@@ -38,13 +38,14 @@ Two lanes, decreasing Envoy visibility:
 ```
 
 Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
-compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
-`sidecar/` declares.
+compiles in `golang:1.26-alpine`, which must be at least the `go 1.26.10`
+every module in `sidecar/` declares; `docker pull golang:1.26-alpine` if
+the build stops at `requires go >= 1.26.10`.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
-admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
-is only the host-side publication, because a laptop usually has something on
-5432 already.
+admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
+postgres listener is `envoy:5432`; 5433 is only the host-side publication,
+because a laptop usually has something on 5432 already.
 
 Envoy reaches the sidecar over TCP here, which keeps the topology to one
 claim: hoop-inspect is an ordinary upstream. To close the last port and have
@@ -174,8 +175,8 @@ cd ../../../sidecar/cmd && go run . -validate \
   -config ../../deploy/docker-compose/envoy-stack/sidecar/config.yaml
 ```
 
-That one runs on the host, so it needs Go 1.26.5 or newer. An older toolchain
-stops at `requires go >= 1.26.5`; `GOTOOLCHAIN=auto`, the default, fetches the
+That one runs on the host, so it needs Go 1.26.10 or newer. An older toolchain
+stops at `requires go >= 1.26.10`; `GOTOOLCHAIN=auto`, the default, fetches the
 right one instead.
 
 ## The tiers
@@ -315,6 +316,38 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 
 `read-audit.py` also asserts the trail contains no value that masking removed;
 recording a masked value in the clear has un-masked it.
+
+### Watch the metrics
+
+The sidecar pushes OTLP to the `otel-collector` service (`telemetry:` block
+in `sidecar/config.yaml`); the collector serves the metrics to Prometheus
+and Grafana renders them. Open <http://localhost:3000> (no login) and the
+**hoop sidecar** dashboard: statements per lane and verdict, denials by
+source, p99 per stage (`policy`, `analyzer`, `review`, `upstream`), the
+share of each statement's time the sidecar itself costs, masked values,
+audit write failures. Run `./demo.sh` and watch it move; the `lane`
+selector splits `appdb` from `httpbin`.
+
+Raw series are at <http://localhost:9090> under `hoop_sidecar_*`, for
+example:
+
+```
+sum by (hoop_lane, hoop_verdict) (rate(hoop_sidecar_statements_total[1m]))
+histogram_quantile(0.99, sum by (le, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[1m])))
+```
+
+Traces (one per connection, a span per statement and per stage) and the
+audit events as log records reach the collector too, but this stack keeps
+no trace or log store, so they only show in its log:
+
+```bash
+docker compose logs otel-collector | grep -E 'Traces|Logs|Metrics'
+```
+
+Point `telemetry/otelcol.yaml`'s traces and logs pipelines at a Tempo or
+Loki exporter to keep them. The series, attributes and latency stages are
+documented in the "OpenTelemetry" section of
+[`sidecar/README.md`](../../../sidecar/README.md).
 
 ## Tier 2c: producers report, OPA decides (off in this stack)
 
@@ -457,19 +490,23 @@ reference in [`sidecar/README.md`](../../../sidecar/README.md) and
 
 ## Identity
 
-Every session in this stack records `principal: anonymous`, and that is honest
-rather than broken. `session.Identity` carries a Subject, and
-`proxy.Config.IdentityFn` is the seam a deployment fills from a verified JWT,
-an mTLS peer cert or a credential token
-(`sidecar/proxy/proxy.go:86-93`). The sidecar exposes it as
-`identity_header` on a listener, but the current implementation contributes
-only the peer address: extracting a header there would mean buffering ahead of
-the relay, and identity for HTTP belongs in the gate where the request is
-already parsed (`sidecar/daemon/daemon.go:650-667`).
+The httpbin lane sets `identity_header: X-Hoop-User`
+(`sidecar/config.yaml`). Envoy forwards the header OPA admitted, and the
+lane reads it on every request, so each http session is filed under its
+caller and a request naming a different user on the same pooled connection
+opens its own session. The postgres lane names the `user` from the
+StartupMessage instead.
 
-So the actor column is wired end to end and unpopulated. Filling it takes one
-function rather than an architecture change, and `X-Hoop-User` already rides
-on every request that reaches the sidecar.
+A request with no header, or a blank one, names nobody and runs as the
+connection: anonymous here, the mTLS subject on a lane that verified one.
+It is served, not refused; a policy that needs a named caller denies
+`input.context.principal == "anonymous"` itself. `./demo.sh` shows that by
+sending one request from the client container straight to
+`hoop-inspect:18080`, past Envoy. The header is trusted exactly as far as
+the network is, which is why that port is reachable on the compose network
+and never published on the host.
+
+`X-Hoop-User` stands in for a verified JWT subject; see Known gaps.
 
 ## Known gaps
 

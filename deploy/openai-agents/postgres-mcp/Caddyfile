@@ -1,0 +1,30 @@
+{
+	servers {
+		# By default only loopback is trusted, so client_ip is the TCP peer and
+		# a client cannot set its own address with a header. The tunnel overlay
+		# trusts its own subnet and the header Cloudflare writes.
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+		client_ip_headers {$CLIENT_IP_HEADER:X-Forwarded-For}
+	}
+}
+
+# MCP_HOST gets a Let's Encrypt certificate. The tunnel overlay sets :8080.
+{$SITE_ADDRESS} {
+	log
+	# @outside: every address not in OpenAI's connectors list
+	# (https://developers.openai.com/api/docs/guides/ip-addresses). ./run.sh
+	# writes it; ./run.sh ranges refreshes it.
+	import /etc/caddy/ranges/openai.caddy
+	# One route block, so the rules run in the written order.
+	route {
+		respond @outside "forbidden" 403
+
+		@mcp path /mcp
+		reverse_proxy @mcp dbhub:8080 {
+			header_up Host mcp.internal
+		}
+
+		# dbhub's port also serves a SQL workbench and /api/*.
+		respond 404
+	}
+}

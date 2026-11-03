@@ -295,7 +295,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		log.Warnf("failed recording last login of %s, reason=%v", uinfo.Email, err)
 	}
 
-	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
+	redirectSuccessURL := httputils.WithQueryParam(login.Redirect, "token", fmt.Sprint(sessionToken))
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
@@ -382,8 +382,7 @@ func parseRedirectURL(c *gin.Context) (string, error) {
 }
 
 func redirectToErrURL(c *gin.Context, loginURL string, format string, a ...any) {
-	redirectURL := fmt.Sprintf("%s?error=%s", loginURL,
-		url.QueryEscape(fmt.Errorf(format, a...).Error()))
+	redirectURL := httputils.WithQueryParam(loginURL, "error", fmt.Errorf(format, a...).Error())
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 

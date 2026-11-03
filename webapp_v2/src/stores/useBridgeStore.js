@@ -25,6 +25,19 @@ export const useBridgeStore = create(() => ({
   // init event re-reads window.location.search and selects the connection.
   // No-op while the bundle isn't booted: the panel's own mount init will pick
   // the role up from the URL in that case.
+  // Forget the web terminal's database and schema before it opens another role,
+  // as :database-schema->clear-schema does.
+  clearDatabaseSchema: () => {
+    try {
+      localStorage.removeItem('selected-database')
+    } catch {
+      // Storage can be blocked; CLJS still clears its own copy below.
+    }
+    if (typeof window.hoopDispatch === 'function') {
+      clojureDispatch('database-schema->clear-schema')
+    }
+  },
+
   syncPrimaryConnectionFromUrl: () => {
     if (typeof window.hoopDispatch === 'function') {
       clojureDispatch('primary-connection/initialize-from-query-or-persistence')

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -158,6 +159,16 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
 			}
 		case pbclient.PGConnectionWrite:
+			// libhoop keeps the guardrails info on every packet from the
+			// ErrorResponse to the ReadyForQuery. Persist it on the packet
+			// that holds the ErrorResponse only: the update appends, so once
+			// per block. Its redactor can flush DataRow, ..., ErrorResponse,
+			// ReadyForQuery in one packet, so look at every message. Decode
+			// only when the packet carries guardrails info: this is the hot
+			// path of every result.
+			if len(pkt.Spec[pb.SpecClientGuardRailsInfoKey]) > 0 && hasPGErrorResponse(pkt) {
+				updateGuardRailsInfoFromPacket(pctx, pkt)
+			}
 			rewritePGGuardRailsErrorPacket(pkt)
 		case pbclient.MSSQLConnectionWrite:
 			// A native MSSQL guardrail block returns a TDS error but keeps the
@@ -199,6 +210,36 @@ func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) b
 	return true
 }
 
+// hasPGErrorResponse reports whether any Postgres backend message in the
+// packet payload is an ErrorResponse. It walks the frames by hand: every
+// backend message has a type byte and a length, but pgtypes.Decode reads a
+// server-only type ('1', '2', 'T', 'Z', ...) as an untyped startup frame.
+func hasPGErrorResponse(pkt *pb.Packet) bool {
+	payload := pkt.Payload
+	for len(payload) >= 5 {
+		if pgtypes.PacketType(payload[0]) == pgtypes.ServerErrorResponse {
+			return true
+		}
+		// the length includes itself, not the type byte
+		msgLen := int(binary.BigEndian.Uint32(payload[1:5]))
+		if msgLen < 4 || msgLen > len(payload)-1 {
+			return false
+		}
+		payload = payload[1+msgLen:]
+	}
+	return false
+}
+
+// isPGErrorResponsePacket reports whether the first Postgres message in the
+// packet payload is an ErrorResponse.
+func isPGErrorResponsePacket(pkt *pb.Packet) bool {
+	if len(pkt.Payload) == 0 {
+		return false
+	}
+	decoded, err := pgtypes.Decode(bytes.NewBuffer(pkt.Payload))
+	return err == nil && decoded != nil && decoded.Type() == pgtypes.ServerErrorResponse
+}
+
 func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
 	rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]
 	if len(rawInfo) == 0 || len(pkt.Payload) == 0 {
@@ -209,11 +250,7 @@ func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
 		return
 	}
 
-	decoded, err := pgtypes.Decode(bytes.NewBuffer(pkt.Payload))
-	if err != nil || decoded == nil {
-		return
-	}
-	if decoded.Type() != pgtypes.ServerErrorResponse {
+	if !isPGErrorResponsePacket(pkt) {
 		return
 	}
 

@@ -13,12 +13,16 @@ import (
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-// onlyGood admits the credential "good" as agents.
+// onlyGood admits the credential "good" as agents, and names a request
+// without one the way the token resolver does.
 var onlyGood = gate.RequestIdentityFunc(func(_ context.Context, cred string) (session.Identity, error) {
-	if cred != "good" {
-		return session.Identity{}, errors.New("not accepted")
+	switch cred {
+	case "":
+		return session.Identity{}, errors.New("the request carried no credential")
+	case "good":
+		return session.Identity{Subject: "agents"}, nil
 	}
-	return session.Identity{Subject: "agents"}, nil
+	return session.Identity{}, errors.New("not accepted")
 })
 
 func authenticatingGate(t *testing.T, sink audit.Sink) *gate.Gate {
@@ -42,7 +46,8 @@ func authenticatingGate(t *testing.T, sink audit.Sink) *gate.Gate {
 // the authentication the codec refuses the head before then, and the gate
 // records that refusal
 // as the identity refusal it would have made: the same 403 text, rule
-// identity, filed under anonymous with the request line as the statement.
+// identity, filed under anonymous with the method and normalized path as
+// the statement.
 func TestACallerRefusedBeforeItsBodyIsAnIdentityRefusal(t *testing.T) {
 	for name, tc := range map[string]struct{ head, want string }{
 		"no header": {"DELETE /items/1 HTTP/1.1\r\nHost: h\r\nContent-Length: 1\r\n\r\n",
@@ -59,8 +64,8 @@ func TestACallerRefusedBeforeItsBodyIsAnIdentityRefusal(t *testing.T) {
 					d.Allowed, d.Rule, d.Payload, d.Message, tc.want)
 			}
 			ev := sink.find(audit.KindViolation)
-			if ev == nil || ev.Rule != "identity" || ev.Principal != session.AnonymousPrincipal || ev.Statement != "DELETE /items/1" {
-				t.Fatalf("violation = %+v, want an identity refusal of DELETE /items/1 under anonymous", ev)
+			if ev == nil || ev.Rule != "identity" || ev.Principal != session.AnonymousPrincipal || ev.Statement != "DELETE /items/*" {
+				t.Fatalf("violation = %+v, want an identity refusal of DELETE /items/* under anonymous", ev)
 			}
 			if p := g.Session().Identity.Principal(); p != "alice@example.com" {
 				t.Errorf("the refusal moved the running session to %q", p)

@@ -1,7 +1,7 @@
 // twins runs one twin or the router, or mints the test PKI:
 //
 //	twins pki    -dir /pki -leaf oidc=oidc-twin,localhost,127.0.0.1
-//	twins oidc   -issuer https://oidc-twin -cert /pki/oidc.crt -key /pki/oidc.key
+//	twins oidc   -issuer https://oidc-twin -browser-url http://127.0.0.1:18081 -cert /pki/oidc.crt -key /pki/oidc.key
 //	twins router -route oidc-twin=oidc-twin:443
 package main
 
@@ -51,9 +51,10 @@ func main() {
 		err = kit.WritePKI(*dir, m)
 	case "oidc":
 		issuer := fs.String("issuer", "https://oidc-twin", "issuer URL, as hoop is configured")
+		browserURL := fs.String("browser-url", "", "where a browser reaches this twin; discovery advertises authorize there (default: the issuer)")
 		fs.Parse(os.Args[2:])
 		var t *oidc.Twin
-		if t, err = oidc.New(*issuer); err == nil {
+		if t, err = oidc.New(*issuer, *browserURL); err == nil {
 			err = kit.Serve(t, *tlsAddr, *adminAddr, *cert, *key)
 		}
 	case "router":

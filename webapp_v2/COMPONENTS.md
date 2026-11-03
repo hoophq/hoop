@@ -19,7 +19,7 @@ Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
 |---|---|---|
 | *(none)* / `md` | 40px | **Default — do not pass a size prop** |
 | `xs` | 24px | Micro affordances in dense chrome |
-| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons. |
 | `lg` | 48px | Prominent/hero actions |
 
 Rules:
@@ -30,6 +30,8 @@ Rules:
 - **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
 - Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
   and align automatically.
+- A filter trigger next to a `Select` takes `<Button variant="field">`: input
+  surface, border and placeholder color. Add `data-filled` once it holds a value.
 
 ---
 
@@ -187,45 +189,6 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
 
-### `BarChart`
-Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
-```jsx
-import BarChart from '@/components/BarChart'
-
-// Grouped bars, no axes (identification via tooltip):
-<BarChart
-  h={300}
-  data={buckets}
-  dataKey="label"
-  withXAxis={false}
-  withYAxis={false}
-  barProps={{ radius: 4 }}
-  series={[
-    { name: 'approved', label: 'Approved', color: 'green.5' },
-    { name: 'rejected', label: 'Rejected', color: 'red.5' },
-  ]}
-/>
-```
-Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
-
-### `DonutChart`
-Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
-```jsx
-import DonutChart from '@/components/DonutChart'
-
-<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
-```
-Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
-
-### `CHART_SERIES_COLORS` (theme export, not a component)
-The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
-```jsx
-import { CHART_SERIES_COLORS } from '@/theme'
-
-const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
-```
-**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
-
 ### `SegmentedControl`
 Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
 ```jsx
@@ -260,7 +223,7 @@ import StepAccordion from '@/components/StepAccordion'
 ```
 
 ### `ProtectedRoute` / `GatewayProtectedRoute`
-Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents landing swap. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents swap: with `experimental.agents` off, every agent path (`modes/agentPaths.js`) lands on Sidecars or Reviews. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
 
 ### `Stepper`
 Horizontal step indicator for a multi-page flow (numbered circles joined by a rule). Controlled by the zero-based `active` step; render the step body below it yourself.
@@ -317,7 +280,7 @@ root and its own `AppShell.Header` uses under `layout="alt"`; that is why the ba
 the sidebar collapsing instead of recomputing its width from a store.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere.
 
 ### `NotImplemented`
 A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
@@ -325,20 +288,23 @@ A route that exists in the information architecture but has no backend yet. Name
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
 
-### `useModeConfig` / `getModeConfig` / `postAuthPath` (`src/modes/`)
-The product manifest (`modes/gateway.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
+### Route wrappers (`src/modes/gateway.jsx`)
+`Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx` only — see `CLAUDE.md`, "Routing, gates and roles".
+
+### `POST_LOGIN_PATH` / `POST_SETUP_PATH` (`src/modes/`)
+Where an auth page sends the user next: `/client` after login, `/onboarding/setup` after a local org's first sign-up.
 
 ### `useRuleTraffics` (`src/modes/`)
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
-`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+`<ByRuleTraffic kind={RULE_KIND_ANALYZER} fetchRule={aiSessionAnalyzerService.getRule} listPath="/features/ai-session-analyzer" agent={<GatewayAiAnalyzerForm />} sidecar={<SidecarAiAnalyzerForm />} />` — picks the analyzer rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Guardrails and masking have one form each and do not use it. Used in `Router.jsx` only.
 
 ### `RuleTrafficBadge` / `NewRuleButton`
-`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
+`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two (analyzer page only).
 
-### `ModeThemeProvider` (`src/modes/`)
-The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.
+### `RuleSupportTag`
+`<RuleSupportTag side="sidecar" />` / `side="agent"` — inline "Sidecar only" / "Agent only" marker for a form option that one engine does not run. Put it in an input `label` (`<Group gap="xs">Label <RuleSupportTag side="sidecar" /></Group>`) or in a `Select` `renderOption`. The reasons live in `utils/ruleSupport.js` (`guardrailAgentBlockers`, `maskingAgentBlockers`).
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
@@ -411,6 +377,28 @@ const [opened, { open, close }] = useDisclosure(false)
   {/* form content */}
 </Modal>
 ```
+
+### `ConfirmDialog`
+Confirmation for a destructive or irreversible action: title, body, Cancel and a confirm button. `danger` paints the confirm red; `loading` keeps it open (Cancel, Escape, outside click, close button).
+```jsx
+import ConfirmDialog from '@/components/ConfirmDialog'
+
+<ConfirmDialog opened={opened} title="Delete role?" confirmLabel="Confirm and delete" danger
+  loading={deleting} onConfirm={handleDelete} onClose={close}>
+  <Text size="sm">This cannot be undone.</Text>
+</ConfirmDialog>
+```
+
+### `TestConnectionModal`
+The "Connectivity Check" modal: agent status and connection status, each updating on its own. Presentational; the caller runs the two probes (`GET /connections/:name`, `GET /connections/:name/test`). Used by Configure Role and `/resources`.
+```jsx
+import TestConnectionModal from '@/components/TestConnectionModal'
+
+<TestConnectionModal opened={test.opened} testing={test.testing} connectionName={test.connectionName}
+  agentStatus={test.agentStatus} connectionStatus={test.connectionStatus}
+  durationMs={test.durationMs} errorMessage={test.errorMessage} onClose={closeTest} />
+```
+`agentStatus`: `checking | online | offline`. `connectionStatus`: `checking | successful | failed`.
 
 ### `Select`
 Single-value select input.
@@ -684,6 +672,29 @@ Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChang
 
 ---
 
+### `PaginatedSelect`
+Single-value sibling of `PaginatedMultiSelect`: a select over a **paginated, server-searched** option source, with the search box in the dropdown and infinite scroll. Controlled (no fetching). `onChange` receives the whole option; `selectedLabel` names a value that is not on the loaded pages. The CMDB fields of the Jira prompt gate use it.
+```jsx
+import PaginatedSelect from '@/components/PaginatedSelect'
+
+<PaginatedSelect
+  label="Database server"
+  required
+  value={pick?.value ?? null}
+  selectedLabel={pick?.label ?? null}
+  onChange={(option) => setPick(option)}
+  options={rows.map((r) => ({ value: r.id, label: r.name }))}
+  loading={loading}
+  hasMore={hasMore}
+  onLoadMore={loadMore}
+  searchValue={search}
+  onSearchChange={setSearch}
+/>
+```
+Props: `label`, `placeholder`, `searchPlaceholder`, `nothingFound`, `required`, `error`, `disabled`, `value`, `selectedLabel`, `onChange(option)`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`, `comboboxProps`.
+
+---
+
 ### `ConnectionsMultiSelect`
 Resource-role (connection) multi-select with infinite-scroll pagination + server search. Composes `usePaginatedConnections` + `PaginatedMultiSelect` and resolves labels for already-selected ids on demand via `?connection_ids=` (so edit-mode chips show names without loading every connection). This is the React port of CLJS `connections-select` — use it anywhere a feature needs a connection picker.
 ```jsx
@@ -694,7 +705,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
   onChange={(ids) => setField({ connectionIds: ids })}
 />
 ```
-Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`, `disabled`.
 
 ---
 
@@ -724,7 +735,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
   onChange={(targets) => setField({ sidecarTargets: targets })}
 />
 ```
-Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
+Props: `value` (targets[]), `onChange(targets)`, `label`, `description`, `listenerBlocked(sidecar, listener)` (returns a reason to disable that listener, or null; keep it a stable reference). A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
 
 **The payload distinction that matters:** an *absent* `sidecar_targets` leaves a rule's bindings alone; `[]` unbinds it from every sidecar. The three `formToPayload` helpers omit the key entirely where the picker did not render, so a gateway save cannot silently unbind a fleet.
 
@@ -855,7 +866,7 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
 ### `useLiveEvent(type, handler, enabled = true)`
-Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per tab, shared by every subscriber, closed when the last one unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
+Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per browser: the tab holding the `hoop-live-events` Web Lock streams and passes events to the other tabs. It closes when the last subscriber of the tab unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
 ```jsx
 useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
 ```
@@ -869,6 +880,9 @@ credential). Expiry side effects belong to the owning store, not to this hook �
 ```jsx
 const { label } = useCountdown(credential.expire_at)
 ```
+
+### `useInfiniteScroll(onLoadMore, enabled = true)`
+Returns a ref for a sentinel at the end of a list; `onLoadMore` runs when it scrolls into view. Pass `enabled = hasMore && !loading`, so a page that loads while the sentinel stays visible asks for the next one. Used by `/resources`.
 
 ### `usePaginatedConnections({ pageSize = 50 })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
@@ -889,12 +903,12 @@ directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
-useAuthStore.getState().token
+useAuthStore.getState().isAuthenticated
 ```
 
 Non-obvious notes only:
 
-- `useUserStore` — the signed-in user, the org's plan and the product mode.
+- `useUserStore` — the signed-in user and the org's plan.
   `installLicense(payload)` is one operation on purpose: the moment the `PUT`
   lands the plan has changed server-side, and every gate reading `isFreeLicense`
   or `licenseFeatures` is stale until `/serverinfo` is re-read. Doing the two
@@ -923,6 +937,12 @@ Non-obvious notes only:
   on navigation, on window focus and on the `hoop:session-executed` DOM event
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
+- `usePendingApprovalsStore` — the sidebar's pending approvals count. One call
+  to `GET /approvals/count?status=PENDING`; never count the list. Read on
+  navigation, window focus and `review.created` (with
+  `experimental.review_notifications` on) (`layout/Sidebar/usePendingApprovalsCount`,
+  called once in `GatewayLayout` for both sidebars) and after every `decide`;
+  never while the sidebar is collapsed. Resets on logout.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
   `updateSidecar`, `patchSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
@@ -947,6 +967,14 @@ Non-obvious notes only:
   revisit cannot open on a record minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
+- `useJiraPromptStore` — the Jira prompt gate (`features/JiraPromptGate`), the
+  React port of the CLJS runtime prompt. A caller runs `load(connectionName)`
+  before it runs something on a resource: `{ needed: false, fields }` means add
+  `fields` to the request now, `{ needed: true }` means open `<JiraPromptGate>`,
+  whose `onSubmit` gets `{ jira_fields }`, and `null` means a newer load replaced
+  this one. CMDB picks go in `jira_fields` too; the gateway reads nothing else.
+  The pure parts (`cascade.js`, `jiraFields.js`) are tested against fixtures the
+  CLJS code writes (`npm --prefix ../webapp run fixtures:jira`). Resets on logout.
 
 ---
 
@@ -958,8 +986,9 @@ when adding one, follow the pattern in `services/agents.js`.
 
 Non-obvious notes only:
 
-- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
-  URL + logout). Every other service imports it; never call axios directly.
+- `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
+  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
+  imports it; never call axios directly.
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
@@ -1113,6 +1142,15 @@ gateway decides expiry against its own clock, which is the clock that actually
 blocks sessions. `daysUntilExpiration` is only for the "expires in N days"
 countdown while the status is still `valid`.
 
+### `csv.js`
+CSV export for tables. Used by Users → Export CSV.
+```js
+import { toCSV, downloadCSV } from '@/utils/csv'
+
+downloadCSV('hoop-users-2026-10-23.csv', toCSV(['Name', 'Email'], [['Doe, John', 'j@x.com']]))
+```
+`toCSV` writes RFC 4180 (quotes for comma, double quote, line break; CRLF), a UTF-8 BOM for Excel, and a leading `'` on cells that start with `=`, `+`, `-`, `@` (ASCII or full-width), tab, CR or LF (CSV injection). `null`/`undefined` become empty cells.
+
 ### `support.js`
 Opens the same destination as "Contact support" in the header user menu.
 ```js
@@ -1146,6 +1184,14 @@ showSnackbar({
   level: 'error',
   text: 'Validation failed.',
   details: { field: 'name', reason: 'required' },
+})
+
+// Buttons under the text; a click dismisses the toast. The first is the primary one.
+showSnackbar({
+  text: 'Approval request',
+  description: 'maria · pg-prod · One-time access',
+  actions: [{ label: 'Open', onClick: open }],
+  duration: 20000,
 })
 ```
 

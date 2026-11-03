@@ -35,7 +35,6 @@ func RunReviewedExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionId := c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sessionId)
 	review, err := models.GetReviewByIdOrSid(ctx.OrgID, sessionId)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving approval request")

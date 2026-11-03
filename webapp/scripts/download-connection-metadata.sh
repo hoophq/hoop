@@ -50,6 +50,19 @@ HTTP_CODE=$(curl "${CURL_ARGS[@]}" \
 
 echo "HTTP Status: $HTTP_CODE"
 
+# A cloud session cannot call the GitHub API. The repository is public: read
+# the same file from its default branch with git.
+if [ "$HTTP_CODE" -ne 200 ]; then
+    TMP_DIR=$(mktemp -d)
+    if git clone -q --depth 1 --filter=blob:none --sparse "https://github.com/$ORG/$REPO" "$TMP_DIR/repo" 2>/dev/null &&
+        git -C "$TMP_DIR/repo" sparse-checkout set "$(dirname "$FILE")" &&
+        cp "$TMP_DIR/repo/$FILE" "$OUTPUT_DIR/$OUTPUT_FILE"; then
+        echo "  GitHub API refused it; read $FILE with git instead"
+        HTTP_CODE=200
+    fi
+    rm -rf "$TMP_DIR"
+fi
+
 # Check if download was successful
 if [ -f "$OUTPUT_DIR/$OUTPUT_FILE" ]; then
     FILE_SIZE=$(wc -c < "$OUTPUT_DIR/$OUTPUT_FILE" | tr -d ' ')

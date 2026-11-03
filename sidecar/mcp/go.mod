@@ -4,7 +4,7 @@
 // importing this module; one that does not refuses an "mcp" block.
 module github.com/hoophq/hoop/sidecar/mcp
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
@@ -19,7 +19,7 @@ require (
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df // indirect
+	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect

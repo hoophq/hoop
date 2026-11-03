@@ -28,12 +28,14 @@ type ServerAuthConfig struct {
 }
 
 type ServerAuthOidcConfig struct {
-	IssuerURL    string         `json:"issuer_url"`
-	ClientID     string         `json:"client_id"`
-	ClientSecret string         `json:"client_secret"`
-	Scopes       pq.StringArray `json:"scopes"`
-	Audience     string         `json:"audience"`
-	GroupsClaim  string         `json:"groups_claim"`
+	IssuerURL    string `json:"issuer_url"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	// ClientAssertionFile is a JWT file that authenticates the client in place of ClientSecret.
+	ClientAssertionFile string         `json:"client_assertion_file,omitempty"`
+	Scopes              pq.StringArray `json:"scopes"`
+	Audience            string         `json:"audience"`
+	GroupsClaim         string         `json:"groups_claim"`
 }
 
 type ServerAuthSamlConfig struct {

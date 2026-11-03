@@ -1,0 +1,14 @@
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  width: 100%;
+  padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-smAlt);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.option:hover,
+.option:focus-visible {
+  background-color: var(--mantine-color-gray-1);
+}

@@ -30,7 +30,9 @@
 #   --config FILE       install FILE as /etc/hoop-inspect/config.yaml once it
 #                       validates; without it an existing config stays and a
 #                       new host gets examples/config.single.yaml to edit
-#                       (examples/config.cidr.yaml is the CIDR-mode one)
+#                       (examples/config.cidr.yaml is the CIDR-mode one,
+#                       examples/config.gateway-direct.yaml the single-mode
+#                       lane a Citrix Gateway dials directly)
 #   --model-dir DIR     copy the NER model from DIR instead of downloading it
 #                       (air-gapped hosts). DIR is a KnightsAnalytics_distilbert-NER
 #                       directory: config.json, model.onnx, tokenizer.json, ...
@@ -286,7 +288,7 @@ elif [[ ! -f $CONF ]]; then
   # The single-mode example from the tarball, with its EDIT markers: the
   # --start branch below refuses to run it until they are gone.
   install -o root -g hoop -m 0640 "$here/examples/config.single.yaml" "$CONF"
-  echo "    wrote examples/config.single.yaml to ${CONF}; edit upstream and tenant_id (examples/config.cidr.yaml for CIDR mode)"
+  echo "    wrote examples/config.single.yaml to ${CONF}; edit upstream and tenant_id (examples/config.cidr.yaml for CIDR mode, examples/config.gateway-direct.yaml for a Gateway that dials this host)"
 fi
 
 # Releases older than the one this run replaced go: the previous one stays

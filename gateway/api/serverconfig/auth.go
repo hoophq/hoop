@@ -80,12 +80,13 @@ func GetAuthConfig(c *gin.Context) {
 				scopes = append(scopes, strings.Split(opts.CustomScopes, ",")...)
 			}
 			oidcConfig = &models.ServerAuthOidcConfig{
-				IssuerURL:    opts.IssuerURL,
-				ClientID:     opts.ClientID,
-				ClientSecret: opts.ClientSecret,
-				Scopes:       scopes,
-				Audience:     opts.Audience,
-				GroupsClaim:  opts.GroupsClaim,
+				IssuerURL:           opts.IssuerURL,
+				ClientID:            opts.ClientID,
+				ClientSecret:        opts.ClientSecret,
+				ClientAssertionFile: opts.ClientAssertionFile,
+				Scopes:              scopes,
+				Audience:            opts.Audience,
+				GroupsClaim:         opts.GroupsClaim,
 			}
 		}
 		config = &models.ServerAuthConfig{
@@ -157,12 +158,13 @@ func UpdateAuthConfig(c *gin.Context) {
 	existentConfig.OidcConfig = nil
 	if req.OidcConfig != nil {
 		existentConfig.OidcConfig = &models.ServerAuthOidcConfig{
-			IssuerURL:    req.OidcConfig.IssuerURL,
-			ClientID:     req.OidcConfig.ClientID,
-			ClientSecret: req.OidcConfig.ClientSecret,
-			Scopes:       req.OidcConfig.Scopes,
-			Audience:     req.OidcConfig.Audience,
-			GroupsClaim:  req.OidcConfig.GroupsClaim,
+			IssuerURL:           req.OidcConfig.IssuerURL,
+			ClientID:            req.OidcConfig.ClientID,
+			ClientSecret:        req.OidcConfig.ClientSecret,
+			ClientAssertionFile: req.OidcConfig.ClientAssertionFile,
+			Scopes:              req.OidcConfig.Scopes,
+			Audience:            req.OidcConfig.Audience,
+			GroupsClaim:         req.OidcConfig.GroupsClaim,
 		}
 	}
 
@@ -191,13 +193,17 @@ func UpdateAuthConfig(c *gin.Context) {
 	log.With("auth_method", req.AuthMethod).Infof("performing pre-flight check for auth config update")
 	switch req.AuthMethod {
 	case openapi.ProviderTypeOIDC:
+		if err = idp.ValidateDatabaseClientAssertionFile(req.OidcConfig.ClientAssertionFile); err != nil {
+			break
+		}
 		_, err = oidcprovider.New(oidcprovider.Options{
-			IssuerURL:    req.OidcConfig.IssuerURL,
-			ClientID:     req.OidcConfig.ClientID,
-			ClientSecret: req.OidcConfig.ClientSecret,
-			Audience:     req.OidcConfig.Audience,
-			GroupsClaim:  req.OidcConfig.GroupsClaim,
-			CustomScopes: strings.Join(req.OidcConfig.Scopes, ","),
+			IssuerURL:           req.OidcConfig.IssuerURL,
+			ClientID:            req.OidcConfig.ClientID,
+			ClientSecret:        req.OidcConfig.ClientSecret,
+			ClientAssertionFile: req.OidcConfig.ClientAssertionFile,
+			Audience:            req.OidcConfig.Audience,
+			GroupsClaim:         req.OidcConfig.GroupsClaim,
+			CustomScopes:        strings.Join(req.OidcConfig.Scopes, ","),
 		})
 	case openapi.ProviderTypeSAML:
 		var samlProvider *samlprovider.Provider
@@ -352,12 +358,13 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 	var oidcConfig *openapi.ServerAuthOidcConfig
 	if cfg.OidcConfig != nil {
 		oidcConfig = &openapi.ServerAuthOidcConfig{
-			IssuerURL:    cfg.OidcConfig.IssuerURL,
-			ClientID:     cfg.OidcConfig.ClientID,
-			ClientSecret: cfg.OidcConfig.ClientSecret,
-			Scopes:       cfg.OidcConfig.Scopes,
-			Audience:     cfg.OidcConfig.Audience,
-			GroupsClaim:  cfg.OidcConfig.GroupsClaim,
+			IssuerURL:           cfg.OidcConfig.IssuerURL,
+			ClientID:            cfg.OidcConfig.ClientID,
+			ClientSecret:        cfg.OidcConfig.ClientSecret,
+			ClientAssertionFile: cfg.OidcConfig.ClientAssertionFile,
+			Scopes:              cfg.OidcConfig.Scopes,
+			Audience:            cfg.OidcConfig.Audience,
+			GroupsClaim:         cfg.OidcConfig.GroupsClaim,
 		}
 	}
 	var samlConfig *openapi.ServerAuthSamlConfig

@@ -29,7 +29,7 @@ docker run -p 5449:5432 -d --name hoopdevpg \
     postgres:16
 
 
-until docker exec -it hoopdevpg psql -h 0 --quiet -c 'select now()' -o /dev/null 1> /dev/null
+until docker exec hoopdevpg psql -h 0 --quiet -c 'select now()' -o /dev/null 1> /dev/null
 do
     sleep 1
     echo -n '.'

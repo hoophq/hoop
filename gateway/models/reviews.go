@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/liveevents"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -421,12 +424,69 @@ func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale in
 	return counts.Pending, counts.Stale, nil
 }
 
+// CountPendingReviewsForViewer counts the PENDING reviews ListReviews returns to viewer.
+func CountPendingReviewsForViewer(db *gorm.DB, orgID string, viewer ReviewViewer) (int64, error) {
+	visibility, visibilityArgs := viewer.condition()
+	var count int64
+	err := db.Raw(`
+	SELECT COUNT(*) FROM private.reviews rv
+	WHERE org_id = ? AND status = ?
+	AND NOT (COALESCE(rv.listener_name, '') <> '' AND rv.expires_at IS NOT NULL AND rv.expires_at <= ?)`+visibility,
+		append([]any{orgID, ReviewStatusPending, time.Now().UTC()}, visibilityArgs...)...).
+		Scan(&count).
+		Error
+	return count, err
+}
+
 // Create the review object, when input is not empty it generates a blob id
 // and save the input as well.
 func CreateReview(rev *Review, input string) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return createReviewTx(tx, rev, input)
 	})
+	if err == nil {
+		publishReviewCreated(DB, rev)
+	}
+	return err
+}
+
+// publishReviewCreated tells the browsers of the users who can approve rev.
+func publishReviewCreated(db *gorm.DB, rev *Review) {
+	if rev.Status != ReviewStatusPending || !featureflag.IsEnabled(rev.OrgID, featureflag.FlagReviewNotifications) {
+		return
+	}
+	groups, err := reviewApproverGroups(db, rev)
+	if err != nil {
+		log.With("review", rev.ID).Warnf("failed reading the approvers of the review, reason=%v", err)
+		return
+	}
+	liveevents.Publish(rev.OrgID, liveevents.Event{
+		Type:     liveevents.ReviewCreated,
+		ID:       rev.ID,
+		Audience: &liveevents.Audience{Groups: groups, OwnerID: rev.OwnerID},
+	})
+}
+
+// reviewApproverGroups are the groups that can approve rev: the ones
+// reviewVisibilityCondition admits, except the requester.
+func reviewApproverGroups(db *gorm.DB, rev *Review) ([]string, error) {
+	var groups []string
+	for _, rg := range rev.ReviewGroups {
+		groups = append(groups, rg.GroupName)
+	}
+	switch {
+	case rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil:
+		groups = append(groups, rev.ForceApprovalGroups...)
+	case !rev.isSidecar():
+		var force pq.StringArray
+		err := db.Raw(`SELECT force_approve_groups FROM private.connections WHERE org_id = ? AND name = ?`,
+			rev.OrgID, rev.ConnectionName).Row().Scan(&force)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		groups = append(groups, force...)
+	}
+	return groups, nil
 }
 
 // createReviewTx is CreateReview's body with the transaction supplied by the
@@ -927,6 +987,7 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 	if err != nil {
 		return nil, err
 	}
+	publishReviewCreated(db, rev)
 	return expired, nil
 }
 

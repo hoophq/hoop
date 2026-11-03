@@ -3,8 +3,8 @@
 // admin listeners.
 //
 // A twin implements Twin. The kit owns /_twin/seed, /_twin/state,
-// /_twin/reset, /_twin/faults and /_twin/healthz, so every twin answers them
-// the same way.
+// /_twin/reset, /_twin/faults, /_twin/healthz and /_twin/ui, so every twin
+// answers them the same way.
 //
 // Twins import nothing from github.com/hoophq/hoop (ADR-0032), so they log
 // with log/slog, not common/log.
@@ -81,6 +81,7 @@ func Handler(t Twin) http.Handler {
 	h.admin.HandleFunc("POST /_twin/faults", h.addFault)
 	h.admin.HandleFunc("DELETE /_twin/faults", h.clearFaults)
 	h.admin.HandleFunc("GET /_twin/healthz", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") })
+	h.admin.HandleFunc("GET /_twin/ui", h.ui)
 	if a, ok := t.(Actor); ok {
 		a.Actions(h.admin)
 	}

@@ -2,9 +2,10 @@
 // authorize, token (authorization_code and refresh_token), userinfo and
 // JWKS. Users, groups and the groups claim name come from /_twin/seed.
 //
-// Authorize shows no prompt. It approves the seeded user that the standard
-// login_hint parameter names, so a scenario logs in over HTTP with no
-// browser.
+// Authorize approves the seeded user that the standard login_hint parameter
+// names, so a scenario logs in over HTTP with no browser. With no
+// login_hint, it serves a page that lists the seeded users, for a person or
+// a headless browser to pick one.
 package oidc
 
 import (
@@ -84,8 +85,11 @@ type issued struct {
 // Twin is the OIDC provider twin. Create it with New.
 type Twin struct {
 	issuer string
-	key    *rsa.PrivateKey
-	kid    string
+	// browserURL is where a browser reaches the twin. Discovery advertises
+	// the authorize endpoint there; the gateway never calls it.
+	browserURL string
+	key        *rsa.PrivateKey
+	kid        string
 
 	mu      sync.Mutex
 	cfg     seed
@@ -99,12 +103,28 @@ type Twin struct {
 
 // New returns a twin that answers as issuer. The gateway requires the
 // discovery document to name the issuer it is configured with.
-func New(issuer string) (*Twin, error) {
+//
+// browserURL is the base URL of the authorize endpoint in discovery, for a
+// browser that cannot resolve or trust the issuer host. Empty means the
+// issuer. It takes a path prefix, but no query or fragment: authorize goes
+// at the end of its path.
+func New(issuer, browserURL string) (*Twin, error) {
+	issuer = strings.TrimSuffix(issuer, "/")
+	if browserURL == "" {
+		browserURL = issuer
+	}
+	u, err := url.Parse(browserURL)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return nil, fmt.Errorf("browser URL %q must be an absolute URL", browserURL)
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(browserURL, "#") {
+		return nil, fmt.Errorf("browser URL %q must have no query and no fragment", browserURL)
+	}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
 	}
-	t := &Twin{issuer: strings.TrimSuffix(issuer, "/"), key: key, kid: "twin-1"}
+	t := &Twin{issuer: issuer, browserURL: strings.TrimSuffix(browserURL, "/"), key: key, kid: "twin-1"}
 	t.Reset()
 	return t, nil
 }
@@ -179,14 +199,23 @@ func (t *Twin) Seed(raw json.RawMessage) error {
 	return nil
 }
 
+// state is the document of /_twin/state. Its field order is the order of
+// the /_twin/ui page.
+type state struct {
+	Issuer        string   `json:"issuer"`
+	BrowserURL    string   `json:"browser_url"`
+	ClientID      string   `json:"client_id"`
+	GroupsClaim   string   `json:"groups_claim"`
+	TokenTTLSec   int      `json:"token_ttl_sec"`
+	Users         []User   `json:"users"`
+	Codes         []code   `json:"codes"`
+	Tokens        []issued `json:"tokens"`
+	ExpiredTokens []string `json:"expired_tokens"`
+}
+
 func (t *Twin) State() any {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	users := make([]User, 0, len(t.users))
-	for _, u := range t.users {
-		users = append(users, u)
-	}
-	sort.Slice(users, func(i, j int) bool { return users[i].Email < users[j].Email })
 	codes := make([]code, 0, len(t.codes))
 	for _, c := range t.codes {
 		codes = append(codes, *c)
@@ -197,10 +226,20 @@ func (t *Twin) State() any {
 		expired = append(expired, k)
 	}
 	slices.Sort(expired)
-	tokens := append([]issued{}, t.issued...)
-	return map[string]any{"issuer": t.issuer, "client_id": t.cfg.ClientID, "groups_claim": t.cfg.GroupsClaim,
-		"token_ttl_sec": t.cfg.TokenTTLSec, "expired_tokens": expired,
-		"users": users, "codes": codes, "tokens": tokens}
+	return state{Issuer: t.issuer, BrowserURL: t.browserURL, ClientID: t.cfg.ClientID, GroupsClaim: t.cfg.GroupsClaim,
+		TokenTTLSec: t.cfg.TokenTTLSec, Users: sortUsers(t.users), Codes: codes,
+		Tokens: append([]issued{}, t.issued...), ExpiredTokens: expired}
+}
+
+// sortUsers lists users by email. It takes the map, not the twin: the
+// caller reads t.users under t.mu.
+func sortUsers(byEmail map[string]User) []User {
+	users := make([]User, 0, len(byEmail))
+	for _, u := range byEmail {
+		users = append(users, u)
+	}
+	sort.Slice(users, func(i, j int) bool { return users[i].Email < users[j].Email })
+	return users
 }
 
 func (t *Twin) Routes(mux *http.ServeMux) {
@@ -212,10 +251,14 @@ func (t *Twin) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /jwks", t.jwks)
 }
 
+// authorizeURL is where a browser reaches authorize. Discovery advertises
+// it, and the login page sends its form there.
+func (t *Twin) authorizeURL() string { return t.browserURL + "/authorize" }
+
 func (t *Twin) discovery(w http.ResponseWriter, _ *http.Request) {
 	kit.WriteJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                t.issuer,
-		"authorization_endpoint":                t.issuer + "/authorize",
+		"authorization_endpoint":                t.authorizeURL(),
 		"token_endpoint":                        t.issuer + "/token",
 		"userinfo_endpoint":                     t.issuer + "/userinfo",
 		"jwks_uri":                              t.issuer + "/jwks",
@@ -259,8 +302,14 @@ func (t *Twin) authorize(w http.ResponseWriter, r *http.Request) {
 		fail("invalid_scope", "scope must hold openid")
 		return
 	}
-	// No login page: a scenario names the user. An unknown user is a broken
-	// scenario, so answer here with the reason.
+	// A scenario names the user. A browser picks one on the login page,
+	// which sends this request again with login_hint. An unknown user is a
+	// broken scenario, so answer here with the reason.
+	if !q.Has("login_hint") {
+		// authorize holds t.mu, so it reads the client and the users here.
+		writeLoginPage(w, newLoginView(t.authorizeURL(), t.issuer, t.cfg.ClientID, q, sortUsers(t.users)))
+		return
+	}
 	u, ok := t.users[strings.ToLower(q.Get("login_hint"))]
 	if !ok {
 		http.Error(w, fmt.Sprintf("login_hint %q names no seeded user", q.Get("login_hint")), http.StatusBadRequest)

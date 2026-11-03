@@ -195,7 +195,6 @@ func RunExec(c *gin.Context) {
 	}
 
 	sessionID := uuid.NewString()
-	apiroutes.SetSidSpanAttr(c, sessionID)
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.runbook.exec"

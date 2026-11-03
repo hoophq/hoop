@@ -1,13 +1,9 @@
-import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
-import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
-import { useModeConfig } from '@/modes'
+import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
-import { dataMaskingService } from '@/services/dataMasking'
-import { guardrailsService } from '@/services/guardrails'
-import { RULE_KIND_ANALYZER, RULE_KIND_DATAMASKING, RULE_KIND_GUARDRAIL } from '@/utils/ruleTraffic'
+import { RULE_KIND_ANALYZER } from '@/utils/ruleTraffic'
 
 // Auth pages
 import Login from '@/pages/Auth/Login'
@@ -21,6 +17,7 @@ import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
+import Resources from '@/pages/Resources'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -30,7 +27,6 @@ import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
-import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import Users from '@/pages/Organization/Users'
@@ -41,19 +37,17 @@ import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
-import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
-import ControlPlaneDataMaskingForm from '@/pages/Features/DataMasking/Create/ControlPlaneDataMaskingForm'
+import DataMaskingForm from '@/pages/Features/DataMasking/Create/DataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import AccessRequest from '@/pages/Features/AccessRequest'
 import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
 import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
-import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
+import SidecarAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/SidecarAiAnalyzerForm'
 import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
 import Guardrails from '@/pages/Guardrails'
-import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
-import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
+import GuardrailForm from '@/pages/Guardrails/Create/GuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -65,13 +59,9 @@ import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
+import SidecarLogin from '@/pages/Sidecars/Login'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
 import SidecarListenerPage from '@/pages/Sidecars/Listener'
-
-// The only lazily-loaded page. Every other route is imported eagerly, but the
-// Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
-// only — no reason to put that in the bundle every user downloads.
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
 // /reviews is the old path of /approvals. Keep the session id and the query.
 function ReviewsRedirect() {
@@ -82,13 +72,13 @@ function ReviewsRedirect() {
 }
 
 /**
- * The route table (src/modes/gateway.jsx is the product manifest):
+ * The route table (the wrappers come from src/modes/gateway.jsx):
  *   - `Page`: the shell a React page renders in (ProtectedRoute + Layout).
  *   - `Guard`: a React route without the shell (onboarding).
  *   - `Home`, `Onboarding`, `CatchAll`: the ClojureScript leaves.
  *
- * Guardrail, masking and analyzer forms are chosen per rule with
- * <ByRuleTraffic>, since one org can have both agent and sidecar traffic.
+ * The analyzer form is chosen per rule with <ByRuleTraffic>, since one org can
+ * have both agent and sidecar traffic. Guardrails and masking have one form each.
  *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
@@ -96,7 +86,7 @@ function ReviewsRedirect() {
  *   3. Delete the corresponding panel from app.cljs
  */
 function Router() {
-  const { Page, Guard, Home, Onboarding, CatchAll } = useModeConfig()
+  const { Page, Guard, Home, Onboarding, CatchAll } = gateway
   return (
     <Routes>
       {/* Public Auth Routes — no Layout, no auth required */}
@@ -124,6 +114,15 @@ function Router() {
         element={
           <Page adminOnly>
             <SidecarSetup mode="connect" />
+          </Page>
+        }
+      />
+      {/* Approves a sidecar that logged in by device code (hoop start sidecar). */}
+      <Route
+        path="/sidecars/login"
+        element={
+          <Page adminOnly>
+            <SidecarLogin />
           </Page>
         }
       />
@@ -166,18 +165,9 @@ function Router() {
       <Route path="/approvals/:sessionId" element={<Page><Reviews /></Page>} />
       <Route path="/reviews" element={<ReviewsRedirect />} />
       <Route path="/reviews/:sessionId" element={<ReviewsRedirect />} />
+      <Route path="/dashboard" element={<Navigate to="/" replace />} />
 
       {/* React pages — fully migrated */}
-      <Route
-        path="/dashboard"
-        element={
-          <Page adminOnly>
-            <Suspense fallback={<PageLoader h={400} />}>
-              <Dashboard />
-            </Suspense>
-          </Page>
-        }
-      />
       <Route
         path="/compliance-report"
         element={
@@ -209,6 +199,17 @@ function Router() {
         element={
           <Page adminOnly>
             <ConfigureRolePage />
+          </Page>
+        }
+      />
+
+      {/* The CLJS :resources panel stays until ENG-922, so a rollback is
+          reverting this route. */}
+      <Route
+        path="/resources"
+        element={
+          <Page>
+            <Resources />
           </Page>
         }
       />
@@ -406,13 +407,7 @@ function Router() {
         path="/features/data-masking/new"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByRuleTraffic
-              kind={RULE_KIND_DATAMASKING}
-              listPath="/features/data-masking"
-              fetchRule={dataMaskingService.get}
-              agent={<GatewayDataMaskingForm />}
-              sidecar={<ControlPlaneDataMaskingForm />}
-            />
+            <DataMaskingForm />
           </Page>
         }
       />
@@ -420,13 +415,7 @@ function Router() {
         path="/features/data-masking/edit/:id"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByRuleTraffic
-              kind={RULE_KIND_DATAMASKING}
-              listPath="/features/data-masking"
-              fetchRule={dataMaskingService.get}
-              agent={<GatewayDataMaskingForm />}
-              sidecar={<ControlPlaneDataMaskingForm />}
-            />
+            <DataMaskingForm />
           </Page>
         }
       />
@@ -507,7 +496,7 @@ function Router() {
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
-              sidecar={<ControlPlaneAiAnalyzerForm />}
+              sidecar={<SidecarAiAnalyzerForm />}
             />
           </Page>
         }
@@ -522,7 +511,7 @@ function Router() {
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
-              sidecar={<ControlPlaneAiAnalyzerForm />}
+              sidecar={<SidecarAiAnalyzerForm />}
             />
           </Page>
         }
@@ -541,13 +530,7 @@ function Router() {
         path="/guardrails/new"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByRuleTraffic
-              kind={RULE_KIND_GUARDRAIL}
-              listPath="/guardrails"
-              fetchRule={guardrailsService.get}
-              agent={<GatewayGuardrailForm />}
-              sidecar={<ControlPlaneGuardrailForm />}
-            />
+            <GuardrailForm />
           </Page>
         }
       />
@@ -555,13 +538,7 @@ function Router() {
         path="/guardrails/edit/:id"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByRuleTraffic
-              kind={RULE_KIND_GUARDRAIL}
-              listPath="/guardrails"
-              fetchRule={guardrailsService.get}
-              agent={<GatewayGuardrailForm />}
-              sidecar={<ControlPlaneGuardrailForm />}
-            />
+            <GuardrailForm />
           </Page>
         }
       />
@@ -671,14 +648,6 @@ function Router() {
         element={
           <Guard adminOnly>
             <OnboardingProtectionRules />
-          </Guard>
-        }
-      />
-      <Route
-        path="/onboarding/license"
-        element={
-          <Guard adminOnly>
-            <OnboardingLicense />
           </Guard>
         }
       />

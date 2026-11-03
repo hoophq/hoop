@@ -1,0 +1,33 @@
+# Test overlay for ./run.sh --test and --tunnel. Not for production.
+#
+# Caddy serves plain HTTP on :8080 with no published port. It trusts only
+# the `tunnel` subnet, and takes the caller's address from Cf-Connecting-Ip,
+# which Cloudflare overwrites with the true client.
+
+services:
+  caddy:
+    ports: !reset []
+    networks: !override [edge, tunnel]
+    environment:
+      SITE_ADDRESS: ":8080"
+      TRUSTED_PROXIES: 10.231.17.0/24
+      CLIENT_IP_HEADER: Cf-Connecting-Ip
+
+  # --tunnel only: a public URL for a real Managed Agents session.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    profiles: [tunnel]
+    networks: [tunnel]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://caddy:8080"]
+    depends_on: [caddy]
+
+  # Stands where cloudflared stands, so demo.sh can send any Cf-Connecting-Ip.
+  probe:
+    image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+    networks: [tunnel]
+    entrypoint: ["sleep", "infinity"]
+
+networks:
+  tunnel:
+    ipam:
+      config: [{ subnet: 10.231.17.0/24 }] # Caddy trusts exactly this

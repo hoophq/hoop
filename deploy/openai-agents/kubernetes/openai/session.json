@@ -1,0 +1,4 @@
+{
+  "environment": {"type": "openai_hosted", "container_size": "small"},
+  "metadata": {"template": "hoop deploy/openai-agents/kubernetes"}
+}

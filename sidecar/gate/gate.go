@@ -38,6 +38,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Masker rewrites sensitive values out of a payload.
@@ -78,6 +79,36 @@ type Masker interface {
 type Reframer interface {
 	Rewrite(data []byte, mask func(column string, value []byte) []byte) ([]byte, inspect.ReframeResult, error)
 	Flush(mask func(column string, value []byte) []byte) []byte
+}
+
+// checkedFlusher is a Reframer that reports a response it refused at
+// connection end (libhoop codec/http FlushChecked): a close-delimited body
+// too large to mask ends only there, with its head still held. Optional; a
+// Reframer without it drops such a response silently through Flush.
+type checkedFlusher interface {
+	FlushChecked(mask func(column string, value []byte) []byte) ([]byte, error)
+}
+
+// responseStarter is a Reframer that knows whether the response in progress
+// already went out in part (libhoop codec/http ResponseStarted).
+type responseStarter interface {
+	ResponseStarted() bool
+}
+
+// responseStarted reports whether a response refused with err already
+// reached the client in part, so a deny frame would land inside it and the
+// relay must cut the response instead (Decision.NoFrame).
+//
+// The codec decides, not the gate: only it knows where its protocol's
+// responses begin and end. A codec that does not implement responseStarter
+// keeps the deny frame, which a protocol with an in-band error (a Postgres
+// ErrorResponse mid-result) can read.
+func (g *Gate) responseStarted(err error) bool {
+	if errors.Is(err, inspect.ErrResponseStarted) {
+		return true
+	}
+	rs, ok := g.reframer.(responseStarter)
+	return ok && rs.ResponseStarted()
 }
 
 // rewriteActivator lets a stateful codec retain request correlation before
@@ -223,6 +254,13 @@ type Config struct {
 	// no more than an atomic increment: it runs on the data path.
 	Metrics Metrics
 
+	// Telemetry receives per-statement spans, stage durations and counts
+	// for the lane's OpenTelemetry export. Optional; nil records nothing,
+	// which is every lane without a telemetry block. Shared by every
+	// connection on the lane, so it MUST be safe for concurrent use, and
+	// it runs on the data path, so it costs one instrument record.
+	Telemetry telemetry.LaneRecorder
+
 	// RequestIdentity re-derives the caller from every HTTP request instead
 	// of trusting the identity the connection opened with. Optional; nil
 	// keeps one identity per connection, which is every lane but http.
@@ -294,7 +332,9 @@ type CredentialSource interface {
 }
 
 // RequestIdentity turns one request's credential into the identity behind
-// it. credential is "" when the request did not carry one. An error refuses
+// it. credential is "" when the request did not carry one, and the resolver
+// decides what that means: a proxy-trust header names nobody and the
+// request runs as the connection; a token lane refuses it. An error refuses
 // the request: a credential that cannot be verified must not be served
 // under whichever identity the connection had before.
 //
@@ -335,6 +375,9 @@ const (
 	// SourceIdentity is a request refused because its credential did not
 	// resolve, or because its caller changed with a response outstanding.
 	SourceIdentity = "identity"
+	// SourcePlacement is a request refused because it carried a credential
+	// outside the header that credential belongs in.
+	SourcePlacement = "placement"
 )
 
 // Decision is the answer for one chunk of bytes.
@@ -379,6 +422,18 @@ type Decision struct {
 	// overtake the earlier response. The client resends on a fresh
 	// connection, where the request comes first.
 	Hangup bool
+
+	// NoFrame marks a denial that must not write a deny frame: the denied
+	// response already reached the client in part (inspect.ErrResponseStarted).
+	// The caller sends Payload, what the codec masked before it refused,
+	// then closes; Allowed is false alongside it.
+	NoFrame bool
+
+	// Preceding is what the caller sends ahead of the deny frame: responses
+	// the codec finished, in the same read, before the one it refused. Only
+	// a codec that reports the refused response had not started sets it, so
+	// nothing of that response is in it.
+	Preceding []byte
 
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
@@ -732,16 +787,31 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
+	out, _ := g.FlushResponseChecked()
+	return out
+}
+
+// FlushResponseChecked is FlushResponse, and it reports a held response the
+// codec refused (inspect.ErrStreamUnsafe) with no bytes. The codec still
+// held its head, so nothing of it reached the client: the relay answers
+// with its deny frame. The refusal is audited and counted here.
+func (g *Gate) FlushResponseChecked() ([]byte, error) {
 	if g.reframer == nil {
-		return nil
+		return nil, nil
+	}
+	flush := func(mask func(column string, value []byte) []byte) ([]byte, error) {
+		if cf, ok := g.reframer.(checkedFlusher); ok {
+			return cf.FlushChecked(mask)
+		}
+		return g.reframer.Flush(mask), nil
 	}
 	if g.masker == nil {
-		return g.reframer.Flush(nil)
+		return flush(nil)
 	}
 	// Rows masked here were held back by the codec and never passed through
 	// maskByReframing, so this is their only chance to be counted.
 	masked := 0
-	out := g.reframer.Flush(func(column string, value []byte) []byte {
+	out, err := flush(func(column string, value []byte) []byte {
 		res, _, n := g.masker.MaskCell(column, value)
 		if n == 0 {
 			return value
@@ -750,7 +820,15 @@ func (g *Gate) FlushResponse() []byte {
 		return res
 	})
 	g.countMasked(masked)
-	return out
+	if err != nil {
+		g.writeAudit(context.Background(), audit.ErrorEvent(g.session(), err))
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceStream)
+		return nil, err
+	}
+	return out, nil
 }
 
 // DiscardResponse clears response bytes held by a re-framing codec without
@@ -789,6 +867,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			// stands in for the statement.
 			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
 			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			return *r
+		}
+		var placed *inspect.PlacementRefusal
+		if errors.As(err, &placed) {
+			// Recorded as a caller refusal is, with its redacted request
+			// line. Filed under the peer alone: the filter has checked the
+			// caller's token but not resolved whom it names. Its own rule,
+			// not "identity": the caller may well be one the lane admits.
+			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: placed.Request}
+			r := g.refuse(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+				"credential-placement", SourcePlacement, placed.Error())
 			return *r
 		}
 		if err != nil {
@@ -882,6 +971,11 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
+			if dir == inspect.FromServer && g.responseStarted(err) {
+				// These bytes were never masked: nothing more goes out.
+				d.Payload = nil
+				d.NoFrame = true
+			}
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
@@ -954,6 +1048,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				// running session. Nothing is outstanding on such a
 				// lane: the codec does not pair responses to requests,
 				// so a caller change applies from this frame on.
+				//
+				// A frame with no credential is not lifted at all, so
+				// an empty lifted one is the WASM host answering ("",
+				// true) when the guest's credential export failed: it
+				// names nobody, and no resolver sees it.
+				if credentials[i] == "" {
+					r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+						"request refused: the codec lifted an empty credential")
+					r.Statements = stmts
+					return *r
+				}
 				if r := g.identify(ctx, stmt, credentials[i], true); r != nil {
 					r.Statements = stmts
 					return *r
@@ -1025,6 +1130,7 @@ type judgment struct {
 // caller forwards, because a crash between the write and the forward must
 // not lose the record of the statement that ran.
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
+	ctx, endStatement := g.beginStatement(ctx, stmt)
 	verdict := g.evaluate(ctx, stmt)
 
 	ev := audit.StatementEvent(
@@ -1059,6 +1165,13 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	}
 	g.mu.Unlock()
 	g.countStatement(denied, source)
+	endStatement(telemetry.Verdict{
+		Denied:    denied,
+		Source:    source,
+		Rule:      verdict.Rule,
+		RiskLevel: verdict.Annotations[policy.AnnotationRiskLevel],
+		Err:       verdict.Err,
+	})
 
 	if refused {
 		// Nothing is forwarded, so an approval the policy just reserved for
@@ -1236,6 +1349,21 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
 			d.Payload = nil
+			if g.responseStarted(err) {
+				// The head and earlier masked units already left the codec,
+				// on this call or a former one. A deny frame now would be a
+				// second status line inside the first response: send what
+				// the codec masked and cut the response instead.
+				d.Payload = out
+				d.NoFrame = true
+				g.recordMasked(ctx, d, entities, res.Cells)
+			} else if _, ok := g.reframer.(responseStarter); ok {
+				// The refused response has not started, so out holds only
+				// the responses before it, whole. Dropping them would make
+				// the client read the deny frame as their answer.
+				d.Preceding = out
+				g.recordMasked(ctx, d, entities, res.Cells)
+			}
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
@@ -1249,13 +1377,20 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
-	if res.Cells > 0 {
-		sort.Strings(entities)
-		d.Masked = entities
-		d.MaskedCount = res.Cells
-		g.countMasked(res.Cells)
-		g.writeAudit(ctx, audit.MaskedEvent(g.session(), entities, res.Cells))
+	g.recordMasked(ctx, d, entities, res.Cells)
+}
+
+// recordMasked counts and audits the cells the codec masked in bytes that
+// go out, on a refusal as on a forwarded response.
+func (g *Gate) recordMasked(ctx context.Context, d *Decision, entities []string, cells int) {
+	if cells == 0 {
+		return
 	}
+	sort.Strings(entities)
+	d.Masked = entities
+	d.MaskedCount = cells
+	g.countMasked(cells)
+	g.writeAudit(ctx, audit.MaskedEvent(g.session(), entities, cells))
 }
 
 // MaskSupported reports whether a protocol's response payload can be masked.
@@ -1355,7 +1490,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	if !ok {
 		return g.policy.Evaluate(stmt)
 	}
-	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx}
+	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)
@@ -1422,8 +1557,13 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 		return nil
 	}
 	err := g.audit.Write(context.WithoutCancel(ctx), ev)
-	if err != nil && g.cfg.Metrics != nil {
-		g.cfg.Metrics.AuditError()
+	if err != nil {
+		if g.cfg.Metrics != nil {
+			g.cfg.Metrics.AuditError()
+		}
+		if g.cfg.Telemetry != nil {
+			g.cfg.Telemetry.AuditError()
+		}
 	}
 	return err
 }
@@ -1539,18 +1679,16 @@ func (g *Gate) resolveCaller(ctx context.Context, stmt inspect.Statement, creden
 // The reason is the client's 403 body after "request refused: ", and the
 // same text whether the gate refuses the request or a codec does before
 // forwarding it (CallerAuthenticator).
+//
+// An empty credential reaches the resolver: the HTTP codec lifts one from
+// every request, so "" is a request without the header, and only the
+// resolver knows whether that names the connection or nobody.
 func (g *Gate) callerFor(ctx context.Context, credential string, lifted bool) (session.Identity, error) {
-	switch {
-	case !lifted:
+	if !lifted {
 		// New checked the codec implements the seam, so this is a codec
 		// that stopped lifting mid-connection. Serving the request under
 		// the old identity is the failure this whole path exists to stop.
 		return session.Identity{}, errors.New("the codec lifted no credential from it")
-	case credential == "":
-		// A request without the header, or the WASM host answering ("",
-		// true) when the guest's credential export failed: no caller is
-		// named by an empty value, so no resolver sees it.
-		return session.Identity{}, errors.New("the request carried no credential")
 	}
 	return g.cfg.RequestIdentity.Resolve(ctx, credential)
 }
@@ -1632,7 +1770,12 @@ func (g *Gate) sibling(id session.Identity) *session.Session {
 // session of its own (start, the denied statement, end) and the running
 // session's totals do not count it.
 func (g *Gate) refuseAs(ctx context.Context, stmt inspect.Statement, id session.Identity, message string) *Decision {
-	const rule = "identity"
+	return g.refuse(ctx, stmt, id, "identity", SourceIdentity, message)
+}
+
+// refuse is refuseAs under a rule and a metrics source of the caller's
+// choosing, for a refusal the gate decides on other grounds than identity.
+func (g *Gate) refuse(ctx context.Context, stmt inspect.Statement, id session.Identity, rule, source, message string) *Decision {
 	g.mu.Lock()
 	sess := g.sess
 	own := sameIdentity(sess.Identity, id)
@@ -1644,7 +1787,7 @@ func (g *Gate) refuseAs(ctx context.Context, stmt inspect.Statement, id session.
 	g.statements++
 	g.denied++
 	g.mu.Unlock()
-	g.countStatement(true, SourceIdentity)
+	g.countStatement(true, source)
 
 	var err error
 	if !own {
@@ -1678,4 +1821,31 @@ func (g *Gate) countMasked(values int) {
 	if g.cfg.Metrics != nil {
 		g.cfg.Metrics.Masked(values)
 	}
+	if g.cfg.Telemetry != nil {
+		g.cfg.Telemetry.Masked(values)
+	}
+}
+
+// beginStatement opens the statement's span, or returns ctx and a no-op
+// when the lane exports nothing. The no-op is a package-level func so the
+// off path allocates no closure per statement, and stmt travels by value
+// so it never escapes to the heap on that path either.
+func (g *Gate) beginStatement(ctx context.Context, stmt inspect.Statement) (context.Context, telemetry.EndStatement) {
+	if g.cfg.Telemetry == nil {
+		return ctx, endNothing
+	}
+	return g.cfg.Telemetry.BeginStatement(ctx, stmt)
+}
+
+func endNothing(telemetry.Verdict) {}
+
+// stageRecorder is what the policy chain times its stages into: the lane's
+// recorder, or a nil interface. The nil check matters: a nil LaneRecorder
+// assigned to a StageRecorder field would be a non-nil interface holding
+// nothing, and the chain would call through it.
+func (g *Gate) stageRecorder() telemetry.StageRecorder {
+	if g.cfg.Telemetry == nil {
+		return nil
+	}
+	return g.cfg.Telemetry
 }

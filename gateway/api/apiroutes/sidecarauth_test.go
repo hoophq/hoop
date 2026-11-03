@@ -294,3 +294,28 @@ func TestSidecarIdentityAuth(t *testing.T) {
 		}
 	})
 }
+
+// A free organization whose one seat is taken: a service account that would
+// create a second sidecar is refused before the row exists, so the refusal
+// leaves nothing that holds a seat.
+func TestSidecarIdentityRefusedPastTheFreeSeat(t *testing.T) {
+	startSidecarAuthDB(t)
+	iss := newTestIssuer(t)
+	r := &Router{apiURL: "http://localhost:8009",
+		sidecarIdentity: externaljwt.NewOIDCVerifier(externaljwt.OIDCOptions{HTTPClient: iss.Client()})}
+	require.NoError(t, models.CreateSidecar(models.DB, &models.Sidecar{
+		OrgID: sidecarOrgB, Name: "held", KeyHash: models.HashAPIKey("hsc_held_token"), CreatedBy: "admin@hoop.dev"}))
+	require.NoError(t, models.CreateSidecarServiceAccount(models.DB, &models.SidecarServiceAccount{
+		OrgID: sidecarOrgB, Name: "gke", Issuer: iss.URL, Audience: sidecarAudience, Claim: services.SidecarClaimSub,
+		SubjectPattern: "system:serviceaccount:*:hoop-sidecar", NameTemplate: "gke-{1}", CreatedBy: "admin@hoop.dev",
+	}))
+
+	w, reached, _ := callSidecarAuth(r, map[string]string{
+		SidecarIdentityHeader: iss.token(t, iss.URL, sidecarAudience, "system:serviceaccount:ws-1:hoop-sidecar")})
+	require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body)
+	require.Nil(t, reached, "the handler ran")
+	assert.Contains(t, w.Body.String(), "the free plan allows 1 sidecar per organization")
+	items, err := models.ListSidecars(models.DB, sidecarOrgB)
+	require.NoError(t, err)
+	assert.Len(t, items, 1, "the refusal created a sidecar")
+}

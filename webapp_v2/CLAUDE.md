@@ -11,6 +11,7 @@ details: `README.md`.
 - Development (Vite only): `npm run dev`
 - Build: `npm run build`
 - Lint: `npm run lint`
+- Test: `npm test` (vitest; the session fixtures in `test/fixtures/sessions` come from `npm --prefix ../webapp run fixtures:sessions`)
 - Preview production: `npm run preview`
 
 ## Project Structure
@@ -19,7 +20,7 @@ details: `README.md`.
 src/
 ├── components/          # Presentational components (receive props, no business logic)
 ├── layout/              # App shell
-├── modes/               # The product manifest (gateway.jsx) and ByRuleTraffic
+├── modes/               # Route wrappers (gateway.jsx), ByRuleTraffic, the agents flag
 ├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
@@ -39,36 +40,31 @@ src/
 └── main.jsx             # Entry point
 ```
 
-## Application modes
+## Routing, gates and roles
 
-One product: the gateway. `application_mode` is always `"gateway"` (`hoop start
-control-plane` is the gateway too), and `modes/gateway.jsx` is the only manifest.
-`src/modes/` is the only reader of `appMode` (ESLint: `appMode` anywhere else is an
-error).
+One product: the gateway. `hoop start control-plane` runs the same gateway and UI.
 
-- **The manifest is components, not flags.** `modes/gateway.jsx` exports `{ id, theme,
-  postLoginPath, postSetupPath, Page, Guard, Home, Onboarding, CatchAll }`. `Page` is the
-  shell of a React page (`layout/GatewayPage`: auth gate + Layout + PageLayout), `Guard` a
-  React route without the shell. `Home`, `Onboarding` and `CatchAll` are the ClojureScript
-  leaves `/`, `/onboarding/*` and `/*`. `Router.jsx` reads them through `useModeConfig()`;
-  nothing else does.
-- **Agent and sidecar rule forms are siblings.** Guardrail, masking and analyzer forms
-  come as `Gateway*Form` (agent traffic) and `ControlPlane*Form` (sidecar traffic), picked
-  per rule with `<ByRuleTraffic>` in `Router.jsx`.
-- **The name is the contract, enforced by lint** (`eslint.config.js`): a `ControlPlane*`
-  file cannot import `Gateway*`, `ClojureApp`, the CLJS bridge, `NativeConnections` or
-  `ConfigStatus`; a `Gateway*` file cannot import `ControlPlane*`; an un-prefixed file
-  cannot import either side (only `modes/` and `Router.jsx` may). Matching is
-  case-sensitive.
+- **Route wrappers.** `modes/gateway.jsx` exports `{ Page, Guard, Home, Onboarding,
+  CatchAll }`. `Page` is the shell of a React page (`layout/GatewayPage`: auth gate +
+  Layout + PageLayout), `Guard` a React route without the shell. `Home`, `Onboarding` and
+  `CatchAll` are the ClojureScript leaves `/`, `/onboarding/*` and `/*`. Only `Router.jsx`
+  reads them.
+- **Guardrail and masking rules have one form each.** `pages/Guardrails/Create/GuardrailForm.jsx`
+  and `pages/Features/DataMasking/Create/DataMaskingForm.jsx` write both halves of a rule (the
+  agent fields and `sidecar_spec`); an option one engine does not run carries a
+  `RuleSupportTag` (`utils/ruleSupport.js`). Only the analyzer keeps `Gateway*Form` /
+  `Sidecar*Form` siblings, picked per rule with `<ByRuleTraffic>` in `Router.jsx`.
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
-  flag). Off, `GatewayProtectedRoute` turns `/`, `/client` and the agent onboarding into
-  the landing by role (`pages/Home`) on every route change, and the CLJS app does not
-  move the URL while it is parked (`routes/navigate!`).
+  flag). Off, `GatewayProtectedRoute` turns `/`, the agent onboarding and every path a
+  nav or palette entry flags with `AGENTS_FLAG` (`modes/agentPaths.js`), sub-paths
+  included, into the landing by role (`pages/Home`) on every route change, and the CLJS
+  app does not move the URL while it is parked (`routes/navigate!`). Flag a new agent
+  page in `gatewayNav.js` and its URL closes too.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`). `GatewayProtectedRoute` adds the
-  agents landing swap.
+  agents swap.
 - **Roles.** `/userinfo` reports `role`. A role is a reserved group name; `standard` is
   the absence of one and is never stored as a group. The group names come from
   `/serverinfo` (`admin_role_name`, `approver_role_name`), never a literal. Gate a route
@@ -167,7 +163,7 @@ and avoids the cycle a call from `useAuthStore` would create. Live examples:
 | Where it lives | What it is | Examples |
 |---|---|---|
 | `pages/[Page]/<X>.jsx` | A tab body or top-level slice of the page | `CredentialsTab.jsx`, `DetailsTab.jsx`, `ConfigureHeader.jsx` |
-| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `TestConnectionModal.jsx`, `MetadataFieldsInput.jsx` |
+| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `SidecarMirrorView.jsx`, `MetadataFieldsInput.jsx` |
 | `pages/[Page]/components/` | Reusable within the page (≥2 consumers) | `SecretField/`, `ToggleSection.jsx`, `ReviewSection.jsx` |
 | `src/components/` | Reusable across the whole app | `Button`, `TextInput`, `Table` |
 
@@ -217,10 +213,11 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
 ## Real-time updates — use `useLiveEvent`, never a new stream or socket
 
 When a page must react to a change made elsewhere (a sidecar checked in, a
-record changed), subscribe with `useLiveEvent`. The tab holds one shared
-connection to `GET /api/events/stream`: it opens with the first subscriber and
-closes when the last page unmounts. Do not open an `EventSource`, a websocket or
-a new `fetch` stream for this.
+record changed), subscribe with `useLiveEvent`. The browser holds one shared
+connection to `GET /api/events/stream`: one tab streams and passes events to the
+others. It opens with the first subscriber and closes when the last page
+unmounts. Do not open an `EventSource`, a websocket or a new `fetch` stream for
+this.
 
 ```jsx
 import { useLiveEvent } from '@/hooks/useLiveEvent'
@@ -237,8 +234,10 @@ useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
 - A new type is added in both places: the gateway constant
   (`gateway/liveevents`) and `LIVE_EVENTS`.
 - A page that must not miss an event keeps a slow poll: the stream is
-  best effort (one replica, reconnects after 5s).
-- The first user is the sidecar setup wizard (`pages/Sidecars/Setup`).
+  best effort (one replica, no replay, reconnects after 3-8s).
+- Users: the sidecar setup wizard (`pages/Sidecars/Setup`), approval
+  notifications (`features/ApprovalNotifications`) and the sidebar pending
+  approvals count (`layout/Sidebar/usePendingApprovalsCount`).
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 
@@ -273,14 +272,15 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - Supports **local auth** (email/password) and **IDP/OAuth** providers
 - Token stored in localStorage as `jwt-token` (not just `token`)
 - Token can come from cookies (`hoop_access_token`) or query params (`?token=xxx`)
-- **No refresh token** - on 401, redirects to login
+- **The gateway renews the token** in the `X-New-Access-Token` response header; `api.js` and the SSE clients store it, as CLJS does. Send `useAuthStore.getState().getToken()`, never the store's `token` (the sign-in's, kept to detect an account change)
+- On 401, redirects to login
 - Saves current URL before redirect for post-auth navigation
 
 ### Key Files
 - `stores/useAuthStore.js` - Token management, cookie/query param handling
 - `services/auth.js` - Login/logout API calls
 - `services/api.js` - Axios interceptor for auth header and 401 handling
-- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents landing swap
+- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents swap
 - `pages/Auth/Login/` - Login page (detects auth method from gateway)
 - `pages/Auth/Register/` - Local auth signup form
 - `pages/Auth/Signup/` - IDP org setup (post-OAuth)

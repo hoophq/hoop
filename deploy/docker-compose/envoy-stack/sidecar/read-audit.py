@@ -32,8 +32,9 @@ def main() -> int:
             mark = "ALLOW" if e.get("allowed") else "DENY "
             proto = e.get("protocol", "")
             op = e.get("operation", "")
+            who = e.get("principal", "")[:12]
             stmt = (e.get("statement") or "")[:46]
-            print(f"  {mark} {proto:<9}{op:<10}{stmt}")
+            print(f"  {mark} {proto:<9}{op:<10}{who:<13}{stmt}")
         elif kind == "masked":
             ents = ",".join(e.get("masked_entities") or [])
             print(f"  MASK  entities={ents} count={e.get('masked_count', 0)}")

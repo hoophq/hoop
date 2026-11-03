@@ -54,10 +54,11 @@ func (t userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 // withUserAgent wraps a transport so its requests identify this process as
-// component. A nil next is the default transport, as it is for http.Client.
+// component and carry the trace context when telemetry is up (otel.go). A
+// nil next is the default transport, as it is for http.Client.
 func withUserAgent(next http.RoundTripper, component string) http.RoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
-	return userAgentTransport{next: next, ua: userAgent(component)}
+	return userAgentTransport{next: tracePropagationTransport{next: next}, ua: userAgent(component)}
 }

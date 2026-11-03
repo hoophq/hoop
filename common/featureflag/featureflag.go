@@ -37,6 +37,9 @@ const FlagAgents = "experimental.agents"
 // FlagAnalyzeBeforeRunForms is spelled here for the same reason.
 const FlagAnalyzeBeforeRunForms = "experimental.analyze_before_run_forms"
 
+// FlagReviewNotifications is spelled here for the same reason.
+const FlagReviewNotifications = "experimental.review_notifications"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -170,6 +173,13 @@ var catalog = map[string]Flag{
 		Name:        FlagAnalyzeBeforeRunForms,
 		Description: "Run the AI Session Analyzer before the web editor opens the forms of a run (Jira template, required metadata). A blocked script stops before any form, so the user does not fill them in for nothing. The verdict is kept for 15 minutes and the run reuses it, so the analyzer runs once. When off, the forms open first and the analyzer runs when the script is sent.",
 		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagReviewNotifications: {
+		Name:        FlagReviewNotifications,
+		Description: "Notify approvers in the web app when a request waits for their approval: a toast while they look at the Control Plane, a browser notification when they do not. Only users who can approve the request get it. Needs a Control Plane tab open; browser notifications need the user's permission and HTTPS. With more than one gateway replica, only approvers whose tab is connected to the replica that received the request get it.",
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},

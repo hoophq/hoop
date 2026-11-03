@@ -54,7 +54,7 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 				// scanner finding. Fail loudly rather than skip quietly.
 				t.Fatalf("oracle could not parse fixture: %v", err)
 			}
-			mine := scannerWrites(got)
+			mine := scannerRelations(got, lexer.Write)
 			tally := byGroup[c.group]
 
 			switch {
@@ -85,16 +85,16 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 	}
 }
 
-// scannerWrites reduces an Analysis to the sorted, lowercased set of relation
-// names it says the statement changes.
+// scannerRelations reduces an Analysis to the sorted, lowercased set of
+// relation names it says the statement reads or changes, as acc says.
 //
 // Lowercasing is what the root adapter does before a policy sees a name, so
 // it is what the comparison must do. Both sides get it, so a quoted
 // "Orders" folds the same way on both and the comparison stays sound.
-func scannerWrites(a lexer.Analysis) []string {
+func scannerRelations(a lexer.Analysis, acc lexer.Access) []string {
 	out := make([]string, 0, len(a.Relations))
 	for _, r := range a.Relations {
-		if r.Access == lexer.Write {
+		if r.Access == acc {
 			out = append(out, strings.ToLower(r.Name))
 		}
 	}
@@ -381,7 +381,7 @@ func TestClickHouseDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
 			}
 		})
@@ -414,6 +414,9 @@ func TestOracleDialectCorpus(t *testing.T) {
 		{"row lock is not DML", `DECLARE CURSOR c IS SELECT * FROM t FOR UPDATE OF x; BEGIN NULL; END;`, lexer.Call, false, nil},
 		{"rename", `RENAME customers TO c_old`, lexer.Alter, true, []string{"customers"}},
 		{"alter session is set", `ALTER SESSION SET NLS_LANGUAGE = 'AMERICAN'`, lexer.Set, true, nil},
+		// `#` and `$` continue an Oracle name, so these name no verb.
+		{"SELECT# is one name", `SELECT#`, lexer.Unknown, true, nil},
+		{"DELETE$x is one name", `DELETE$x FROM t`, lexer.Unknown, true, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parts := lexer.Split(tc.sql, lexer.Oracle)
@@ -427,8 +430,145 @@ func TestOracleDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+}
+
+// TestSparkDialectCorpus keeps the Spark classifications in this module, as
+// the two dialects above do. No offline grammar judges them: PostgreSQL's
+// parser rejects backticks and reads '"' as an identifier, and Spark's ANTLR
+// grammar is not Databricks SQL, which refuses `$$` and does not substitute
+// `${}`. Each row is the verdict an operator's rule depends on. The bypass
+// rows (A to E′, from the ENG-817 research) and the maintenance commands
+// were run on a Databricks SQL warehouse (2026.42): A, B, C and E dropped a
+// table there behind a statement every other dialect reads as harmless.
+// E′ is Delta Lake's flat-comment reading, which the warehouse does not share
+// and open-source Delta does.
+func TestSparkDialectCorpus(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sql      string
+		verb     lexer.Verb
+		complete bool
+		writes   []string
+	}{
+		// The bypasses: each runs a write that a reading of Spark text
+		// under another dialect's rules hides.
+		{"A: dash comment continued by backslash-newline", "-- x \\\nSELECT '\nDROP TABLE t -- '", lexer.Drop, true, []string{"t"}},
+		{"B: no-break space between DROP and TABLE", "DROP\u00a0TABLE t", lexer.Drop, true, []string{"t"}},
+		{"C: write inside a script", "BEGIN DROP TABLE t; END", lexer.Drop, false, []string{"t"}},
+		{"D: variable substitution", "SELECT * FROM ${tbl}", lexer.Select, false, nil},
+		{"E: nested comment hides a quote", "/* /* */ SELECT 'x */ DROP TABLE t; -- '", lexer.Drop, true, []string{"t"}},
+		{"E′: Delta's flat comment hides a VACUUM", "/* /* */ VACUUM t RETAIN 0 HOURS -- */", lexer.Delete, true, []string{"t"}},
+		{"hint string inside a script", "BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", lexer.Drop, false, []string{"t"}},
+		{"raw string ends at the first quote", `SELECT r'\'; DELETE FROM t; --'`, lexer.Delete, true, []string{"t"}},
+		{"script whose first label is work", "BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, false, []string{"t"}},
+		{"REPLACE TABLE in a handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, false, []string{"t"}},
+		{"IF inside a handler's block", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop, false, []string{"t"}},
+		{"variable called case before a CASE statement", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", lexer.Drop, false, []string{"t"}},
+		{"hint opener inside a comment, released Spark", "/* /*+ */ DROP TABLE t -- */", lexer.Drop, true, []string{"t"}},
+		{"CR ends a dash comment", "-- x\rDROP TABLE t", lexer.Drop, true, []string{"t"}},
+		{"dynamic SQL only released Spark sees", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", lexer.Call, false, nil},
+
+		// The keyword overrides.
+		{"VACUUM is a delete", "VACUUM t RETAIN 0 HOURS", lexer.Delete, true, []string{"t"}},
+		{"VACUUM of a table called over", "VACUUM over RETAIN 0 HOURS", lexer.Delete, true, []string{"over"}},
+		{"OPTIMIZE is an alter", "OPTIMIZE t ZORDER BY (a)", lexer.Alter, true, []string{"t"}},
+		{"RESTORE is an alter", "RESTORE TABLE t TO VERSION AS OF 1", lexer.Alter, true, []string{"t"}},
+		{"MSCK REPAIR is an alter", "MSCK REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
+		{"REPAIR without MSCK is an alter", "REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
+		{"CONVERT TO DELTA is an alter", "CONVERT TO DELTA t", lexer.Alter, true, []string{"t"}},
+		{"REORG is an alter", "REORG TABLE t APPLY (PURGE)", lexer.Alter, true, []string{"t"}},
+		{"GENERATE is an alter", "GENERATE symlink_format_manifest FOR TABLE t", lexer.Alter, true, []string{"t"}},
+		{"REPLACE TABLE is a create", "REPLACE TABLE t AS SELECT * FROM s", lexer.Create, true, []string{"t"}},
+		{"DESCRIBE is a show", "DESCRIBE TABLE t", lexer.Show, true, nil},
+		{"DESC is a show", "DESC t", lexer.Show, true, nil},
+		{"CACHE is other", "CACHE TABLE t", lexer.Other, true, nil},
+		{"UNCACHE is other", "UNCACHE TABLE t", lexer.Other, true, nil},
+		{"COPY INTO writes its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", lexer.Copy, true, []string{"t"}},
+		{"INSERT OVERWRITE writes its target", "INSERT OVERWRITE t SELECT * FROM s", lexer.Insert, true, []string{"t"}},
+		{"INSERT OVERWRITE TABLE writes its target", "INSERT OVERWRITE TABLE t PARTITION (p = 1) SELECT * FROM s", lexer.Insert, true, []string{"t"}},
+		{"write after a script's DO", "BEGIN DECLARE c INT DEFAULT 0; WHILE c < 3 DO DELETE FROM t; SET c = c + 1; END WHILE; END", lexer.Delete, false, []string{"t"}},
+		{"write in a script's handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP TABLE t; SELECT 1; END", lexer.Drop, false, []string{"t"}},
+		{"LOAD DATA is an insert", "LOAD DATA INPATH '/p' INTO TABLE t", lexer.Insert, true, []string{"t"}},
+		{"FROM-first multi-insert", "FROM s INSERT INTO t SELECT a INSERT INTO u SELECT a", lexer.Insert, true, []string{"t", "u"}},
+		{"BEGIN TRANSACTION is a begin", "BEGIN TRANSACTION", lexer.Begin, true, nil},
+
+		// Reads stay reads.
+		{"join hint", "SELECT /*+ BROADCAST(s) */ * FROM t JOIN s ON t.id = s.id", lexer.Select, true, nil},
+		{"MERGE join hint", "SELECT /*+ MERGE(t, s) */ * FROM t JOIN s ON t.id = s.id", lexer.Select, true, nil},
+		{"DELETE in a double-quoted string", `SELECT "a\"; DELETE FROM t; --"`, lexer.Select, true, nil},
+		{"DELETE in a single-quoted string", `SELECT 'a\'; DELETE FROM t; --'`, lexer.Select, true, nil},
+		{"DROP in a dollar quote", "SELECT $q$; DROP TABLE t; $q$", lexer.Select, true, nil},
+		{"DELETE in a nested comment", "/* a /* b */ DELETE FROM t */ SELECT 1", lexer.Select, true, nil},
+		{"DELETE after a continued comment", "SELECT 1 -- note \\\n; DELETE FROM t", lexer.Select, true, nil},
+		{"parameters", "SELECT * FROM t WHERE a = :into AND b = ?", lexer.Select, true, nil},
+		{"doubled backtick", "DELETE FROM `a``b`", lexer.Delete, true, []string{"a`b"}},
+		{"read-only script", "BEGIN SELECT 1; END", lexer.Select, false, nil},
+		{"SHOW CREATE TABLE in a script", "BEGIN SHOW CREATE TABLE t; END", lexer.Show, false, nil},
+		{"column called load in a script", "BEGIN SELECT load FROM metrics; END", lexer.Select, false, nil},
+		{"column called generate in a script", "BEGIN SELECT generate FROM t; END", lexer.Select, false, nil},
+		{"GENERATE in a script's handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", lexer.Alter, false, []string{"t"}},
+		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
+		{"replace() after THEN in a CASE", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", lexer.Select, true, nil},
+		{"column called load after THEN", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", lexer.Select, true, nil},
+		{"replace() in a CASE in an IF condition", "BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END", lexer.Select, false, nil},
+		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := lexer.Split(tc.sql, lexer.Spark)
+			if len(parts) != 1 {
+				t.Fatalf("Split = %q, want the whole call", parts)
+			}
+			got := lexer.Analyze(parts[0], lexer.Spark)
+			if got.Complete != tc.complete {
+				t.Errorf("complete = %v (%s), want %v", got.Complete, got.Reason, tc.complete)
+			}
+			if verb := got.Severity(); verb != tc.verb {
+				t.Errorf("verb = %q, want %q", verb, tc.verb)
+			}
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
+				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+
+	// Reads of a table's metadata or change feed. Each names the table read,
+	// and a rule fencing reads of it depends on that.
+	for _, tc := range []struct {
+		name  string
+		sql   string
+		reads []string
+	}{
+		{"table_changes reads its table", "SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
+		{"SHOW TBLPROPERTIES reads its table", "SHOW TBLPROPERTIES salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table", "SHOW COLUMNS IN salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table in a schema", "SHOW COLUMNS IN salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW PARTITIONS reads its table", "SHOW PARTITIONS salaries", []string{"salaries"}},
+		{"SHOW CREATE TABLE reads its table", "SHOW CREATE TABLE salaries", []string{"salaries"}},
+		{"DESCRIBE HISTORY reads its table", "DESCRIBE HISTORY salaries", []string{"salaries"}},
+		{"DESC of a table called history", "DESC history", []string{"history"}},
+		{"DESCRIBE of a table called extended", "DESCRIBE extended", []string{"extended"}},
+		{"DESCRIBE DETAIL of a path names no table", "DESCRIBE DETAIL '/data/events'", nil},
+		{"DESCRIBE HISTORY of a path names no table", "DESCRIBE HISTORY '/data/events'", nil},
+		{"SHOW TBLPROPERTIES of a table called only", "SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW COLUMNS in a schema called only", "SHOW COLUMNS IN t IN only", []string{"only.t"}},
+		{"builtin.table_changes reads its table", "SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"system.builtin.table_changes reads its table", "SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lexer.Analyze(tc.sql, lexer.Spark)
+			if !got.Complete {
+				t.Fatalf("analysis conceded: %s", got.Reason)
+			}
+			if writes := scannerRelations(got, lexer.Write); len(writes) != 0 {
+				t.Errorf("writes = %v, want none", writes)
+			}
+			if reads := scannerRelations(got, lexer.Read); !slices.Equal(reads, tc.reads) {
+				t.Errorf("reads = %v, want %v", reads, tc.reads)
 			}
 		})
 	}
@@ -472,10 +612,34 @@ func corpus() []stmtCase {
 		// the privilege it tested, so the refusal hit every table.
 		`SELECT 1 AS delete`,
 		`SELECT 1 AS update, 2 AS insert, 3 AS drop`,
+		// A lone CR ends a -- comment in PostgreSQL, so the DELETE after
+		// it runs. The scanner read the comment to the next LF and filed
+		// the DELETE as commentary (ENG-855). A CR LF line end reads the
+		// same either way.
+		"-- note\rDELETE FROM customers",
+		"SELECT 1; -- note\rDELETE FROM customers",
+		"SELECT 1 -- note\r\n",
 		`WITH p AS (SELECT 1 AS delete) SELECT * FROM p`,
 		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
 		        has_table_privilege(current_user, t.tablename, 'update') AS update
 		   FROM pg_catalog.pg_tables t`,
+		// A column or alias that spells a relation introducer took the
+		// FROM after it for a relation (ENG-859). Under SELECT it read a
+		// table called from; under INTO it wrote one.
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT s.update, s.truncate FROM salaries s`,
+		`SELECT amount AS update, 1 AS from FROM salaries`,
+		`SELECT * FROM salaries update JOIN secrets ON true`,
+		`INSERT INTO audit SELECT s.into FROM salaries s`,
+		`INSERT INTO audit SELECT amount AS into FROM salaries`,
+		// The FROM list now continues past an aliased item, so its commas
+		// are read up to the next clause. A comma there must not name a
+		// written relation (ENG-859).
+		`INSERT INTO audit SELECT * FROM salaries s, secrets t, (SELECT 1) u`,
+		`UPDATE t SET a = 1, b = 2 FROM s x, u WHERE t.id = x.id RETURNING t.a, t.b`,
+		`DELETE FROM t x USING s y, u WHERE x.id = y.id RETURNING x.a, x.b`,
+		`INSERT INTO t SELECT * FROM s x, u ON CONFLICT (k) DO UPDATE SET c = 1, d = 2`,
+		`SELECT * FROM a x, b y GROUP BY 1, 2 ORDER BY 1, 2 FOR UPDATE OF x, y`,
 	)
 
 	add("cte",

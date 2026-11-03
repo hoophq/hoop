@@ -5,7 +5,8 @@ import { SidebarCollapsed } from './SidebarCollapsed';
 import { SidebarExpanded } from './SidebarExpanded';
 import classes from './Sidebar.module.css';
 
-export function Sidebar({ nav, top }) {
+// Only the expanded nav gets `counts`: the collapsed rail shows no count.
+export function Sidebar({ nav, top, counts }) {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
 
   // navKey forces a remount of the expanded nav each time the sidebar opens,
@@ -33,7 +34,7 @@ export function Sidebar({ nav, top }) {
         className={classes.expandedLayer}
         data-visible={!sidebarCollapsed || undefined}
       >
-        <SidebarExpanded nav={nav} navKey={navKey} top={top} />
+        <SidebarExpanded nav={nav} navKey={navKey} top={top} counts={counts} />
       </Box>
     </Box>
   );

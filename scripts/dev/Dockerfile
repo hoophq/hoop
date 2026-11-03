@@ -1,5 +1,14 @@
 FROM hoophq/agent-tools:noble-20260709-6890906
 
+# A cloud sandbox re-signs TLS with its own CA. run.sh copies it into
+# scripts/dev/extra-ca/ when HOOPDEV_CA_CERT is set; otherwise the folder holds
+# only its README and this step does nothing.
+COPY scripts/dev/extra-ca/ /tmp/extra-ca/
+RUN if [ -s /tmp/extra-ca/extra-ca.crt ]; then \
+    cp /tmp/extra-ca/extra-ca.crt /usr/local/share/ca-certificates/hoopdev-extra-ca.crt && \
+    update-ca-certificates; \
+  fi && rm -rf /tmp/extra-ca
+
 RUN mkdir -p /opt/hoop/sessions && \
   mkdir -p /opt/hoop/bin && \
   apt-get update -y && \

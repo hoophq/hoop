@@ -1,0 +1,4 @@
+{
+  "name": "hoop postgres mcp",
+  "network": {"access": "disabled"}
+}

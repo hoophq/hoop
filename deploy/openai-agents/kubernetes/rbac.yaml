@@ -1,0 +1,126 @@
+# The agent's identity in the cluster: a ServiceAccount and a long-lived
+# token, which the vault holds. The API server checks this token on every
+# request the sidecar forwards, so RBAC still decides what the agent may do.
+#
+# What the roles grant, and why. All object access is in one namespace,
+# demo (EDIT: the namespace the agent manages; it must exist):
+# - view (built in): read most objects. It leaves out Secrets and the exec,
+#   attach, port-forward and proxy subresources.
+# - Secrets get, list, watch. The sidecar masks the values in kubectl's
+#   JSON. A read that asks for YAML or Protobuf gets them in clear, so grant
+#   this only where that is acceptable.
+# - The scale subresource of Deployments: the agent can scale, and change
+#   nothing else in a Deployment.
+# - Pods delete: RBAC allows it so that the sidecar's refusal is what stops
+#   it. Remove it if RBAC must refuse a delete as well.
+#
+# Never grant create, patch or update on pods or workloads: a pod spec can
+# mount a Secret or put it in an environment variable, and `kubectl logs`
+# then prints it as text, which the sidecar does not mask.
+#
+# The session id: kubectl cannot add a header, but it sends impersonation
+# headers from its kubeconfig. The agent impersonates itself with one extra,
+# hoop-session, and the sidecar records Impersonate-Extra-Hoop-Session in
+# each row. The API server then runs the request as the same ServiceAccount,
+# with the same groups: no permission is added.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openai-agent
+  namespace: hoop
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openai-agent-token
+  namespace: hoop
+  annotations:
+    kubernetes.io/service-account.name: openai-agent
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openai-agent-view
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - {kind: ServiceAccount, name: openai-agent, namespace: hoop}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openai-agent
+  namespace: demo
+rules:
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openai-agent
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openai-agent
+subjects:
+  - {kind: ServiceAccount, name: openai-agent, namespace: hoop}
+---
+# Impersonate this ServiceAccount, and no other.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openai-agent-self
+  namespace: hoop
+rules:
+  - apiGroups: ['']
+    resources: [serviceaccounts]
+    resourceNames: [openai-agent]
+    verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openai-agent-self
+  namespace: hoop
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openai-agent-self
+subjects:
+  - {kind: ServiceAccount, name: openai-agent, namespace: hoop}
+---
+# Set the hoop-session extra, with any value. Kubernetes checks an extra
+# without a namespace, so this one rule needs a ClusterRole. It grants no
+# access to any object.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openai-agent-session
+rules:
+  - apiGroups: [authentication.k8s.io]
+    resources: [userextras/hoop-session]
+    verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openai-agent-session
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: openai-agent-session
+subjects:
+  - {kind: ServiceAccount, name: openai-agent, namespace: hoop}

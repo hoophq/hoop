@@ -29,9 +29,10 @@ The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
 own inputs without naming their types.
 
-**Go 1.26.5.** Every module here declares `go 1.26.5`, so an older toolchain
-refuses the build instead of miscompiling it. The repo's `go.work` and the
-sidecar image pin the same version.
+**Go 1.26.10.** Every module here declares `go 1.26.10`, so an older toolchain
+refuses the build instead of miscompiling it. The repo's `go.work` pins the
+same version. 1.26.10 is the first release whose `crypto/x509` refuses the
+compromised eMudhra intermediates (ENG-847).
 
 ```go
 import (
@@ -181,8 +182,8 @@ go build -o hoop-inspect .
 ./hoop-inspect -version
 ```
 
-Go 1.26.5 or newer builds it. Below that the module's own `go` directive stops
-the build with `requires go >= 1.26.5`, and `GOTOOLCHAIN=auto` (the default)
+Go 1.26.10 or newer builds it. Below that the module's own `go` directive stops
+the build with `requires go >= 1.26.10`, and `GOTOOLCHAIN=auto` (the default)
 fetches the right one rather than failing.
 
 As a container, with the `sidecar` tree as the build context. From the repo
@@ -193,12 +194,13 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
   -t hoop-inspect:local sidecar/
 ```
 
-There are no build tags. The config file decides every capability, so an
-operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and the detector still runs, holding all 55 entity types:
-the section narrows that set rather than switching it on. A binary built
-without the alcatraz plugin is the case that refuses a `mask` block at
-startup.
+The one build tag is `ORT`, and it decides only which backend runs the NER
+model (see "Names, places and organizations" under Masking and PII). The
+config file decides every other capability, so an operator turning on PII
+detection does not also have to swap the binary. Omit the `pii` section and
+the detector still runs, holding all 55 entity types: the section narrows
+that set rather than switching it on. A binary built without the alcatraz
+plugin is the case that refuses a `mask` block at startup.
 
 To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
@@ -239,9 +241,8 @@ fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
 applies the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
-move. That is how a license file replaced behind an unchanged `license` path
-is picked up — a stat of the config file cannot see it, and a `SIGHUP` (or
-any later rule edit) re-resolves the path and adopts the new document.
+move. It also re-reads the license file, which is watched on the same ten
+second tick; see "Changing the license of a running process".
 
 On Kubernetes, mount the ConfigMap as a volume, not through `subPath`: the
 kubelet updates a volume in place (an atomic symlink swap the stat sees, on
@@ -284,6 +285,69 @@ The plane issues the token once, when you register the sidecar
 means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
 hold the token itself, never a path, and no config key exists for it: a
 bearer secret does not belong in a file that gets committed.
+
+#### Logging in instead of a token
+
+The free plan always runs identified. `hoop start sidecar` logs in on its
+first run, with a config file or without one, unless the run already has a
+credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
+license, which is not the free plan. `--validate`, `--migrate` and
+`--codec-test` never log in.
+
+The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
+`control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
+an Enterprise deployment, and its own web app approves the code. The login
+prints a URL and a code; an admin approves the code in the web app, and the
+sidecar joins that admin's organization.
+
+```bash
+hoop start sidecar --config sidecar.yaml
+#   To connect this sidecar, approve it in your browser:
+#     https://use.hoop.dev/sidecars/login?code=BCDF-GHJK
+#   The page shows the code BCDF-GHJK. Approve only if it matches this one.
+```
+
+The sidecar makes its own `hsc_` token and sends it once; the plane keeps
+only its hash, and approving creates the sidecar with it. The token is saved
+in `~/.hoop/sidecar/credentials.json` (mode 0600; `HOOP_SIDECAR_STATE_DIR`
+moves the folder), one login per control plane, and is only ever sent to the
+plane that issued it. The next run on that plane reuses it without asking.
+
+A run with a config file boots that file, connected: the file stays the
+source and the plane shows it (`load_from_disk`). A bare run at a terminal
+asks first: **Managed by hoop (free)** logs in on the first-run screen and
+then sets the config up there, and **Enterprise** opens the Connect page (your
+own Control Plane and token, or a license). The setup screen also asks the
+plane every few seconds, and boots on a configuration set in the web app as
+soon as there is one. The next bare run boots the file the last run booted.
+
+| Command | Does |
+|---|---|
+| `hoop sidecar status` | the planes this machine is logged in to, each with its sidecar and config file |
+| `hoop sidecar status --token` | the same, with each token, to set `HOOP_SIDECAR_TOKEN` elsewhere |
+| `hoop sidecar logout` | forgets this machine's token; `--control-plane <url>` or `--all` when it holds several |
+| `--login` | logs in again even when a login is saved |
+| `--no-login` | runs standalone; refused on the free plan, accepted with a license |
+
+Logout is local, like `docker logout`: the sidecar stays in its organization.
+Delete it in the web app to remove it there, which also stops its token.
+
+**Headless** (a container, a marketplace image, an agent): log in once and
+pass the token. Get it from the web app (Connect an existing Sidecar) or from
+a machine that logged in (`hoop sidecar status --token`), and set
+`HOOP_SIDECAR_TOKEN`. With no `HOOP_CONTROL_PLANE_URL` the token goes to the
+hosted plane. A headless run with no credential logs in by itself and writes
+the login as JSON lines on stdout, for a console or an agent to show a person:
+
+```json
+{"time":"2026-10-16T20:00:00Z","level":"INFO","msg":"sidecar login required: approve the code in the web app","event":"sidecar_login_required","control_plane_url":"https://use.hoop.dev","verification_url":"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK","user_code":"BCDF-GHJK","expires_in":600}
+{"time":"2026-10-16T20:01:10Z","level":"INFO","msg":"sidecar login approved","event":"sidecar_login_approved","control_plane_url":"https://use.hoop.dev","sidecar":"edge-1"}
+```
+
+Keep `HOOP_SIDECAR_STATE_DIR` on a volume, or the next restart logs in again.
+
+An organization without an Enterprise license holds one sidecar, under the
+free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.
 
 #### Service account identity instead of a token
 
@@ -528,8 +592,10 @@ A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 `install-source` says which hoop template started the sidecar. The template
 sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
-are a fixed list, `managed-agents-http` and `managed-agents-kubernetes`
-today, and any other value is sent as `other`, so it can never carry a name.
+are a fixed list, `managed-agents-http`, `managed-agents-kubernetes`,
+`openai-agents-http`, `openai-agents-kubernetes`, `agentcore-http`,
+`agentcore-kubernetes` and `agentcore-postgres` today, and any other value
+is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -666,6 +732,56 @@ a path is the silent downgrade this build refuses everywhere else.
 
 `/config` serves the same verdict under `license`, without the signature, and
 the caps under `limits`, where a `null` means the license lifted one.
+
+#### Changing the license of a running process
+
+No restart is needed to renew or replace a license. Three ways, and a
+restart picks the same license the running process ends up with:
+
+- **Replace the file.** When the source in force (`-license`,
+  `HOOP_LICENSE` or the `license` key) names a path, the process stats that
+  file every ten seconds and re-reads it when it moves, or at once on
+  `SIGHUP`. A new document is in force on that tick and logged as
+  `license file replaced`. A file that does not load keeps the license in
+  use and warns once. On Kubernetes, mount a Secret as a directory, not a
+  `subPath`, and point the source at the file in it.
+- **Edit the `license` key** in the config file, when no flag or
+  `HOOP_LICENSE` outranks it. It applies with the next config reload.
+- **`PUT /license` on the admin listener**, with the document as the body.
+  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
+  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
+  send it from the host or through an encrypted tunnel (`kubectl
+  port-forward`, SSH), never across a network others can read:
+
+  ```bash
+  curl -X PUT --data-binary @license.json \
+    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
+  ```
+
+  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
+  the same report `/config` serves. Status `401` is a missing or wrong
+  secret, `403` means the endpoint is off, `409` means a control plane owns
+  the license, and `422` is a license this process refuses, with the reason.
+  The license lives in memory: the next change to the source in force
+  replaces it, and so does a restart. Update the source as well.
+
+A replaced file or an edited key is the owner's change, so it is in force
+even when it covers fewer rules; then the relay stops, as when a term ends.
+The admin API is stricter: it takes only a current license that covers the
+running rules, so a holder of the secret cannot stop the relay. It also
+takes only a document, never a path.
+
+A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
+change in a running process; use a path, the admin API, or a restart. Under
+a control plane that owns the license, set it there: the file is not
+watched and the admin API answers `409`.
+
+Connecting a licensed standalone sidecar to a control plane takes a restart.
+After it, a control plane that manages licenses (every current gateway) is the
+only license source. Set the organization's license there first: rules past
+the free tier do not start without a current license that covers them. When
+the config file starts naming a control plane, the running process warns about
+this before the restart.
 
 #### When a term ends under a running process
 
@@ -824,7 +940,11 @@ license: /etc/hoop-inspect/license.json
 # control_plane_url: https://cp.example.com
 
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
+  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*, PUT /license
+
+# Metrics, traces and audit events over OTLP. See "OpenTelemetry".
+# telemetry:
+#   otlp: {endpoint: otel-collector:4317, insecure: true}
 
 # Approval status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
@@ -835,6 +955,7 @@ audit:
   async_queue_size: 1024    # a slow sink must not block a user's query
   memory_buffer: 256        # last N events, readable at GET /events
   query_sessions: 500       # backs GET /api/sessions
+  query_max_bytes: 67108864 # memory for those events (the default); past it the oldest go, and their session reports events_dropped
   fail_open: false          # the default: a statement whose audit write failed is refused
 
 pii:                        # omit the section and all 55 entity types are active
@@ -921,9 +1042,14 @@ session (`session_end`) and opens a new one on the same connection
 (`session_start`), so the policy context and the audit rows of each request
 carry its own caller. A caller change while an earlier response on the
 connection is still outstanding is refused: that response belongs to the
-session that sent its request. The header value is lifted out of the
-statement, so it reaches policy input and the audit trail only when
-`http.headers` names it. A grpc lane reads it per RPC. The header is trusted
+session that sent its request. A request that carries no header, or one
+whose value is blank, names nobody and runs as the connection: anonymous,
+or the mTLS subject on a lane that verified one. It ends the session of a
+caller a previous request named, so nothing runs under a borrowed name;
+a policy that requires a named caller denies `principal == "anonymous"`.
+The header value is lifted out of the statement, so it reaches policy input
+and the audit trail only when `http.headers` names it. A grpc lane reads it
+per RPC. The header is trusted
 exactly as far as the network is: nothing but that proxy may be able to reach
 the listener.
 
@@ -2262,6 +2388,161 @@ Every pod in the cluster can reach a ClusterIP Service; a NetworkPolicy
 narrows that to the agent. See the chart's
 [README](../deploy/helm-chart/chart/sidecar/README.md#ports).
 
+## OpenTelemetry
+
+A `telemetry` block pushes metrics, traces and audit events to an OTLP
+collector, so one Grafana, Honeycomb or Datadog shows every sidecar: how much
+each lane judged, what it denied, and where a statement's time went, split
+into the sidecar's own policy cost, the AI analyzer, a human review and the
+upstream itself. Absent, nothing is built and the data path has no telemetry
+code in it. The exporter lives in the nested `sidecar/telemetry/otlp`
+module; a build without it refuses the block, and the control plane serves
+it only to a sidecar whose capabilities header carries `telemetry`.
+
+```yaml
+telemetry:
+  otlp:
+    endpoint: otel-collector:4317   # host:port for grpc, a URL for http
+    protocol: grpc                  # grpc (default) | http
+    insecure: true                  # a collector in the same pod
+    # headers: {authorization: "Bearer ..."}   # a vendor endpoint
+    # ca_file: /etc/ssl/collector-ca.pem
+  resource:                         # extra resource attributes
+    deployment.environment: prod
+  metrics:
+    interval_sec: 60                # on with the block; enabled: false turns it off
+  traces:
+    sample_ratio: 0.1               # 0 (default) is off; decided once per connection or RPC
+  events:
+    enabled: true                   # audit events as log records; default off
+    statement_text: false           # default: a sha256 fingerprint, as redact_statements writes
+```
+
+`grpc` is protobuf over HTTP/2 on one long-lived connection, the OTel
+default; `http` is protobuf over HTTP/1.1 POSTs to `/v1/metrics`,
+`/v1/traces` and `/v1/logs`, for a path that blocks HTTP/2. Same data either
+way. The SDK's `OTEL_EXPORTER_OTLP_*` environment variables are not read:
+the block is the configuration, so `-validate` and the plane can check it.
+
+Every signal carries the resource `service.name=hoop-sidecar` (override it
+under `resource`), `service.version`, `service.instance.id` (the same
+install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
+and `hoop.schema.version=1.0`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+added bumps the minor; one renamed or removed bumps the major, because a
+dashboard written against the old name goes dark.
+
+### Metrics
+
+| Series | Instrument | Attributes |
+|---|---|---|
+| `hoop.sidecar.connections` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.connections.active` | gauge | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`, `placement`) |
+| `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
+| `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.outcome` |
+| `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model` |
+| `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
+| `hoop.sidecar.session_events.sent`, `.dropped` | counter | the control plane copy's counters |
+| `hoop.sidecar.config.generation` | gauge | reloads applied since start |
+
+No metric carries a principal, a session id, a table or statement text:
+those are unbounded, and they belong on the span and the log record below.
+The analyzer families are the ones `GET /metrics` serves in Prometheus text,
+which stays as it is. Counters survive a hot reload.
+
+**Latency.** `hoop.sidecar.statement.duration` has one series per stage of a
+statement's life:
+
+- `stage=policy`, `engine=rules` or `engine=opa`: a local rule set or one
+  OPA round trip. The cost the sidecar adds to decide. Exact on every
+  protocol.
+- `stage=analyzer`: the model-backed evaluator, cache hits included. The
+  provider call alone is `hoop.sidecar.analyzer.request.duration`.
+- `stage=review`: the hold while a human decides, with `hoop.outcome` set to
+  `approved`, `rejected`, `expired`, `revoked`, `disconnected` (the client
+  left mid-hold) or `denied` (any other refusal: the plane unreachable, a
+  status this build does not know). Its own stage, so a ten-minute approval does not read as
+  a slow policy. A lane in return mode (`review_mode: return`) shows no
+  wait here: the client is denied at once and resends after approval, and
+  only the control plane knows the time between filing and approval.
+- `stage=upstream`: from the request leaving the sidecar to its answer
+  arriving. `hoop.pairing` says how exact that is. `exact` is a protocol
+  that pairs them itself: one gRPC call, or HTTP/1, where responses answer
+  requests in order. `unpipelined` is pgwire, MySQL, MSSQL, MongoDB,
+  Oracle and ClickHouse, whose codecs do not expose the pairing: the
+  sample is taken only when one request is outstanding and dropped when
+  the client pipelines, so the series describes unpipelined exchanges and
+  never guesses which answer belongs to which request. An extended-protocol
+  client that sends two statements per query is therefore not sampled.
+
+Other stages carry `hoop.outcome` as `allow` or `deny`. Two queries worth
+having, in PromQL after the collector's Prometheus exporter:
+
+```
+histogram_quantile(0.99, sum by (le, hoop_lane, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[5m])))
+sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum{hoop_stage="policy"}[5m]))
+  / sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum[5m]))
+```
+
+The first is p99 per lane and stage; the second is the share of a lane's
+time the sidecar itself costs.
+
+### Traces
+
+`traces.sample_ratio` above zero opens one span per exchange — `hoop.session`
+for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
+`hoop.statement` per judged statement and, under it, one span per stage
+(`policy`, `analyzer`, `review`). The upstream measurement is an event on
+the enclosing span. The sampling decision is taken once, at the exchange, so
+every statement of a sampled connection is in and a 1% ratio costs 1%. A
+denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
+`hoop.rule` and an error status naming the rule. The OPA decision and the
+analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
+service or a model gateway that is itself traced joins the same trace.
+
+### Events and alerts
+
+`events.enabled` adds a sink to the audit chain that sends every event as a
+log record: body is the kind (`session_start`, `statement`, `violation`,
+`masked`, `error`, `session_end`), severity `WARN` for `violation` and
+`masked`, `ERROR` for `error`, and attributes `hoop.lane`, `hoop.protocol`,
+`hoop.session_id`, `hoop.principal`, `hoop.operation`, `hoop.direction`,
+`hoop.verdict`, `hoop.rule`, `hoop.message`, `hoop.statement`,
+`hoop.tables`, the HTTP detail as `hoop.http.*` (`query`, `target` and `body`
+under the same redaction as the statement), each metadata key as
+`hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
+written under a sampled span carries its trace and span id.
+
+The record goes through the same redaction as the audit file and the plane
+copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:
+true`, because the collector is a new place audit data leaves the process;
+the file keeps the text under the audit block's own setting. The sink never
+fails a write and never blocks a statement: a bounded queue
+(`events.queue_size`, default 4096) drops the oldest record when the
+collector falls behind, and `GET /stats` reports `telemetry.events_sent`
+and `telemetry.events_dropped`. The audit file stays the record of truth.
+
+Alerts live in the backend. Three worth having:
+
+```
+# denials on a lane, per minute
+sum by (hoop_lane) (rate(hoop_sidecar_statements_total{hoop_verdict="deny"}[5m])) * 60 > 10
+# analyzer failing: statements left unscored
+sum by (hoop_analyzer) (rate(hoop_sidecar_analyzer_request_duration_seconds_count{hoop_outcome!="ok"}[5m])) > 0
+# the audit trail is dropping records
+rate(hoop_sidecar_audit_errors_total[5m]) > 0
+```
+
+and, on the log records, a `violation` burst for one `hoop.principal`, which
+no metric can express because the principal is only on the record.
+
+A collector that is down costs nothing but the signals: exports fail, one
+warning per 30 seconds per message reaches the sidecar's log, and traffic
+is unaffected. Shutdown flushes once, bounded by three seconds.
+
 ## Overlap with Envoy
 
 Envoy already parses some of this.
@@ -2895,8 +3176,26 @@ listeners:
     upstream: 10.77.0.30:2598
     ica:
       tenant_id: finance
+      source_cidrs: [10.20.1.10/32]    # optional: only the Citrix Gateway SNIP may connect
       edt: true                        # optional: EDT over UDP on the same port
 ```
+
+CPU masking is conservative by default. To replace historical protection with
+only current accepted policy matches, set `ica.options.pii_matches_only: true`
+in a build supporting CPU match-only mode. Each visible update then performs
+fresh full-screen Tesseract OCR, with fresh-result reuse disabled, and replaces
+the active masks. Unreadable boxes and uncertainty do not independently mask;
+configured entity sets and acceptance thresholds still apply. OCR misses may
+remain visible, and full-screen CPU work may increase latency. OCR, policy and
+protocol errors still block output. The option does not enable an inspector or
+text logging.
+
+This is single mode: the lane serves one VDA, named in `upstream`, and the
+Gateway (or Workspace) is pointed at this host as that VDA — the STA/broker
+hands out the sidecar's address. `ica.source_cidrs` pins who may connect;
+with no list the lane admits any source that reaches it, as the other lanes
+do. A connection from elsewhere is refused before a session exists and
+recorded with stage `gateway_source_policy`. No TPROXY, no privileges.
 
 The `hoophq/hoopsidecar:<version>-ica` image runs `hoop-inspect` with the
 engine, tesseract, ONNX Runtime and the NER model in place, so a config like
@@ -2932,9 +3231,10 @@ rule and policy route stay yours. Rerunning the installer from a newer
 bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
 config and the model. The source of the installer is
 `deploy/ica-sidecar/install.sh`; `deploy/ica-sidecar/examples/` holds a
-commented config for each mode (`config.single.yaml`, `config.cidr.yaml`),
-shipped in the bundle, and the single one is what a host without a config
-gets to edit.
+commented config for each mode (`config.single.yaml`, `config.cidr.yaml`,
+and `config.gateway-direct.yaml` for a single-mode lane a Citrix Gateway
+dials directly, with its SNIP pinned in `source_cidrs`), shipped in the
+bundle, and the single one is what a host without a config gets to edit.
 
 With the assets installed, the Linux `hoop` CLI serves the same file
 in-process: `hoop start sidecar --config /etc/hoop-inspect/config.yaml`.
@@ -3480,6 +3780,67 @@ Those choices buy this, measured through the real Postgres path:
 | `DO $$ BEGIN DELETE FROM customers; END $$` | `unknown` by accident | `unknown`, reason "anonymous code block; body is interpreted at runtime" |
 | `CALL purge()` | `call` | `unknown`, reason "stored procedure; body is in the catalog" |
 
+#### Spark SQL (Databricks)
+
+`lexer.Spark` reads Spark SQL as Databricks runs it. An http lane selects it
+with `http.sql.dialect: spark` (SQL in request bodies, below); a caller
+passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
+GoogleSQL's: backslash escapes in `'...'` and `"..."`, `"..."` is a string,
+backticks escape by doubling, `r'...'` is raw, and `:name` and `?` are
+parameters. Five rules differ from every other dialect here, and each one
+dropped a table on a Databricks SQL warehouse (2026.42) behind a statement
+the other dialects read as harmless:
+
+| Rule | Spark | Elsewhere | Cost of using the wrong one |
+|---|---|---|---|
+| `\` at the end of a `--` line | the comment continues on the next line | the comment ends | `-- x \` newline `SELECT '` newline `DROP TABLE t -- '` hides the DROP in a literal |
+| U+00A0 and the other Unicode spaces in Spark's `WS` | whitespace | part of the word | `DROP` U+00A0 `TABLE t` is one word that no verb matches |
+| `/*+ ... */` | a hint, lexed as SQL tokens | a comment | a `*/` in a string inside the hint ends the comment early, and the quote after it hides a statement |
+| `/* /* */` | nests | flat in MySQL, ClickHouse, GoogleSQL and Oracle | `/* /* */ SELECT 'x */ DROP TABLE t; -- '` runs the DROP |
+| `BEGIN ... END` | a SQL script | a transaction, except in Oracle | `BEGIN DROP TABLE t; END` reads as a begin and a commit |
+
+A script is `unknown`, because its control flow decides which statements
+run, and every write in it is an effect: a rule naming `drop` refuses
+`BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
+As in an Oracle PL/SQL block, a write verb counts anywhere in a script,
+minus the known false readings: `SHOW CREATE TABLE`, a MERGE join hint, and
+REPLACE, LOAD, CONVERT, MSCK, REORG or REPAIR without the keyword their
+statement starts with, and GENERATE without its FOR, so `CASE WHEN a THEN replace(s, 'x', 'y') END` and a
+column called load stay reads. A column named like another write verb
+(update, delete, vacuum, restore, copy ...) after THEN, or anywhere inside a
+script, still reads as a write, as a column called update does in every
+dialect. `BEGIN TRANSACTION` and `BEGIN WORK` with
+nothing after them stay a begin. Any `${` makes the
+statement `unknown`: Spark replaces `${var}` in the raw text before it
+parses, inside literals too. Databricks SQL 2026.42 does not substitute, so
+there this costs a false `unknown` for a literal that contains `${`.
+
+Delta Lake's own parser reads VACUUM, OPTIMIZE, RESTORE and its other
+commands before Spark does, with FLAT block comments and no `--`
+continuation, so `/* /* */ VACUUM t RETAIN 0 HOURS -- */` is a comment to
+Spark and a VACUUM to Delta. When a statement starts with a Delta command,
+the scanner reads it both ways and merges the two readings, as it does for
+MySQL's backslash modes. Databricks SQL 2026.42 lexes Delta commands with
+Spark's rules; open-source Delta Lake does not. Spark versions also differ
+on a `/*+` inside a block comment: Spark master and Databricks SQL nest on
+it, every released Spark reads it as text, so text holding `/*+` is read
+both ways too.
+
+The Databricks verbs: VACUUM is a `delete`, because it removes the files
+that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA,
+GENERATE and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
+is `insert`, DESCRIBE is `show`, and CACHE and UNCACHE are `other`. The
+maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
+multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
+written. Their previews read the same: `VACUUM t DRY RUN` is a `delete` and
+`COPY INTO t ... VALIDATE` writes t, though neither changes the table, so a
+rule that refuses the write refuses its preview too. DESCRIBE, SHOW
+TBLPROPERTIES, SHOW COLUMNS, SHOW PARTITIONS and SHOW CREATE TABLE record
+their table as read, and so does `table_changes('t', 1)`, whose string names
+the table it reads; any other first argument makes the statement `unknown`.
+`Split` keeps the text whole, as for Oracle: Spark runs one statement or one
+script per call.
+
 ### The ceiling
 
 Three shapes are out of reach for any amount of parsing, this scanner's or
@@ -3555,8 +3916,8 @@ stmts, _ := i.Inspect(inspect.FromClient, packetBytes)
 ```
 
 **Build it through the seam.** `codec/http.New` returns `*Codec`, libhoop's
-Inspector with the relay's additions around it: Connect Gateway
-normalization on every entry point, and on the byte path the Via marker and
+Inspector with the relay's additions around it: path cleaning and Connect
+Gateway normalization on every entry point, and on the byte path the Via marker and
 the lifting of `Options.CredentialHeader`. `InspectRequest` does not lift the
 credential, since a caller holding the `*http.Request` already has the
 header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
@@ -3567,6 +3928,23 @@ names it.
 like `/users/alice` survives intact: merging it with `/users/settings` would
 silently widen every rule written against either. The normalizer errs toward
 keeping segments, so a policy comes out too narrow rather than too broad.
+
+**Dot and empty segments resolve.** The resource is the resolved path: `\`
+becomes `/`, `.`, `..` and empty segments resolve, and a trailing slash
+stays. `/x/../admin/users` and
+`//admin//users` both become `/admin/users`. The path, the target and the
+statement text stay as sent.
+
+**A dot segment is matched three ways.** When the path held `.` or `..`,
+`metadata["http.resource_unresolved"]` keeps the resource before resolution.
+`http_resource` rules and the `resources` scope of `http_header` rules match
+the resolved resource, the unresolved form, and the unresolved form resolved
+on its own. The sidecar cannot see how an upstream routes: Express 4 runs
+`/admin/../x` under `/admin`, and Connect Gateway may route the raw
+membership and leave the rest to a cluster that resolves it. Analyzer
+triggers and `match_ignore` read the resolved form only. OPA gets the
+resolved form in `input.http.resource` and the unresolved form in
+`input.metadata`, and does its own matching.
 
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
@@ -3579,9 +3957,50 @@ pseudonym is random per process, so the upstream sees one extra header. RFC
 behind a transparent MITM proxy the sidecar's own upstream connection can be
 routed back into its listener, and every lap would look like a fresh client.
 A request that already carries this process's pseudonym is refused with a
-403 whose message starts `request loop:`. After a request with `Upgrade` or a
-`CONNECT`, the rest of that connection is another protocol and is no longer
-marked.
+403 whose message starts `request loop:`. Once the server accepts an
+`Upgrade` or a `CONNECT`, the rest of that connection is another protocol and
+is no longer marked; a declined one leaves it marked.
+
+**A known credential stays in its header.** A vault that fills a secret
+wherever its placeholder appears turns a token an agent writes into a URL
+into the real token in the URL. OpenAI's does toward the host it is bound
+to: in hosted sessions it filled the URL path, the query and a form body
+(see the OpenAI template's
+[Limits](../deploy/openai-agents/http/README.md#limits)). The real token
+then sits in the URL, where the audit row records it and an upstream that
+echoes the value hands it back. So every http lane refuses, with a 403 and before any byte reaches
+the upstream, a request that carries a credential it knows outside that
+credential's header. It knows, with no setting:
+
+- the caller token it admitted (see caller tokens below), at home in its
+  own header;
+- each `Authorization` credential of the request (the value after the
+  scheme), at home in `Authorization`;
+- the `Authorization` credentials of earlier requests on the connection
+  still awaiting an answer, and those the upstream answered with a 2xx in
+  the last hour, so a request that leaves `Authorization` off is checked
+  too. The lane remembers up to 64 values that hold a letter and a digit
+  and no whitespace, `;` or `,`; when full, it keeps the ones it has, so
+  junk the upstream accepts cannot push a real token out. A rule reload
+  empties the memory.
+
+It looks in the request line, raw and percent-decoded, every other header
+and header name, the body with chunk framing removed, chunk extensions and
+trailers. Values under 16 bytes are not looked for. The audit row is
+`METHOD path` with each credential replaced by `[redacted]` and no query,
+under rule `credential-placement` and `anonymous`. A lane that passes a head
+it cannot parse through as written refuses one with an `Authorization`
+line, and scans the rest of the connection for the credentials it knew.
+Every lane refuses a head over 1 MiB, bytes sent before the server answers
+an `Upgrade` or `CONNECT`, and a request that would be checked against more
+than 128 credentials.
+
+Not covered: a body that is compressed or encodes the token (base64, a JSON
+`\u` escape), Basic's password, bytes past a switch the server accepted, and
+a response that echoes the request's own `Authorization` header. A caller can
+send a value that other requests carry, such as a path segment with a digit,
+as a bearer to an endpoint that answers 2xx whatever the bearer: the lane
+then refuses those requests for an hour.
 
 ### A browser in front: upstream as a URL
 
@@ -3649,7 +4068,8 @@ listeners:
 
 - **What is refused.** No header, an empty or whitespace-only value, a value
   not in the file, or the header sent twice: each gets a 403 and reaches no
-  upstream. The refusal is audited under `anonymous`.
+  upstream. The refusal is audited under `anonymous`, with the method and
+  the normalized path, so a token-shaped segment is recorded as `*`.
 - **Checked on the head.** Policy judges a request once its body has
   arrived, and the sidecar holds the request until then. The token is
   checked earlier, on the head, so a stranger costs no held body and a
@@ -3662,10 +4082,9 @@ listeners:
   input or an analyzer prompt. Validate refuses an `http.headers` entry that
   names it, and a header that the upstream, HTTP framing or the sidecar
   already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
-  and the like). The strip stops a leak by accident, not by intent: it covers
-  the header in each request head. An admitted caller that copies the token
-  into another header, a chunked trailer or the body sends it on, and a
-  vault fills the secret into any header it finds the placeholder in.
+  and the like). A request that carries the token anywhere else, in the
+  URL, another header, the body or a trailer, is refused (see "A known
+  credential stays in its header" above).
 - **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
   caller the token admits.
 - **Stricter framing.** As on a URL upstream, a request head the lane cannot
@@ -3725,6 +4144,25 @@ credential does not cover, is refused like any other wrong token. A vault
 rotation reaches running sessions on its own schedule, so rotate with the
 two-line overlap above.
 
+#### Filling the token from an OpenAI vault
+
+An OpenAI vault `environment_variable` credential also puts a placeholder
+in the sandbox, and fills the real secret only toward the hosts in its
+`networking.allowed_hosts`. It has no `injection_location`: toward the
+sidecar's host it fills the placeholder anywhere in the request, the URL
+and the body included. Keep the token in `X-Hoop-Token` only. The setup is
+in `deploy/openai-agents/http/` and on the docs page,
+[OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
+
+#### A private lane in an AgentCore VPC
+
+An Amazon Bedrock AgentCore agent calls a lane inside the customer's VPC,
+not on a public URL. The lane is plain HTTP: the harness loop runs outside
+the agent's container and trusts no private CA. The security groups admit
+only the agents, and the caller token still names the caller in the audit
+trail. The setup is in `deploy/agentcore/http/` and on the docs page,
+[Amazon Bedrock AgentCore](https://hoop.dev/docs/integrations/aws-agentcore).
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect
@@ -3739,7 +4177,8 @@ through the gateway as it does against the API server. Without it such a rule
 matches nothing and kubectl through the gateway passes it untouched. The path,
 the target and the statement text stay as sent, and
 `metadata["http.resource_prefix"]` records what was removed. Any other host
-or shape is left alone.
+or shape is left alone. `metadata["http.resource_unresolved"]` loses its
+prefix the same way, split on its own.
 
 The lane below names each caller from kubectl's own Google bearer with
 [`google_identity`](#1-write-the-file), and serves kubectl's h2 over ALPN (see
@@ -3773,6 +4212,120 @@ listeners:
           headers_not: {Accept: ["application/json;as=Table;*"]}
           message: listing secrets is fine; reading one is not
 ```
+
+### SQL in request bodies: Databricks
+
+**An `http.sql` block reads the SQL a JSON API carries in its request body.**
+Databricks' Statement Execution API sends its SQL in `statement`, and the
+workspace SQL MCP server in the arguments of a `tools/call`. Without the block
+the lane's statement is `POST /api/2.0/sql/statements`, and an `operation` or
+table rule matches nothing there: a `DROP` passes a lane written to refuse it.
+With the block, each SQL string becomes a statement of its own, right after
+the request that carried it, classified under the block's `dialect`. The
+JSON reading is the `jsonsql` package, which knows no protocol; `codec/http`
+only routes requests to it, so another protocol that carries JSON can reuse
+it.
+
+- **Fields.** `fields` maps a resource pattern, written as an `http_resource`
+  rule writes it, to the dotted JSON path of the SQL. The longest matching
+  pattern wins; two of the same length that match and name different paths
+  refuse the request, because reading one would leave SQL at the other
+  unread. A pattern that can match nothing as written (`**` not at the end,
+  `*` inside a segment, an empty, `.` or `..` segment) is refused at load. A pattern
+  matches the cleaned path, because Databricks routes
+  `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
+  canonical path. `dialect` is required: it decides what a comment or a string is, and
+  `spark` is Databricks SQL. A request with no body carries no SQL.
+- **MCP.** Where the path is under `params.arguments`, a body with a
+  `jsonrpc` member carries SQL only as a `tools/call` naming one of `tools`;
+  `initialize`, `tools/list` and other tools carry none. Such a path needs
+  `tools`. Anywhere else `jsonrpc` decides nothing: the Statement Execution
+  API runs a body that also holds it, so its SQL is read. A JSON-RPC batch
+  yields one statement per call.
+- **Refuse.** `refuse` lists `field=value` pairs whose results would not pass
+  through the lane. Databricks' `disposition: EXTERNAL_LINKS` answers with
+  links to cloud storage, so the rows would skip the masking and the audit.
+  Such a request is refused before it is forwarded, with `refuse_message`,
+  whatever the rules say, and whether or not the message carries SQL. A value at a `refuse` field that is not a string is
+  refused too: Databricks takes `"disposition": 2` for `EXTERNAL_LINKS`.
+  `refuse_message` is required with `refuse`, since only the operator knows
+  what the client should ask for instead.
+- **Unreadable is `unknown`.** A body that should carry SQL and does not
+  yield it (cut at `max_body_bytes`, not JSON, no string at the path) becomes
+  an `unknown` statement with the reason in `sql.incomplete`, as every codec
+  reports SQL it cannot read, so a rule naming `unknown` refuses it and
+  padding a body past the limit is no way around the rules. With `refuse`
+  set, a body cut at the limit or not JSON is refused outright: its
+  disposition cannot be checked either.
+- **What the statement carries.** Protocol `http`, no HTTP detail, the SQL as
+  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect`,
+  `http.sql_resource` (the cleaned route) and `http.sql_method` (the
+  request's operation, `post`) in its metadata; the request records
+  `http.sql_statements`. An `http_resource`
+  rule never matches it. The request is judged as before, so `delete` names
+  both an HTTP `DELETE` and a SQL `DELETE`.
+- **Bodies are captured on its routes.** The block captures the bodies of
+  requests to its routes, so they reach policy, the analyzer and the audit
+  trail. A request to any other route keeps its body only under
+  `capture_body`, or on a lane that holds.
+- **The analyzer** renders the SQL statement as SQL. The request that carried
+  it is not sent, so a query is one model call. A trigger selects the SQL by
+  its operation, by the method of the request that carried it through
+  `http.sql_method`, or by resource through `http.sql_resource`, so a
+  trigger written for the request (`operations: [post]`) still selects it.
+  An `exclude` item reads the SQL's own operation: excluding `post` skips
+  the requests, as before, and not the SQL they carry.
+- **Not with approvals yet.** A lane whose analyzer holds for approval cannot
+  set the block: the gate spends an approval on the request, not on the SQL
+  read from its body, so one approval would release that SQL again and again.
+
+A lane in front of a Databricks workspace, with a URL upstream so clients dial
+the sidecar by its own name. The one guardrail the free tier allows denies
+the writes it names and every statement the classifier cannot read. An
+`operation` rule naming `unknown` judges client statements only; responses
+carry no verb and never match it. The `operations` scope of another rule
+type still reaches responses through `unknown`. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
+and `REFRESH`, but also `USE CATALOG`, which clients send.
+
+```yaml
+listeners:
+  - name: databricks
+    protocol: http
+    listen: https://0.0.0.0:8443
+    upstream: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+    http:
+      sql:
+        dialect: spark
+        fields:
+          /api/2.0/sql/statements: statement
+          /ai-gateway/mcp-services/**: params.arguments.query
+          /api/2.0/mcp/sql: params.arguments.query
+        tools: [execute_sql]
+        refuse: [disposition=EXTERNAL_LINKS, disposition=INLINE_OR_EXTERNAL_LINKS]
+        refuse_message: ask for disposition INLINE; external links skip this listener
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, create, drop, alter, truncate, grant, revoke, unknown]
+          message: this listener allows reads only
+    mask:
+      rules:
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+```
+
+JDBC, ODBC and the other Databricks drivers speak Thrift, not JSON, so this
+block does not cover them: their requests reach the lane as opaque bodies.
+
+What that rule refuses besides writes, from the Spark dialect above: every
+SQL script (`BEGIN ... END`), `EXECUTE IMMEDIATE`, any statement holding
+`${`, `VACUUM t DRY RUN` and `COPY INTO t ... VALIDATE`, and a read naming a
+column like a write verb after THEN. `IDENTIFIER(:t)` hides the table from
+table rules; the operation is still read. Table rules miss the table of
+`SHOW TBLPROPERTIES`, `SHOW COLUMNS`, `SHOW PARTITIONS` and `table_changes()`.
 
 ## Guardrails and OPA
 
@@ -3837,8 +4390,11 @@ policy.NewRules([]policy.Rule{
 An `operation` rule matches the statement's `operation`. When that is
 `unknown` (the scanner could not read the whole statement, e.g. a PL/SQL
 block), the rule also matches the effects the scanner did see, so
-`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. The
-`operations` scope of every other rule type uses the same test.
+`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. `unknown`
+matches client statements only: a response carries no verb, so the codecs
+report it as `unknown`, and a rule naming `unknown` would otherwise refuse
+every response. The `operations` scope of every other rule type uses the
+same test.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
@@ -4225,9 +4781,12 @@ ends and what declares its length.
   deflate body is undone around the masker and compressed again. A binary
   body is forwarded as it arrives. A text or JSON body under an encoding
   the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
-  event rather than forwarded unmasked. A body the codec is holding that
-  outgrows `MaxMessageBytes` goes out unmasked and the next response is
-  masked again.
+  event rather than forwarded unmasked. So is a body too large to mask: one
+  held past the 8 MiB inspection buffer, or a gzip or deflate body that
+  inflates past 16 MiB. A gzip body is small on the wire, so the server, not
+  the client, decides whether it reaches that size, and forwarding it as it
+  came would hand the client every row unmasked. The lane keeps serving after
+  the refusal.
 
 A codec that cannot re-frame gets its `mask.rules` refused at startup,
 because accepting a masking config that can never fire is the failure that
@@ -4266,6 +4825,54 @@ secret, so `pii/alcatraz/secrets.go` registers three into the same engine:
 and `PRIVATE_KEY` (including a PEM block a size limit cut short). You name
 them in config like any other entity.
 
+### Names, places and organizations: NER
+
+`PERSON`, `LOCATION`, `ORGANIZATION` and `NRP` (nationality, religion,
+political group) have no pattern. They come from an ONNX token-classification
+model, `github.com/hoophq/alcatraz/ner`, that the `pii.ner` block loads:
+
+```yaml
+pii:
+  ner:
+    models_dir: /opt/alcatraz/models   # default; parent of KnightsAnalytics_distilbert-NER/
+    backend: ort                       # go | ort; default ort in a -tags ORT build, go otherwise
+    ort_library: /opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so  # default; ort only
+    threads: 2                         # ort intra-op threads, 1..16; go ignores it
+```
+
+`alcatraz models download --dest <models_dir>` writes the directory. Every
+pinned file is sha256-verified at load and nothing is fetched at runtime.
+Without `pii.ner`, a mask rule or a `pii` guardrail rule naming one of the
+four is refused at load, and the message names `pii.ner`.
+
+Two backends run the same model. `ort` is ONNX Runtime, loaded from
+`ort_library`, and exists only in a cgo `-tags ORT` build: the Linux `hoop`
+and the `hoop-inspect` ica build. The darwin and windows CLIs are `go` only,
+the pure-Go backend; `backend: ort` on a build without it is a startup error.
+`go` is the portability floor, not a production path: measured at ~100 ms
+per masked value on an Apple M-series CPU (2000 rows of one column took
+200 s through a lane), where alcatraz puts `ort` at 5-10x faster. Serve a
+result set of more than a few hundred names from an `ort` build.
+
+The `hoophq/hoopsidecar:<version>-alcatraz` and `<version>-distroless-alcatraz`
+images carry the model at `/opt/alcatraz/models` and ONNX Runtime under
+`/opt/alcatraz/ort/releases/<ort>/lib/`, the defaults above, so the block
+needs no paths there.
+
+One process holds one ONNX Runtime session (hugot's rule), and the ICA
+engine takes it for its own NER. So `pii.ner` on `ort` and an `ica` listener
+do not share a process: Validate refuses that document unless one side sets
+`go` (`pii.ner.backend: go`, or `ica.options.ner_backend: go`). The
+production shape is two sidecars, the `-ica` image for the ICA lanes and the
+`-alcatraz` image for the database and HTTP lanes.
+
+A loaded engine lives as long as the process. A reload that changes only
+rules reuses it. A reload that changes `ner` itself loads a second engine
+beside the first on `go`, and is refused on `ort`, where the first engine
+holds the one session; either way a backend or model change wants a
+restart. The handshake header carries `pii_ner`, and the control plane
+serves `pii.ner` only to a build that reports it.
+
 ### The guardrail half
 
 One `Detector` drives both paths. The `pii` guardrail rule answers a different
@@ -4298,7 +4905,7 @@ switch off keeps running and the detector boots looking exactly like one that
 obeyed you. Write `US_SSSN` and the process stops with
 
 ```
-pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN (PERSON, ...)
+pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN
 ```
 
 A wide detector costs a wider scan and nothing else. `NewMasker` narrows the
@@ -4802,3 +5409,11 @@ because `e2e/` is deliberately not a `go.work` member:
 Each codec runs a split-read matrix: the tests feed the same message in two
 chunks at every possible boundary, then assert that a fragment emits no
 statement and that reassembly loses none.
+
+### ICA cell slots (TCP)
+
+The optional listener `ica.slots` block maps consecutive unprivileged ports to VDA hostnames, using one shared OCR/NER runtime. See [config.slots.yaml](../deploy/ica-sidecar/examples/config.slots.yaml). Use one `%d`/`%03d` hostname pattern or an explicit `names` list, plus destination/frontend CIDRs; Gateway sources are mandatory. Fixed `upstream`, transparent mode and EDT are mutually exclusive with slots. Names resolve on connection with a 2-second timeout and at most a 30-second application cache, then the engine validates and dials a literal allowed address. Audits include slot, upstream_name and upstream.
+
+`ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
+
+The adapter pins the published **libhoop-ica v0.8.0** cell API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.

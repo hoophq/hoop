@@ -11,7 +11,7 @@
 // config that names one.
 module github.com/hoophq/hoop/sidecar/codec/wasm
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
@@ -19,7 +19,7 @@ require (
 )
 
 require (
-	github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df // indirect
+	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
 

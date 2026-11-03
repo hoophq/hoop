@@ -160,12 +160,15 @@ func (c *prefixConn) Read(b []byte) (int, error) {
 type HeaderIdentity struct{}
 
 // Resolve returns the trimmed value as the Subject; the value is trusted as
-// far as the network is, see peekHTTPIdentity. A blank value is an error: as
-// an anonymous subject it would run the request as the connection. Repeated
-// blank header lines arrive joined as ", ", so commas count as blank.
+// far as the network is, see peekHTTPIdentity. A header that names nobody
+// (absent, or only whitespace and commas, which is how repeated blank lines
+// arrive) resolves to an anonymous identity, and Server.requestIdentity
+// turns that into the connection's own: the proxy in front vouched for no
+// one, so the request runs as whatever the connection is, never as the
+// caller a previous request on it named.
 func (HeaderIdentity) Resolve(_ context.Context, value string) (session.Identity, error) {
 	if strings.TrimFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) == "" {
-		return session.Identity{}, errors.New("the identity header is blank")
+		return session.Identity{}, nil
 	}
 	return session.Identity{Subject: strings.TrimSpace(value)}, nil
 }

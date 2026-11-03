@@ -9,6 +9,8 @@
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
+(def agents-flag "experimental.agents")
+
 (def icons-registry
   {"Resources" (fn [& [{:keys [size] :or {size 24}}]]
                  [:> Package {:size size}])
@@ -61,20 +63,23 @@
     :icon (get icons-registry "Resources")
     :uri (routes/url-for :resources)
     :navigate :resources
-    :admin-only? false}
+    :admin-only? false
+    :feature-flag agents-flag}
    {:name "Terminal"
     :label "Terminal"
     :icon (get icons-registry "Terminal")
     :uri (routes/url-for :editor-plugin)
     :navigate :editor-plugin
-    :admin-only? false}
+    :admin-only? false
+    :feature-flag agents-flag}
    {:name "Runbooks"
     :label "Runbooks"
     :icon (get icons-registry "Runbooks")
     :uri (routes/url-for :runbooks)
     :navigate :runbooks
     :admin-only? false
-    :license-feature "runbooks"}
+    :license-feature "runbooks"
+    :feature-flag agents-flag}
    {:name "Sessions"
     :label "Sessions"
     :icon (get icons-registry "Sessions")
@@ -87,7 +92,8 @@
     :uri (routes/url-for :provisioning)
     :navigate :provisioning
     :admin-only? true
-    :license-feature "provisioning-hub"}
+    :license-feature "provisioning-hub"
+    :feature-flag agents-flag}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")
@@ -107,7 +113,8 @@
     :uri (routes/url-for :runbooks-setup)
     :navigate :runbooks-setup
     :admin-only? true
-    :license-feature "runbooks"}
+    :license-feature "runbooks"
+    :feature-flag agents-flag}
    {:name "Guardrails"
     :label "Guardrails"
     :icon (get icons-registry "Guardrails")
@@ -143,6 +150,7 @@
     :navigate :integrations-aws-connect
     :admin-only? true
     :license-feature "resource-discovery"
+    :feature-flag agents-flag
     :badge "BETA"}
    {:name "MachineIdentities"
     :label "Machine Identities"
@@ -150,7 +158,8 @@
     :uri (routes/url-for :machine-identities)
     :navigate :machine-identities
     :admin-only? true
-    :license-feature "machine-identities"}])
+    :license-feature "machine-identities"
+    :feature-flag agents-flag}])
 
 ;; Seção Settings
 ;; Emptied by EVL-116 (Track A1) ahead of the route deletions in A2/A3 —

@@ -41,6 +41,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // DenyWriter renders a policy denial in the wire protocol's own error frame.
@@ -185,6 +186,11 @@ type Config struct {
 	// Metrics is handed to every connection's Gate. Optional. See
 	// gate.Config.Metrics for the contract it must meet.
 	Metrics gate.Metrics
+
+	// Telemetry is the lane's OpenTelemetry recorder: a span per
+	// connection, one per statement, and the upstream round trip the pumps
+	// measure. Optional; nil records nothing. See gate.Config.Telemetry.
+	Telemetry telemetry.LaneRecorder
 
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
@@ -343,6 +349,43 @@ func NewServer(cfg Config) (*Server, error) {
 		s.h2 = newH2Lane(s)
 	}
 	return s, nil
+}
+
+// writeDenyFrame writes the protocol's refusal for d to target, the client.
+// The codec goes first: a plug-in or custom codec is the only thing that
+// knows its own error frame, and the writer knows only the shipped
+// protocols by name.
+func (s *Server) writeDenyFrame(g *gate.Gate, target net.Conn, dir inspect.Direction, d gate.Decision, log *slog.Logger) {
+	frame, _ := g.DenyFrame(dir, d.Message)
+	if len(frame) == 0 && s.cfg.DenyWriter != nil {
+		if d.DeniedStatement != nil {
+			if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
+				frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
+			}
+		}
+		if len(frame) == 0 {
+			frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
+		}
+	}
+	writeBeforeClose(target, frame, "deny frame", dir, log)
+}
+
+// writeBeforeClose writes b to target on a connection about to close and
+// reports whether all of it went out. The connection closes either way; the
+// log is the only place a client left without what it was owed shows.
+func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direction, log *slog.Logger) bool {
+	if len(b) == 0 {
+		return true
+	}
+	err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err == nil {
+		_, err = target.Write(b)
+	}
+	if err != nil {
+		log.Warn(what+" not delivered", "direction", string(dir), "error", err)
+		return false
+	}
+	return true
 }
 
 func (s *Server) reserveMySQLHandshake() bool {
@@ -635,6 +678,12 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}
 	log := sessionLog()
 
+	// The session span encloses every statement of this connection, and the
+	// trace is sampled here, once per connection. It ends with the failure
+	// that ended the session, when one did. No-op without telemetry.
+	ctx, span := s.beginSession(ctx, sess)
+	defer span.end()
+
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,
 		Policy:           rules.policy,
@@ -643,6 +692,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
+		Telemetry:        s.cfg.Telemetry,
 		RequestIdentity:  requestIdentity,
 		Answer:           s.cfg.Answer,
 		Settle:           s.cfg.Settle,
@@ -669,11 +719,17 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	upstream, err := s.dialUpstream(ctx)
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
+		span.fail(err)
 		if s.cfg.Audit != nil {
-			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil && s.cfg.Metrics != nil {
+			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
 				// The one audit write that happens outside a Gate, so it
-				// reports its own failure into the same counter.
-				s.cfg.Metrics.AuditError()
+				// reports its own failure into the same counters.
+				if s.cfg.Metrics != nil {
+					s.cfg.Metrics.AuditError()
+				}
+				if s.cfg.Telemetry != nil {
+					s.cfg.Telemetry.AuditError()
+				}
 			}
 		}
 		return
@@ -767,19 +823,22 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	defer endConn(nil)
 
 	// Both directions run concurrently; the first to finish tears down the
-	// other by closing its peer, which unblocks the pending Read.
+	// other by closing its peer, which unblocks the pending Read. They
+	// share one upstream clock: the client pump stamps what it forwards,
+	// the server pump reads the stamp when the answer arrives.
+	clock := newUpstreamClock(s.cfg.Protocol, s.cfg.Telemetry)
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
 		defer upstream.Close()
-		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, log)
+		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, span, log)
 	}()
 	go func() {
 		defer wg.Done()
 		defer client.Close()
-		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, log)
+		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, span, log)
 	}()
 
 	wg.Wait()
@@ -849,6 +908,8 @@ func (s *Server) pump(
 	g *gate.Gate,
 	src, dst net.Conn,
 	dir inspect.Direction,
+	clock *upstreamClock,
+	span *sessionSpan,
 	log *slog.Logger,
 ) {
 	// A re-framing codec holds rows back until its result set ends. Release
@@ -862,7 +923,16 @@ func (s *Server) pump(
 				g.DiscardResponse()
 				return
 			}
-			if tail := g.FlushResponse(); len(tail) > 0 {
+			tail, err := g.FlushResponseChecked()
+			if err != nil {
+				// A close-delimited body too large to mask ends only here,
+				// and its head is still held: answer as for any refusal.
+				s.denied.Add(1)
+				log.Info("statement denied", "direction", string(dir), "rule", "stream-unsafe", "message", err.Error())
+				s.writeDenyFrame(g, dst, dir, gate.Decision{Rule: "stream-unsafe", Message: err.Error()}, log)
+				return
+			}
+			if len(tail) > 0 {
 				_, _ = dst.Write(tail)
 			}
 		}()
@@ -923,6 +993,10 @@ func (s *Server) pump(
 				d = g.Request(ctx, chunk)
 			} else {
 				d = g.Response(ctx, chunk)
+				// The answer is in: stamped before the forward below so the
+				// measurement ends when the sidecar saw the response, not
+				// when the client read it.
+				clock.answered(ctx, finalAnswers(d.Statements))
 			}
 
 			if d.Err != nil {
@@ -953,39 +1027,37 @@ func (s *Server) pump(
 				// denial came from: on a response denial the offending bytes
 				// travel toward the client, so the client needs to know why
 				// the connection ended.
-				// The codec goes first: a plug-in or custom codec is the
-				// only thing that knows its own error frame, and the
-				// writer below knows only the shipped protocols by name.
 				target := dst
 				if dir == inspect.FromClient {
 					target = src // the client is the source of a request
 				}
-				frame, _ := g.DenyFrame(dir, d.Message)
-				if len(frame) == 0 && s.cfg.DenyWriter != nil {
-					if d.DeniedStatement != nil {
-						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
-							frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
-						}
-					}
-					if len(frame) == 0 {
-						frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
-					}
+				if d.NoFrame {
+					// The response already reached the client in part. Send
+					// what the codec masked before it refused and cut the
+					// response: a deny frame now would sit inside it.
+					writeBeforeClose(target, d.Payload, "masked part of a refused response", dir, log)
+					return
 				}
-				if len(frame) > 0 {
-					// The connection closes either way; the log is the
-					// only place a client left without its reason shows.
-					err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-					if err == nil {
-						_, err = target.Write(frame)
-					}
-					if err != nil {
-						log.Warn("deny frame not delivered", "direction", string(dir), "error", err)
-					}
+				// Responses the codec finished before the refused one go
+				// first, or the client reads the deny frame as their answer.
+				// After a write that may have stopped inside one of them, a
+				// deny frame would garble it: close instead.
+				if writeBeforeClose(target, d.Preceding, "responses before a refused one", dir, log) {
+					s.writeDenyFrame(g, target, dir, d, log)
 				}
 				return
 			}
 
 			if len(d.Payload) > 0 {
+				if dir == inspect.FromClient {
+					// Stamped BEFORE the write, not after: a fast upstream
+					// can answer, and the server pump record the answer,
+					// before Write returns to this goroutine. A stamp that
+					// came second would miss its answer and pair with the
+					// next one. A failed write ends the connection, so its
+					// stamp never meets an answer.
+					clock.sent(len(d.Statements))
+				}
 				if _, err := dst.Write(d.Payload); err != nil {
 					if !isClosed(err) {
 						log.Debug("forward failed", "direction", string(dir), "error", err)
@@ -999,6 +1071,7 @@ func (s *Server) pump(
 			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)
+				span.fail(endCause(dir, readErr))
 			}
 			return
 		}

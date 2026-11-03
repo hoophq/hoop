@@ -15,6 +15,11 @@ const InstallSourceEnvVar = "HOOP_SIDECAR_INSTALL_SOURCE"
 const (
 	InstallSourceManagedAgentsHTTP       = "managed-agents-http"       // deploy/managed-agents/http
 	InstallSourceManagedAgentsKubernetes = "managed-agents-kubernetes" // deploy/managed-agents/kubernetes
+	InstallSourceOpenAIAgentsHTTP        = "openai-agents-http"        // deploy/openai-agents/http
+	InstallSourceOpenAIAgentsKubernetes  = "openai-agents-kubernetes"  // deploy/openai-agents/kubernetes
+	InstallSourceAgentCoreHTTP           = "agentcore-http"            // deploy/agentcore/http
+	InstallSourceAgentCoreKubernetes     = "agentcore-kubernetes"      // deploy/agentcore/kubernetes
+	InstallSourceAgentCorePostgres       = "agentcore-postgres"        // deploy/agentcore/postgres
 	InstallSourceOther                   = "other"                     // set, but not a value this build knows
 )
 
@@ -27,7 +32,9 @@ func InstallSource() string {
 	switch v {
 	case "":
 		return ""
-	case InstallSourceManagedAgentsHTTP, InstallSourceManagedAgentsKubernetes:
+	case InstallSourceManagedAgentsHTTP, InstallSourceManagedAgentsKubernetes,
+		InstallSourceOpenAIAgentsHTTP, InstallSourceOpenAIAgentsKubernetes,
+		InstallSourceAgentCoreHTTP, InstallSourceAgentCoreKubernetes, InstallSourceAgentCorePostgres:
 		return v
 	}
 	return InstallSourceOther

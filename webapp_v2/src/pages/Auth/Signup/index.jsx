@@ -14,7 +14,7 @@ import {
 } from '@mantine/core'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
-import { postAuthPath } from '@/modes'
+import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -72,7 +72,7 @@ function Signup() {
 
     try {
       await authService.signup(orgName, userName || undefined)
-      navigate(await postAuthPath())
+      goAfterAuth(navigate, POST_LOGIN_PATH)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to set up organization. Please try again.')
     } finally {

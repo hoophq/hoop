@@ -21,7 +21,7 @@ const bugStickyAdmin = "ENG-742"
 // and no IdP account. The subtests are the scenarios; they share one stack
 // and run in order.
 func TestOIDCLogin(t *testing.T) {
-	s := newStack(t)
+	s := newStack(t, stackOpts{})
 	seedOIDC(t, map[string]any{"users": []map[string]any{
 		{"sub": "bob-sub", "email": "bob@example.com", "name": "Bob", "groups": []string{"admin", "sre"}},
 		{"sub": "carol-sub", "email": "carol@example.com", "name": "Carol", "groups": []string{"sre"}},

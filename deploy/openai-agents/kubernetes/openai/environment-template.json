@@ -1,0 +1,19 @@
+{
+  "name": "hoop kubernetes",
+  "network": {
+    "access": "restricted",
+    "allowed_domains": ["sidecar.example.com"]
+  },
+  "files": [
+    {
+      "type": "file_id",
+      "path": "/workspace/.hoop/kubernetes-client-linux-amd64.tar.gz",
+      "file_id": "setup.sh uploads the tarball and sets this"
+    },
+    {
+      "type": "inline",
+      "path": "/workspace/.hoop/kubeconfig.sh",
+      "data": "setup.sh sets this to kubeconfig.sh in base64"
+    }
+  ]
+}

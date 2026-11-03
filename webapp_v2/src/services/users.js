@@ -2,7 +2,9 @@ import api from './api'
 
 export const usersService = {
   // Every user as a plain array. Pickers that filter client-side use it.
-  list: () => api.get('/users'),
+  // Optional `{ email, status }` filters; empty filters are not sent.
+  list: ({ email, status } = {}) =>
+    api.get('/users', { params: { email: email || undefined, status: status || undefined } }),
   // One page as `{ pages: { total, page, size }, data }`. Empty filters are not sent.
   listPaginated: ({ page, pageSize, email, status }) =>
     api.get('/users', {

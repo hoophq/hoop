@@ -2,12 +2,18 @@ package oidc_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/twins/kit"
+	"github.com/hoophq/hoop/twins/oidc"
 )
 
 const alice = `{"users":[{"sub":"alice-sub","email":"Alice@Example.com","name":"Alice","groups":["admin","sre"]}]}`
@@ -243,6 +249,196 @@ func TestStateAndReset(t *testing.T) {
 	}
 	if code, _ := s.authorize(t, authorizeParams("alice@example.com")); code != http.StatusBadRequest {
 		t.Fatalf("reset must clear the users, authorize got %d", code)
+	}
+}
+
+// With no login_hint, authorize serves a page of the seeded users. Each
+// button sends the same request with login_hint, which approves.
+func TestLoginPage(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, alice)
+	s.seed(t, `{"users":[{"sub":"bob-sub","email":"bob@example.com","name":"Bob","groups":["dba"]}]}`)
+
+	p := authorizeParams("")
+	p.Del("login_hint")
+	p.Set("nonce", "n-1")
+	status, ctype, page := s.get(t, "/authorize?"+p.Encode())
+	if status != http.StatusOK || !strings.HasPrefix(ctype, "text/html") {
+		t.Fatalf("authorize with no login_hint: %d %s, want the login page", status, ctype)
+	}
+	for _, want := range []string{
+		`<form method="get" action="` + s.issuer + `/authorize">`,
+		`<input type="hidden" name="client_id" value="hoop">`,
+		`<input type="hidden" name="nonce" value="n-1">`,
+		`<input type="hidden" name="redirect_uri" value="` + callbackURL + `">`,
+		`<input type="hidden" name="state" value="st-1">`,
+		`name="login_hint" value="Alice@Example.com"`,
+		`<span class="chip">admin</span><span class="chip">sre</span>`,
+		`name="login_hint" value="bob@example.com"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the login page lacks %s", want)
+		}
+	}
+	if strings.Index(page, "Alice@Example.com") > strings.Index(page, "bob@example.com") {
+		t.Error("the login page must list the users by email")
+	}
+	if strings.Contains(page, `<input type="hidden" name="login_hint"`) {
+		t.Error("the page must not carry a login_hint of its own")
+	}
+
+	// The button: the same query plus login_hint.
+	p.Set("login_hint", "bob@example.com")
+	code, loc := s.authorize(t, p)
+	if code != http.StatusFound || loc.Query().Get("code") == "" || loc.Query().Get("state") != "st-1" {
+		t.Fatalf("pick bob: got %d %v", code, loc)
+	}
+
+	// The page comes after the client and redirect checks.
+	p.Del("login_hint")
+	p.Set("client_id", "other")
+	if code, _ := s.authorize(t, p); code != http.StatusBadRequest {
+		t.Fatalf("unknown client with no login_hint: got %d, want 400", code)
+	}
+}
+
+// The avatar holds the first letter of the name, or of the email when the
+// user has no name.
+func TestLoginPageInitials(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, `{"users":[{"sub":"e","email":"elodie@example.com","name":"élodie"},{"sub":"z","email":"zed@example.com"}]}`)
+	p := authorizeParams("")
+	p.Del("login_hint")
+	_, _, page := s.get(t, "/authorize?"+p.Encode())
+	for _, want := range []string{`<span class="avatar">É</span>`, `<span class="avatar">Z</span>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the login page lacks %s", want)
+		}
+	}
+}
+
+func TestLoginPageWithNoUsers(t *testing.T) {
+	s := startTwin(t)
+	p := authorizeParams("")
+	p.Del("login_hint")
+	if status, _, page := s.get(t, "/authorize?"+p.Encode()); status != http.StatusOK || !strings.Contains(page, "No users seeded") {
+		t.Fatalf("an empty twin: %d %s", status, page)
+	}
+}
+
+// A browser reaches authorize at the browser URL, and the login page sends
+// its form there; the gateway reaches the rest at the issuer.
+func TestDiscoveryBrowserURL(t *testing.T) {
+	for name, tc := range map[string]struct{ browserURL, want string }{
+		"default: the issuer":          {"", "https://oidc-twin/authorize"},
+		"a browser URL":                {"http://127.0.0.1:18081/", "http://127.0.0.1:18081/authorize"},
+		"a browser URL behind a proxy": {"http://127.0.0.1:18081/twins/oidc", "http://127.0.0.1:18081/twins/oidc/authorize"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			twin, err := oidc.New("https://oidc-twin", tc.browserURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := httptest.NewServer(kit.Handler(twin))
+			defer srv.Close()
+			var doc map[string]any
+			if code := getJSON(t, srv.Client(), srv.URL+"/.well-known/openid-configuration", "", &doc); code != http.StatusOK {
+				t.Fatalf("discovery: %d", code)
+			}
+			if doc["authorization_endpoint"] != tc.want {
+				t.Errorf("authorization_endpoint %v, want %s", doc["authorization_endpoint"], tc.want)
+			}
+			p := authorizeParams("")
+			p.Del("login_hint")
+			resp, err := srv.Client().Get(srv.URL + "/authorize?" + p.Encode())
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := `<form method="get" action="` + tc.want + `">`; !strings.Contains(string(page), want) {
+				t.Errorf("the login page lacks %s", want)
+			}
+			for _, k := range []string{"token_endpoint", "userinfo_endpoint", "jwks_uri"} {
+				if u, _ := doc[k].(string); !strings.HasPrefix(u, "https://oidc-twin/") {
+					t.Errorf("%s %q: want it on the issuer", k, u)
+				}
+			}
+		})
+	}
+	// authorize goes at the end of the path: a query or a fragment would
+	// hide it from the request.
+	for _, bad := range []string{"127.0.0.1:18081", "http://127.0.0.1:18081?mode=test",
+		"http://127.0.0.1:18081/?", "http://127.0.0.1:18081/#top", "http://127.0.0.1:18081/twins#"} {
+		if _, err := oidc.New("https://oidc-twin", bad); err == nil {
+			t.Errorf("browser URL %q must be refused", bad)
+		}
+	}
+}
+
+// The login page and the state page read what /_twin/seed writes. Run with
+// -race: a read outside the twin's lock is a data race.
+func TestPagesWhileSeeding(t *testing.T) {
+	s := startTwin(t)
+	p := authorizeParams("")
+	p.Del("login_hint")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 100 {
+			body := fmt.Sprintf(`{"client_id":"hoop","client_secret":"hoop-secret","users":[{"sub":"u%d","email":"u%d@example.com","name":"U%d"}]}`, i, i, i)
+			resp, err := s.client.Post(s.issuer+"/_twin/seed", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Errorf("seed: %v", err)
+				return
+			}
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("seed: close the answer: %v", err)
+				return
+			}
+			if resp.StatusCode != http.StatusNoContent {
+				t.Errorf("seed %d: status %d", i, resp.StatusCode)
+				return
+			}
+		}
+	}()
+	for range 30 {
+		for _, path := range []string{"/authorize?" + p.Encode(), "/_twin/ui"} {
+			if status, _, _ := s.get(t, path); status != http.StatusOK {
+				t.Fatalf("GET %s while seeding: %d", path, status)
+			}
+		}
+	}
+	<-done
+}
+
+// The OIDC page of /_twin/ui shows the users with their groups, the codes
+// and the tokens.
+func TestStatePage(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, alice)
+	s.login(t, "alice@example.com")
+	status, _, page := s.get(t, "/_twin/ui")
+	if status != http.StatusOK {
+		t.Fatalf("/_twin/ui: %d", status)
+	}
+	for _, want := range []string{
+		`<section data-section="users"><h2>Users <span class="count">1</span></h2>`,
+		`<td>Alice@Example.com</td><td>Alice</td><td><span class="chip">admin</span><span class="chip">sre</span></td>`,
+		`<section data-section="codes"><h2>Codes <span class="count">1</span></h2>`,
+		`<section data-section="tokens"><h2>Tokens <span class="count">3</span></h2>`,
+		`<td>access_token</td><td>alice-sub</td><td>authorization_code</td>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the state page lacks %s", want)
+		}
+	}
+	users, codes, tokens := strings.Index(page, `data-section="users"`), strings.Index(page, `data-section="codes"`), strings.Index(page, `data-section="tokens"`)
+	if users > codes || codes > tokens {
+		t.Error("the state page must show users, then codes, then tokens")
 	}
 }
 

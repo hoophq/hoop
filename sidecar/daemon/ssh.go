@@ -155,6 +155,7 @@ func buildSSHServer(
 			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
+			Telemetry:        ln.telemetry,
 		})
 		if err != nil {
 			// No handler, so libhoop calls no Close: release here.

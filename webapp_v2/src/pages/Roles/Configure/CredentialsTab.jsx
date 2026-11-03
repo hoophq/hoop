@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Stack, Title, Text, Anchor } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, TriangleAlert, ExternalLink } from 'lucide-react'
+import { FileText, Cloud, ShieldCheck, TriangleAlert, ExternalLink, Fingerprint } from 'lucide-react'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import SelectionCard from '@/components/SelectionCard'
@@ -8,6 +8,7 @@ import Select from '@/components/Select'
 import {
   CONNECTION_METHODS,
   supportsAwsIam,
+  supportsIamFederation,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionInfo } from '@/pages/Roles/Configure/utils/connectionMethod'
@@ -15,6 +16,7 @@ import { SOURCES, SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCod
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import { pickRendererRule } from '@/pages/Roles/Configure/sections/credentials'
 import { formatTimestamp } from '@/pages/Roles/Configure/components/SecretField/util'
+import FederationSection from '@/pages/Roles/Configure/sections/FederationSection'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -44,12 +46,21 @@ const METHOD_DEFINITIONS = [
       'Use an IAM Role that can be assumed to authenticate and access AWS resources.',
     icon: ShieldCheck,
   },
+  {
+    id: CONNECTION_METHODS.IAM_FEDERATION,
+    title: 'IAM Federation',
+    description:
+      'Impersonate users at session time via GCP IAM — no static credentials stored per user.',
+    icon: Fingerprint,
+  },
 ]
 
-function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) {
-  const visibleMethods = METHOD_DEFINITIONS.filter(
-    (m) => m.id !== CONNECTION_METHODS.AWS_IAM || awsIamAvailable,
-  )
+function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable, federationAvailable }) {
+  const visibleMethods = METHOD_DEFINITIONS.filter((m) => {
+    if (m.id === CONNECTION_METHODS.AWS_IAM) return awsIamAvailable
+    if (m.id === CONNECTION_METHODS.IAM_FEDERATION) return federationAvailable
+    return true
+  })
   return (
     <Stack gap="md">
       <Title order={4}>Connection method</Title>
@@ -163,10 +174,24 @@ function SecretsManagerProviderSection({ provider, onProviderChange }) {
 }
 
 export default function CredentialsTab({ connection }) {
+  const federationStatus = useConfigureRoleStore((s) => s.federation.status)
+  const federationAvailable = supportsIamFederation(connection.subtype)
+  if (federationAvailable && (federationStatus === 'idle' || federationStatus === 'loading')) {
+    return <PageLoader h={200} />
+  }
+  return <CredentialsEditor connection={connection} federationAvailable={federationAvailable} />
+}
+
+function CredentialsEditor({ connection, federationAvailable }) {
   // Derive method + provider from existing values so the top-level
   // controls reflect what's actually stored, not a hardcoded default.
   const derived = deriveConnectionInfo(connection.secret)
-  const [selectedMethod, setSelectedMethodState] = useState(derived.method)
+  const federationConfigured = useConfigureRoleStore((s) => Boolean(s.federation.config))
+  const federationError = useConfigureRoleStore((s) => s.federation.error)
+  const selectFederation = useConfigureRoleStore((s) => s.selectFederation)
+  const [selectedMethod, setSelectedMethodState] = useState(
+    () => deriveConnectionInfo(connection.secret, { federated: federationConfigured }).method,
+  )
   const [secretsProvider, setSecretsProviderState] = useState(
     derived.provider || SOURCES.AWS_SECRETS_MANAGER,
   )
@@ -187,6 +212,7 @@ export default function CredentialsTab({ connection }) {
     connection.type === 'application' && draftSubtype === 'ssh-local'
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
+  const isFederation = selectedMethod === CONNECTION_METHODS.IAM_FEDERATION
   const isDerivedMethod = selectedMethod === derived.method
 
   // Method switch wipes existing fields and stages deletes for any
@@ -194,6 +220,7 @@ export default function CredentialsTab({ connection }) {
   const setSelectedMethod = (next) => {
     if (next === selectedMethod) return
     switchConnectionMethod(next)
+    selectFederation(next === CONNECTION_METHODS.IAM_FEDERATION)
     setSelectedMethodState(next)
   }
 
@@ -217,11 +244,18 @@ export default function CredentialsTab({ connection }) {
 
   return (
     <Stack gap="xl" maw={720}>
+      {federationError && (
+        <CredentialsError
+          title="Could not load the IAM federation of this role."
+          message={federationError}
+        />
+      )}
       {!isLocalSsh && (
         <ConnectionMethodSection
           selectedMethod={selectedMethod}
           onSelect={setSelectedMethod}
           awsIamAvailable={awsIamAvailable}
+          federationAvailable={federationAvailable}
         />
       )}
       {!isLocalSsh && isSecretsManager && (
@@ -230,13 +264,17 @@ export default function CredentialsTab({ connection }) {
           onProviderChange={setSecretsProvider}
         />
       )}
-      <CredentialsBody
-        connection={connection}
-        availableSources={availableSources}
-        forceNewState={forceNewState}
-        connectionMethod={selectedMethod}
-        hideRoleInfo={hideRoleInfo}
-      />
+      {isFederation ? (
+        <FederationSection />
+      ) : (
+        <CredentialsBody
+          connection={connection}
+          availableSources={availableSources}
+          forceNewState={forceNewState}
+          connectionMethod={selectedMethod}
+          hideRoleInfo={hideRoleInfo}
+        />
+      )}
     </Stack>
   )
 }

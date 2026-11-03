@@ -127,9 +127,14 @@ jobs:
           # Create the release with GitHub's auto-generated changelog (the PRs
           # merged since $PREVIOUS). The tag push (made with the PAT) triggers
           # release.yml, which builds and uploads every artifact linked below.
+          # It starts as a prerelease: consumers of the latest stable release
+          # (the infra sandbox canary) must not see it before its charts exist.
+          # release.yml's publish-release marks it stable once they do. The
+          # version lookup above still counts it, so the next run bumps past it.
           gh release create "$NEXT" \
             --title "$NEXT" \
             --target "$SHA" \
+            --prerelease \
             --generate-notes \
             --notes-start-tag "$PREVIOUS"
 

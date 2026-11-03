@@ -2,10 +2,12 @@ import { AppShell, Burger, Drawer } from '@mantine/core';
 import { useEffect } from 'react';
 import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar/GatewaySidebar';
+import { usePendingApprovalsCount } from './Sidebar/usePendingApprovalsCount';
 import AppHeader from './Header/GatewayHeader';
 import LicenseBanner from './LicenseBanner';
 import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
+import ApprovalNotifications from '@/features/ApprovalNotifications';
 
 const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
@@ -45,6 +47,8 @@ const MOBILE_DRAWER_STYLES = {
 
 function GatewayLayout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
+  // Read once here: the desktop navbar and the mobile drawer each mount a sidebar.
+  const pendingApprovals = usePendingApprovalsCount();
 
   // Close mobile drawer when resizing to desktop
   useEffect(() => {
@@ -88,7 +92,7 @@ function GatewayLayout({ children }) {
 
         {/* Desktop sidebar — always visible above breakpoint */}
         <AppShell.Navbar>
-          <Sidebar />
+          <Sidebar pendingApprovals={pendingApprovals} />
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content" tabIndex={-1}>
@@ -108,12 +112,13 @@ function GatewayLayout({ children }) {
         styles={MOBILE_DRAWER_STYLES}
         transitionProps={{ duration: 250, timingFunction: 'ease' }}
       >
-        <Sidebar />
+        <Sidebar pendingApprovals={pendingApprovals} />
       </Drawer>
 
       {/* Mounted here, outside AppShell, so it is available on React routes and
           on the ClojureApp catch-all alike. */}
       <NativeConnectionsDrawer />
+      <ApprovalNotifications />
     </>
   );
 }

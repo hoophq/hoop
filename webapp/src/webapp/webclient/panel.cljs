@@ -38,15 +38,10 @@
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.log-area.main :as log-area]
+   [webapp.shell :as shell]
    [webapp.webclient.quickstart :as quickstart]
    [webapp.features.ai-session-analyzer.views.ai-analyzer-card :refer [ai-analyzer-card]]
    [webapp.features.ai-session-analyzer.views.ai-block-card :refer [ai-block-card]]))
-
-(defn- react-shell?
-  "True when the React shell hosts this page. Under the shell, AppShell.Main
-   already provides the #main-content landmark."
-  []
-  (boolean (.getItem js/localStorage "react-shell")))
 
 (defn discover-connection-type [connection]
   (cond
@@ -381,7 +376,7 @@
            ;; AppShell.Main, with a duplicate id — invalid, and it makes the
            ;; sidebar's "Skip to main content" resolve to the outer element.
            ;; Standalone CLJS keeps the landmark, since nothing else provides one.
-           [:> Box (cond-> {:as (if (react-shell?) "section" "main")
+           [:> Box (cond-> {:as (if (shell/react-shell?) "section" "main")
                             :tabIndex "-1"
                             ;; Flex column: the toolbar keeps its natural height
                             ;; and the splitter takes whatever is left. No
@@ -390,7 +385,7 @@
                                         (when @dark-mode?
                                           "dark"))
                             :aria-label "Terminal"}
-                     (not (react-shell?)) (assoc :id "main-content"))
+                     (not (shell/react-shell?)) (assoc :id "main-content"))
             [connection-dialog/connection-dialog]
             [parallel-mode-modal/parallel-mode-modal]
             [execution-summary/execution-summary-modal]

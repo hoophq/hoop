@@ -11,6 +11,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // DefaultTimeout bounds one classification. It is deliberately short: the
@@ -72,8 +73,10 @@ func (i TriggerItem) isZero() bool {
 	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
 }
 
-func (i TriggerItem) matches(stmt inspect.Statement) bool {
-	return (len(i.Operations) == 0 || matchOperation(i.Operations, stmt)) &&
+// matches reports whether stmt meets every field of the item; op is
+// selectOperation on an Any item and matchOperation on an Exclude item.
+func (i TriggerItem) matches(stmt inspect.Statement, op func([]inspect.Operation, inspect.Statement) bool) bool {
+	return (len(i.Operations) == 0 || op(i.Operations, stmt)) &&
 		(len(i.Tables) == 0 || matchTable(i.Tables, stmt)) &&
 		(len(i.Resources) == 0 || matchResource(i.Resources, stmt))
 }
@@ -104,24 +107,40 @@ func (t Trigger) validate() error {
 // matches reports whether stmt should be classified.
 func (t Trigger) matches(stmt inspect.Statement) bool {
 	for _, item := range t.Exclude {
-		if item.matches(stmt) {
+		if item.matches(stmt, matchOperation) {
 			return false
 		}
 	}
-	if t.All || matchOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
+	if t.All || selectOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
 		matchResource(t.Resources, stmt) {
 		return true
 	}
 	for _, item := range t.Any {
-		if item.matches(stmt) {
+		if item.matches(stmt, selectOperation) {
 			return true
 		}
 	}
 	return false
 }
 
+// matchOperation matches the statement's own operation.
 func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
 	return slices.Contains(ops, stmt.Operation)
+}
+
+// selectOperation is matchOperation for selecting. SQL an http lane read out
+// of a request body also matches the method of the request that carried it
+// (the key is a literal: analyzer does not import codec/http). That request
+// is not sent to the model, so without this a trigger naming its method
+// would classify nothing on the route. An Exclude item reads the SQL's own
+// operation only: excluding post skips the requests, as it did, and not the
+// SQL they carry.
+func selectOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
+	if matchOperation(ops, stmt) {
+		return true
+	}
+	m := stmt.Metadata["http.sql_method"]
+	return m != "" && slices.Contains(ops, inspect.Operation(m))
 }
 
 func matchTable(tables []string, stmt inspect.Statement) bool {
@@ -135,16 +154,28 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 	return false
 }
 
-// matchResource matches an HTTP target. A statement with no HTTP detail
-// never matches, so an item pairing resources with operations stays on the
-// http lane.
+// matchResource matches an HTTP target: an HTTP statement's resource, or
+// the route of the request that carried SQL an http lane read out of its
+// body. Any other statement never matches, so an item pairing resources
+// with operations stays on the http lane.
 func matchResource(patterns []string, stmt inspect.Statement) bool {
-	if stmt.HTTP == nil {
-		return false
+	var target string
+	switch {
+	case stmt.HTTP != nil:
+		target = stmt.HTTP.Resource
+		if target == "" {
+			target = stmt.HTTP.Path
+		}
+	default:
+		// SQL an http lane read out of a request body has no HTTP detail;
+		// it names the route of the request that carried it (the key is a
+		// literal: analyzer does not import codec/http). That request is not
+		// sent to the model, so without this a resource trigger on the route
+		// would classify nothing there.
+		target = stmt.Metadata["http.sql_resource"]
 	}
-	target := stmt.HTTP.Resource
 	if target == "" {
-		target = stmt.HTTP.Path
+		return false
 	}
 	for _, pattern := range patterns {
 		if policy.MatchResource(pattern, target) {
@@ -427,6 +458,13 @@ func (e *Evaluator) Evaluate(stmt inspect.Statement) policy.Verdict {
 	return e.EvaluateWith(stmt, nil)
 }
 
+// TelemetryStage implements policy.Staged: the model-backed evaluator is
+// its own stage in a statement's latency, apart from the local rules and
+// OPA it sits between.
+func (e *Evaluator) TelemetryStage() (telemetry.Stage, string) {
+	return telemetry.StageAnalyzer, ""
+}
+
 // EvaluateWith implements policy.ContextualEvaluator.
 //
 // It reads one thing from the context and writes one. A gate-phase policy
@@ -438,7 +476,16 @@ func (e *Evaluator) Evaluate(stmt inspect.Statement) policy.Verdict {
 // Chain carries to whatever decides next. That hop is the entire connection
 // between the model and OPA: neither has any idea the other exists.
 func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext) policy.Verdict {
-	res, status, err := e.classify(context.Background(), stmt, ec)
+	// The provider call runs under ConnCtx's VALUES and not its
+	// cancellation: the stage span rides to the model endpoint as a
+	// traceparent, while the deadline stays the configured timeout, as
+	// the comment on Evaluate says. The hold, which does read ConnCtx's
+	// cancellation, takes it from ec itself.
+	ctx := context.Background()
+	if ec != nil && ec.ConnCtx != nil {
+		ctx = context.WithoutCancel(ec.ConnCtx)
+	}
+	res, status, err := e.classify(ctx, stmt, ec)
 	if status == "" {
 		// Not eligible: a response frame, a protocol with no builder.
 		// Reporting would put a finding on rows where no analyzer could

@@ -1,6 +1,7 @@
 package apiroutes
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -117,4 +118,31 @@ func SidecarFromContext(c *gin.Context) *models.Sidecar {
 	}
 	sidecar, _ := obj.(*models.Sidecar)
 	return sidecar
+}
+
+// SidecarSeatOnly replaces EnterpriseLicenseOnly on the routes a sidecar
+// calls. A free organization runs one sidecar under the free rule caps; a
+// sidecar past its seats is refused here, so it stops at its next handshake
+// instead of serving rules nobody pays for. Runs after SidecarAuthMiddleware.
+func SidecarSeatOnly(c *gin.Context) {
+	sidecar := SidecarFromContext(c)
+	if sidecar == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
+		return
+	}
+	ctx := storagev2.ParseContext(c)
+	var data json.RawMessage
+	if ctx.OrgLicenseData != nil {
+		data = *ctx.OrgLicenseData
+	}
+	err := services.CheckSidecarSeat(models.DB, sidecar.OrgID, sidecar.ID, data)
+	switch {
+	case err == nil:
+		c.Next()
+	case errors.Is(err, services.ErrSidecarSeatLimit):
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": err.Error()})
+	default:
+		log.Errorf("failed checking the sidecar seat, err=%v", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+	}
 }

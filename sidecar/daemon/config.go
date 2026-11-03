@@ -21,6 +21,10 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
+	// Aliased: this package's own `telemetry` type is the usage analytics
+	// holder (analytics.go), and a file-scope import may not repeat a
+	// package-scope name.
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Config is the on-disk configuration.
@@ -126,6 +130,13 @@ type Config struct {
 	// a module is loaded once at startup, and a change to it restarts.
 	Plugins []CodecPluginConfig `json:"plugins,omitempty" cap:"plugins"`
 
+	// Telemetry pushes metrics, traces and audit events over OTLP to a
+	// collector. Absent means off: no SDK is built and every data-path
+	// hook stays nil. The exporter lives in the nested
+	// sidecar/telemetry/otlp module; checkTelemetry refuses the block in a
+	// build that did not link it. See telemetry.Config.
+	Telemetry *telem.Config `json:"telemetry,omitempty" cap:"telemetry"`
+
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
 
@@ -185,6 +196,12 @@ type Config struct {
 	// The zero value is missing, so an embedder who skips it keeps the caps.
 	lic license.Status
 
+	// licPinned is the license flag or HOOP_LICENSE reference lic resolved
+	// from, empty when neither held one. Both outrank the config key and
+	// cannot change while the process runs; the file a path names can, and
+	// the reloader watches it. Setup fills it.
+	licPinned license.Ref
+
 	// cp is the resolved control plane connection, when one is configured.
 	// resolveConfigSource fills it; Run starts the heartbeat from it. Not a
 	// config key: the file names a URL and does not carry a token or a
@@ -222,6 +239,48 @@ type Config struct {
 	codecPluginInfo []CodecPluginInfo
 }
 
+// piiNER reports whether the pii section sets a ner block, and the backend
+// it names. It reads those two keys and nothing else of the shape, which
+// stays the detector plugin's.
+func (c Config) piiNER() (set bool, backend string) {
+	if len(c.PII) == 0 {
+		return false, ""
+	}
+	var s struct {
+		NER *struct {
+			Backend string `json:"backend"`
+		} `json:"ner"`
+	}
+	if json.Unmarshal(c.PII, &s) != nil || s.NER == nil {
+		return false, ""
+	}
+	return true, strings.ToLower(strings.TrimSpace(s.NER.Backend))
+}
+
+// usesPIINER reports whether the pii section sets a ner block.
+func (c Config) usesPIINER() bool {
+	set, _ := c.piiNER()
+	return set
+}
+
+// checkOneORTSession refuses pii.ner beside an ica lane when both would
+// open ONNX Runtime: hugot allows one ORT session per process
+// (hugot_ort.go NewORTSession), so the second load fails at startup with
+// a message that names neither block. Either side on the go backend is
+// fine. The default of each side is ort in the build that links the ica
+// engine, so the check wants an explicit go on one of them.
+func (c *Config) checkOneORTSession() []string {
+	set, backend := c.piiNER()
+	if !set || backend == "go" || !slices.ContainsFunc(c.Listeners, isICA) {
+		return nil
+	}
+	if c.ICA != nil && c.ICA.Options != nil && c.ICA.Options.NERBackend != nil && *c.ICA.Options.NERBackend == "go" {
+		return nil
+	}
+	return []string{"pii.ner and an ica listener would both open ONNX Runtime, and this process can hold one session; " +
+		"run the ica lanes in their own sidecar, or set pii.ner.backend: go, or set ica.options.ner_backend: go"}
+}
+
 // Licensing reports the license this config runs under. The zero value is a
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }
@@ -240,6 +299,13 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		return s.Err
 	}
 	c.lic = s
+	// The reference a running process watches follows the license in
+	// force: a path is re-read when its file is replaced, a document is
+	// not, and a flag or HOOP_LICENSE path Setup pinned no longer applies.
+	c.licPinned = license.Ref{}
+	if licenseIsPath(ref.Value) {
+		c.licPinned = ref
+	}
 	return nil
 }
 
@@ -717,8 +783,7 @@ type AuditConfig struct {
 	// QuerySessions enables the queryable in-memory store behind the admin
 	// query API (/api/sessions, /api/events, /api/stats), the endpoints a UI
 	// renders. The value bounds how many sessions are retained; when full the
-	// oldest session and its whole timeline are evicted, and the API reports
-	// the drop count so a reader can tell the window is partial.
+	// oldest session and its whole timeline are evicted.
 	//
 	// In-memory by design. A durable, queryable backend lives in the nested
 	// module github.com/hoophq/hoop/sidecar/store/sqlite, which this binary
@@ -730,6 +795,16 @@ type AuditConfig struct {
 	// Zero disables the query API; the JSONL file remains the record of truth
 	// either way.
 	QuerySessions int `json:"query_sessions,omitempty"`
+
+	// QueryMaxBytes bounds the memory the query store's events hold, by
+	// estimate. Past it the oldest events are dropped from whichever session
+	// holds them, and that session reports events_dropped. A session count
+	// alone never bounds a connection pool or an agent that keeps a few
+	// sessions open for days. Zero uses 64 MiB. Size a container for about
+	// 2.5x this: allocator fragmentation and the runtime come on top. The
+	// session records are outside it and bounded by QuerySessions: each keeps
+	// its counters and at most one Postgres StartupMessage of metadata (10 kB).
+	QueryMaxBytes int64 `json:"query_max_bytes,omitempty" cap:"audit_query_max_bytes"`
 
 	// FailOpen allows a statement whose audit record could not be written.
 	//
@@ -1249,6 +1324,7 @@ func (c *Config) validate(onHost bool) error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true, onHost)...)
+	problems = append(problems, c.checkOneORTSession()...)
 
 	// Loaded, not merely checked for a path: a bundle with no certificate in
 	// it must fail here, where -validate reports it, and not at the first
@@ -1266,8 +1342,13 @@ func (c *Config) validate(onHost bool) error {
 
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
+	problems = append(problems, c.Telemetry.Validate()...)
+	if c.Audit.QueryMaxBytes < 0 {
+		problems = append(problems, fmt.Sprintf("audit.query_max_bytes: %d is negative; omit it for the 64 MiB default", c.Audit.QueryMaxBytes))
+	}
 
 	problems = append(problems, c.validatePlugins()...)
+	problems = append(problems, c.validateICASlotBinds()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
@@ -1496,6 +1577,16 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+		// The gate queues and spends an approval on an HTTP request
+		// statement only. An approval the analyzer asked for on SQL read
+		// out of a body would never be spent, so one approval would
+		// release that SQL again and again. Refuse the pair until the gate
+		// settles those statements too.
+		if lc.HTTP.SQL != nil && analyzerHolds(lc.Analyzer) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: http.sql cannot be combined with an analyzer that holds for approval yet: "+
+					"an approval on SQL read from a request body would never be spent", name))
+		}
 	}
 
 	if lc.ClickHouse != nil {
@@ -2025,6 +2116,10 @@ type analyzerDeps struct {
 	// generation of every evaluator, so a reload does not reset a counter.
 	// Nil in tests that build deps by hand, which then count nothing.
 	metrics *analyzerMetrics
+
+	// otel mirrors the analyzer's observers onto the telemetry exporter,
+	// beside metrics. Nil without a telemetry block.
+	otel *otelExporter
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

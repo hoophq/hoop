@@ -13,6 +13,7 @@ import { useAiSessionAnalyzerStore } from './store'
 import { FREE_LICENSE_LIMIT_MESSAGE } from './helpers'
 import RulesTab from './RulesTab'
 import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
+import SidecarAnalyzers from './sections/SidecarAnalyzers'
 
 // The CLJS activation journey writes the same key, so both stacks agree on
 // what "seen" means.
@@ -119,6 +120,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
             </Text>
           )}
           <ConfigureTab onSaved={() => setTab('rules')} />
+          <SidecarAnalyzers />
         </Box>
       ) : (
         <RulesTab

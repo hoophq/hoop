@@ -235,6 +235,7 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		}
 	}
 
+	// No name: this tool does not rename, and the update keeps the stored one.
 	rule := &models.DataMaskingRule{
 		ID:                   args.ID,
 		OrgID:                sc.GetOrgID(),

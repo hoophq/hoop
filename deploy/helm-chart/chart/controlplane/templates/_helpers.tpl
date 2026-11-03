@@ -37,6 +37,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end -}}
 
+{{/* Where idpFederatedToken mounts the projected service account token. */}}
+{{- define "hoopcontrolplane.idpTokenDir" -}}/var/run/secrets/hoop/idp{{- end -}}
+
+{{/* The client assertion file the control plane reads, or empty. */}}
+{{- define "hoopcontrolplane.idpClientAssertionFile" -}}
+{{- if (.Values.idpFederatedToken | default dict).enabled -}}
+{{ include "hoopcontrolplane.idpTokenDir" . }}/token
+{{- else -}}
+{{ (.Values.config | default dict).IDP_CLIENT_ASSERTION_FILE | default "" }}
+{{- end -}}
+{{- end -}}
+
 {{- define "hoopcontrolplane.configSecretName" -}}
 {{- printf "%s-config" (include "hoopcontrolplane.fullname" .) -}}
 {{- end -}}
@@ -53,6 +65,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{- define "hoopcontrolplane.validate" -}}
+{{- /*
+The image reference lives only in values.yaml (AWS Marketplace rewrites it
+there). A release made when the templates held the defaults has no image
+values, and `helm upgrade --reuse-values` keeps exactly those: without this
+guard it would render ":" as the image.
+*/ -}}
+{{- if not (and .Values.image .Values.image.repository .Values.image.tag) -}}
+{{- fail "image.repository and image.tag must both be set. An upgrade with --reuse-values from a release whose chart kept the image defaults in its templates carries no image values: upgrade with --reset-then-reuse-values, or set image.repository and image.tag" -}}
+{{- end -}}
 {{- $c := .Values.config | default dict -}}
 
 {{- if not $c.POSTGRES_DB_URI -}}
@@ -75,12 +96,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- fail (printf "config.PORT is %v but this chart publishes %s. Leave PORT unset" $c.PORT $port) -}}
 {{- end -}}
 
+{{- $idpAssertionFile := include "hoopcontrolplane.idpClientAssertionFile" . -}}
+{{- if and $idpAssertionFile $c.IDP_CLIENT_SECRET -}}
+{{- fail "set config.IDP_CLIENT_SECRET or a client assertion (idpFederatedToken.enabled, config.IDP_CLIENT_ASSERTION_FILE), not both" -}}
+{{- end -}}
+{{- if and (.Values.idpFederatedToken | default dict).enabled (not (include "hoopcontrolplane.serviceAccountName" .)) -}}
+{{- fail "idpFederatedToken.enabled needs the service account the federated credential trusts: set serviceAccount.create=true or serviceAccount.name" -}}
+{{- end -}}
 {{- if $c.IDP_ISSUER -}}
 {{- if not $c.IDP_CLIENT_ID -}}
 {{- fail "config.IDP_CLIENT_ID is required when config.IDP_ISSUER is set" -}}
 {{- end -}}
-{{- if not $c.IDP_CLIENT_SECRET -}}
-{{- fail "config.IDP_CLIENT_SECRET is required when config.IDP_ISSUER is set" -}}
+{{- if not (or $c.IDP_CLIENT_SECRET $idpAssertionFile) -}}
+{{- fail "config.IDP_CLIENT_SECRET or idpFederatedToken.enabled is required when config.IDP_ISSUER is set" -}}
 {{- end -}}
 {{- end -}}
 

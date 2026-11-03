@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
-import { FEATURES } from '../config'
+import { FEATURES, analyzerBlocked } from '../config'
 import { targetLanes } from '../rules'
 import RuleFormModal from '../sections/RuleFormModal'
 import RulePickerModal from '../sections/RulePickerModal'
@@ -25,6 +25,7 @@ export default function FeatureRules({ sidecar, listener = null, editable = fals
       ? {
           onAdd: (key) => setPicker({ feature: FEATURES[key], opened: true }),
           onEdit: (key, rule) => setForm({ feature: FEATURES[key], rule, opened: true }),
+          addBlocked: (key) => (key === 'ai-analyzer' ? analyzerBlocked(sidecar.configuration) : null),
         }
       : undefined
 

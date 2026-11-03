@@ -8,7 +8,7 @@ import { RULE_DRIVEN_PROVIDERS } from '../helpers'
 //     both drive masking from data-masking rules.
 //   - gcp → docs link + deprecated-provider warning, no create path.
 //   - unset → docs link only; there is no provider to call deprecated.
-// providerRequired=false (control plane) skips the gate: sidecars mask
+// providerRequired=false (sidecar rules) skips the gate: sidecars mask
 // in-process and need no DLP provider.
 const FEATURE_ITEMS = [
   {

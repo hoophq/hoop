@@ -76,9 +76,15 @@ func BuildSessionClosePacket(sessionID string, exitCode string) *pb.Packet {
 }
 
 func OpenPGSession(t T, tr *MockTransport, host, port, user, pass, dbname string) string {
+	return OpenPGSessionWithGuardRails(t, tr, host, port, user, pass, dbname, nil)
+}
+
+// OpenPGSessionWithGuardRails is OpenPGSession with guardrail rules attached to
+// the connection params, so libhoop's Postgres proxy enforces them.
+func OpenPGSessionWithGuardRails(t T, tr *MockTransport, host, port, user, pass, dbname string, guardRailRules []byte) string {
 	sessionID := uuid.New().String()
 	envVars := BuildPGEnvVars(host, port, user, pass, dbname, "disable")
-	pkt := BuildSessionOpenPacket(sessionID, string(pb.ConnectionTypePostgres), envVars)
+	pkt := BuildSessionOpenPacketWithGuardRails(sessionID, string(pb.ConnectionTypePostgres), envVars, guardRailRules)
 
 	tr.Inject(pkt)
 

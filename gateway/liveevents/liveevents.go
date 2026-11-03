@@ -8,19 +8,48 @@
 // polling for that case.
 package liveevents
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // Event types. A page subscribes to one by its name.
 const (
-	// SidecarCheckedIn is a sidecar handshake the plane answered. ID is the
-	// sidecar's ID.
+	// SidecarCheckedIn is a sidecar's first handshake the plane answered. ID
+	// is the sidecar's ID.
 	SidecarCheckedIn = "sidecar.checked_in"
+	// ReviewCreated is a review that waits for approval. ID is the review's ID.
+	ReviewCreated = "review.created"
 )
 
 // Event is one change notice.
 type Event struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+	// Audience stays in the gateway: the stream sends only Type and ID.
+	Audience *Audience `json:"-"`
+}
+
+// Audience is who may get an event: a member of one of Groups. OwnerID gets it
+// only as an admin, as the requester of a review approves it only as one.
+type Audience struct {
+	Groups  []string
+	OwnerID string
+}
+
+func (a *Audience) Allows(userID string, userGroups []string, isAdmin bool) bool {
+	if a == nil {
+		return false
+	}
+	if userID == a.OwnerID && !isAdmin {
+		return false
+	}
+	for _, g := range userGroups {
+		if slices.Contains(a.Groups, g) {
+			return true
+		}
+	}
+	return false
 }
 
 // subscriberBuffer holds the events a slow reader has not taken yet. A full

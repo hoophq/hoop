@@ -1,0 +1,7 @@
+{
+  "name": "hoop sidecar",
+  "network": {
+    "access": "restricted",
+    "allowed_domains": ["sidecar.example.com"]
+  }
+}

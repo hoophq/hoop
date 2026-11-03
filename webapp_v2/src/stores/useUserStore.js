@@ -47,13 +47,6 @@ export const useUserStore = create((set, get) => ({
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
   // listen address the gateway cannot serve a native postgres session.
   postgresProxyEnabled: false,
-  // Which product this bundle renders as: always 'gateway' today. A property
-  // of the deployment, not of the user, so clear() leaves it alone.
-  // 'gateway' until /publicserverinfo says otherwise, which keeps an old gateway
-  // that does not send application_mode behaving exactly as before. Consumers
-  // read it through src/modes (useModeConfig), never directly.
-  appMode: 'gateway',
-  appModeLoaded: false,
   // Group names that carry the roles. ADMIN_USERNAME and the auth server config
   // rename the admin one, so /serverinfo is the source, never a literal.
   adminRoleName: ROLE_ADMIN,
@@ -96,8 +89,6 @@ export const useUserStore = create((set, get) => ({
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
       adminRoleName: serverInfo?.admin_role_name || ROLE_ADMIN,
       approverRoleName: serverInfo?.approver_role_name || ROLE_APPROVER,
-      // The authenticated answer wins over the boot-time /publicserverinfo one.
-      ...(serverInfo?.application_mode && { appMode: serverInfo.application_mode }),
     })
   },
   /**
@@ -128,14 +119,6 @@ export const useUserStore = create((set, get) => ({
     }
     get().setServerInfo(serverInfo)
     return { ok: true }
-  },
-  // Boot fetch, called once at module level from main.jsx so StrictMode's
-  // double-invoked effects cannot fire it twice. A failed request keeps the
-  // gateway default.
-  loadAppMode: async () => {
-    if (get().appModeLoaded) return
-    const info = await authService.getPublicServerInfo().catch(() => null)
-    set({ appMode: info?.application_mode || get().appMode, appModeLoaded: true })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags, featureFlagsLoaded: true }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],

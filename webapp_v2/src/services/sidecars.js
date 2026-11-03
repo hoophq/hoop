@@ -48,4 +48,9 @@ export const sidecarsService = {
   slackChannels: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`),
   updateSlackChannels: (nameOrId, body) =>
     api.put(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`, body),
+  // A sidecar started with no token shows a code; approving it creates the
+  // sidecar in this organization with the token the sidecar made for itself.
+  getLogin: (code) => api.get(`/sidecars/login/${encodeURIComponent(code)}`),
+  approveLogin: (code, name) => api.post(`/sidecars/login/${encodeURIComponent(code)}/approve`, { name }),
+  denyLogin: (code) => api.post(`/sidecars/login/${encodeURIComponent(code)}/deny`),
 }

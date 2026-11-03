@@ -9,7 +9,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
-- `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. To work against a local clone, `make libhoop-dev`.
+- `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica` and credentials for both: `client/`, `sidecar/ica` and `sidecar/cmd` also link the private `libhoop-ica` (Citrix ICA engine). To work against a local clone, `make libhoop-dev`.
 
 ## Toolchain & Prerequisites
 
@@ -105,7 +105,7 @@ Plugins are registered in `gateway/main.go` in a **fixed, intentional order** �
 6. `slack` (`gateway/transport/plugins/slack/`)
 
 Plugin interface: `gateway/transport/plugins/types/` — each plugin implements `OnStartup`, `Name`, and lifecycle hooks.
-gRPC stream interceptors, in order (`gateway/transport/server.go` → `NewGRPCServer()`): `sessionuuid` → `auth` → `tracing`. `accessrequest` is not an interceptor; it runs during packet handling in `gateway/transport/client.go`.
+gRPC stream interceptors, in order (`gateway/transport/server.go` → `NewGRPCServer()`): `sessionuuid` → `auth`. `accessrequest` is not an interceptor; it runs during packet handling in `gateway/transport/client.go`.
 
 ## Gateway ↔ Agent Compatibility
 
@@ -157,8 +157,9 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 |------|---------|-------|
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
-| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
+| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first). In a cloud session: start `dockerd`, set `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT` |
 | Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` |
+| Run gateway + agent without Docker | `scripts/dev/run-sandbox.sh start` | PGlite, one stack at a time; for cloud sandboxes |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
@@ -266,7 +267,7 @@ this codebase.
 One channel for every "the page should change now" case: `GET /api/events/stream`, an SSE stream (not a websocket). Do not add a new stream, websocket or poll loop for this.
 - Gateway: add a type constant in `gateway/liveevents/liveevents.go`, then `liveevents.Publish(orgID, liveevents.Event{Type, ID})` where the change happens. It never blocks.
 - An event names what changed (`type`, `id`), never its content. The page reads the resource again through its own route, which keeps that route's access checks.
-- The route is `AdminOnlyAccessRole` while every type serves an admin page. A type for other roles needs a per-type role check in `gateway/api/liveevents/stream.go` first.
+- Every role can open the route. `allowed` in `gateway/api/liveevents/stream.go` checks each type; a type it does not list reaches admins only. An event for other users carries an `Audience`, which never leaves the gateway.
 - Webapp: `useLiveEvent(type, handler)` (`webapp_v2/src/hooks/useLiveEvent.js`); types in `LIVE_EVENTS` (`services/liveEvents.js`). See `webapp_v2/CLAUDE.md`.
 - In-process: a replica delivers only its own events. A page that must not miss one keeps a slow poll as fallback.
 - Content streams (session output, server logs) stay on their own routes: they carry data, not notices.
@@ -405,6 +406,6 @@ tooling enforces:
 - Branch names come from Linear's `branchName`; commits start with the ticket ID
 - Go changes: `go test` on the changed packages before the first push; the
   full suite (`make test-oss` and the integration tests) runs in the PR's CI;
-  `webapp_v2/`: `npm run lint`
-  and `npm run build`
+  `webapp_v2/`: `npm run lint`,
+  `npm test` and `npm run build`
 - Every PR is born draft

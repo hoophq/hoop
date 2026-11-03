@@ -131,3 +131,34 @@ export const usesConfigFile = (sidecar) => sidecar?.configuration?.load_from_dis
 // adopts it only when an admin moves the configuration. Null for a sidecar
 // too old to report it.
 export const reportedConfiguration = (sidecar) => sidecar?.reported_configuration ?? null
+
+export const NO_ANALYZER_SECTION = 'No analyzer section'
+const NO_ANALYZER_PROVIDER = 'No analyzer provider'
+
+// Why an analyzer rule cannot bind to this sidecar, or null. The gateway refuses
+// both on save: validateSpecForLane (gateway/services/sidecarrules.go) and
+// Config.CheckServedAnalyzer (sidecar/daemon/analyzer.go).
+export function analyzerBlocked(config) {
+  const section = config?.analyzer
+  if (!section) return NO_ANALYZER_SECTION
+  if (!section.provider && section.use_hoop_llm_provider !== true) return NO_ANALYZER_PROVIDER
+  return null
+}
+
+// AnalyzerConfig in sidecar/daemon/analyzer.go.
+export function analyzerModel(config) {
+  const section = config?.analyzer
+  if (!section) return null
+  if (section.use_hoop_llm_provider === true) return 'Hoop-hosted model'
+  if (!section.provider) return NO_ANALYZER_PROVIDER
+  return section.model ? `${section.provider} · ${section.model}` : section.provider
+}
+
+// A config-file sidecar runs the file it reported, not the stored document.
+export function analyzerLabel(sidecar) {
+  const fromFile = usesConfigFile(sidecar)
+  const config = fromFile ? reportedConfiguration(sidecar) : sidecar?.configuration
+  if (fromFile && !config) return { text: 'Not reported', set: false }
+  const model = analyzerModel(config)
+  return model ? { text: model, set: true } : { text: NO_ANALYZER_SECTION, set: false }
+}

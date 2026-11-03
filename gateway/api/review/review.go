@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
-	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/events"
@@ -103,6 +102,32 @@ func (h *handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, openapiReviews)
 }
 
+// Count
+//
+//	@Summary		Count Approvals
+//	@Description	Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported.
+//	@Tags			Approvals
+//	@Param			status	query	string	true	"The status to count"	Enums(PENDING)
+//	@Produce		json
+//	@Success		200		{object}	openapi.ReviewCount
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/approvals/count [get]
+func (h *handler) Count(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	if statuses := c.QueryArray("status"); len(statuses) != 1 || statuses[0] != string(models.ReviewStatusPending) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unsupported status %q, only %s is supported",
+			strings.Join(statuses, ","), models.ReviewStatusPending)})
+		return
+	}
+	count, err := models.CountPendingReviewsForViewer(models.DB, ctx.GetOrgID(), Viewer(ctx))
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed counting approval requests: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.ReviewCount{Count: count})
+}
+
 // Viewer takes the request's groups: the ones DoReview checks to decide.
 func Viewer(ctx *storagev2.Context) models.ReviewViewer {
 	return models.ReviewViewer{
@@ -158,7 +183,6 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	reviewIdOrSid := c.Param("id")
 	if sid := c.Param("session_id"); sid != "" {
 		reviewIdOrSid = sid
-		apiroutes.SetSidSpanAttr(c, sid)
 	}
 
 	var req openapi.ReviewRequest
@@ -672,8 +696,20 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
 		Connection:            reviewConnection(r),
+		Requester:             reviewRequester(r),
 		ExpiresAt:             r.SidecarExpiresAt(),
 		ApprovalTTLSec:        r.SidecarApprovalTTLSec(),
+	}
+}
+
+func reviewRequester(r *models.Review) *openapi.ReviewOwner {
+	if r.OwnerID == "" {
+		return nil
+	}
+	return &openapi.ReviewOwner{
+		ID:    r.OwnerID,
+		Name:  ptr.ToString(r.OwnerName),
+		Email: r.OwnerEmail,
 	}
 }
 

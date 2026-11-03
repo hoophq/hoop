@@ -63,13 +63,14 @@ it is removing a directory.
 |---|---|
 | `cmd/` | the `hoop-inspect` binary, where the optional plugins are linked |
 | `config/yaml/` | `gopkg.in/yaml.v3` |
-| `pii/alcatraz/` | `github.com/hoophq/alcatraz` |
+| `pii/alcatraz/` | `github.com/hoophq/alcatraz` and `github.com/hoophq/alcatraz/ner`, the ONNX NER model runtime: pure Go by default, ONNX Runtime under `-tags ORT` |
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
 | `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
 | `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
+| `telemetry/otlp/` | the OpenTelemetry SDK and its OTLP exporters, behind the `telemetry` block; `daemon` sees only `telemetry.Builder`, injected by `cmd` like `LoadCodecPlugin`. The contract is the root package `telemetry/` |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -128,9 +129,12 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm telemetry/otlp; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
+
+# pii/alcatraz under -tags ORT is cgo; the real-model test runs only with the env set
+(cd pii/alcatraz && CGO_ENABLED=1 HOOP_ALCATRAZ_MODELS_DIR=/opt/alcatraz/models HOOP_ALCATRAZ_ORT_LIBRARY=/opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so go test -tags ORT -run TestNERRealModel ./...)
 
 # the oracle: run this for ANY change under lexer/
 (cd lexer/conformance && CGO_ENABLED=0 go test ./...)
@@ -206,9 +210,10 @@ done
   cannot call `Register`, so these packages do it, and they are also where
   `AnalyzeSQL` and the lexer get injected into a decoder. `codec/http` is
   not thin: its `*Codec` embeds libhoop's Inspector and adds the relay
-  concerns libhoop has no reason to know (Connect Gateway resource
-  normalization, credential lifting for per-request identity, the Via loop
-  marker). Import `codec/all` for postgres, mysql, mssql and http, or one
+  concerns libhoop has no reason to know (path cleaning, Connect Gateway
+  resource normalization, credential lifting for per-request identity, the Via loop
+  marker, and the refusal of a known credential outside its header,
+  placement.go). Import `codec/all` for postgres, mysql, mssql and http, or one
   package for one protocol so a binary fronting Postgres never links the
   TDS, MySQL and HTTP machinery.
 
@@ -317,6 +322,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 |---|---|
 | `inspect/` | bytes to statements, plus the codec registry; the wire vocabulary every other package names |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
+| `jsonsql/` | the SQL a JSON document carries (a field, a JSON-RPC tools/call), for any protocol; `codec/http`'s `http.sql` is its first seam |
 | `codec/` | registration seam: wires libhoop's decoders to the classifier; `codec/http` also wraps the Inspector with the relay's HTTP additions |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |
@@ -344,6 +350,17 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
   pinned.
 - `inspect/bypass_test.go` holds statements that evade classification. A new
   evasion belongs there, phrased as the verdict an operator would get.
+- **Ask whether a piece is protocol-specific before you add it.** Build
+  pieces that combine, the way the http and WebSocket codecs do and a lane
+  splits into more than one listener. The generic layers (`gate/`, `proxy/`,
+  `policy/`, `inspect/`) name no protocol: protocol knowledge stays in the
+  codec and reaches them through an optional interface the gate asserts, as
+  it does `Reframer`, or a sentinel in `libhoop/v2/codec/types`. Logic that is
+  not about the wire (JSON paths, SQL classification, guardrail matching) goes
+  in a protocol-neutral package, with a thin seam per protocol. The design
+  note and the PR say which pieces are reusable and which are protocol-bound.
+ - **sidecar protocol-specific parsers**: if the code must be added to libhoop, the sidecar parsers must live under `libhoop/v2/*`.
+ -  **When adding new sidecar capabilities like guardrails, data masking, AI analyzer**, check if the codec WASM in sidecar plugins has these same capabilities; we must ensure new capabilities like that need to be added to plugins as well.
 
 ## Running it
 

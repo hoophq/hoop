@@ -115,6 +115,9 @@ services:
       # httpbin ships no healthcheck; service_started is the strongest
       # condition available and the sidecar dials lazily anyway.
       httpbin: { condition: service_started }
+      # The exporter tolerates a collector that comes up later; this only
+      # keeps the first export from logging a refused connection.
+      otel-collector: { condition: service_started }
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
       interval: "2s"
@@ -170,6 +173,46 @@ services:
     depends_on:
       opa: { condition: service_healthy }
       hoop-inspect: { condition: service_healthy }
+
+  # Observability: the sidecar pushes OTLP (metrics, traces, audit events)
+  # to the collector; the collector serves the metrics to prometheus, and
+  # grafana renders them. Traces and events only reach the collector's own
+  # log here (`docker compose logs otel-collector`): this stack carries no
+  # trace or log store. See telemetry/otelcol.yaml.
+  otel-collector:
+    image: otel/opentelemetry-collector:0.163.2
+    networks: [inspect]
+    volumes:
+      - ./telemetry/otelcol.yaml:/etc/otelcol/config.yaml:ro
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    # Not published: the sidecar reaches it over the compose network, and
+    # a host-side 4317 usually belongs to a laptop's own collector.
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    networks: [inspect]
+    volumes:
+      - ./telemetry/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"   # Prometheus UI
+    depends_on:
+      otel-collector: { condition: service_started }
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    networks: [inspect]
+    environment:
+      # A local demo: no login, straight to the dashboard.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./telemetry/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./telemetry/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"   # Grafana: the "hoop sidecar" dashboard
+    depends_on:
+      prometheus: { condition: service_started }
 
 networks:
   inspect:

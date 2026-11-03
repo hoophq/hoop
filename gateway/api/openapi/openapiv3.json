@@ -3270,7 +3270,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -3397,7 +3397,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -6120,6 +6120,15 @@
             "readOnly": true,
             "type": "string"
           },
+          "requester": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ReviewOwner"
+              }
+            ],
+            "description": "Who filed the approval request. On a sidecar approval request, the sidecar",
+            "readOnly": true
+          },
           "review_groups_data": {
             "description": "Contains the groups that must approve this request",
             "items": {
@@ -6194,6 +6203,16 @@
             "example": "pgdemo",
             "readOnly": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewCount": {
+        "properties": {
+          "count": {
+            "example": 4,
+            "readOnly": true,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -7426,13 +7445,18 @@
             "example": "hoop-audience",
             "type": "string"
           },
+          "client_assertion_file": {
+            "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.\nIt must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.",
+            "example": "/var/run/secrets/hoop/idp/token",
+            "type": "string"
+          },
           "client_id": {
             "description": "Oauth2 Client ID",
             "example": "hoop-client-id",
             "type": "string"
           },
           "client_secret": {
-            "description": "Oauth2 Client Secret",
+            "description": "Oauth2 Client Secret. Set it or client_assertion_file, not both.",
             "example": "hoop-client-secret",
             "type": "string"
           },
@@ -7461,7 +7485,6 @@
         },
         "required": [
           "client_id",
-          "client_secret",
           "issuer_url"
         ],
         "type": "object"
@@ -8863,6 +8886,99 @@
           "name": {
             "description": "The listener name",
             "example": "payments-pg",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginApproveRequest": {
+        "properties": {
+          "name": {
+            "description": "The sidecar's name. Empty keeps the name the sidecar asked for.",
+            "example": "payments-sidecar",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginDetails": {
+        "properties": {
+          "created_at": {
+            "example": "2026-10-14T12:00:00Z",
+            "type": "string"
+          },
+          "expires_at": {
+            "example": "2026-10-14T12:10:00Z",
+            "type": "string"
+          },
+          "name": {
+            "example": "payments-sidecar",
+            "type": "string"
+          },
+          "status": {
+            "example": "pending",
+            "type": "string"
+          },
+          "user_code": {
+            "example": "BCDF-GHJK",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginRequest": {
+        "properties": {
+          "name": {
+            "description": "The name the sidecar asks for. The approving admin may change it.",
+            "example": "payments-sidecar",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "openapi.SidecarLoginResponse": {
+        "properties": {
+          "expires_in": {
+            "description": "Seconds until the code expires",
+            "example": 600,
+            "type": "integer"
+          },
+          "interval": {
+            "description": "Seconds the sidecar waits between polls",
+            "example": 5,
+            "type": "integer"
+          },
+          "user_code": {
+            "description": "The code the person confirms in the web app",
+            "example": "BCDF-GHJK",
+            "type": "string"
+          },
+          "verification_url": {
+            "description": "The page that approves this code",
+            "example": "https://use.hoop.dev/sidecars/login?code=BCDF-GHJK",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginStatus": {
+        "properties": {
+          "name": {
+            "description": "The sidecar name the admin approved. Set when approved.",
+            "example": "payments-sidecar",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending, approved, denied or expired",
+            "example": "approved",
+            "type": "string"
+          },
+          "url": {
+            "description": "The sidecar's page in the web app, where its listeners are added. Set\nwhen approved.",
+            "example": "https://use.hoop.dev/sidecars/5364ec99-653b-41ba-8165-67a7ba0c2d14",
             "type": "string"
           }
         },
@@ -11837,6 +11953,61 @@
         ]
       }
     },
+    "/approvals/count": {
+      "get": {
+        "description": "Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported.",
+        "parameters": [
+          {
+            "description": "The status to count",
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "enum": [
+                "PENDING"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ReviewCount"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Count Approvals",
+        "tags": [
+          "Approvals"
+        ]
+      }
+    },
     "/approvals/{id}": {
       "get": {
         "description": "Get an approval request by the id or session id. An approval request the user did not make and cannot decide answers 404; admins and auditors get any approval request. `/reviews/{id}` is an alias.",
@@ -14479,6 +14650,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14652,7 +14833,7 @@
     },
     "/events/stream": {
       "get": {
-        "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+        "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in (admins), review.created (users who can approve the review). The stream ends after 30 minutes; reconnect.",
         "responses": {
           "200": {
             "content": {
@@ -15612,6 +15793,16 @@
             },
             "description": "OK"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -15687,6 +15878,16 @@
               }
             },
             "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "422": {
             "content": {
@@ -16920,6 +17121,7 @@
         "parameters": [
           {
             "description": "Filter by connection types (e.g., postgres, mysql)",
+            "explode": false,
             "in": "query",
             "name": "connection_type",
             "schema": {
@@ -16927,10 +17129,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by connection subtypes (e.g., amazon-rds, azure-db)",
+            "explode": false,
             "in": "query",
             "name": "connection_subtype",
             "schema": {
@@ -16938,10 +17142,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by specific connection names",
+            "explode": false,
             "in": "query",
             "name": "connection_name",
             "schema": {
@@ -16949,10 +17155,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by Presidio data types (e.g., EMAIL_ADDRESS, CREDIT_CARD, PHONE_NUMBER)",
+            "explode": false,
             "in": "query",
             "name": "info_type",
             "schema": {
@@ -16960,7 +17168,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Only return masked data (count_masked \u003e 0)",
@@ -16996,6 +17205,7 @@
           },
           {
             "description": "Filter by specific session IDs",
+            "explode": false,
             "in": "query",
             "name": "session_id",
             "schema": {
@@ -17003,7 +17213,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter sessions that started on or after this date (format: YYYY-MM-DD)",
@@ -22032,6 +22243,7 @@
           },
           {
             "description": "Choose the type of events to include\n* `i` - Input (stdin)\n* `o` - Output (stdout)\n* `e` - Error (stderr)",
+            "explode": false,
             "in": "query",
             "name": "events",
             "schema": {
@@ -22039,7 +22251,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Expand the given attributes",
@@ -24082,6 +24295,442 @@
         ]
       }
     },
+    "/sidecars/login": {
+      "post": {
+        "description": "Starts a device-code login. Send the token the sidecar made for itself in the hoop-sidecar-token header; only its hash is stored. Show the user code and the verification URL, then poll /sidecars/login/poll.",
+        "parameters": [
+          {
+            "description": "A token the sidecar made for itself: hsc_ and at least 32 random bytes",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarLoginRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Start a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/poll": {
+      "post": {
+        "description": "Answers 200 once an admin approved the login, 428 while it waits, 403 when denied and 410 when it expired or is unknown. Send the same hoop-sidecar-token header as the start.",
+        "parameters": [
+          {
+            "description": "The token sent to the start",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Poll a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}": {
+      "get": {
+        "description": "The pending login an admin is about to approve. A code that expired or was decided answers 410 and says nothing about it.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginDetails"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}/approve": {
+      "post": {
+        "description": "Creates a sidecar in the caller's organization that the waiting sidecar's token reaches. A free organization holds 1 sidecar.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarLoginApproveRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Approve a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}/deny": {
+      "post": {
+        "description": "Refuses the login; the waiting sidecar stops.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Deny a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
     "/sidecars/reviews": {
       "get": {
         "description": "List the approval requests the calling sidecar filed, newest first. It never changes a request.",
@@ -26076,6 +26725,11 @@
       }
     }
   },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
   "tags": [
     {
       "description": "Hoop implements Oauth2 and OIDC protocol to authenticate users in the system. To obtain a valid access token users need to authenticate in their own identity provider which is generated as a JSON response to the endpoint `http(s):///api/login`. The identity provider them redirects the user to the callback endpoint containing the access token.\n\nThe recommended approach of obtaining an access token is by visiting the Webapp main's page or using the **Hoop command line**. Example:\n\n```sh\nhoop config create --api-url https://\n# save the token after authenticating at $HOME/.hoop/config.toml\nhoop login\n# show token information\nhoop config view --raw\n```\n\nWith an access token you could use any HTTP client to interact with the documented endpoints.\nThe token must be sent through the `Authorization` header.\n\nExample:\n\n```sh\n# obtain the current configuration of the server\ncurl https:///api/serverinfo -H \"Authorization: Bearer $ACCESS_TOKEN\"\n```\n",

@@ -1,6 +1,6 @@
-go 1.26.9
+go 1.26.10
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 use (
 	./agent
@@ -18,5 +18,6 @@ use (
 	./sidecar/mcp
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite
+	./sidecar/telemetry/otlp
 	./tunnel
 )

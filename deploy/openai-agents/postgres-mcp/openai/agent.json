@@ -1,0 +1,15 @@
+{
+  "name": "postgres-analyst",
+  "model": "gpt-6-sol",
+  "reasoning": {"effort": "low"},
+  "tools": [
+    {
+      "type": "mcp",
+      "server_label": "postgres",
+      "transport": {"type": "http", "server_url": "https://mcp.example.com/mcp"},
+      "connection_origin": "service",
+      "required": true
+    }
+  ],
+  "metadata": {"template": "hoop deploy/openai-agents/postgres-mcp"}
+}

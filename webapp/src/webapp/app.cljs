@@ -7,6 +7,7 @@
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.shell :as shell]
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
    [webapp.audit.views.main :as audit]
@@ -34,10 +35,8 @@
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.mcp-oauth]
    [webapp.resources.setup.events.mcp-catalog]
-   [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
-   [webapp.resources.configure-role.main :as configure-role]
    [webapp.resources.add-role.main :as add-role]
    [webapp.resources.add-role.events]
    [webapp.resources.subs]
@@ -222,7 +221,7 @@
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
-        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+        react-shell? (shell/react-shell?)]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
         ;; React shell handles auth redirect — skip if in shell mode
@@ -442,14 +441,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [resource-configure/main resource-id]]]))
-
-(defmethod routes/panels :configure-role-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        connection-name (:connection-name (:route-params current-route))]
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [configure-role/main connection-name]]]))
 
 (defmethod routes/panels :add-role-to-resource-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -706,7 +697,7 @@
   (let [active-panel (rf/subscribe [::subs/active-panel])
         route-path (rf/subscribe [::subs/route-path])
         gateway-public-info (rf/subscribe [:gateway->public-info])
-        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+        react-shell? (shell/react-shell?)]
     ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
     (when-not (and react-shell? (-> @gateway-public-info :data some?))
       (rf/dispatch [:gateway->get-public-info]))

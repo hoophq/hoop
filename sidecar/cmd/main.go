@@ -100,6 +100,10 @@ import (
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
+	// The OpenTelemetry exporter a "telemetry" block turns on, same rule:
+	// the SDK and its OTLP exporters stay in sidecar/telemetry/otlp's own
+	// module, injected below like the codec plug-in host.
+	"github.com/hoophq/hoop/sidecar/telemetry/otlp"
 )
 
 // version is the release this binary reports at -version and on the admin
@@ -119,6 +123,7 @@ func main() {
 		return wasm.Load(ctx, module)
 	}
 	daemon.CodecTester = conformance.Run
+	daemon.NewTelemetryExporter = otlp.New
 
 	err := daemon.Main(version, configyaml.Load, func(raw json.RawMessage) (daemon.Plugin, error) {
 		// An absent "pii" section no longer means no detector: the plugin

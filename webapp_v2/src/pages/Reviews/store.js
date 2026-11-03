@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { reviewsService } from '@/services/reviews'
 import { sessionsService } from '@/services/sessions'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { usePendingApprovalsStore } from '@/stores/usePendingApprovalsStore'
 
 const EMPTY = {
   reviews: [],
@@ -91,6 +92,9 @@ export const useReviewStore = create((set, get) => ({
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }
+    } finally {
+      // A failed decision can mean another approver decided first.
+      usePendingApprovalsStore.getState().fetchCount()
     }
   },
 }))

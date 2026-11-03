@@ -84,6 +84,13 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
   exit 1
 fi
 
+# A cloud sandbox re-signs TLS: HOOPDEV_CA_CERT names its CA, and the image
+# trusts it (scripts/dev/Dockerfile). Unset, no CA reaches the image.
+rm -f ./scripts/dev/extra-ca/extra-ca.crt
+if [[ -n ${HOOPDEV_CA_CERT:-} ]]; then
+  [[ -f $HOOPDEV_CA_CERT ]] || { echo "HOOPDEV_CA_CERT is not a file: $HOOPDEV_CA_CERT" >&2; exit 1; }
+  cp "$HOOPDEV_CA_CERT" ./scripts/dev/extra-ca/extra-ca.crt
+fi
 docker build -t "$IMAGE_NAME" -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
@@ -159,6 +166,10 @@ docker rm "$CONTAINER_NAME" &> /dev/null || true
 
 mkdir -p ./dist/dev/spiffe
 
+# -t needs a terminal. An agent or a CI job runs without one.
+TTY_ARGS=(-i)
+[[ -t 0 ]] && TTY_ARGS=(-it)
+
 # Proxy credentials carry the proxy's listen port, so in slot N the proxies
 # listen on the slot's ports and publish them unchanged.
 docker run --rm --name "$CONTAINER_NAME" \
@@ -177,4 +188,4 @@ docker run --rm --name "$CONTAINER_NAME" \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./dist/dev/resources/:/app/ui/ \
   "${ALCATRAZ_MOUNT[@]}" \
-  -it "$IMAGE_NAME" /app/bin/entrypoint.sh
+  "${TTY_ARGS[@]}" "$IMAGE_NAME" /app/bin/entrypoint.sh

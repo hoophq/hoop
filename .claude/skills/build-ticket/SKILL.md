@@ -11,6 +11,74 @@ evidence.
 Write every Linear and GitHub field in English, whatever the conversation
 language.
 
+## Autonomous mode
+
+When `HOOP_AGENT` is set, the `support-agent` skill started this run from a
+schedule and no person reads the session. Then:
+
+- A step that says show the human a result: attach it to the ticket and
+  continue.
+- A step that says stop, wait for or ask the human: ask as `support-agent`
+  step 5 says, and end the run. A later run resumes from the ticket.
+- A support ticket is shaped as a comment, never in its description. The
+  `ai-disclosure` hook refuses description edits.
+- The stack: the usual `make` targets, in this order in a cloud session:
+  1. Start Docker: `pgrep dockerd || (dockerd >/tmp/dockerd.log 2>&1 &)`.
+  2. Make the `.env`: `cp .env.sample .env`, `sed -i '/^AUTH_METHOD=/d' .env`,
+     `echo AUTH_METHOD=local >> .env` (the first value of a key wins).
+  3. `make run-dev-postgres`, then `make run-dev` in the background; wait for
+     `/api/healthz`. The environment sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`.
+  4. Register the admin and upload the Enterprise license, or the sidecar
+     routes answer 403. The token goes to a file: shell variables do not
+     survive between commands, and `rec.mjs` reads the same file.
+
+     ```bash
+     curl -s -D - -o /dev/null -H 'content-type: application/json' \
+       -d '{"email":"admin@example.com","password":"Dev-Passw0rd","name":"Admin"}' \
+       http://127.0.0.1:8009/api/localauth/register |
+       sed -nE 's/^[Tt]oken: (.*)\r?$/\1/p' | tr -d '\r' > /tmp/hoop-dev-token
+     curl -sf -X PUT http://127.0.0.1:8009/api/orgs/license -H 'content-type: application/json' \
+       -H "authorization: Bearer $(cat /tmp/hoop-dev-token)" -d "$HOOPDEV_LICENSE"
+     ```
+
+  After `make build-dev-webapp`, `git checkout` the two `package-lock.json`
+  unless the ticket changes them. Without Docker, `scripts/dev/run-sandbox.sh`
+  (`--ui` for the UI) runs gateway and agent on PGlite, with no database for a
+  connection to test against. It uploads the license itself.
+- A sidecar: `make test-sidecar-e2e` runs here. By hand,
+  `hoop start sidecar --config <file>` in front of the dev Postgres
+  (`127.0.0.1:5449`); unlicensed it takes one guardrail and one mask rule,
+  and `HOOP_LICENSE="$HOOPDEV_LICENSE"` lifts that. Managed by the gateway:
+  `POST /api/sidecars` returns its `token`, then
+  `HOOP_CONTROL_PLANE_URL=http://127.0.0.1:8009 hoop start sidecar --token <token>`.
+  When a test fails here, read the same test in the PR's CI job before you
+  chase it: a cloud sandbox can differ from the CI runner.
+- Commits go in the owner's name (the environment sets `GIT_AUTHOR_*` and
+  `GIT_COMMITTER_*`) and end with the `Co-Authored-By: Claude` and
+  `Claude-Session:` lines: the CLA passes, and each commit still says an AI
+  wrote it.
+- The sandbox is discarded after the run: push the branch after each commit.
+  The evidence is how a person knows the work is right: a PR without its
+  comparison images in "Testing" is not done. Run the `evidence` skill (Skill
+  tool): a flow, in the UI or in a terminal, is a video with its steps
+  explained on screen. QA's captures are raw material:
+  compose them (`evidence` step 4), then publish them with
+  `.claude/skills/evidence/publish.sh` (`evidence` step 6). That is the upload
+  route of a cloud session; a capture left in the sandbox is lost with it.
+- `gh` can be missing: use the GitHub MCP tools.
+- The PR description starts with `Opened by the support agent (AI) from <ID>.`
+  It opens as a draft, so nobody reviews it before QA. When QA passed, its
+  evidence is in "Testing" and CI is green, mark it ready for review
+  (`update_pull_request`, `draft: false`): Qodo reviews it while this session
+  listens. A person merges it.
+- Once the draft PR exists, `subscribe_pr_activity` on it. Its CI results and
+  review comments (Qodo once it is ready, reviewers) wake this session after
+  the run ends. On each wake: fix a red check this PR caused and push; verify
+  each review finding, then fix and push it or reply why not; reply on each
+  thread you addressed and resolve it. Each reply starts with
+  `Support agent (AI):`. Never merge it. Unsubscribe when it is merged or
+  closed.
+
 ## 1. Context
 
 Fetch the ticket through the Linear MCP server: title, description, comments,
@@ -95,8 +163,8 @@ After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
 and what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
-compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
-against QA's stacks (evidence skill, step 3).
+compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI or terminal flow, record it on the final
+commit, against QA's stacks (evidence skill, step 3).
 Continue only after the user has seen it. Step 7 publishes it.
 
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into
