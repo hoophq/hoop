@@ -127,15 +127,25 @@ admin:
   listen: 127.0.0.1:19000    # the admin API port
 ${LISTENER_EXAMPLE('127.0.0.1')}`
 
-// The name is how a later restart finds the container again.
-const dockerRun = (image, url, token, name = 'hoop-sidecar') => `docker run -d --name ${name} \\
+const dockerRun = (image, url, token) => `docker run -d --name hoop-sidecar \\
   -e HOOP_CONTROL_PLANE_URL=${url} \\
   -e HOOP_SIDECAR_TOKEN=${token} \\
   -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \\
   -p 15432:15432 -p 19000:19000 \\
   ${image}`
 
+// A container keeps the variables it started with, so connect creates it
+// again. Only the two variables are new; its image, mounts and ports are the
+// reader's own, and an example in their place would cut off its listeners.
+const dockerConnectRun = (url, token) => `docker rm -f <your-sidecar-container>
+docker run -d --name <your-sidecar-container> \\
+  -e HOOP_CONTROL_PLANE_URL=${url} \\
+  -e HOOP_SIDECAR_TOKEN=${token} \\
+  <the mounts, ports and image it runs with now>`
+
 // The chart's `config` is the sidecar's config file, indented under one key.
+// The chart's own Service publishes only the admin port: each listener needs a
+// laneServices entry, or nothing in the cluster reaches it.
 const helmValues = (url, token) => `controlPlane:
   url: ${url}
   token: ${token}
@@ -145,7 +155,12 @@ config:
 ${LISTENER_EXAMPLE('0.0.0.0')
   .split('\n')
   .map((line) => `  ${line}`)
-  .join('\n')}`
+  .join('\n')}
+laneServices:
+  appdb:                       # a Service for the appdb listener
+    enabled: true
+    ports:
+      - port: 15432`
 
 const helmConnectValues = (url, token) => `controlPlane:
   url: ${url}
@@ -247,10 +262,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
                       <Note>Write a values.yaml:</Note>
                       <CodeSnippet code={helmValues(controlPlaneUrl, token)} />
                       <Note>
-                        {
-                          'config is the sidecar config file. The Control Plane copies it once, on the first start. It needs at least one entry in listeners. '
-                        }
-                        {HOLDS_TOKEN}
+                        {`config is the sidecar config file. The Control Plane copies it once, on the first start. It needs at least one entry in listeners. Each listener needs a laneServices entry with its port. ${HOLDS_TOKEN}`}
                       </Note>
                       <Note>Install the chart:</Note>
                       <CodeSnippet code={HELM_INSTALL} />
@@ -405,7 +417,6 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         ),
       },
     ],
-    // A container keeps the variables it started with, so it is created again.
     docker: [
       tokenBlock,
       {
@@ -413,12 +424,10 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         title: 'Point it at Hoop and restart it',
         node: (
           <>
-            <CodeSnippet
-              code={`docker rm -f <your-sidecar-container>\n${dockerRun(imageRef, controlPlaneUrl, token, '<your-sidecar-container>')}`}
-            />
+            <CodeSnippet code={dockerConnectRun(controlPlaneUrl, token)} />
             <Note>
-              A container keeps the variables it started with, so this creates it again. Keep the mounts and ports it
-              runs with now.
+              A container keeps the variables it started with, so this creates it again. Add the two variables to the
+              docker run you started it with. Keep its image, mounts and ports as they are.
             </Note>
           </>
         ),
