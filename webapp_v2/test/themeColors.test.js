@@ -7,17 +7,21 @@ import { describe, expect, it } from 'vitest'
 // role token, never a shade or a literal (CLJS_PATTERNS.md, ENG-994). Colors
 // live in src/components/* and src/theme.js only. A one-off effect may name a
 // color when a comment says `theme-exception:`: the comment before its CSS
-// rule, or a JS comment on or up to two lines above the line.
+// rule, or a JS comment on or up to two lines above the line. The comment must
+// say why: a bare marker does not count.
 
 const SRC = join(import.meta.dirname, '..', 'src')
 const OWNERS = [/^components\//, /^theme\.js$/]
-const MARK = 'theme-exception:'
+const MARK = /theme-exception:[ \t]*[^\s*]/
 
 const PALETTES = 'gray|dark|red|pink|grape|violet|indigo|blue|cyan|teal|green|lime|yellow|orange|amber|sky|slate'
-// A palette shade as a CSS variable, or as a Mantine color string ('gray.6').
-const SHADE_VAR = /--mantine-color-[a-z]+-\d\b/
+// A palette shade as a CSS variable, the palette written out or built in a
+// template: --mantine-color-gray-6, `--mantine-color-${name}-6`.
+const SHADE_VAR = /--mantine-color-(?:[a-z]+|\$\{[^}]*\})-\d\b/
 // Inside any string or template: 'gray.6', "1px solid gray.3", `gray.${n}`.
 const SHADE_STRING = new RegExp(`["'\`][^"'\`]*\\b(?:${PALETTES})\\.(?:\\d|\\$\\{)`)
+// A shade added to a palette held in a variable: `${name}.6`, name + '.6'.
+const BUILT_SHADE = /\$\{[^}]*\}\.\d\b|\+\s*["'`][.-]\d\b/
 // theme.colors.gray[6], colors[name][6] (destructured too)
 const THEME_INDEX = /\bcolors(?:\.[a-z]+|\[[^\]]+\])\??\.?\[\d\]/
 // A literal color in CSS: hex, or a color function.
@@ -50,7 +54,7 @@ const owned = (path) => OWNERS.some((re) => re.test(relative(SRC, path)))
 // A comment right before the declaration, or right before its own rule. A
 // mark on an at-rule (@media) does not reach the rules inside it.
 function marked(decl) {
-  return [decl, decl.parent].some((n) => n?.type !== 'atrule' && n?.prev()?.type === 'comment' && n.prev().text.includes(MARK))
+  return [decl, decl.parent].some((n) => n?.type !== 'atrule' && n?.prev()?.type === 'comment' && MARK.test(n.prev().text))
 }
 
 function cssViolations(path) {
@@ -70,10 +74,10 @@ function jsViolations(path) {
     // A line comment, not the // of a URL inside a string.
     const code = line.replace(/(^|[^:"'`])\/\/.*$/, '$1')
     const color =
-      SHADE_VAR.test(code) || SHADE_STRING.test(code) || THEME_INDEX.test(code) || JS_LITERAL.test(code) || JS_NAMED.test(code)
+      SHADE_VAR.test(code) || SHADE_STRING.test(code) || BUILT_SHADE.test(code) || THEME_INDEX.test(code) || JS_LITERAL.test(code) || JS_NAMED.test(code)
     if (!color) return []
     const near = lines.slice(Math.max(0, i - 2), i + 1).join('\n')
-    return near.includes(MARK) ? [] : [`${relative(SRC, path)}:${i + 1}: ${line.trim()}`]
+    return MARK.test(near) ? [] : [`${relative(SRC, path)}:${i + 1}: ${line.trim()}`]
   })
 }
 
@@ -85,6 +89,6 @@ describe('pages take their colors from the theme', () => {
   })
 
   it('no JS or JSX picks a shade or a literal color', () => {
-    expect(all.filter((path) => /\.(jsx?|tsx?)$/.test(path)).flatMap(jsViolations)).toEqual([])
+    expect(all.filter((path) => /\.(m?jsx?|tsx?)$/.test(path)).flatMap(jsViolations)).toEqual([])
   })
 })

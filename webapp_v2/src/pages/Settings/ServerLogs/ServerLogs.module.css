@@ -1,6 +1,5 @@
-/* The terminal is intentionally dark in both color schemes, so colors come
-   from the fixed dark end of the Mantine palette rather than scheme-aware
-   aliases. rgba(...) values are hover/expanded overlays. */
+/* The terminal is dark in both color schemes. Its colors are the theme's
+   terminal tokens (--hoop-terminal-*), not scheme-aware aliases. */
 
 .terminal {
   background-color: var(--hoop-terminal-bg);

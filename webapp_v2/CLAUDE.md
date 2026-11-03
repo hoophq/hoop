@@ -437,8 +437,9 @@ var(--mantine-line-height-xs | sm | md | lg | xl)
 var(--mantine-radius-xs | sm | md | lg | xl)
 
 /* Semantic colors, never a shade number: outside src/components and
-   src/theme.js, test/themeColors.test.js fails on --mantine-color-{name}-{0-9},
-   a hex or an rgb(). A one-off effect says `theme-exception:` in its comment. */
+   src/theme.js, test/themeColors.test.js fails on --mantine-color-{name}-{0-9}
+   (also built: `${name}.6`), a hex or an rgb(). A one-off effect says
+   `theme-exception: <why>` in its comment. */
 var(--mantine-color-{name}-filled)       /* solid fill */
 var(--mantine-color-{name}-light)        /* light variant bg */
 var(--mantine-color-{name}-light-color)  /* light variant text */

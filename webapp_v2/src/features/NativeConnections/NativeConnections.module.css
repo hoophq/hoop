@@ -1,4 +1,4 @@
-/* Light-blue badge on the drawer title — indigo-0 fill, indigo-4 glyph. */
+/* Light-blue badge on the drawer title: the primary color's light variant. */
 .drawerIcon {
   background-color: var(--mantine-primary-color-light);
   color: var(--mantine-primary-color-light-color);
@@ -115,15 +115,15 @@
 }
 
 /* 40px rounded square holding the connection icon. The tint is the Figma's
-   Neutral Alpha 2 (rgba(0,0,85,0.02)) — an alpha overlay rather than a flat
-   colour, so it darkens slightly against the gray-0 of an expanded header and
-   keeps its contrast there. Sampled off the Figma render: #f9f9fb on a white
-   row, #eaeaef on the expanded one. Mantine exposes no alpha-tint variable. */
+   Neutral Alpha 2, an alpha overlay rather than a flat colour, so it darkens
+   slightly against the muted fill of an expanded header and keeps its contrast
+   there. Sampled off the Figma render: #f9f9fb on a white row, #eaeaef on the
+   expanded one. */
 .rowAvatar {
   width: 40px;
   height: 40px;
   border-radius: var(--mantine-radius-md);
-  background-color: color-mix(in srgb, var(--hoop-surface-muted) 40%, transparent);
+  background-color: var(--hoop-overlay-faint);
   display: flex;
   align-items: center;
   justify-content: center;

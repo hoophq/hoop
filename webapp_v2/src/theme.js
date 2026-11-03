@@ -72,6 +72,9 @@ export function cssVariablesResolver(theme) {
       '--hoop-border-strong': 'var(--mantine-color-gray-2)',
       // The hover of a strong surface (the header's gray pill).
       '--hoop-surface-strong-hover': 'var(--mantine-color-gray-2)',
+      // A faint alpha overlay that keeps its contrast on any fill: Figma Neutral
+      // Alpha 2 (the connection icon tile of the Native connections rows).
+      '--hoop-overlay-faint': 'rgba(0, 0, 85, 0.02)',
       // The sidebar's Figma overlays: Neutral Alpha (hover), Black Alpha (active, pressed).
       '--hoop-nav-hover': 'rgba(0, 0, 51, 0.06)',
       '--hoop-nav-active': 'rgba(0, 0, 0, 0.05)',

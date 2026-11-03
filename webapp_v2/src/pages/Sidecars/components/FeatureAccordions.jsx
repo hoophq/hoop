@@ -52,7 +52,7 @@ function RuleRow({ rule, onEdit }) {
 function FeatureIcon({ feature }) {
   const Icon = feature.icon
   return (
-    <Text span c={`${feature.color}.6`} lh={1}>
+    <Text span c={`var(--mantine-color-${feature.color}-filled)`} lh={1}>
       <Icon size={16} aria-hidden="true" />
     </Text>
   )
