@@ -11,6 +11,7 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
+import { sidecarImage } from './image'
 import ConnectStep from './sections/ConnectStep'
 import WaitingStep from './sections/WaitingStep'
 
@@ -194,7 +195,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
           sidecar={sidecar}
           token={token}
           controlPlaneUrl={apiUrl || window.location.origin}
-          imageRef={`hoophq/hoopsidecar:${gatewayVersion || 'latest'}`}
+          imageRef={sidecarImage(gatewayVersion)}
           creating={creating}
           error={createError}
           onCreate={handleCreate}
