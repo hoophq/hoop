@@ -916,12 +916,20 @@ func (s *Server) pump(
 	// them when the server stream ends normally. A response denial writes a
 	// protocol error instead, so held rows must be discarded: appending them
 	// after the error leaks denied data and corrupts the client stream.
+	//
+	// A statement that completes only with the stream (a close-delimited
+	// body) is judged on a normal EOF only: after a reset or a timeout the
+	// body is not whole, and the trail must not record it as a reply.
 	discardResponse := false
+	serverEOF := false
 	if dir == inspect.FromServer {
 		defer func() {
 			if discardResponse {
 				g.DiscardResponse()
 				return
+			}
+			if serverEOF {
+				g.EndOfStream()
 			}
 			tail, err := g.FlushResponseChecked()
 			if err != nil {
@@ -1068,6 +1076,7 @@ func (s *Server) pump(
 		}
 
 		if readErr != nil {
+			serverEOF = readErr == io.EOF
 			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)

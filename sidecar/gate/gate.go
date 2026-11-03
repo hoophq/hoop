@@ -92,9 +92,7 @@ type checkedFlusher interface {
 // streamEnder is a codec that completes a statement only when the server
 // stream ends (libhoop codec/http EndOfStream): a close-delimited HTTP
 // body has no length and no terminator, so its response statement exists
-// only once the upstream closes. Optional; the gate asks at
-// FlushResponseChecked, before the reframer releases what it holds, so the
-// audit row precedes the last bytes out.
+// only once the upstream closes. Optional; the gate asks in EndOfStream.
 type streamEnder interface {
 	EndOfStream(dir inspect.Direction) []inspect.Statement
 }
@@ -806,7 +804,6 @@ func (g *Gate) FlushResponse() []byte {
 // held its head, so nothing of it reached the client: the relay answers
 // with its deny frame. The refusal is audited and counted here.
 func (g *Gate) FlushResponseChecked() ([]byte, error) {
-	g.endOfStream(context.Background())
 	if g.reframer == nil {
 		return nil, nil
 	}
@@ -852,12 +849,19 @@ func (g *Gate) DiscardResponse() {
 	}
 }
 
-// endOfStream judges the server statements a codec completes only at
-// stream end. Each takes the path a decoded response takes in inspect:
-// the exchange it answers, the request it releases once judged, then
-// policy, audit and the counters through judge. A denial here is moot,
-// the upstream has already closed, but the trail still records it.
-func (g *Gate) endOfStream(ctx context.Context) {
+// EndOfStream judges the server statements a codec completes only when the
+// server stream ends (libhoop codec/http EndOfStream: a close-delimited
+// body). Each takes the path a decoded response takes in inspect: the
+// exchange it answers, the request it releases once judged, then policy,
+// audit and the counters through judge. A denial here is moot, the
+// upstream has already closed, but the trail still records it.
+//
+// The relay calls it on a normal server EOF only, before FlushResponse, so
+// the audit row precedes the last bytes out. After a read error or a reset
+// the body is not whole, and a statement for it would record a reply the
+// client never got; the codec's state goes with the connection.
+func (g *Gate) EndOfStream() {
+	ctx := context.Background()
 	if g.server == nil {
 		return
 	}

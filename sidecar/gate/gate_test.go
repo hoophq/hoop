@@ -819,10 +819,10 @@ func (c *closeDelimitedCodec) EndOfStream(dir inspect.Direction) []inspect.State
 }
 
 // A close-delimited response body ends with the connection, so its
-// statement exists only then. FlushResponseChecked asks the codec for it
-// and judges it as inspect would have: the audit trail records the
-// response, and a rule on it is audited as a denial (ENG-946).
-func TestEndOfStreamResponseIsJudgedAndAuditedOnFlush(t *testing.T) {
+// statement exists only then. EndOfStream asks the codec for it and judges
+// it as inspect would have: the audit trail records the response, and a
+// rule on it is audited as a denial (ENG-946).
+func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
 	for name, pol := range map[string]policy.Evaluator{"allowed": nil, "denied": no200(t)} {
 		t.Run(name, func(t *testing.T) {
 			sink := &recordingSink{}
@@ -842,9 +842,7 @@ func TestEndOfStreamResponseIsJudgedAndAuditedOnFlush(t *testing.T) {
 			if len(sink.kinds()) != 0 {
 				t.Fatalf("recorded before the body ended: %v", sink.kinds())
 			}
-			if _, err := g.FlushResponseChecked(); err != nil {
-				t.Fatalf("FlushResponseChecked: %v", err)
-			}
+			g.EndOfStream()
 			kind := audit.KindStatement
 			if pol != nil {
 				kind = audit.KindViolation
@@ -859,10 +857,8 @@ func TestEndOfStreamResponseIsJudgedAndAuditedOnFlush(t *testing.T) {
 			if statements, denied := g.Stats(); statements != 1 || denied != btoi(pol != nil) {
 				t.Fatalf("Stats = %d/%d, want 1 statement and %d denied", statements, denied, btoi(pol != nil))
 			}
-			// The relay may flush more than once; the codec answers once.
-			if _, err := g.FlushResponseChecked(); err != nil {
-				t.Fatalf("second FlushResponseChecked: %v", err)
-			}
+			// The relay may call it more than once; the codec answers once.
+			g.EndOfStream()
 			if n := len(sink.kinds()); n != 1 {
 				t.Fatalf("recorded %d times: %v", n, sink.kinds())
 			}
