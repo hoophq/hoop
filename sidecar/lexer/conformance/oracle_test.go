@@ -748,3 +748,63 @@ func TestCorpusGroupsAreCovered(t *testing.T) {
 		t.Errorf("group %q is used by the corpus but missing from groups()", g)
 	}
 }
+
+// The callees the scanner reports are held to PostgreSQL's own reading of
+// CALL. A CALL is conceded as unreadable (the body is in the catalog), so
+// the write-set check above never compares it; this one compares the name,
+// which is what a procedure rule matches on. Every top-level CALL counts;
+// an EXECUTE is a prepared statement here and names no procedure. EXPLAIN
+// CALL is not PostgreSQL, so the EXPLAIN exclusion stays a unit test.
+func TestScannerCalleesMatchPostgres(t *testing.T) {
+	for _, sql := range []string{
+		`CALL purge()`,
+		`CALL "Ops".purge(1)`,
+		`CALL public.purge(); CALL audit.touch()`,
+		`SET search_path = app; CALL purge()`,
+		`EXECUTE purge`,
+		`SELECT purge()`,
+	} {
+		t.Run(caseName(sql), func(t *testing.T) {
+			want, err := oracleCallees(sql)
+			if err != nil {
+				t.Fatalf("oracle could not parse fixture: %v", err)
+			}
+			got := normalizedCallees(lexer.Analyze(sql, lexer.Postgres).Callees)
+			if !slices.Equal(got, want) {
+				t.Errorf("callees disagree\n  sql:      %s\n  scanner:  %v\n  postgres: %v", sql, got, want)
+			}
+		})
+	}
+}
+
+// oracleCallees lists every top-level CALL's procedure as PostgreSQL parses
+// it, dotted, in statement order.
+func oracleCallees(sql string) ([]string, error) {
+	tree, err := pgquery.Parse(sql)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, raw := range tree.GetStmts() {
+		call := raw.GetStmt().GetCallStmt()
+		if call == nil {
+			continue
+		}
+		var parts []string
+		for _, n := range call.GetFunccall().GetFuncname() {
+			parts = append(parts, strings.ToLower(n.GetString_().GetSval()))
+		}
+		out = append(out, strings.Join(parts, "."))
+	}
+	return out, nil
+}
+
+// normalizedCallees folds the scanner's verbatim spellings to the
+// parser's: lowercase, double-quote delimiters removed.
+func normalizedCallees(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, c := range in {
+		out = append(out, strings.ToLower(strings.ReplaceAll(c, `"`, "")))
+	}
+	return out
+}

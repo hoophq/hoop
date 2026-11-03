@@ -75,12 +75,22 @@ func (l ListenerConfig) credentialHeader() string {
 // gate's cannot be configured apart; see gate.Config.AuthenticatesCaller.
 func (l ListenerConfig) authenticatesCaller() bool { return l.CallerToken != nil }
 
-// buildRequestIdentity returns the resolver for credentialHeader's value,
-// nil when the lane has none. roots is the process trust pool, so a Google
-// API reached through an intercepting proxy verifies against its CA. tokens
-// is the lane's caller token file, opened by openCallerTokens.
+// buildRequestIdentity returns the resolver for the credential a lane's
+// codec lifts, nil when the lane has none. roots is the process trust pool,
+// so a Google API reached through an intercepting proxy verifies against its
+// CA. tokens is the lane's caller token file, opened by openCallerTokens.
+//
+// An mssql lane always has one: its codec lifts the user name from a
+// readable LOGIN7, and the session is named for it. A login the codec
+// cannot read (encrypted, which every driver does by default; or
+// integrated) lifts nothing and the session stays anonymous, as it was
+// before this resolver existed. No option turns it on or off: the name is
+// information the connection already carries, and a lane that wants no
+// anonymous sessions refuses them in policy.
 func buildRequestIdentity(l ListenerConfig, roots *x509.CertPool, tokens *token.File) (gate.RequestIdentity, error) {
 	switch {
+	case inspect.Protocol(l.Protocol) == inspect.MSSQL:
+		return proxy.LoginIdentity{}, nil
 	case l.credentialHeader() == "":
 		return nil, nil
 	case l.CallerToken != nil:

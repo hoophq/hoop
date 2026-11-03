@@ -109,14 +109,22 @@ listeners:
   # Envoy terminates the client's TDS 8.0 TLS and forwards plaintext here, so
   # this relay reads every statement without holding a key or a credential.
   #
+  # Because the LOGIN7 crosses in the clear too, the session is named for
+  # the SQL login: `principal: appuser` on every audit row, and the `LOGIN`
+  # row carries the client's host, application and driver. Under TDS 7.x
+  # (the mssql2019 overlay) the login is the one encrypted packet and the
+  # principal stays `anonymous`; a Kerberos login stays `anonymous` here too,
+  # because the name is inside the ticket.
+  #
   # Masking works here now. The codec re-frames TDS response tokens the way
   # the postgres one re-frames DataRow: it reassembles the token stream across
-  # packets, rewrites ROW and NBCROW values, and lays fresh packets over the
-  # result. See codec/mssql/rewrite.go.
+  # packets, rewrites ROW, NBCROW and RETURNVALUE (an OUTPUT parameter)
+  # values, and lays fresh packets over the result. See codec/mssql/rewrite.go.
   #
   # A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the
   # rewriting for that connection rather than guessing a length. Statements
-  # and policy carry on; only masking steps aside.
+  # and policy carry on; only masking steps aside, and the trail records a
+  # `masking_declined` activity row with the reason.
   #
   # Kerberos needs nothing configured. The SSPI packets (TDS type 0x11) are
   # forwarded verbatim by the codec, so the client's ticket reaches SQL
@@ -142,10 +150,26 @@ listeners:
     # source), not flipping a config key.
     guardrails:
       rules:
+        # Reaches a DELETE however the driver sends it: a batch, the
+        # statement inside sp_executesql, and an sp_execute of a prepared
+        # handle, whose text the codec read off the sp_prepexec that created
+        # it. It does NOT reach `EXEC dbo.delete_customer`: a procedure's
+        # body is in the catalog, so the call is `unknown` with the reason
+        # "stored procedure; body is in the catalog". The rule below does.
         - name: no-destructive-tsql
           type: operation
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on mssqldb
+        # Procedures by name, in every spelling a client can reach them by:
+        # `dbo.get_secrets`, `[dbo].[get_secrets]`, `appdb.dbo.get_secrets`,
+        # from a batch `EXEC` or an RPC `callproc`. A regex scoped to
+        # `operations: [unknown]` can do the same; this is the first-class
+        # form. Any procedure not named here runs, is recorded as
+        # `EXEC <name>` with `mssql.proc`, and has its result set masked.
+        - name: no-secret-procs
+          type: procedure
+          procedures: [get_secrets, delete_customer]
+          message: this procedure is not callable through mssqldb
     mask:
       rules:
         # Column rules beat detection wherever the protocol names its values.
