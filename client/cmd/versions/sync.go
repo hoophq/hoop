@@ -25,6 +25,10 @@ require any gateway configuration).`,
 	},
 }
 
+// Sync installs and activates the CLI version the configured gateway reports,
+// the same as `hoop versions sync`.
+func Sync() error { return runSync() }
+
 func runSync() error {
 	// The version-mismatch warning would otherwise fire right before
 	// the "Installing <new>..." banner we print below. Silence it for
