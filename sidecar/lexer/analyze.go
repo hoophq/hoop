@@ -185,6 +185,12 @@ type analyzer struct {
 	// callees are the names every top-level EXEC, EXECUTE or CALL named;
 	// see Analysis.Callees.
 	callees []string
+
+	// tsqlModule marks a T-SQL batch that defines a procedure, function or
+	// trigger. T-SQL requires such a CREATE or ALTER to be the only
+	// statement in its batch, so once seen, every EXEC after it is in the
+	// body: source the server compiles, not a call the client made.
+	tsqlModule bool
 }
 
 // Analyze reports what one SQL statement does.
@@ -638,8 +644,9 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 		// `DECLARE @x INT EXEC dbo.p` each run p. EXEC and EXECUTE are
 		// reserved, so one at the top level is a statement wherever it
 		// sits, and it is read as a head there: the batch is then an
-		// unreadable call, not the SET it opened with.
-		return (word == "exec" || word == "execute") && len(a.stack) == 1
+		// unreadable call, not the SET it opened with. Inside a module
+		// definition it is body text; see tsqlModule.
+		return !a.tsqlModule && (word == "exec" || word == "execute") && len(a.stack) == 1
 	}
 	return false
 }
@@ -778,13 +785,16 @@ func (a *analyzer) head(t Token, i int) bool {
 	// PostgreSQL and MySQL `EXECUTE name` runs a prepared statement, and
 	// a rule naming a procedure must not fire on a query that happens to
 	// share its name.
-	if verb == Call && !a.explainSeen && a.top().kind == regTop {
+	if verb == Call && !a.explainSeen && !a.tsqlModule && a.top().kind == regTop {
 		call := t.Text == "call" || a.d == MSSQL && (t.Text == "exec" || t.Text == "execute")
 		if call {
 			if name := a.calleeAt(i + 1); name != "" {
 				a.callees = append(a.callees, name)
 			}
 		}
+	}
+	if a.d == MSSQL && (verb == Create || verb == Alter) && a.tsqlModuleAt(i+1) {
+		a.tsqlModule = true
 	}
 
 	if a.d == Oracle {
@@ -1301,22 +1311,29 @@ func (a *analyzer) tableChanges(j int) (int, Relation, bool) {
 	return j, Relation{}, false
 }
 
-// calleeAt returns the source text of the name that starts at token j: name
-// tokens joined by dots, read from the bytes so brackets, quotes and case
-// survive. Empty when j names nothing: a parenthesis (`EXEC ('...')`), a
-// string, IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure, or
-// AS, which makes T-SQL's `EXECUTE AS USER = 'x'` a context switch.
-// T-SQL's `EXEC @status = dbo.proc` is read past its return variable.
+// calleeAt returns the name that starts at token j as the client wrote it:
+// each name token's own source bytes, so brackets, quotes and case survive,
+// joined by dots. Token by token rather than one slice from first to last,
+// because the scanner drops comments and whitespace between the parts and
+// SQL Server does too: `EXEC dbo./**/get_secrets` runs dbo.get_secrets.
+// Empty when j names nothing: a parenthesis (`EXEC ('...')`), a string,
+// IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure, or AS, which
+// makes T-SQL's `EXECUTE AS USER = 'x'` a context switch. T-SQL's
+// `EXEC @status = dbo.proc` is read past its return variable, and its
+// temporary procedures keep their `#` or `##`.
 func (a *analyzer) calleeAt(j int) string {
 	if a.puncts(j, "@") && j+1 < len(a.toks) && a.toks[j+1].isName() && a.puncts(j+2, "=") {
 		j += 3
 	}
+	prefix := ""
+	if a.d == MSSQL {
+		for a.puncts(j, "#") {
+			prefix += "#"
+			j++
+		}
+	}
 	if j >= len(a.toks) || !a.toks[j].isName() || a.toks[j].isWord("immediate") || a.toks[j].isWord("as") {
 		return ""
-	}
-	k := j
-	for a.puncts(k+1, ".") && k+2 < len(a.toks) && a.toks[k+2].isName() {
-		k += 2
 	}
 	if a.spans == nil {
 		a.spans = tokenSpans(a.src, a.rules)
@@ -1325,7 +1342,28 @@ func (a *analyzer) calleeAt(j int) string {
 	if len(a.spans) != len(a.toks) {
 		return ""
 	}
-	return a.src[a.spans[j][0]:a.spans[k][1]]
+	name := prefix + a.src[a.spans[j][0]:a.spans[j][1]]
+	for a.puncts(j+1, ".") && j+2 < len(a.toks) && a.toks[j+2].isName() {
+		j += 2
+		name += "." + a.src[a.spans[j][0]:a.spans[j][1]]
+	}
+	return name
+}
+
+// tsqlModuleAt reports whether the CREATE or ALTER at i-1 defines a stored
+// module: `CREATE [OR ALTER] PROC[EDURE] | FUNCTION | TRIGGER`.
+func (a *analyzer) tsqlModuleAt(i int) bool {
+	if i+1 < len(a.toks) && a.toks[i].isWord("or") && a.toks[i+1].isWord("alter") {
+		i += 2
+	}
+	if i >= len(a.toks) {
+		return false
+	}
+	switch a.toks[i].Text {
+	case "proc", "procedure", "function", "trigger":
+		return a.toks[i].Kind == Word
+	}
+	return false
 }
 
 // literalName reads the Literal token at k as a relation name: a string

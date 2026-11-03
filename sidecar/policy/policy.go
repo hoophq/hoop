@@ -875,7 +875,38 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		}
 	}()
 
+	// The procedures a client statement calls, read once: the lexer runs
+	// over the text to find them, and a lane with several procedure rules
+	// must not pay that per rule. Nil until the first procedure rule asks,
+	// and never for a response, which calls nothing.
+	var (
+		called     []string
+		calledRead bool
+	)
+	procedures := func() []string {
+		if !calledRead {
+			calledRead = true
+			if stmt.Direction != inspect.FromServer {
+				called = inspect.ProceduresOf(stmt)
+			}
+		}
+		return called
+	}
+
 	for _, rule := range r.rules {
+		if rule.Type == MatchProcedure {
+			if !rule.inScope(stmt) || !rule.matchesProcedure(procedures()) {
+				continue
+			}
+			if rule.Action == ActionDefer && !r.DenyDeferred {
+				// The normalized name, not the client's spelling: a
+				// policy compares against one form, and the raw name is
+				// already in input.statement or input.metadata.
+				deferred = recordMatch(deferred, rule, map[string]any{"procedure": rule.procedureValue(procedures())})
+				continue
+			}
+			return DenyRule(rule, rule.messageOr(stmt))
+		}
 		// Rules owns the Scanner, so PII dispatches here rather than
 		// inside Rule.matches.
 		if rule.Type == MatchPII {
@@ -975,11 +1006,6 @@ func (r Rule) findingValues(stmt inspect.Statement) map[string]any {
 			}
 		}
 		return map[string]any{"words": hit}
-	case MatchProcedure:
-		// The normalized name, not the client's spelling: a policy
-		// compares against one form, and the raw name is already in
-		// input.statement or input.metadata.
-		return map[string]any{"procedure": r.procedureValue(stmt)}
 	}
 	return nil
 }
@@ -1013,6 +1039,15 @@ func (r Rule) messageOr(stmt inspect.Statement) string {
 	return fmt.Sprintf("statement denied by policy rule %q (operation=%s)", r.Name, stmt.Operation)
 }
 
+// inScope applies the Operations narrowing matches describes, for a rule
+// type evaluated outside matches.
+func (r Rule) inScope(stmt inspect.Statement) bool {
+	if len(r.Operations) > 0 && r.Type != MatchOperation {
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) })
+	}
+	return true
+}
+
 func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	// Operations NARROWS every rule type except the one it defines.
 	//
@@ -1030,10 +1065,8 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	//
 	// MatchOperation is excluded because there the field IS the matcher;
 	// narrowing it by itself would be a tautology.
-	if len(r.Operations) > 0 && r.Type != MatchOperation {
-		if !slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }) {
-			return false, nil
-		}
+	if !r.inScope(stmt) {
+		return false, nil
 	}
 
 	// http.go handles the HTTP rule types, grpc.go the gRPC ones and
@@ -1045,9 +1078,6 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return matched, nil
 	}
 	if matched, ok := r.matchesMetadata(stmt); ok {
-		return matched, nil
-	}
-	if matched, ok := r.matchesProcedure(stmt); ok {
 		return matched, nil
 	}
 	switch r.Type {

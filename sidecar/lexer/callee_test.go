@@ -45,6 +45,18 @@ func TestCalleesOfTopLevelCalls(t *testing.T) {
 		{`DECLARE @x INT EXEC dbo.delete_customer 3`, lexer.MSSQL, "dbo.delete_customer"},
 		{`INSERT INTO t EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
 		{`SELECT (1) EXECUTE dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		// Comments and whitespace between the parts are not part of the name.
+		{`EXEC dbo./**/get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		{"EXEC dbo .\n  get_secrets", lexer.MSSQL, "dbo.get_secrets"},
+		{`EXEC [dbo]/*x*/.[get_secrets]`, lexer.MSSQL, "[dbo].[get_secrets]"},
+		// Temporary procedures keep their prefix.
+		{`EXEC #local_proc`, lexer.MSSQL, "#local_proc"},
+		{`EXEC ##global_proc 1`, lexer.MSSQL, "##global_proc"},
+		// A module definition does not call what its body calls.
+		{`CREATE PROCEDURE dbo.p AS EXEC dbo.q`, lexer.MSSQL, ""},
+		{`CREATE OR ALTER PROC dbo.p AS BEGIN EXEC dbo.q; EXEC dbo.r END`, lexer.MSSQL, ""},
+		{`ALTER TRIGGER dbo.t ON dbo.c AFTER INSERT AS EXEC dbo.q`, lexer.MSSQL, ""},
+		{`CREATE FUNCTION dbo.f() RETURNS INT AS BEGIN EXEC dbo.q RETURN 1 END`, lexer.MSSQL, ""},
 		// A context switch, not a call.
 		{`EXECUTE AS USER = 'alice'`, lexer.MSSQL, ""},
 		{`EXECUTE AS LOGIN = 'alice'; EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},

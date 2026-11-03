@@ -1564,8 +1564,36 @@ func TestMaskingDeclineIsAuditedAndRefusedWhenTheSinkFails(t *testing.T) {
 		if d.Allowed == failClosed {
 			t.Errorf("FailOnAuditError=%v: Allowed=%v", failClosed, d.Allowed)
 		}
-		if failClosed && d.Rule != "audit" {
-			t.Errorf("refusal rule = %q, want audit", d.Rule)
+		if failClosed && (d.Rule != "audit" || d.Err == nil) {
+			t.Errorf("refusal rule = %q err = %v, want audit with the sink's error", d.Rule, d.Err)
+		}
+	}
+
+	// The refusal keeps what the codec already handed the client. A
+	// response in flight goes out as rebuilt with no deny frame inside it;
+	// one not yet started keeps the whole responses before it as
+	// Preceding, so the client does not read the deny frame as their
+	// answer.
+	for _, started := range []bool{true, false} {
+		sink := &recordingSink{failOn: audit.KindActivity}
+		codec := &decliningReframer{}
+		codec.started = started
+		g, _ := gate.New(newSession(), gate.Config{
+			Protocol:         inspect.Postgres,
+			Audit:            sink,
+			Masker:           stubMasker{find: "x", replace: "y"},
+			FailOnAuditError: true,
+			CodecFactory:     func() inspect.Codec { return codec },
+		})
+		d := g.Response(context.Background(), []byte("rows"))
+		if d.Allowed {
+			t.Fatalf("started=%v: allowed", started)
+		}
+		switch {
+		case started && (!d.NoFrame || string(d.Payload) != "rows"):
+			t.Errorf("started response: NoFrame=%v Payload=%q, want the bytes and no frame", d.NoFrame, d.Payload)
+		case !started && (d.NoFrame || string(d.Preceding) != "rows" || d.Payload != nil):
+			t.Errorf("unstarted response: NoFrame=%v Preceding=%q Payload=%q, want the bytes as Preceding", d.NoFrame, d.Preceding, d.Payload)
 		}
 	}
 

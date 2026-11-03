@@ -1573,8 +1573,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 				ln.notes = append(ln.notes, fmt.Sprintf(
 					"table rule %q sets require_table_match with no operations scope, so it "+
 						"also refuses every stored-procedure call and the driver's SET/USE "+
-						"batches, whose relations the scanner cannot read. Add operations: to "+
-						"scope it, or name the procedures in a procedure rule", r.Name))
+						"batches, whose relations the scanner cannot read. Scope it with "+
+						"operations: (select, insert, update, delete). A procedure rule names "+
+						"the calls to refuse; it does not change what this rule refuses", r.Name))
 			}
 		}
 		// An omitted trigger on an ungated lane classifies EVERYTHING.

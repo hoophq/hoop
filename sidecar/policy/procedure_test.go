@@ -55,6 +55,9 @@ func TestProcedureMatchesAcrossSpellings(t *testing.T) {
 		{"get_secrets", `"dbo"."Get_Secrets"`, true},
 		{"dbo.get_secrets", "appdb.dbo.get_secrets", true},
 		{"get_secrets", "[ get_secrets ]", false},
+		{"master..sp_executesql", "master..sp_executesql", true},
+		{"master..sp_executesql", "master.sys.sp_executesql", false},
+		{"sp_executesql", "master..sp_executesql", true},
 		{"[ get_secrets ]", "[ get_secrets ]", true},
 		{"get_secrets", " dbo . get_secrets ", true},
 		{"dbo.get_secrets", "[dbo].[get_secrets]", true},
@@ -180,6 +183,19 @@ func TestProcedureDeferReportsTheNormalizedName(t *testing.T) {
 
 // A rule naming no procedure would load and match nothing, the failure this
 // package refuses everywhere; so would a name that normalizes to nothing.
+// SQL Server lets a three-part name omit its schema; any other empty part
+// is refused.
+func TestProcedureRuleAcceptsAnOmittedSchema(t *testing.T) {
+	if _, err := policy.NewRules([]policy.Rule{{Name: "r", Type: policy.MatchProcedure, Procedures: []string{"master..sp_executesql"}}}); err != nil {
+		t.Fatalf("master..sp_executesql refused: %v", err)
+	}
+	for _, bad := range []string{"dbo.", ".x", "a..b..c", "..x"} {
+		if _, err := policy.NewRules([]policy.Rule{{Name: "r", Type: policy.MatchProcedure, Procedures: []string{bad}}}); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
 func TestProcedureRuleWithoutProceduresIsRefused(t *testing.T) {
 	for name, procs := range map[string][]string{
 		"empty list":  nil,

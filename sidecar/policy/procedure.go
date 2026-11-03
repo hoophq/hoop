@@ -3,8 +3,6 @@ package policy
 import (
 	"fmt"
 	"strings"
-
-	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // A stored procedure call reaches policy as `EXEC <name>` with operation
@@ -38,8 +36,10 @@ func (r Rule) compileProcedures() ([][]string, error) {
 		if len(parts) == 0 {
 			return nil, fmt.Errorf("%s: procedure rule names an empty procedure", r.Name)
 		}
-		for _, part := range parts {
-			if part == "" {
+		for i, part := range parts {
+			// SQL Server lets a three-part name omit its schema:
+			// `master..sp_executesql`. Any other empty part names nothing.
+			if part == "" && !(len(parts) == 3 && i == 1) {
 				return nil, fmt.Errorf("%s: procedure %q has an empty part", r.Name, p)
 			}
 		}
@@ -48,30 +48,24 @@ func (r Rule) compileProcedures() ([][]string, error) {
 	return out, nil
 }
 
-// matchesProcedure evaluates the procedure rule type. ok reports whether
-// this rule type belongs here, mirroring matchesMetadata. A response calls
-// nothing, so it never matches, whatever its text says.
-func (r Rule) matchesProcedure(stmt inspect.Statement) (matched, ok bool) {
-	if r.Type != MatchProcedure {
-		return false, false
-	}
-	if stmt.Direction == inspect.FromServer {
-		return false, true
-	}
-	// Every procedure the statement calls: a batch runs them all, so a rule
-	// naming any one of them has a say.
-	for _, name := range inspect.ProceduresOf(stmt) {
-		called := procedureParts(name)
-		if len(called) == 0 {
+// matchesProcedure evaluates the procedure rule type against the
+// procedures the statement calls, which Rules reads once per statement
+// (inspect.ProceduresOf runs the lexer) and hands to every procedure rule.
+// A batch runs every call it names, so a rule naming any one of them has a
+// say. A response calls nothing; the caller passes nil for one.
+func (r Rule) matchesProcedure(called []string) bool {
+	for _, name := range called {
+		parts := procedureParts(name)
+		if len(parts) == 0 {
 			continue
 		}
 		for _, want := range r.procedures {
-			if trailingParts(called, want) {
-				return true, true
+			if trailingParts(parts, want) {
+				return true
 			}
 		}
 	}
-	return false, true
+	return false
 }
 
 // trailingParts reports whether want equals the last len(want) parts of got.
@@ -151,12 +145,12 @@ func procedureParts(name string) []string {
 // reads one spelling whatever the client sent. A statement calling several
 // is reported by the one the rule was written for; the others are in the
 // statement text.
-func (r Rule) procedureValue(stmt inspect.Statement) string {
-	for _, name := range inspect.ProceduresOf(stmt) {
-		called := procedureParts(name)
+func (r Rule) procedureValue(called []string) string {
+	for _, name := range called {
+		parts := procedureParts(name)
 		for _, want := range r.procedures {
-			if trailingParts(called, want) {
-				return strings.Join(called, ".")
+			if trailingParts(parts, want) {
+				return strings.Join(parts, ".")
 			}
 		}
 	}

@@ -1455,14 +1455,26 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
-	if g.recordDeclined(ctx, res) {
+	if auditErr := g.recordDeclined(ctx, res); auditErr != nil && g.cfg.FailOnAuditError {
 		// The one record of a masking gap could not be written, on a
 		// lane that refuses to run unrecorded. The values after it would
-		// travel unmasked with nothing in the trail saying so.
+		// travel unmasked with nothing in the trail saying so. The
+		// refusal takes the shape the ErrStreamUnsafe branch above gives
+		// one: what the codec already sent or rebuilt whole stays with
+		// the client, and a deny frame goes only where it can start a
+		// response.
+		d.Err = errors.Join(d.Err, auditErr)
 		d.Allowed = false
 		d.Rule = "audit"
 		d.Message = "audit trail unavailable; response refused"
 		d.Payload = nil
+		if g.responseStarted(nil) {
+			d.Payload = out
+			d.NoFrame = true
+		} else if _, ok := g.reframer.(responseStarter); ok {
+			d.Preceding = out
+		}
+		g.recordMasked(ctx, d, entities, res.Cells)
 		g.mu.Lock()
 		g.denied++
 		g.mu.Unlock()
@@ -1475,15 +1487,14 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 // recordDeclined writes the one record a codec produces when it stops
 // rewriting for the rest of the connection. Values keep travelling after
 // it, unmasked, and the client sees nothing different: this row is the only
-// place the gap shows. It reports true when the write failed on a lane
-// configured to refuse rather than run unrecorded.
-func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) (refused bool) {
+// place the gap shows. It returns the sink's error; the caller decides
+// whether the lane runs unrecorded.
+func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) error {
 	if res.Declined == "" {
-		return false
+		return nil
 	}
-	err := g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
+	return g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
 		map[string]string{"reason": res.Declined}))
-	return err != nil && g.cfg.FailOnAuditError
 }
 
 // recordMasked counts and audits the cells the codec masked in bytes that
