@@ -276,7 +276,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `WEBAPP_USERS_MANAGEMENT`, `DISABLE_SESSIONS_DOWNLOAD`, `DISABLE_CLIPBOARD_COPY_CUT` | web app toggles |
 | `AUTH_METHOD` | inferred: any `IDP_*` key selects OIDC, none leaves local. SAML is configured in the database and cannot be selected by environment |
 | `STATIC_UI_PATH` | the web UI is compiled into the binary; any path here serves API-only with a 404 at `/` while the pod stays ready. Setting it through `extraSecret` breaks the UI |
-| `ANALYTICS_TRACKING`, `PGREST_ROLE`, `ADMIN_USERNAME` | dead keys in the gateway chart. Nothing reads the first two by those names; `ADMIN_USERNAME` is a constant default in `gateway/storagev2/types/const.go` |
+| `PGREST_ROLE`, `ADMIN_USERNAME` | dead keys in the gateway chart. Nothing reads the first by that name; `ADMIN_USERNAME` is a constant default in `gateway/storagev2/types/const.go` |
 
 ## Values
 

@@ -49,6 +49,15 @@ func UpdateOrgLicense(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// ApplyOrgLicense stores a signed document after the checks an upload goes
+// through: signature, validity window and this gateway's host.
+func ApplyOrgLicense(orgID string, licenseData []byte) error {
+	if _, err := license.Parse(licenseData, appconfig.Get().ApiHostname()); err != nil {
+		return err
+	}
+	return models.UpdateOrgLicense(orgID, licenseData)
+}
+
 type SignRequest struct {
 	LicenseType  string   `json:"license_type"`
 	AllowedHosts []string `json:"allowed_hosts"`

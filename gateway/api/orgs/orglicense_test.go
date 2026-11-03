@@ -50,3 +50,23 @@ func TestSignedLicenseProperties(t *testing.T) {
 		}
 	}
 }
+
+// A valid document cannot be produced here: the signing key is not in the
+// repository. These are the states that MUST be refused before anything is
+// stored; models.DB is nil in this package, so reaching the store panics.
+func TestApplyOrgLicenseRefuses(t *testing.T) {
+	for _, tt := range []struct {
+		msg  string
+		data string
+	}{
+		{"malformed document", `{"payload":`},
+		{"enterprise type without a valid signature", `{"payload":{"type":"enterprise","issued_at":1,"expire_at":4102444800,"allowed_hosts":["*"],"description":"d"},"key_id":"k","signature":"c2ln"}`},
+		{"unknown license type", `{"payload":{"type":"trial","issued_at":1,"expire_at":4102444800,"allowed_hosts":["*"],"description":"d"},"key_id":"k","signature":"c2ln"}`},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			if err := ApplyOrgLicense("org-1", []byte(tt.data)); err == nil {
+				t.Fatal("expected ApplyOrgLicense to refuse, got nil")
+			}
+		})
+	}
+}

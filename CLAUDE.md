@@ -138,8 +138,9 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 - **TLS termination**: `gateway/proxyproto/tlstermination/`
 
 ## Configuration
-- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, or `RDP_PII_GUARD_POLICY` stops startup.
+- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, `RDP_PII_GUARD_POLICY`, `HOOP_LICENSE` or `ANALYTICS_MODE` stops startup.
 - `RDP_PII_SNAPSHOT_INTERVAL`, `RDP_PII_SCORE_THRESHOLD`, and `EVENT_ROUTING_WORKERS` fall back to a default instead.
+- `HOOP_LICENSE` (license JSON or a file path) and `ANALYTICS_MODE` (`identified|anonymous|disabled`) are applied to the default org at every boot; neither is accepted with `ORG_MULTI_TENANT`.
 - Key env vars: `POSTGRES_DB_URI`, `API_URL`, `GRPC_URL`, `AUTH_METHOD`, `DLP_PROVIDER`, `DLP_MODE`, `GIN_MODE`.
 - DLP providers: Presidio (`MSPRESIDIO_ANALYZER_URL`, `MSPRESIDIO_ANONYMIZER_URL`) or GCP (`GOOGLE_APPLICATION_CREDENTIALS_JSON`).
 - Auth provider resolution: dynamic (`gateway/idp/core.go`): DB `server_auth_config` overrides env; providers are `local`, `oidc`, `saml` with 30-minute cached verifier instances.

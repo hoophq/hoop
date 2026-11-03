@@ -150,6 +150,12 @@ config:
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: "0|1|2"
   # ASK_AI_CREDENTIALS: ''
+  # License of the default organization, stored at every boot: the signed
+  # license JSON itself (starts with '{') or the path of a file that holds it.
+  # HOOP_LICENSE: ''
+  # Analytics mode of the default organization, set at every boot:
+  # identified | anonymous | disabled. Unset leaves the stored value alone.
+  # ANALYTICS_MODE: ''
   # Data masking provider: 'mspresidio' (or dataMasking.enabled above),
   # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
   # (in-process pattern engine on the agent, no extra services or

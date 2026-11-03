@@ -134,6 +134,9 @@ type sidecarIdentity struct {
 	ID    string
 	Name  string
 	OrgID string
+	// Instance is the hostname the sidecar sent in
+	// daemon.SidecarInstanceHeader, empty for a build that sends none.
+	Instance string
 	// Mirrors maps a listener to its mirror connection's name.
 	Mirrors map[string]string
 }
@@ -399,8 +402,12 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 	}
 	user := sidecarUserFor(principal)
 	sess.UserName, sess.UserEmail = user.Name, user.Email
+	meta := sess.Metadata["sidecar"].(map[string]any)
 	if user.Full != "" {
-		sess.Metadata["sidecar"].(map[string]any)["principal"] = user.Full
+		meta["principal"] = user.Full
+	}
+	if sc.Instance != "" {
+		meta["instance"] = sc.Instance
 	}
 	return sess, nil
 }
@@ -568,8 +575,9 @@ func metricBool(m map[string]any, key string) bool {
 }
 
 // ApplySidecarSessionEvents applies each session in its own transaction. It
-// returns SidecarEventsRefused when every failure is permanent.
-func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.SessionEvent) (SidecarEventsResult, error) {
+// returns SidecarEventsRefused when every failure is permanent. instance is
+// the pod the batch came from, empty for a build that does not name itself.
+func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, instance string, events []daemon.SessionEvent) (SidecarEventsResult, error) {
 	var result SidecarEventsResult
 	if err := ValidateSidecarSessionEvents(events); err != nil {
 		return result, err
@@ -578,7 +586,7 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	if err != nil {
 		return result, fmt.Errorf("failed reading the sidecar's mirror connections: %w", err)
 	}
-	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID, Mirrors: mirrors}
+	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID, Instance: instance, Mirrors: mirrors}
 	receivedAt := time.Now().UTC()
 
 	// Grouped by session; the sidecar's order holds within a group.

@@ -1,6 +1,7 @@
 // Package sidecarmirrorstatus sets offline the connections that mirror a
 // sidecar listener when their sidecar stops checking in. The handshake sets
-// them online (gateway/api/sidecar); nothing else sees a sidecar stop.
+// them online (gateway/api/sidecar); nothing else sees a sidecar stop. The
+// same sweep drops the instance rows of pods silent past their retention.
 package sidecarmirrorstatus
 
 import (
@@ -49,5 +50,14 @@ func sweep(ctx context.Context, db *gorm.DB) {
 	}
 	if n > 0 {
 		log.Infof("sidecar mirrors: set %v connection(s) offline, no sidecar check-in", n)
+	}
+
+	n, err = models.DeleteStaleSidecarInstances(ctx, db, models.SidecarInstanceRetention)
+	if err != nil {
+		log.Errorf("sidecar instances: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Infof("sidecar instances: removed %v silent past %v", n, models.SidecarInstanceRetention)
 	}
 }

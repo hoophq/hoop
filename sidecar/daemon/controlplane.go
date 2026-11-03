@@ -93,6 +93,18 @@ const (
 	// Exported because the gateway sets what this reads.
 	SessionEventsHeader = "hoop-sidecar-session-events"
 
+	// SidecarInstanceHeader names the process behind a request: the
+	// hostname, which on Kubernetes is the pod name. Pods sharing one
+	// token or one service account identity reach the same sidecar row,
+	// and this is how the plane tells them apart. Sent on every
+	// control-plane request; omitted when the hostname is unknown.
+	//
+	// A HEADER, like CapabilitiesHeader, so the request and the document
+	// stay the same bytes for every build.
+	//
+	// Exported because the gateway reads what this sets.
+	SidecarInstanceHeader = "hoop-sidecar-instance"
+
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
 	// anything near this is a misdirected URL, not a big deployment.
@@ -108,6 +120,18 @@ const (
 	// last-seen staleness on the plane reads the same.
 	heartbeatJitter = 0.2
 )
+
+// sidecarInstance is the SidecarInstanceHeader value, read once: the
+// hostname does not change within a process.
+var sidecarInstance, _ = os.Hostname()
+
+// setSidecarInstance adds SidecarInstanceHeader to one control-plane
+// request, when there is a hostname to report.
+func setSidecarInstance(h http.Header) {
+	if sidecarInstance != "" {
+		h.Set(SidecarInstanceHeader, sidecarInstance)
+	}
+}
 
 // controlPlane is the resolved connection Setup reached: where to call, what
 // to present, and the config bytes this process is serving, kept for the
@@ -475,6 +499,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(header, value)
 	req.Header.Set(CapabilitiesHeader, strings.Join(SidecarCapabilities(), ","))
+	setSidecarInstance(req.Header)
 
 	resp, derr := controlPlaneHTTPClient().Do(req)
 	if derr != nil {
@@ -689,6 +714,7 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(header, value)
+	setSidecarInstance(req.Header)
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {

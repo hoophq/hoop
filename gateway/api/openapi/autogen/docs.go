@@ -11002,6 +11002,12 @@ const docTemplate = `{
                         "in": "header"
                     },
                     {
+                        "type": "string",
+                        "description": "The hostname of the process, the pod name on Kubernetes. Recorded on each session as metadata.sidecar.instance.",
+                        "name": "hoop-sidecar-instance",
+                        "in": "header"
+                    },
+                    {
                         "description": "The request body resource",
                         "name": "request",
                         "in": "body",
@@ -11093,6 +11099,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report.",
                         "name": "hoop-sidecar-capabilities",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The hostname of the process, the pod name on Kubernetes. Pods sharing one credential are listed apart under instances on GET /sidecars/{nameOrID}. Absent means a build too old to report.",
+                        "name": "hoop-sidecar-instance",
                         "in": "header"
                     },
                     {
@@ -21787,6 +21799,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "system:serviceaccount:ws-123:hoop-sidecar"
                 },
+                "instances": {
+                    "description": "Instances lists the processes behind this sidecar, one per hostname\nsent in hoop-sidecar-instance: the pods sharing its credential.\nAbsent until one names itself, and on the list endpoint. The fields\nabove merge every instance; a row here says what one pod said last.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarInstance"
+                    }
+                },
                 "last_error": {
                     "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
                     "type": "string",
@@ -21906,6 +21925,46 @@ const docTemplate = `{
                     "description": "Version of the sidecar binary",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarInstance": {
+            "type": "object",
+            "properties": {
+                "applied_revision": {
+                    "description": "AppliedRevision is the configuration this instance says it is running;\nLastOutcome and LastError are what it did with the last one it\nhandled, as on the sidecar. Empty must read as unknown.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_outcome": {
+                    "type": "string",
+                    "example": "applied"
+                },
+                "last_seen_at": {
+                    "description": "Last time this instance handshook.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "The hostname the process sent, the pod name on Kubernetes.",
+                    "type": "string",
+                    "example": "hoop-sidecar-7d9f-abc12"
+                },
+                "status": {
+                    "description": "online while the last handshake is within three minutes, else offline.",
+                    "type": "string",
+                    "enum": [
+                        "online",
+                        "offline"
+                    ],
+                    "example": "online"
+                },
+                "version": {
+                    "description": "Version reported at the last handshake. Empty for a build too old to report.",
+                    "type": "string",
+                    "example": "1.2.3"
                 }
             }
         },
@@ -22115,6 +22174,13 @@ const docTemplate = `{
                 "identity_subject": {
                     "type": "string",
                     "example": "system:serviceaccount:ws-123:hoop-sidecar"
+                },
+                "instances": {
+                    "description": "Instances lists the processes behind this sidecar, one per hostname\nsent in hoop-sidecar-instance: the pods sharing its credential.\nAbsent until one names itself, and on the list endpoint. The fields\nabove merge every instance; a row here says what one pod said last.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarInstance"
+                    }
                 },
                 "last_error": {
                     "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
