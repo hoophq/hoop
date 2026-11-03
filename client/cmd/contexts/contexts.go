@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"text/tabwriter"
 
@@ -52,6 +53,7 @@ func init() {
 	createCmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "An API key to store as the login token (optional)")
 	createCmd.Flags().BoolVar(&overwriteFlag, "overwrite", false, "Replace a context that already exists")
 	useCmd.Flags().BoolVar(&skipSyncFlag, "skip-sync", false, "Do not sync the CLI version with the gateway")
+	useCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite a current configuration that no context keeps")
 	removeCmd.Flags().BoolVar(&forceFlag, "force", false, "Remove the context even if it is active")
 
 	MainCmd.AddCommand(createCmd, listCmd, showCmd, useCmd, removeCmd)
@@ -85,6 +87,10 @@ current configuration ($HOME/.hoop/config.toml), login included.`,
 			return err
 		}
 		fmt.Printf("Context %s saved (api_url=%s)\n", ctx.Name, ctx.ApiURL)
+		if apiURLFlag == "" {
+			// it is a copy of config.toml, so it is the context in use
+			return s.SetActive(ctx.Name)
+		}
 		return nil
 	},
 }
@@ -231,7 +237,10 @@ its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
 		if gate.err != nil {
 			return gate.err
 		}
-		if _, err := s.Use(target.Name); err != nil {
+		if _, err := s.Use(target.Name, forceFlag); err != nil {
+			if errors.Is(err, clientconfig.ErrUnsavedConfig) {
+				return fmt.Errorf("%v; save it first with `hoop context create NAME`, or pass --force to overwrite it", err)
+			}
 			return err
 		}
 		fmt.Printf("Switched to context %s (api_url=%s)\n", target.Name, target.ApiURL)
@@ -242,11 +251,35 @@ its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
 			fmt.Println(gate.syncHint)
 			return nil
 		}
-		if err := versions.Sync(); err != nil {
+		err = versions.SyncIf(hasContextCommand)
+		var notActivated *versions.NotActivatedError
+		if errors.As(err, &notActivated) {
+			fmt.Printf("The gateway runs %s, but hoop %s has no `hoop context`, so this CLI stays active to let you switch again.\n"+
+				"Run `hoop versions use %s` to use that version anyway.\n", notActivated.Version, notActivated.Version, notActivated.Version)
+			return nil
+		}
+		if err != nil {
 			return fmt.Errorf("switched to context %s, but the version sync failed: %w", target.Name, err)
 		}
 		return nil
 	},
+}
+
+// hasContextCommand refuses a CLI binary without `hoop context`: activating
+// it would leave the user unable to switch contexts again. Released versions
+// before this command answer `context --help` with "unknown command".
+// `--help` runs no command code and reads no configuration.
+func hasContextCommand(binary string) error {
+	out, err := exec.Command(binary, "context", "--help").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("it has no `hoop context` command (%v: %s)", err, strings.TrimSpace(firstLine(out)))
+	}
+	return nil
+}
+
+func firstLine(b []byte) string {
+	line, _, _ := strings.Cut(string(b), "\n")
+	return line
 }
 
 type flagGate struct {

@@ -17,6 +17,10 @@ import (
 // ErrContextNotFound is returned when a named context has no file.
 var ErrContextNotFound = errors.New("context not found")
 
+// ErrUnsavedConfig is returned by Use when config.toml holds an installation
+// that no context keeps: switching would lose it.
+var ErrUnsavedConfig = errors.New("the current configuration is not saved in a context")
+
 const (
 	contextsDirName  = "contexts"
 	activeContextKey = "current"
@@ -210,13 +214,32 @@ func (s *ContextStore) ReadConfigFile() (*Context, error) {
 	return &ctx, nil
 }
 
+// SetActive marks name as the active context. It does not touch config.toml.
+func (s *ContextStore) SetActive(name string) error {
+	if _, err := s.Get(name); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, activeContextKey), []byte(name+"\n"), 0600); err != nil {
+		return fmt.Errorf("failed marking context %s active: %v", name, err)
+	}
+	return nil
+}
+
 // Use makes name the active context. First it saves config.toml back into
 // the active context, so a token from `hoop login` is kept. Then it writes the
 // target into config.toml and marks it active.
-func (s *ContextStore) Use(name string) (*Context, error) {
+//
+// When config.toml holds an installation no context keeps, Use returns
+// ErrUnsavedConfig unless force is set.
+func (s *ContextStore) Use(name string, force bool) (*Context, error) {
 	target, err := s.Get(name)
 	if err != nil {
 		return nil, err
+	}
+	if !force {
+		if err := s.checkSaved(); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.saveBack(); err != nil {
 		return nil, err
@@ -230,10 +253,33 @@ func (s *ContextStore) Use(name string) (*Context, error) {
 	if _, err := conf.Save(); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(s.dir, activeContextKey), []byte(name+"\n"), 0600); err != nil {
-		return nil, fmt.Errorf("failed marking context %s active: %v", name, err)
+	if err := s.SetActive(name); err != nil {
+		return nil, err
 	}
 	return target, nil
+}
+
+// checkSaved returns ErrUnsavedConfig when config.toml has an installation
+// that is not the active context and that no context holds with the same
+// api_url and token.
+func (s *ContextStore) checkSaved() error {
+	current, err := s.ReadConfigFile()
+	if err != nil || current.ApiURL == "" {
+		return err
+	}
+	if active, err := s.Active(); err != nil || active != "" {
+		return err
+	}
+	items, err := s.List()
+	if err != nil {
+		return err
+	}
+	for _, ctx := range items {
+		if ctx.ApiURL == current.ApiURL && ctx.Token == current.Token {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w (api_url=%s)", ErrUnsavedConfig, current.ApiURL)
 }
 
 func (s *ContextStore) saveBack() error {
