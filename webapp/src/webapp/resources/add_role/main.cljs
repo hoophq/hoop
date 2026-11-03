@@ -18,6 +18,8 @@
         roles (rf/subscribe [:resource-setup/roles])]
 
     (rf/dispatch [:add-role->initialize resource-id])
+    ;; Opened from the React configure page, which does not load the CLJS metadata.
+    (rf/dispatch [:connections->load-metadata])
 
     (fn []
       (if @loading?
