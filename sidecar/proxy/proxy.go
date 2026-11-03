@@ -929,7 +929,20 @@ func (s *Server) pump(
 				return
 			}
 			if serverEOF {
-				g.EndOfStream()
+				d := g.EndOfStream()
+				clock.answered(ctx, finalAnswers(d.Statements))
+				if d.Err != nil {
+					log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
+				}
+				if !d.Allowed {
+					// The body already reached the client: what the
+					// reframer still holds is dropped, and the response is
+					// cut, as for a denial inside one.
+					s.denied.Add(1)
+					log.Info("statement denied", "direction", string(dir), "rule", d.Rule, "message", d.Message)
+					g.DiscardResponse()
+					return
+				}
 			}
 			tail, err := g.FlushResponseChecked()
 			if err != nil {

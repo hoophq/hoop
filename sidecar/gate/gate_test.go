@@ -842,7 +842,13 @@ func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
 			if len(sink.kinds()) != 0 {
 				t.Fatalf("recorded before the body ended: %v", sink.kinds())
 			}
-			g.EndOfStream()
+			d := g.EndOfStream()
+			if d.Allowed != (pol == nil) || len(d.Statements) != 1 || len(d.Payload) != 0 {
+				t.Fatalf("EndOfStream = %+v, want Allowed=%v, one statement, no bytes", d, pol == nil)
+			}
+			if pol != nil && (!d.NoFrame || d.DeniedStatement == nil || d.Rule == "") {
+				t.Fatalf("a denial at stream end must name its rule and ask for no frame: %+v", d)
+			}
 			kind := audit.KindStatement
 			if pol != nil {
 				kind = audit.KindViolation
@@ -858,7 +864,9 @@ func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
 				t.Fatalf("Stats = %d/%d, want 1 statement and %d denied", statements, denied, btoi(pol != nil))
 			}
 			// The relay may call it more than once; the codec answers once.
-			g.EndOfStream()
+			if again := g.EndOfStream(); !again.Allowed || len(again.Statements) != 0 {
+				t.Fatalf("second EndOfStream = %+v", again)
+			}
 			if n := len(sink.kinds()); n != 1 {
 				t.Fatalf("recorded %d times: %v", n, sink.kinds())
 			}

@@ -853,25 +853,30 @@ func (g *Gate) DiscardResponse() {
 // server stream ends (libhoop codec/http EndOfStream: a close-delimited
 // body). Each takes the path a decoded response takes in inspect: the
 // exchange it answers, the request it releases once judged, then policy,
-// audit and the counters through judge. A denial here is moot, the
-// upstream has already closed, but the trail still records it.
+// audit and the counters through judge. The Decision carries the
+// statements, for the relay's clock, and a denial: the body already
+// reached the client, so the relay cannot withhold it, but it discards what
+// the reframer still holds and cuts the response, as for a denial inside
+// one. No bytes travel in it.
 //
 // The relay calls it on a normal server EOF only, before FlushResponse, so
 // the audit row precedes the last bytes out. After a read error or a reset
 // the body is not whole, and a statement for it would record a reply the
 // client never got; the codec's state goes with the connection.
-func (g *Gate) EndOfStream() {
+func (g *Gate) EndOfStream() Decision {
 	ctx := context.Background()
+	d := Decision{Allowed: true}
 	if g.server == nil {
-		return
+		return d
 	}
 	ender, ok := g.server.Codec().(streamEnder)
 	if !ok {
-		return
+		return d
 	}
 	stmts := ender.EndOfStream(inspect.FromServer)
+	d.Statements = stmts
 	if len(stmts) == 0 {
-		return
+		return d
 	}
 	var finals int
 	if g.creds != nil {
@@ -884,10 +889,28 @@ func (g *Gate) EndOfStream() {
 				finals++
 			}
 		}
-		if j := g.judge(ctx, stmt); j.refusal != nil {
-			return
+		j := g.judge(ctx, stmt)
+		if j.refusal != nil {
+			r := *j.refusal
+			r.Statements = stmts
+			r.Payload, r.NoFrame = nil, true
+			return r
+		}
+		if j.err != nil {
+			d.Err = errors.Join(d.Err, j.err)
+		}
+		if j.denied {
+			d.Allowed = false
+			d.Message = j.message
+			d.Rule = j.rule
+			d.Review = j.review
+			denied := stmt
+			d.DeniedStatement = &denied
+			d.NoFrame = true
+			return d
 		}
 	}
+	return d
 }
 
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) (out Decision) {

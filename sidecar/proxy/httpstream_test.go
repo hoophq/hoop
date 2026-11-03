@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	httpcodec "github.com/hoophq/hoop/sidecar/codec/http"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
@@ -181,4 +182,54 @@ func TestLargeHTTPResponseAuditKeepsTheBodyUpToMaxBodyBytes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A close-delimited response is judged when the upstream closes, after its
+// body went out. A rule that denies it cannot take the body back, but the
+// lane drops what the masker still held (the last line, with no newline),
+// records the denial and counts it; the rest of the masked body stays as
+// it went out.
+func TestCloseDelimitedResponseDeniedAtStreamEndIsCutAndAudited(t *testing.T) {
+	body := []byte("1\tada@example.com\n2\tada@example.com\n3\tbob@example.com")
+	sink := audit.NewMemorySink(64)
+	srv := startServer(t, proxy.Config{
+		Upstream:   oneShotUpstream(t, tsvResponse("close-delimited", body)),
+		Protocol:   inspect.HTTP,
+		Policy:     no200Responses(t),
+		Masker:     emailMasker{},
+		Audit:      sink,
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+	got := rawExchange(t, srv.Addr().String(), "GET /rows HTTP/1.1\r\nHost: h\r\n\r\n")
+	_, b := parseResponse(t, got)
+	if want := "1\t[REDACTED]\n2\t[REDACTED]\n"; string(b) != want {
+		t.Fatalf("client read %q, want the masked lines before the end and nothing held after the denial", b)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !hasKind(sink.Events(), audit.KindSessionEnd) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	var violations int
+	for _, ev := range sink.Events() {
+		if ev.Kind == audit.KindViolation && ev.Direction == inspect.FromServer {
+			violations++
+		}
+	}
+	if violations != 1 {
+		t.Fatalf("got %d response violations, want 1: %+v", violations, sink.Events())
+	}
+	if _, _, denied := srv.Stats(); denied != 1 {
+		t.Fatalf("denied = %d, want 1", denied)
+	}
+}
+
+func no200Responses(t *testing.T) *policy.Rules {
+	t.Helper()
+	r, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-200", Type: policy.MatchHTTPStatus}.WithStatuses("200"),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	return r
 }
