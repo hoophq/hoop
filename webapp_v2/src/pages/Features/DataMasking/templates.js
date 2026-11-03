@@ -10,8 +10,8 @@
 //   `masking-templates` in
 //   webapp/src/webapp/features/activation_journey/templates.cljs — the CLJS
 //   side matches configured rules by name to decide card/banner states.
-// - `rule` is shaped like a GET /datamasking-rules/:id response so
-//   apiRuleToFormRows() consumes it directly to seed the create form.
+// - `rule` is shaped like a GET /datamasking-rules/:id response so the
+//   editor's loader consumes it directly to seed the create form.
 //
 // Adaptations from the handoff JSON (flagged for design/product review):
 // - Entity groups ("PII", "Government IDs", ...) are flattened into a single

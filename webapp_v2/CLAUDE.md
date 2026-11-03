@@ -49,9 +49,11 @@ One product: the gateway. `hoop start control-plane` runs the same gateway and U
   Layout + PageLayout), `Guard` a React route without the shell. `Home`, `Onboarding` and
   `CatchAll` are the ClojureScript leaves `/`, `/onboarding/*` and `/*`. Only `Router.jsx`
   reads them.
-- **Agent and sidecar rule forms are siblings.** Guardrail, masking and analyzer forms
-  come as `Gateway*Form` (agent traffic) and `Sidecar*Form` (sidecar traffic), picked
-  per rule with `<ByRuleTraffic>` in `Router.jsx`.
+- **Guardrail and masking rules have one form each.** `pages/Guardrails/Create/GuardrailForm.jsx`
+  and `pages/Features/DataMasking/Create/DataMaskingForm.jsx` write both halves of a rule (the
+  agent fields and `sidecar_spec`); an option one engine does not run carries a
+  `RuleSupportTag` (`utils/ruleSupport.js`). Only the analyzer keeps `Gateway*Form` /
+  `Sidecar*Form` siblings, picked per rule with `<ByRuleTraffic>` in `Router.jsx`.
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
@@ -270,7 +272,8 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - Supports **local auth** (email/password) and **IDP/OAuth** providers
 - Token stored in localStorage as `jwt-token` (not just `token`)
 - Token can come from cookies (`hoop_access_token`) or query params (`?token=xxx`)
-- **No refresh token** - on 401, redirects to login
+- **The gateway renews the token** in the `X-New-Access-Token` response header; `api.js` and the SSE clients store it, as CLJS does. Send `useAuthStore.getState().getToken()`, never the store's `token` (the sign-in's, kept to detect an account change)
+- On 401, redirects to login
 - Saves current URL before redirect for post-auth navigation
 
 ### Key Files

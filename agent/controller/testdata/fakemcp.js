@@ -20,7 +20,7 @@ process.stdin.on("data", (chunk) => {
     let result;
     if (req.method === "initialize") {
       result = {
-        protocolVersion: "2025-11-25",
+        protocolVersion: (req.params && req.params.protocolVersion) || "2025-11-25",
         capabilities: { tools: {} },
         serverInfo: { name: "fake-mcp-on-laptop", version: "1.0.0" },
       };

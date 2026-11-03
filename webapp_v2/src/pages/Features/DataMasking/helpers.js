@@ -1,4 +1,5 @@
 // Constants and transforms for Live Data Masking rules.
+import { ENTITY_TYPES } from '@/pages/sidecarRuleVocabulary'
 
 // Providers whose masking is driven by data-masking rules, so the org can be
 // sent straight into the create flow.
@@ -123,31 +124,25 @@ export const PRESIDIO_OPTIONS = [
   'FI_PERSONAL_IDENTITY_CODE',
 ]
 
-export const RULE_TYPES = [
-  { value: 'presets', label: 'Presets' },
-  { value: 'fields', label: 'Fields' },
-  { value: 'custom', label: 'Custom' },
-]
+// Every entity the agent's DLP provider or the sidecar's detector names. The
+// field accepts anything the operator types besides.
+export const ENTITY_OPTIONS = [...new Set([...PRESIDIO_OPTIONS, ...ENTITY_TYPES])].sort()
 
 export const PRESET_OPTIONS = Object.entries(PRESET_DEFINITIONS).map(
   ([value, preset]) => ({ value, label: preset.text }),
 )
 
-export const FIELD_OPTIONS = PRESIDIO_OPTIONS.map((v) => ({ value: v, label: v }))
-
 export function getPresetValues(presetKey) {
   return PRESET_DEFINITIONS[presetKey]?.values ?? []
 }
 
-// Stable unique id for editable table rows (used as React key).
-let rowSeq = 0
-function nextRowId() {
-  rowSeq += 1
-  return `row-${rowSeq}`
-}
-
-export function createEmptyRow() {
-  return { id: nextRowId(), type: '', rule: '', details: '', selected: false }
+// The preset whose entities are exactly `entities`, for the quick-fill select.
+export function presetFor(entities) {
+  const set = new Set(entities)
+  const match = Object.entries(PRESET_DEFINITIONS).find(
+    ([, preset]) => preset.values.length === set.size && preset.values.every((v) => set.has(v)),
+  )
+  return match ? match[0] : null
 }
 
 // UPPERCASE_WITH_UNDERSCORES, stripping anything that isn't [A-Z0-9_].
@@ -160,112 +155,12 @@ export function normalizeEntityName(name) {
     .replace(/[^A-Z0-9_]/g, '')
 }
 
-export function apiRuleToFormRows(rule) {
-  const supported = (rule?.supported_entity_types ?? []).map((entity) => {
-    const entityValues = entity.entity_types ?? entity.values ?? []
-    if (entity.name === 'CUSTOM_SELECTION') {
-      return {
-        id: nextRowId(),
-        type: 'fields',
-        rule: 'Custom Selection',
-        details: [...entityValues],
-        selected: false,
-      }
-    }
-    // Preset: keep the underscored name as-is.
-    return {
-      id: nextRowId(),
-      type: 'presets',
-      rule: entity.name,
-      details: '',
-      selected: false,
-    }
-  })
-
-  const custom = (rule?.custom_entity_types ?? []).map((c) => ({
-    id: nextRowId(),
-    type: 'custom',
-    rule: c.name,
-    details: c.regex,
-    selected: false,
-  }))
-
-  const all = [...supported, ...custom]
-  return all.length ? all : [createEmptyRow()]
-}
-
-function isEmptyRow(row) {
-  if (!row.type) return true
-  if (row.type === 'fields') {
-    return !Array.isArray(row.details) || row.details.length === 0
-  }
-  return !row.rule
-}
-
-function removeEmptyRows(rows) {
-  return rows.filter((row) => !isEmptyRow(row))
-}
-
-function prepareSupportedEntityTypes(rows) {
-  const clean = removeEmptyRows(rows).filter((r) => r.type !== 'custom')
-
-  // Group presets by their key; group all fields rows under "fields".
-  const groups = new Map()
-  for (const row of clean) {
-    const key = row.type === 'presets' ? row.rule : 'fields'
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
-  }
-
-  const result = []
-  for (const [key, groupRows] of groups) {
-    if (key === 'fields') {
-      const entityTypes = groupRows.flatMap((r) =>
-        Array.isArray(r.details) ? r.details : [],
-      )
-      result.push({ name: 'CUSTOM_SELECTION', entity_types: entityTypes })
-    } else {
-      result.push({ name: key, entity_types: getPresetValues(key) })
-    }
-  }
-  return result
-}
-
-function prepareCustomEntityTypes(rows) {
-  return removeEmptyRows(rows)
-    .filter((r) => r.type === 'custom')
-    .map((r) => ({
-      name: normalizeEntityName(r.rule),
-      regex: r.details,
-      score: 0.8,
-    }))
-}
-
-// Build the API payload from form state.
-// form = { name, description, connectionIds, attributes, scoreThreshold, rules }
-// scoreThreshold is a percentage (1-100) or '' / null.
-export function formToPayload(form) {
-  const payload = {
-    name: form.name,
-    description: form.description,
-    connection_ids: form.connectionIds,
-    attributes: form.attributes,
-    supported_entity_types: prepareSupportedEntityTypes(form.rules),
-    custom_entity_types: prepareCustomEntityTypes(form.rules),
-  }
-
-  const score = form.scoreThreshold
-  if (score !== '' && score !== null && score !== undefined) {
-    payload.score_threshold = Number(score) / 100
-  }
-  return payload
-}
-
 export function scoreToPercent(scoreThreshold) {
   if (scoreThreshold === null || scoreThreshold === undefined) return ''
   return Math.round(scoreThreshold * 100)
 }
 
+// The list badges: the agent's entity groups, else what the sidecar spec names.
 export function ruleEntityBadges(rule) {
   const badges = []
   for (const entity of rule?.supported_entity_types ?? []) {
@@ -277,6 +172,11 @@ export function ruleEntityBadges(rule) {
   }
   for (const custom of rule?.custom_entity_types ?? []) {
     badges.push(custom.name)
+  }
+  if (badges.length === 0) {
+    for (const r of rule?.sidecar_spec?.rules ?? []) {
+      badges.push(...(r.entities ?? r.columns ?? []))
+    }
   }
   return badges
 }

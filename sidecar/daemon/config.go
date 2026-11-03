@@ -239,6 +239,48 @@ type Config struct {
 	codecPluginInfo []CodecPluginInfo
 }
 
+// piiNER reports whether the pii section sets a ner block, and the backend
+// it names. It reads those two keys and nothing else of the shape, which
+// stays the detector plugin's.
+func (c Config) piiNER() (set bool, backend string) {
+	if len(c.PII) == 0 {
+		return false, ""
+	}
+	var s struct {
+		NER *struct {
+			Backend string `json:"backend"`
+		} `json:"ner"`
+	}
+	if json.Unmarshal(c.PII, &s) != nil || s.NER == nil {
+		return false, ""
+	}
+	return true, strings.ToLower(strings.TrimSpace(s.NER.Backend))
+}
+
+// usesPIINER reports whether the pii section sets a ner block.
+func (c Config) usesPIINER() bool {
+	set, _ := c.piiNER()
+	return set
+}
+
+// checkOneORTSession refuses pii.ner beside an ica lane when both would
+// open ONNX Runtime: hugot allows one ORT session per process
+// (hugot_ort.go NewORTSession), so the second load fails at startup with
+// a message that names neither block. Either side on the go backend is
+// fine. The default of each side is ort in the build that links the ica
+// engine, so the check wants an explicit go on one of them.
+func (c *Config) checkOneORTSession() []string {
+	set, backend := c.piiNER()
+	if !set || backend == "go" || !slices.ContainsFunc(c.Listeners, isICA) {
+		return nil
+	}
+	if c.ICA != nil && c.ICA.Options != nil && c.ICA.Options.NERBackend != nil && *c.ICA.Options.NERBackend == "go" {
+		return nil
+	}
+	return []string{"pii.ner and an ica listener would both open ONNX Runtime, and this process can hold one session; " +
+		"run the ica lanes in their own sidecar, or set pii.ner.backend: go, or set ica.options.ner_backend: go"}
+}
+
 // Licensing reports the license this config runs under. The zero value is a
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }
@@ -1282,6 +1324,7 @@ func (c *Config) validate(onHost bool) error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true, onHost)...)
+	problems = append(problems, c.checkOneORTSession()...)
 
 	// Loaded, not merely checked for a path: a bundle with no certificate in
 	// it must fail here, where -validate reports it, and not at the first
@@ -1305,6 +1348,7 @@ func (c *Config) validate(onHost bool) error {
 	}
 
 	problems = append(problems, c.validatePlugins()...)
+	problems = append(problems, c.validateICASlotBinds()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
@@ -1533,6 +1577,16 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+		// The gate queues and spends an approval on an HTTP request
+		// statement only. An approval the analyzer asked for on SQL read
+		// out of a body would never be spent, so one approval would
+		// release that SQL again and again. Refuse the pair until the gate
+		// settles those statements too.
+		if lc.HTTP.SQL != nil && analyzerHolds(lc.Analyzer) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: http.sql cannot be combined with an analyzer that holds for approval yet: "+
+					"an approval on SQL read from a request body would never be spent", name))
+		}
 	}
 
 	if lc.ClickHouse != nil {
@@ -1655,7 +1709,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	if isSpanner(lc) && anySQLDerived(localRules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has operation/table rule(s) on a spanner listener but "+
+			"%s: has operation/table/procedure rule(s) on a spanner listener but "+
 				"grpc.capture_payload is not set, so rules would only ever see "+
 				"the generic RPC statement and never the extracted SQL; add a "+
 				"\"grpc\" block with capture_payload: true and descriptors", name))
@@ -1806,7 +1860,7 @@ func anyPII(rules []policy.Rule) bool {
 func anySQLDerived(rules []policy.Rule) bool {
 	for _, r := range rules {
 		switch r.Type {
-		case policy.MatchOperation, policy.MatchTable:
+		case policy.MatchOperation, policy.MatchTable, policy.MatchProcedure:
 			return true
 		}
 	}

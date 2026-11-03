@@ -35,6 +35,9 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
   `main`.
 - Without uv, agents-cli writes a `pyproject.toml` with no `google-adk` and still
   reports success.
+- `Gemini platform connection failed: Status 404 ... gemini-2.5-flash` is
+  harmless: agents-cli tests your login with its own default model. The agent
+  uses `AGENT_MODEL`.
 
 ## Deploy
 
@@ -93,7 +96,9 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
 
    A `DELETE` comes back as `hoop: this agent may read appdb, not change it`,
    and the sidecar's log holds the violation with the ADK session id
-   (`postgres.option.adk.session.id`).
+   (`postgres.option.adk.session.id`). After a time with no requests, the agent
+   stops. The first call starts it again and can fail with `Read timed out`:
+   run it again.
 
 PSC-I does not stop the agent from calling Google front ends (`*.run.app`). A
 VPC Service Controls perimeter does.
@@ -127,8 +132,9 @@ rm deployment_metadata.json
 ```
 
 agents-cli grants the six roles in the loop to the agent's identity and does
-not remove them. Google can hold the attachment for an hour or more after the
-agent moves off it: run the two attachment lines again later.
+not remove them. Google frees the attachment a few minutes after the agent is
+deleted. An attachment that an agent moved off, for example by a redeploy, can
+stay held for more than a day: run the two attachment lines again later.
 
 ## Free tier
 

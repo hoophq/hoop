@@ -194,12 +194,13 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
   -t hoop-inspect:local sidecar/
 ```
 
-There are no build tags. The config file decides every capability, so an
-operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and the detector still runs, holding all 55 entity types:
-the section narrows that set rather than switching it on. A binary built
-without the alcatraz plugin is the case that refuses a `mask` block at
-startup.
+The one build tag is `ORT`, and it decides only which backend runs the NER
+model (see "Names, places and organizations" under Masking and PII). The
+config file decides every other capability, so an operator turning on PII
+detection does not also have to swap the binary. Omit the `pii` section and
+the detector still runs, holding all 55 entity types: the section narrows
+that set rather than switching it on. A binary built without the alcatraz
+plugin is the case that refuses a `mask` block at startup.
 
 To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
@@ -2609,6 +2610,7 @@ capability it does not implement is a feature the lane refuses at load:
 | `gate.Duplex` | the meaning of a server message depends on client-side state (negotiated capabilities, the command in flight, a prepared statement's text). The gate then builds ONE instance for both directions; the per-direction reassembly buffers still stay apart |
 | `gate.StreamFilter` | the codec must change bytes before inspection or forwarding, in both directions: ClickHouse clamps the advertised protocol revisions here. A filter may hold a prefix and return nothing; an error is fatal |
 | `MaxReassemblyBytes() int` | the protocol admits a message larger than the 8 MiB default and the codec is the authority on its own cap |
+| `EndOfStream(dir) []Statement` | a statement completes only when the server stream ends, as a close-delimited HTTP body does. The relay asks on a normal server EOF, before the reframer flushes, and judges and audits what comes back; a denial then drops what the reframer still holds and cuts the response when part of it went out, or answers with the deny frame when the reframer still held it whole |
 | `gate.CredentialSource` | requests carry a credential the lane resolves to an identity (HTTP's `Authorization` or an identity header). The gate refuses `RequestIdentity` on a codec without it |
 | `gate.DenyFramer` | always, for a protocol `proxy.ProtocolDenyWriter` does not know by name. The gate asks the codec first and falls back to the writer; without either a denial is a bare socket close with no reason the user can read |
 | `gate.Labeled` | the protocol is registered and the control-plane listener form should show a human-readable name |
@@ -2753,7 +2755,7 @@ ABI.md.
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
-| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
+| `mssql` | `SQLBatch` (0x01), every call in an `RPCRequest` (0x03) with prepared handles resolved to their text, and a readable `LOGIN7` (0x10); all reassembled across packets | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2), `RETURNVALUE` (0xAC) for masking; login replies scanned for a routing redirect and the feature acknowledgements; prepare replies read for the handle | yes, both directions on one codec |
 | `oracle` | Plaintext TCP Oracle Net (TNS/TTC) SQL calls from thin and OCI (thick) clients; negotiated TTC request layouts and cursor re-execution | Verified result-set columns and rows for character-value masking | yes |
 | `http` | HTTP/1.x requests; HTTP/2 streams, each bridged into one HTTP/1.1 request | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
@@ -3604,6 +3606,57 @@ leaving no trace that it stopped being watched. The codec returns
 the connection ends with a message naming the redirect target. No rule enables
 this behaviour and none can switch it off.
 
+**Every procedure call is a statement.** An `RPCRequest` is how a driver
+calls a procedure by name (`callproc`, `EXEC` from an ORM) and how .NET and
+JDBC send every parameterized query: `sp_executesql` with the statement as
+a parameter, `sp_prepexec`/`sp_prepare` for a prepared one, the `sp_cursor*`
+family for a server cursor. A call to one of those yields the statement it
+carries, whether the client named the proc by its well-known id or by name
+in any spelling (`sys.sp_executesql`, `[sp_executesql]`), so a rule refusing
+`SELECT * FROM dbo.secrets` as a batch refuses
+`callproc("sp_executesql", (sql,))` too. Any other procedure yields
+`EXEC <name>` with `mssql.proc` set and no parameter values: the scanner
+reports it `unknown` with the reason "stored procedure; body is in the
+catalog", a rule naming `unknown` or demanding a table match refuses it,
+and the trail records it either way. One message may batch several calls
+(SqlClient's `SqlCommandSet`); each is a statement. A parameter the codec
+cannot measure — a table-valued parameter, `sql_variant`, XML, a UDT, an
+Always Encrypted value — ends the walk, and the call it belongs to is
+`unknown` with a reason naming the type, because a further call may sit
+behind it. `sp_execute` and the cursor fetch/close procs run a handle the
+server returned for an earlier prepare. The codec drives both directions of
+the connection (it is Duplex, like MySQL's), reads the handle out of the
+prepare's reply and files the text under it, so an `sp_execute` is judged
+and recorded as the SQL it runs, with `mssql.proc: sp_execute` and
+`mssql.handle`. A handle prepared before the connection was observed, or
+whose reply the codec could not read, is `unknown` with a reason naming the
+handle: the fail-closed direction.
+
+**A readable login is a statement too.** `LOGIN <user>`, operation `other`,
+with `mssql.login.user`, `.host`, `.app`, `.database`, `.library` and `.tds`
+in metadata; an integrated login reports `mssql.login.integrated` and no
+user. The password, the SSPI ticket and the federated token are never
+reported. Readable means the LOGIN7 crossed in the clear: a client that sent
+ENCRYPT_NOT_SUP (go-mssqldb `encrypt=disable`), a TDS 8.0 session whose TLS
+something in front terminated, or a relay terminating the login itself.
+Under ENCRYPT_OFF, the default of every driver, the login is the one
+encrypted packet and yields no statement; `mssql.login_encrypted` on the
+session's statements says so. The user name of a readable SQL login is the
+session's principal: the `LOGIN` row loses `mssql.login.user` and every row
+from there carries `principal: <user>`, which OPA reads as
+`input.context.principal`. The session opens as the connection and turns
+into the named one on the login frame, so the trail shows a 0-statement
+anonymous session_start/end before it, as an http lane does. A login the
+codec could not read, or an integrated one, leaves the principal
+`anonymous` and is never refused over it. No lane option governs this. A
+lane that wants no unnamed sessions says so in Rego:
+
+```rego
+result := {"denied": true, "rule": "named-callers-only", "message": "log in with a SQL login this relay can read"} if {
+	input.context.principal == "anonymous"
+}
+```
+
 **MSSQL masks its responses**, by the same re-framing mechanism Postgres uses
 and against a harder framing. TDS nests two: an 8-byte packet header wrapping
 a token stream, where one `ROW` spans packets and one packet holds several
@@ -3612,12 +3665,25 @@ tokens repack, so the codec strips the headers, rewrites the token stream, and
 lays fresh packets over the result. Patching bytes in place cannot work,
 because a longer value has nowhere to go.
 
-A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the rewriting
-for that connection. Guessing a length would desynchronize the client, which
-turns a privacy gap into a lost session. Statements and policy carry on; only
-masking steps aside. Whatever was already rewritten is kept and emitted, so a
-value masked earlier in a response stays masked when an unmeasurable token
-turns up later in the same one.
+A column type it cannot measure (SQL_VARIANT, XML, UDT, an Always Encrypted
+column) stops the rewriting for that connection. Guessing a length would
+desynchronize the client, which turns a privacy gap into a lost session.
+Statements and policy carry on; only masking steps aside. Whatever was
+already rewritten is kept and emitted, so a value masked earlier in a
+response stays masked when an unmeasurable token turns up later in the same
+one. The stop is recorded once, as an `activity` row `masking_declined` with
+the reason, because values keep travelling after it and neither end of the
+connection can tell.
+
+An OUTPUT parameter comes back in a `RETURNVALUE` token and is masked under
+the parameter's name without its `@`: a rule on column `email` reaches
+`@email OUTPUT`, not `@e`. A PII rule reaches either.
+
+A driver that negotiates Always Encrypted (mssql-jdbc does on every
+connection, whether or not a column uses it) gets a key table in front of
+every result set's columns; the codec reads the login response for the
+acknowledgement and parses accordingly, so a JDBC result set masks like any
+other.
 
 A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in
@@ -3781,8 +3847,9 @@ Those choices buy this, measured through the real Postgres path:
 
 #### Spark SQL (Databricks)
 
-`lexer.Spark` reads Spark SQL as Databricks runs it. No config key selects
-it yet; a caller passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
+`lexer.Spark` reads Spark SQL as Databricks runs it. An http lane selects it
+with `http.sql.dialect: spark` (SQL in request bodies, below); a caller
+passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
 GoogleSQL's: backslash escapes in `'...'` and `"..."`, `"..."` is a string,
 backticks escape by doubling, `r'...'` is raw, and `:name` and `?` are
 parameters. Five rules differ from every other dialect here, and each one
@@ -3920,6 +3987,15 @@ the lifting of `Options.CredentialHeader`. `InspectRequest` does not lift the
 credential, since a caller holding the `*http.Request` already has the
 header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
 names it.
+
+**A response body streams.** The lane forwards a response body as it
+arrives, under every framing (`Content-Length`, chunked, ended by the
+close), with no size limit: a 20 MiB export passes whole. Its statement is
+emitted when the body ends, with the body cut at `max_body_bytes` (64 KiB
+unless set) and `body_truncated` set, under `capture_body`. What is held
+and bounded is only a body masking must rewrite as one unit; see [Masking
+and PII](#masking-and-pii). Before this, every http lane cut a response at
+8 MiB with a 403 (ENG-946).
 
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug
@@ -4211,6 +4287,120 @@ listeners:
           message: listing secrets is fine; reading one is not
 ```
 
+### SQL in request bodies: Databricks
+
+**An `http.sql` block reads the SQL a JSON API carries in its request body.**
+Databricks' Statement Execution API sends its SQL in `statement`, and the
+workspace SQL MCP server in the arguments of a `tools/call`. Without the block
+the lane's statement is `POST /api/2.0/sql/statements`, and an `operation` or
+table rule matches nothing there: a `DROP` passes a lane written to refuse it.
+With the block, each SQL string becomes a statement of its own, right after
+the request that carried it, classified under the block's `dialect`. The
+JSON reading is the `jsonsql` package, which knows no protocol; `codec/http`
+only routes requests to it, so another protocol that carries JSON can reuse
+it.
+
+- **Fields.** `fields` maps a resource pattern, written as an `http_resource`
+  rule writes it, to the dotted JSON path of the SQL. The longest matching
+  pattern wins; two of the same length that match and name different paths
+  refuse the request, because reading one would leave SQL at the other
+  unread. A pattern that can match nothing as written (`**` not at the end,
+  `*` inside a segment, an empty, `.` or `..` segment) is refused at load. A pattern
+  matches the cleaned path, because Databricks routes
+  `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
+  canonical path. `dialect` is required: it decides what a comment or a string is, and
+  `spark` is Databricks SQL. A request with no body carries no SQL.
+- **MCP.** Where the path is under `params.arguments`, a body with a
+  `jsonrpc` member carries SQL only as a `tools/call` naming one of `tools`;
+  `initialize`, `tools/list` and other tools carry none. Such a path needs
+  `tools`. Anywhere else `jsonrpc` decides nothing: the Statement Execution
+  API runs a body that also holds it, so its SQL is read. A JSON-RPC batch
+  yields one statement per call.
+- **Refuse.** `refuse` lists `field=value` pairs whose results would not pass
+  through the lane. Databricks' `disposition: EXTERNAL_LINKS` answers with
+  links to cloud storage, so the rows would skip the masking and the audit.
+  Such a request is refused before it is forwarded, with `refuse_message`,
+  whatever the rules say, and whether or not the message carries SQL. A value at a `refuse` field that is not a string is
+  refused too: Databricks takes `"disposition": 2` for `EXTERNAL_LINKS`.
+  `refuse_message` is required with `refuse`, since only the operator knows
+  what the client should ask for instead.
+- **Unreadable is `unknown`.** A body that should carry SQL and does not
+  yield it (cut at `max_body_bytes`, not JSON, no string at the path) becomes
+  an `unknown` statement with the reason in `sql.incomplete`, as every codec
+  reports SQL it cannot read, so a rule naming `unknown` refuses it and
+  padding a body past the limit is no way around the rules. With `refuse`
+  set, a body cut at the limit or not JSON is refused outright: its
+  disposition cannot be checked either.
+- **What the statement carries.** Protocol `http`, no HTTP detail, the SQL as
+  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect`,
+  `http.sql_resource` (the cleaned route) and `http.sql_method` (the
+  request's operation, `post`) in its metadata; the request records
+  `http.sql_statements`. An `http_resource`
+  rule never matches it. The request is judged as before, so `delete` names
+  both an HTTP `DELETE` and a SQL `DELETE`.
+- **Bodies are captured on its routes.** The block captures the bodies of
+  requests to its routes, so they reach policy, the analyzer and the audit
+  trail. A request to any other route keeps its body only under
+  `capture_body`, or on a lane that holds.
+- **The analyzer** renders the SQL statement as SQL. The request that carried
+  it is not sent, so a query is one model call. A trigger selects the SQL by
+  its operation, by the method of the request that carried it through
+  `http.sql_method`, or by resource through `http.sql_resource`, so a
+  trigger written for the request (`operations: [post]`) still selects it.
+  An `exclude` item reads the SQL's own operation: excluding `post` skips
+  the requests, as before, and not the SQL they carry.
+- **Not with approvals yet.** A lane whose analyzer holds for approval cannot
+  set the block: the gate spends an approval on the request, not on the SQL
+  read from its body, so one approval would release that SQL again and again.
+
+A lane in front of a Databricks workspace, with a URL upstream so clients dial
+the sidecar by its own name. The one guardrail the free tier allows denies
+the writes it names and every statement the classifier cannot read. An
+`operation` rule naming `unknown` judges client statements only; responses
+carry no verb and never match it. The `operations` scope of another rule
+type still reaches responses through `unknown`. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
+and `REFRESH`, but also `USE CATALOG`, which clients send.
+
+```yaml
+listeners:
+  - name: databricks
+    protocol: http
+    listen: https://0.0.0.0:8443
+    upstream: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+    http:
+      sql:
+        dialect: spark
+        fields:
+          /api/2.0/sql/statements: statement
+          /ai-gateway/mcp-services/**: params.arguments.query
+          /api/2.0/mcp/sql: params.arguments.query
+        tools: [execute_sql]
+        refuse: [disposition=EXTERNAL_LINKS, disposition=INLINE_OR_EXTERNAL_LINKS]
+        refuse_message: ask for disposition INLINE; external links skip this listener
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, create, drop, alter, truncate, grant, revoke, unknown]
+          message: this listener allows reads only
+    mask:
+      rules:
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+```
+
+JDBC, ODBC and the other Databricks drivers speak Thrift, not JSON, so this
+block does not cover them: their requests reach the lane as opaque bodies.
+
+What that rule refuses besides writes, from the Spark dialect above: every
+SQL script (`BEGIN ... END`), `EXECUTE IMMEDIATE`, any statement holding
+`${`, `VACUUM t DRY RUN` and `COPY INTO t ... VALIDATE`, and a read naming a
+column like a write verb after THEN. `IDENTIFIER(:t)` hides the table from
+table rules; the operation is still read. Table rules miss the table of
+`SHOW TBLPROPERTIES`, `SHOW COLUMNS`, `SHOW PARTITIONS` and `table_changes()`.
+
 ## Guardrails and OPA
 
 Two evaluators under two config sections, layered via `policy.Chain{local,
@@ -4218,7 +4408,7 @@ opa}` so a statement the local rules already forbid costs no network round
 trip. The Go package is still `policy`; the config keys are what split.
 
 **Guardrails are Hoop's own rules**, written under `guardrails` and evaluated
-in-process against a decoded statement. Ten local rule types, plus the
+in-process against a decoded statement. Eleven local rule types, plus the
 DEPRECATED `ai_analysis` one that the listener `analyzer` block replaced, and
 `guardrails.mode` decides whether a match denies or lands in the audit record
 as `guardrails.would_deny`. Nothing here needs a policy engine, a network hop
@@ -4235,8 +4425,8 @@ and never leave the process, and an `opa` block with no `guardrails.rules`
 hands every statement to Rego.
 
 **The local rule types.** SQL: `deny_words_list`, `pattern_match` (RE2),
-`operation`, `table`. HTTP: `http_resource`, `http_status`, `http_header`.
-gRPC: `grpc_status`. Cross-protocol: `pii` (see [Masking and
+`operation`, `table`, `procedure`. HTTP: `http_resource`, `http_status`,
+`http_header`. gRPC: `grpc_status`. Cross-protocol: `pii` (see [Masking and
 PII](#masking-and-pii)) and `metadata`, which reads `Statement.Metadata`:
 the rule ANDs keys, ORs the values under one key, lowercases both sides and
 compares them for equality; a key the statement lacks never matches. It is
@@ -4274,8 +4464,11 @@ policy.NewRules([]policy.Rule{
 An `operation` rule matches the statement's `operation`. When that is
 `unknown` (the scanner could not read the whole statement, e.g. a PL/SQL
 block), the rule also matches the effects the scanner did see, so
-`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. The
-`operations` scope of every other rule type uses the same test.
+`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. `unknown`
+matches client statements only: a response carries no verb, so the codecs
+report it as `unknown`, and a rule naming `unknown` would otherwise refuse
+every response. The `operations` scope of every other rule type uses the
+same test.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
@@ -4336,6 +4529,48 @@ rules:
     require_table_match: true   # deny when the relations could not be determined
 ```
 
+#### Stored procedures
+
+A procedure call reaches policy as the statement `EXEC <name>` (or the
+client's `CALL x()`) with `operation: unknown`, `sql.incomplete` set to
+`stored procedure; body is in the catalog`, and no relations: the body is on
+the server, so the scanner cannot say what the call does. A TDS RPCRequest,
+the form a driver's parameterized call takes, also carries
+`metadata["mssql.proc"]` with the name as the client sent it
+(`dbo.get_secrets`, `[dbo].[get_secrets]`, `appdb.dbo.get_secrets`). A batch
+`exec dbo.get_secrets`, a Postgres `CALL purge()` or a MySQL `CALL x()` is
+text only.
+
+A `procedure` rule names the procedures and reads the name from the metadata
+and from every top-level `EXEC`/`EXECUTE` (T-SQL) or `CALL` in the text, so `SET NOCOUNT ON EXEC p` names `p` with or without a semicolon, and so does an `EXEC p` carried inside `sp_executesql`, `sp_prepexec` or a prepared handle's text. In PostgreSQL and MySQL `EXECUTE` runs a prepared statement and names nothing; the body of a T-SQL `CREATE PROCEDURE`/`FUNCTION`/`TRIGGER` is not read; `#temp` procedures keep their prefix; comments between the parts of a name are dropped. Dynamic SQL (`EXEC ('...')`) names no procedure and is `unknown`, which `operations: [unknown]` refuses. Names
+compare case-insensitively with the `[...]`, `"..."` and `` `...` `` delimiters
+removed, and a configured name matches the trailing parts of the called one:
+`get_secrets` matches `dbo.get_secrets` and `appdb.dbo.get_secrets`;
+`dbo.get_secrets` matches `appdb.dbo.get_secrets` and not
+`custom.get_secrets`. A response never matches.
+
+```yaml
+rules:
+  - name: no-secrets
+    type: procedure
+    procedures: [get_secrets, dbo.rotate_keys]
+    message: get_secrets and rotate_keys run from the deploy job only
+```
+
+The same fence written before the type existed still works: a
+`deny_words_list` or `pattern_match` rule scoped with `operations: [unknown]`
+reads the `EXEC` text, at the cost of one pattern per spelling. In Rego the
+name is `input.metadata["mssql.proc"]` on an RPC call and only in
+`input.statement` on a batch. A deferring `procedure` rule reports
+`findings.procedure.values.procedure`, the normalized name.
+
+**`require_table_match` refuses every procedure call.** A `table` rule with
+`require_table_match: true` and no `operations:` scope denies every statement
+the scanner found no relation in, and a procedure call is one of them, as are
+the `SET` and `USE` batches a driver sends on connect. The lane loads and
+`-validate` says so. Scope the rule with `operations:` or name the procedures
+in a `procedure` rule.
+
 **OPA.** Posts to an OPA Data API endpoint. sidecar does not own policy;
 it owns the *input document*:
 
@@ -4391,16 +4626,16 @@ after them.
 
 `findings` rides the decide phase only, and only where something reported. It
 is a map keyed by **source**, the producer that wrote the entry: local rules
-key by rule TYPE (`pii`, `deny_words_list`, `operation`, ...), the analyzer
-keys as `ai_analysis`. Every entry has one shape:
+key by rule TYPE (`pii`, `deny_words_list`, `operation`, `procedure`, ...),
+the analyzer keys as `ai_analysis`. Every entry has one shape:
 
 - `status` is always set, and is one of `ok`, `cached`, `skipped`,
   `unavailable`, `error`. Only `ok` and `cached` mean the source answered.
 - `reason` narrows a non-ok status where the producer has more to say. The
   analyzer's `unavailable` carries `budget_exhausted`, `rate_limited` or `refused`.
 - `values` is the producer's own: `risk_level` under `ai_analysis`,
-  `entities` under `pii`, `words` under `deny_words_list`. Read a key only
-  under a source you know writes it.
+  `entities` under `pii`, `words` under `deny_words_list`, `procedure` under
+  `procedure`. Read a key only under a source you know writes it.
 - `rule` names what produced the entry: the first configured rule of that
   type, or the listener for its analyzer block.
 
@@ -4619,9 +4854,10 @@ matched.
 `values.rules` and nothing else: the match itself is the whole message.
 `deny_words_list` adds `values.words`, because which of several configured
 words fired is not recoverable from `input.statement` without reimplementing
-the matcher. `pii` adds `values.entities`, and it is the only type
-contributing a fact the input document does not carry at all: running a
-detector over the statement is not something Rego does.
+the matcher, and `procedure` adds `values.procedure`, the called name
+normalized, for the same reason. `pii` adds `values.entities`, and it is the
+only type contributing a fact the input document does not carry at all:
+running a detector over the statement is not something Rego does.
 
 **A matched pattern's text is never reported.** `pattern_match` says that it
 matched and stops there. The text is content lifted out of the statement, and
@@ -4660,11 +4896,17 @@ ends and what declares its length.
   value, or each text line, goes out as soon as it is whole, so a `kubectl
   get -w` or a `kubectl logs -f` is not held to its end — and a gzip or
   deflate body is undone around the masker and compressed again. A binary
-  body is forwarded as it arrives. A text or JSON body under an encoding
+  body is forwarded as it arrives, and a text body streams line by line,
+  so neither has a size limit; a fixed-length text body over 16 MiB goes
+  out chunked, which an HTTP/1.0 response cannot, so that one is held and
+  refused at 16 MiB. A text or JSON body under an encoding
   the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
-  event rather than forwarded unmasked. A body the codec is holding that
-  outgrows `MaxMessageBytes` goes out unmasked and the next response is
-  masked again.
+  event rather than forwarded unmasked. So is a body masked as one unit
+  that is larger than 16 MiB: one JSON document, or a gzip or deflate body
+  that inflates past it. A gzip body is small on the wire, so the server,
+  not the client, decides whether it reaches that size, and forwarding it as
+  it came would hand the client every row unmasked. The lane keeps serving
+  after the refusal.
 
 A codec that cannot re-frame gets its `mask.rules` refused at startup,
 because accepting a masking config that can never fire is the failure that
@@ -4703,6 +4945,54 @@ secret, so `pii/alcatraz/secrets.go` registers three into the same engine:
 and `PRIVATE_KEY` (including a PEM block a size limit cut short). You name
 them in config like any other entity.
 
+### Names, places and organizations: NER
+
+`PERSON`, `LOCATION`, `ORGANIZATION` and `NRP` (nationality, religion,
+political group) have no pattern. They come from an ONNX token-classification
+model, `github.com/hoophq/alcatraz/ner`, that the `pii.ner` block loads:
+
+```yaml
+pii:
+  ner:
+    models_dir: /opt/alcatraz/models   # default; parent of KnightsAnalytics_distilbert-NER/
+    backend: ort                       # go | ort; default ort in a -tags ORT build, go otherwise
+    ort_library: /opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so  # default; ort only
+    threads: 2                         # ort intra-op threads, 1..16; go ignores it
+```
+
+`alcatraz models download --dest <models_dir>` writes the directory. Every
+pinned file is sha256-verified at load and nothing is fetched at runtime.
+Without `pii.ner`, a mask rule or a `pii` guardrail rule naming one of the
+four is refused at load, and the message names `pii.ner`.
+
+Two backends run the same model. `ort` is ONNX Runtime, loaded from
+`ort_library`, and exists only in a cgo `-tags ORT` build: the Linux `hoop`
+and the `hoop-inspect` ica build. The darwin and windows CLIs are `go` only,
+the pure-Go backend; `backend: ort` on a build without it is a startup error.
+`go` is the portability floor, not a production path: measured at ~100 ms
+per masked value on an Apple M-series CPU (2000 rows of one column took
+200 s through a lane), where alcatraz puts `ort` at 5-10x faster. Serve a
+result set of more than a few hundred names from an `ort` build.
+
+The `hoophq/hoopsidecar:<version>-alcatraz` and `<version>-distroless-alcatraz`
+images carry the model at `/opt/alcatraz/models` and ONNX Runtime under
+`/opt/alcatraz/ort/releases/<ort>/lib/`, the defaults above, so the block
+needs no paths there.
+
+One process holds one ONNX Runtime session (hugot's rule), and the ICA
+engine takes it for its own NER. So `pii.ner` on `ort` and an `ica` listener
+do not share a process: Validate refuses that document unless one side sets
+`go` (`pii.ner.backend: go`, or `ica.options.ner_backend: go`). The
+production shape is two sidecars, the `-ica` image for the ICA lanes and the
+`-alcatraz` image for the database and HTTP lanes.
+
+A loaded engine lives as long as the process. A reload that changes only
+rules reuses it. A reload that changes `ner` itself loads a second engine
+beside the first on `go`, and is refused on `ort`, where the first engine
+holds the one session; either way a backend or model change wants a
+restart. The handshake header carries `pii_ner`, and the control plane
+serves `pii.ner` only to a build that reports it.
+
 ### The guardrail half
 
 One `Detector` drives both paths. The `pii` guardrail rule answers a different
@@ -4735,7 +5025,7 @@ switch off keeps running and the detector boots looking exactly like one that
 obeyed you. Write `US_SSSN` and the process stops with
 
 ```
-pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN (PERSON, ...)
+pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN
 ```
 
 A wide detector costs a wider scan and nothing else. `NewMasker` narrows the
@@ -5239,3 +5529,11 @@ because `e2e/` is deliberately not a `go.work` member:
 Each codec runs a split-read matrix: the tests feed the same message in two
 chunks at every possible boundary, then assert that a fragment emits no
 statement and that reassembly loses none.
+
+### ICA cell slots (TCP)
+
+The optional listener `ica.slots` block maps consecutive unprivileged ports to VDA hostnames, using one shared OCR/NER runtime. See [config.slots.yaml](../deploy/ica-sidecar/examples/config.slots.yaml). Use one `%d`/`%03d` hostname pattern or an explicit `names` list, plus destination/frontend CIDRs; Gateway sources are mandatory. Fixed `upstream`, transparent mode and EDT are mutually exclusive with slots. Names resolve on connection with a 2-second timeout and at most a 30-second application cache, then the engine validates and dials a literal allowed address. Audits include slot, upstream_name and upstream.
+
+`ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
+
+The adapter pins the published **libhoop-ica v0.8.0** cell API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.

@@ -19,7 +19,7 @@ Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
 |---|---|---|
 | *(none)* / `md` | 40px | **Default — do not pass a size prop** |
 | `xs` | 24px | Micro affordances in dense chrome |
-| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons. |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons, as do "Add New Role" in the Configure Resource header and Done in `TestConnectionModal`. |
 | `lg` | 48px | Prominent/hero actions |
 
 Rules:
@@ -298,10 +298,13 @@ Where an auth page sends the user next: `/client` after login, `/onboarding/setu
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
-`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+`<ByRuleTraffic kind={RULE_KIND_ANALYZER} fetchRule={aiSessionAnalyzerService.getRule} listPath="/features/ai-session-analyzer" agent={<GatewayAiAnalyzerForm />} sidecar={<SidecarAiAnalyzerForm />} />` — picks the analyzer rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Guardrails and masking have one form each and do not use it. Used in `Router.jsx` only.
 
 ### `RuleTrafficBadge` / `NewRuleButton`
-`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
+`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two (analyzer page only).
+
+### `RuleSupportTag`
+`<RuleSupportTag side="sidecar" />` / `side="agent"` — inline "Sidecar only" / "Agent only" marker for a form option that one engine does not run. Put it in an input `label` (`<Group gap="xs">Label <RuleSupportTag side="sidecar" /></Group>`) or in a `Select` `renderOption`. The reasons live in `utils/ruleSupport.js` (`guardrailAgentBlockers`, `maskingAgentBlockers`).
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
@@ -704,7 +707,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
   onChange={(ids) => setField({ connectionIds: ids })}
 />
 ```
-Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`, `disabled`.
 
 ---
 
@@ -911,7 +914,7 @@ directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
-useAuthStore.getState().token
+useAuthStore.getState().isAuthenticated
 ```
 
 Non-obvious notes only:
@@ -994,8 +997,9 @@ when adding one, follow the pattern in `services/agents.js`.
 
 Non-obvious notes only:
 
-- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
-  URL + logout). Every other service imports it; never call axios directly.
+- `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
+  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
+  imports it; never call axios directly.
 - `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).

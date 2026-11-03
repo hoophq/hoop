@@ -117,6 +117,7 @@ var ruleTypeLabel = map[string]string{
 	string(policy.MatchPattern):      "Regex pattern",
 	string(policy.MatchOperation):    "Operations",
 	string(policy.MatchTable):        "Tables",
+	string(policy.MatchProcedure):    "Stored procedures",
 	string(policy.MatchPII):          "Sensitive data in the statement",
 	string(policy.MatchHTTPResource): "HTTP resources",
 	string(policy.MatchHTTPStatus):   "HTTP status",
@@ -141,7 +142,7 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			if rpc && !captures {
 				continue
 			}
-		case policy.MatchTable:
+		case policy.MatchTable, policy.MatchProcedure:
 			if protocol == "http" || protocol == "ssh" || (rpc && !captures) {
 				continue
 			}
@@ -528,6 +529,8 @@ func ruleDetail(r policy.Rule) string {
 		return strings.Join(opStrings(r.Operations), ", ")
 	case policy.MatchTable:
 		return strings.Join(r.Tables, ", ")
+	case policy.MatchProcedure:
+		return strings.Join(r.Procedures, ", ")
 	case policy.MatchPII:
 		return strings.Join(r.Entities, ", ")
 	case policy.MatchHTTPResource:
@@ -597,6 +600,8 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 			optLabel: map[string]string{"": "read and write"}, help: "Match only reads, only writes, or both.", hidden: is(policy.MatchTable)},
 		{id: "require", label: "Require table match", kind: fBool, on: r.RequireTableMatch,
 			help: "Also match statements whose tables could not be read.", hidden: is(policy.MatchTable)},
+		{id: "procedures", label: "Procedures", kind: fText, text: strings.Join(r.Procedures, ", "), placeholder: "get_secrets, dbo.delete_customer",
+			help: "Stored procedures called by name, in any spelling (dbo.x, [dbo].[x], appdb.dbo.x). Comma-separated.", hidden: is(policy.MatchProcedure)},
 		{id: "entities", label: "Data types", kind: fMulti, multi: r.Entities, options: entities, placeholder: "pick at least one",
 			help: "A statement carrying one of these is matched.", hidden: is(policy.MatchPII)},
 		{id: "resources", label: "Resources", kind: fText, text: strings.Join(r.Resources, ", "), placeholder: "/admin/*, /users/{id}",
@@ -686,6 +691,10 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		r.Access, r.RequireTableMatch = g("access").text, g("require").on
 		if r.Tables = g("tables").list(); len(r.Tables) == 0 {
 			empty = "Tables"
+		}
+	case policy.MatchProcedure:
+		if r.Procedures = g("procedures").list(); len(r.Procedures) == 0 {
+			empty = "Procedures"
 		}
 	case policy.MatchPII:
 		if r.Entities = g("entities").multi; len(r.Entities) == 0 {

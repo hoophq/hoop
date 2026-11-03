@@ -4,9 +4,7 @@ import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import ByResourceSetup from '@/modes/ByResourceSetup'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
-import { dataMaskingService } from '@/services/dataMasking'
-import { guardrailsService } from '@/services/guardrails'
-import { RULE_KIND_ANALYZER, RULE_KIND_DATAMASKING, RULE_KIND_GUARDRAIL } from '@/utils/ruleTraffic'
+import { RULE_KIND_ANALYZER } from '@/utils/ruleTraffic'
 
 // Auth pages
 import Login from '@/pages/Auth/Login'
@@ -21,6 +19,7 @@ import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
 import Resources from '@/pages/Resources'
+import ConfigureResource from '@/pages/Resources/Configure'
 import ResourceSetup from '@/pages/Resources/Setup'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
@@ -41,8 +40,7 @@ import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
-import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
-import SidecarDataMaskingForm from '@/pages/Features/DataMasking/Create/SidecarDataMaskingForm'
+import DataMaskingForm from '@/pages/Features/DataMasking/Create/DataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import AccessRequest from '@/pages/Features/AccessRequest'
@@ -52,8 +50,7 @@ import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/Gat
 import SidecarAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/SidecarAiAnalyzerForm'
 import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
 import Guardrails from '@/pages/Guardrails'
-import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
-import SidecarGuardrailForm from '@/pages/Guardrails/Create/SidecarGuardrailForm'
+import GuardrailForm from '@/pages/Guardrails/Create/GuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -83,8 +80,8 @@ function ReviewsRedirect() {
  *   - `Guard`: a React route without the shell (onboarding).
  *   - `Home`, `Onboarding`, `CatchAll`: the ClojureScript leaves.
  *
- * Guardrail, masking and analyzer forms are chosen per rule with
- * <ByRuleTraffic>, since one org can have both agent and sidecar traffic.
+ * The analyzer form is chosen per rule with <ByRuleTraffic>, since one org can
+ * have both agent and sidecar traffic. Guardrails and masking have one form each.
  *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
@@ -209,8 +206,8 @@ function Router() {
         }
       />
 
-      {/* The CLJS :resources panel stays until ENG-922, so a rollback is
-          reverting this route. */}
+      {/* The CLJS :resources and :configure-resource panels stay until ENG-922,
+          so a rollback is reverting these routes. */}
       <Route
         path="/resources"
         element={
@@ -231,6 +228,15 @@ function Router() {
             }
             cljs={CatchAll}
           />
+        }
+      />
+
+      <Route
+        path="/resources/configure/:resourceName"
+        element={
+          <Page adminOnly>
+            <ConfigureResource />
+          </Page>
         }
       />
 
@@ -427,13 +433,7 @@ function Router() {
         path="/features/data-masking/new"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByRuleTraffic
-              kind={RULE_KIND_DATAMASKING}
-              listPath="/features/data-masking"
-              fetchRule={dataMaskingService.get}
-              agent={<GatewayDataMaskingForm />}
-              sidecar={<SidecarDataMaskingForm />}
-            />
+            <DataMaskingForm />
           </Page>
         }
       />
@@ -441,13 +441,7 @@ function Router() {
         path="/features/data-masking/edit/:id"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByRuleTraffic
-              kind={RULE_KIND_DATAMASKING}
-              listPath="/features/data-masking"
-              fetchRule={dataMaskingService.get}
-              agent={<GatewayDataMaskingForm />}
-              sidecar={<SidecarDataMaskingForm />}
-            />
+            <DataMaskingForm />
           </Page>
         }
       />
@@ -562,13 +556,7 @@ function Router() {
         path="/guardrails/new"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByRuleTraffic
-              kind={RULE_KIND_GUARDRAIL}
-              listPath="/guardrails"
-              fetchRule={guardrailsService.get}
-              agent={<GatewayGuardrailForm />}
-              sidecar={<SidecarGuardrailForm />}
-            />
+            <GuardrailForm />
           </Page>
         }
       />
@@ -576,13 +564,7 @@ function Router() {
         path="/guardrails/edit/:id"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByRuleTraffic
-              kind={RULE_KIND_GUARDRAIL}
-              listPath="/guardrails"
-              fetchRule={guardrailsService.get}
-              agent={<GatewayGuardrailForm />}
-              sidecar={<SidecarGuardrailForm />}
-            />
+            <GuardrailForm />
           </Page>
         }
       />

@@ -1,25 +1,29 @@
 import { useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
+import EnterpriseBanner from '@/components/EnterpriseBanner'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { PAGE_PADDING } from '@/layout/PageLayout'
+import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
-import SidecarDataMaskingFields from './SidecarDataMaskingFields'
-import { useSidecarDataMaskingEditor } from './useSidecarDataMaskingEditor'
+import { clampRuleToFreePlan, findMaskingTemplate } from '../templates'
+import DataMaskingFields from './DataMaskingFields'
+import { useDataMaskingEditor } from './useDataMaskingEditor'
 import classes from './Create.module.css'
 
-// Page shell around SidecarDataMaskingFields; Router.jsx picks this or the Gateway sibling with <ByRuleTraffic>.
+// Page shell around DataMaskingFields; the sidecar dialog shares the editor and fields.
 
 function FormFields({ rule: stored, id, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const back = () => navigate('/features/data-masking')
-  const editor = useSidecarDataMaskingEditor({ rule: stored, id, isEdit, onSaved: back, onDeleted: back })
+  const editor = useDataMaskingEditor({ rule: stored, id, isEdit, onSaved: back, onDeleted: back })
 
   const handleDelete = async () => {
     await editor.remove()
@@ -42,8 +46,8 @@ function FormFields({ rule: stored, id, isEdit }) {
         </Button>
       </Box>
 
-      {/* The header of the gateway sibling: pulled up by the shell header's
-          height, since useInViewport takes no rootMargin. */}
+      {/* Pulled up by the shell header's height so it leaves the viewport when
+          the sticky bar meets the header: useInViewport takes no rootMargin. */}
       <Box
         ref={sentinelRef}
         aria-hidden="true"
@@ -78,14 +82,20 @@ function FormFields({ rule: stored, id, isEdit }) {
         </Group>
       </Group>
 
-      <SidecarDataMaskingFields editor={editor} />
+      {isFreeLicense && (
+        <Box mb="xl">
+          <EnterpriseBanner />
+        </Box>
+      )}
+
+      <DataMaskingFields editor={editor} />
 
       <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete Data Masking rule?">
         <Stack gap="lg">
           <Text size="sm">
             This action will permanently delete this Data Masking rule and cannot be undone.
-            Every listener it is distributed to stops applying it. Are you sure you want to
-            proceed?
+            Every resource role and listener it applies to stops masking with it. Are you
+            sure you want to proceed?
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={deleteModal.close}>
@@ -101,9 +111,20 @@ function FormFields({ rule: stored, id, isEdit }) {
   )
 }
 
-export default function SidecarDataMaskingForm() {
+export default function DataMaskingForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+
+  // Activation-journey deep link: /features/data-masking/new?template=<id>&connections=<ids>
+  // seeds a recommended rule. An unknown id falls back to the blank form; the URL
+  // is the source of truth, so a refresh re-seeds the same template. The free
+  // plan clamps the template to its one-entity-per-rule limit.
+  const [searchParams] = useSearchParams()
+  const template = isEdit ? null : findMaskingTemplate(searchParams.get('template'))
+  const templateConnectionIds = (searchParams.get('connections') ?? '').split(',').filter(Boolean)
+  const seededRule = template ? { ...template.rule, connection_ids: templateConnectionIds } : null
+  const templateRule = seededRule && isFreeLicense ? clampRuleToFreePlan(seededRule) : seededRule
 
   const active = useDataMaskingStore((s) => s.active)
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
@@ -118,14 +139,16 @@ export default function SidecarDataMaskingForm() {
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
   }
+  // A failed fetch leaves `active` null; rendering the form would present a
+  // blank "edit" whose save overwrites the real rule with defaults.
   if (isEdit && activeStatus === 'error') {
     return <Text c="red">Failed to load data masking rule.</Text>
   }
 
   return (
     <FormFields
-      key={isEdit ? (active?.id ?? id) : 'new'}
-      rule={isEdit ? active : null}
+      key={isEdit ? (active?.id ?? id) : template ? `template-${template.id}` : 'new'}
+      rule={isEdit ? active : templateRule}
       id={id}
       isEdit={isEdit}
     />

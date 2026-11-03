@@ -204,6 +204,9 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if build == nil {
 		return cfg, nil, nil
 	}
+	// The detector may load a model and say so; the process logger is
+	// installed first so that line has the same shape as every other.
+	newLogger(cfg.LogLevel)
 	det, err := build(cfg.PII)
 	if err != nil {
 		_ = cfg.closeCodecPlugins()
@@ -1558,6 +1561,22 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			ln.notes = append(ln.notes,
 				"defer names a decision this lane has no opa.url for, so a deferred "+
 					"match or risk level denies instead of reporting a finding")
+		}
+		// A strict table rule with no scope refuses every statement whose
+		// relations the scanner could not read, and that set is wider
+		// than a table: a stored procedure call names none, and neither
+		// does the SET or USE a driver sends on connect. Said here, so
+		// the operator learns it from -validate and not from a login that
+		// fails.
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchTable && r.RequireTableMatch && len(r.Operations) == 0 {
+				ln.notes = append(ln.notes, fmt.Sprintf(
+					"table rule %q sets require_table_match with no operations scope, so it "+
+						"also refuses every stored-procedure call and the driver's SET/USE "+
+						"batches, whose relations the scanner cannot read. Scope it with "+
+						"operations: (select, insert, update, delete). A procedure rule names "+
+						"the calls to refuse; it does not change what this rule refuses", r.Name))
+			}
 		}
 		// An omitted trigger on an ungated lane classifies EVERYTHING.
 		// That is what the operator wrote, and it is also a model call

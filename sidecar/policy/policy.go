@@ -492,7 +492,7 @@ func RuleTypes() []MatchType {
 	return []MatchType{
 		MatchDenyWords, MatchPattern, MatchOperation, MatchTable, MatchPII,
 		MatchAIAnalysis, MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader,
-		MatchGRPCStatus, MatchMetadata,
+		MatchGRPCStatus, MatchMetadata, MatchProcedure,
 	}
 }
 
@@ -581,6 +581,12 @@ type Rule struct {
 	// that must never be touched, and accept the false positives.
 	RequireTableMatch bool `json:"require_table_match,omitempty"`
 
+	// Procedures for MatchProcedure: the stored procedures the rule names,
+	// in any spelling (`get_secrets`, `dbo.get_secrets`, `[dbo].[x]`).
+	// Each matches the trailing parts of the called name, so a bare name
+	// matches any schema qualification, as Tables does.
+	Procedures []string `json:"procedures,omitempty" cap:"rule_procedures"`
+
 	// Access narrows a MatchTable rule to "write" or "read". Empty matches
 	// either, which is what every rule written before the split meant.
 	//
@@ -666,8 +672,10 @@ type Rule struct {
 	// evaluators with two orderings.
 	httpRuleFields
 
-	// compiled caches the Pattern regex.
-	compiled *regexp.Regexp
+	// compiled caches the Pattern regex; procedures the normalized
+	// Procedures.
+	compiled   *regexp.Regexp
+	procedures [][]string
 }
 
 // Rules is an ordered set of local rules. The first match wins, so order
@@ -810,6 +818,12 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			if err := r.validateMetadata(); err != nil {
 				problems = append(problems, err.Error())
 			}
+		case MatchProcedure:
+			parts, err := r.compileProcedures()
+			if err != nil {
+				problems = append(problems, err.Error())
+			}
+			r.procedures = parts
 		default:
 			// A new case here goes in RuleTypes too, or no control plane
 			// ever serves it to this build.
@@ -861,7 +875,38 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		}
 	}()
 
+	// The procedures a client statement calls, read once: the lexer runs
+	// over the text to find them, and a lane with several procedure rules
+	// must not pay that per rule. Nil until the first procedure rule asks,
+	// and never for a response, which calls nothing.
+	var (
+		called     []string
+		calledRead bool
+	)
+	procedures := func() []string {
+		if !calledRead {
+			calledRead = true
+			if stmt.Direction != inspect.FromServer {
+				called = inspect.ProceduresOf(stmt)
+			}
+		}
+		return called
+	}
+
 	for _, rule := range r.rules {
+		if rule.Type == MatchProcedure {
+			if !rule.inScope(stmt) || !rule.matchesProcedure(procedures()) {
+				continue
+			}
+			if rule.Action == ActionDefer && !r.DenyDeferred {
+				// The normalized name, not the client's spelling: a
+				// policy compares against one form, and the raw name is
+				// already in input.statement or input.metadata.
+				deferred = recordMatch(deferred, rule, map[string]any{"procedure": rule.procedureValue(procedures())})
+				continue
+			}
+			return DenyRule(rule, rule.messageOr(stmt))
+		}
 		// Rules owns the Scanner, so PII dispatches here rather than
 		// inside Rule.matches.
 		if rule.Type == MatchPII {
@@ -945,22 +990,24 @@ func recordMatch(into map[MatchType]Finding, rule Rule, values map[string]any) m
 // on fields Rego can already read off input, so the finding's value is the
 // match itself. deny_words is the exception worth naming, because which of
 // several words fired is not recoverable from input.statement without
-// reimplementing the matcher.
+// reimplementing the matcher; procedure reports the normalized name for the
+// same reason.
 //
 // A matched pattern's TEXT is never reported. It is content from the
 // statement, and OPA's decision log is a copy of everything sent to it.
 func (r Rule) findingValues(stmt inspect.Statement) map[string]any {
-	if r.Type != MatchDenyWords {
-		return nil
-	}
-	var hit []string
-	upper := strings.ToUpper(stmt.Text)
-	for _, w := range r.Words {
-		if w != "" && strings.Contains(upper, strings.ToUpper(w)) {
-			hit = append(hit, w)
+	switch r.Type {
+	case MatchDenyWords:
+		var hit []string
+		upper := strings.ToUpper(stmt.Text)
+		for _, w := range r.Words {
+			if w != "" && strings.Contains(upper, strings.ToUpper(w)) {
+				hit = append(hit, w)
+			}
 		}
+		return map[string]any{"words": hit}
 	}
-	return map[string]any{"words": hit}
+	return nil
 }
 
 func stringsIn(v any) []string {
@@ -977,11 +1024,28 @@ func appendUnique(dst []string, add ...string) []string {
 	return dst
 }
 
+// messageOr is the operator's Message, or a generated one naming the rule
+// and the operation. An `unknown` operation alone tells a user nothing they
+// can act on, so the generated form carries the scanner's reason (`stored
+// procedure; body is in the catalog`): the statement was refused for what
+// it is, not for what it does.
 func (r Rule) messageOr(stmt inspect.Statement) string {
 	if r.Message != "" {
 		return r.Message
 	}
+	if why := stmt.Metadata[inspect.MetadataSQLIncomplete]; stmt.Operation == inspect.OpUnknown && why != "" {
+		return fmt.Sprintf("statement denied by policy rule %q (operation=unknown: %s)", r.Name, why)
+	}
 	return fmt.Sprintf("statement denied by policy rule %q (operation=%s)", r.Name, stmt.Operation)
+}
+
+// inScope applies the Operations narrowing matches describes, for a rule
+// type evaluated outside matches.
+func (r Rule) inScope(stmt inspect.Statement) bool {
+	if len(r.Operations) > 0 && r.Type != MatchOperation {
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) })
+	}
+	return true
 }
 
 func (r Rule) matches(stmt inspect.Statement) (bool, error) {
@@ -1001,10 +1065,8 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	//
 	// MatchOperation is excluded because there the field IS the matcher;
 	// narrowing it by itself would be a tautology.
-	if len(r.Operations) > 0 && r.Type != MatchOperation {
-		if !slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }) {
-			return false, nil
-		}
+	if !r.inScope(stmt) {
+		return false, nil
 	}
 
 	// http.go handles the HTTP rule types, grpc.go the gRPC ones and
@@ -1038,7 +1100,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return r.compiled.MatchString(stmt.Text), nil
 
 	case MatchOperation:
-		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }), nil
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return operationMatches(stmt, op) }), nil
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
@@ -1079,6 +1141,21 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 // and its operation alone would let a rule naming delete miss it.
 func performs(stmt inspect.Statement, op inspect.Operation) bool {
 	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
+}
+
+// operationMatches reports whether an operation rule naming op matches stmt.
+//
+// `unknown` names a client statement the classifier could not read. A
+// response is never one: it carries no verb, so the codecs report it as
+// unknown (a Postgres result, every HTTP response on the relay), and an
+// operation rule naming unknown would refuse every response on the lane
+// (ENG-893, ENG-545). Only the operation rule: the operations scope of the
+// other rule types still reaches responses through unknown, as it did.
+func operationMatches(stmt inspect.Statement, op inspect.Operation) bool {
+	if op == inspect.OpUnknown && stmt.Direction == inspect.FromServer {
+		return false
+	}
+	return performs(stmt, op)
 }
 
 // accessMatches reports whether a relation's access satisfies the rule.
