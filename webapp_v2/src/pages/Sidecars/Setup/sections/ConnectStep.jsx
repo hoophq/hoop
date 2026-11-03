@@ -55,6 +55,22 @@ function SourceTabs({ sources }) {
   )
 }
 
+function Note({ children }) {
+  return (
+    <Text size="xs" c="dimmed">
+      {children}
+    </Text>
+  )
+}
+
+function DocLink({ href, children }) {
+  return (
+    <Anchor href={href} target="_blank" rel="noopener noreferrer" size="xs">
+      {children}
+    </Anchor>
+  )
+}
+
 // The three places a sidecar runs, the tabs of the documentation's "Connect a
 // Sidecar" page. Both flows ask: create for where to deploy it, connect for
 // where it already runs.
@@ -69,10 +85,7 @@ const DEPLOY_TARGETS = [
     value: 'docker',
     icon: Container,
     title: 'Docker',
-    description: {
-      create: 'Run it as a container with docker run or Docker Compose.',
-      connect: 'It runs as a container with docker run or Docker Compose.',
-    },
+    description: { create: 'Run it as a container with Docker.', connect: 'It runs as a container with Docker.' },
   },
   {
     value: 'cli',
@@ -94,37 +107,62 @@ const DEPLOY_TARGETS = [
 // The container takes the Control Plane URL and the Sidecar token as
 // environment variables: the daemon refuses to start with a control plane and
 // no token (resolveConfigSource, sidecar/daemon/controlplane.go).
-const composeConfig = (image, url, token) => `services:
-  hoop-sidecar:
-    image: ${image}
-    environment:
-      HOOP_CONTROL_PLANE_URL: ${url}
-      HOOP_SIDECAR_TOKEN: ${token}
-    volumes:
-      - ./config.yaml:/etc/hoop-inspect/config.yaml:ro
-    ports:
-      - "19000:19000"    # admin only
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]`
+//
+// Every config file below names a listener: the Control Plane imports the file
+// on the first start, and that import fails with none (control-plane/
+// connect-sidecar.mdx). A container binds admin on 0.0.0.0, because a
+// published port cannot reach the container's 127.0.0.1.
+const LISTENER_EXAMPLE = (host) => `listeners:
+  - name: appdb
+    protocol: postgres
+    listen: ${host}:15432
+    upstream: <your-database-host>:5432`
 
-// docker run takes the same two variables and config mount as the compose
-// service (install/container-images.mdx). The name is how a later restart
-// finds the container again.
+const dockerConfig = `admin:
+  listen: 0.0.0.0:19000      # the admin API port
+${LISTENER_EXAMPLE('0.0.0.0')}`
+
+const cliConfig = (url) => `control_plane_url: ${url}
+admin:
+  listen: 127.0.0.1:19000    # the admin API port
+${LISTENER_EXAMPLE('127.0.0.1')}`
+
+// The name is how a later restart finds the container again.
 const dockerRun = (image, url, token, name = 'hoop-sidecar') => `docker run -d --name ${name} \\
   -e HOOP_CONTROL_PLANE_URL=${url} \\
   -e HOOP_SIDECAR_TOKEN=${token} \\
   -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \\
-  -p 19000:19000 \\
+  -p 15432:15432 -p 19000:19000 \\
   ${image}`
+
+// The chart's `config` is the sidecar's config file, indented under one key.
+const helmValues = (url, token) => `controlPlane:
+  url: ${url}
+  token: ${token}
+config:
+  admin:
+    listen: 0.0.0.0:19000      # the admin API port; the chart needs 19000
+${LISTENER_EXAMPLE('0.0.0.0')
+  .split('\n')
+  .map((line) => `  ${line}`)
+  .join('\n')}`
+
+const helmConnectValues = (url, token) => `controlPlane:
+  url: ${url}
+  token: ${token}`
+
+const HELM_INSTALL = `VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+helm upgrade --install hoop-sidecar \\
+  oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart --version $VERSION \\
+  --namespace hoop --create-namespace \\
+  -f values.yaml`
 
 // The token goes in a Secret rather than the manifest: a Deployment is the
 // thing most likely to sit in git.
 const k8sSecret = (token) => `kubectl create secret generic hoop-sidecar-token \\
   --from-literal=token=${token}`
 
-const k8sEnv = (image, url) => `# in your Deployment's container spec
-image: ${image}
-env:
+const K8S_ENV = (url) => `env:
   - name: HOOP_CONTROL_PLANE_URL
     value: ${url}
   - name: HOOP_SIDECAR_TOKEN
@@ -132,30 +170,25 @@ env:
       secretKeyRef:
         name: hoop-sidecar-token
         key: token`
+
+const k8sEnv = (image, url) => `# in your Deployment's container spec
+image: ${image}
+${K8S_ENV(url)}`
 
 // A sidecar that already runs keeps its image and its config file; it only
 // gains the two variables (install/kubernetes.mdx, "Control Plane").
 const k8sConnectEnv = (url) => `# add to your Deployment's container spec
-env:
-  - name: HOOP_CONTROL_PLANE_URL
-    value: ${url}
-  - name: HOOP_SIDECAR_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: hoop-sidecar-token
-        key: token`
+${K8S_ENV(url)}`
 
-const composeConnectEnv = (url, token) => `services:
-  hoop-sidecar:    # your existing service
-    environment:
-      HOOP_CONTROL_PLANE_URL: ${url}
-      HOOP_SIDECAR_TOKEN: ${token}`
+const HOLDS_TOKEN = 'This file holds the token. Keep it out of a repository.'
+const RUN_NOTE = 'Run this on the host that reaches your resources.'
 
 /**
  * Step 1 of the sidecar wizard. The control plane issues a token for a named
  * sidecar (POST /sidecars), so the name comes first. The reader then picks
  * where the sidecar runs, and the blocks that follow are the documented steps
  * for that one target: create installs it first, connect only points it at Hoop.
+ * The steps follow control-plane/connect-sidecar.mdx; keep the two together.
  */
 export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, imageRef, creating, error, onCreate }) {
   const [name, setName] = useState('')
@@ -178,97 +211,109 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
     node: (
       <>
         <CodeSnippet code={token} />
-        <Text size="xs" c="dimmed">
+        <Note>
           <Text component="span" fw={700}>
             Shown once.
           </Text>
-          {
-            ' Copy it before you continue. Leaving this page discards it; delete the sidecar to get a new one.'
-          }
-        </Text>
+          {' Copy it before you continue. Leaving this page discards it; delete the sidecar to get a new one.'}
+        </Note>
       </>
     ),
   }
 
+  const configFileLink = <DocLink href={docsUrl.sidecar.configFile}>Config File Reference</DocLink>
+
   // The create flow branches on the deploy target. Kubernetes keeps the full
-  // manifest in the docs and shows only the two settings the sidecar needs;
-  // Docker and the CLI show the whole flow on screen.
+  // manifest in the docs; Docker and the CLI show the whole flow on screen.
   const targetBlocks = {
     k8s: [
       tokenBlock,
       {
-        key: 'install',
-        title: 'Create the token secret',
+        key: 'deploy',
+        title: 'Deploy it',
         node: (
           <>
-            <CodeSnippet code={k8sSecret(token)} variant="black" />
-            <Text size="xs" c="dimmed">
-              The Deployment reads the Sidecar token from this Secret.
-            </Text>
-          </>
-        ),
-      },
-      {
-        key: 'config',
-        title: 'Configure the container',
-        node: (
-          <>
-            <CodeSnippet code={k8sEnv(imageRef, controlPlaneUrl)} />
-            <Text size="xs" c="dimmed">
-              {'The Control Plane URL and the Sidecar token are all it needs here. '}
-              <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
-                Running the Sidecar
-              </Anchor>
-              {' has the full Deployment and ConfigMap.'}
-            </Text>
-          </>
-        ),
-      },
-    ],
-    docker: [
-      {
-        key: 'install',
-        title: 'Pull the image',
-        node: (
-          <>
-            <CodeSnippet code={`docker pull ${imageRef}`} variant="black" />
-            <Text size="xs" c="dimmed">
-              The dedicated sidecar image. docker run and docker compose up pull it too.
-            </Text>
-          </>
-        ),
-      },
-      tokenBlock,
-      {
-        key: 'run',
-        title: 'Run it',
-        node: (
-          <>
+            <Note>
+              The Helm chart does most of the work for you. Your own YAML gives you full control, and you write each
+              object yourself. New to Kubernetes? Use the Helm chart.
+            </Note>
             <SourceTabs
               sources={[
-                { value: 'run', label: 'docker run', code: dockerRun(imageRef, controlPlaneUrl, token) },
                 {
-                  value: 'compose',
-                  label: 'Docker Compose',
+                  value: 'helm',
+                  label: 'Helm chart',
                   node: (
                     <Stack gap="sm">
-                      <CodeSnippet code={composeConfig(imageRef, controlPlaneUrl, token)} />
-                      <Text size="xs" c="dimmed">
-                        Save this as compose.yaml next to your config.yaml, then start it:
-                      </Text>
-                      <CodeSnippet code="docker compose up -d" />
+                      <Note>Write a values.yaml:</Note>
+                      <CodeSnippet code={helmValues(controlPlaneUrl, token)} />
+                      <Note>
+                        {
+                          'config is the sidecar config file. The Control Plane copies it once, on the first start. It needs at least one entry in listeners. '
+                        }
+                        {HOLDS_TOKEN}
+                      </Note>
+                      <Note>Install the chart:</Note>
+                      <CodeSnippet code={HELM_INSTALL} />
+                    </Stack>
+                  ),
+                },
+                {
+                  value: 'yaml',
+                  label: 'Your own YAML',
+                  node: (
+                    <Stack gap="sm">
+                      <Note>Put the token in a Secret:</Note>
+                      <CodeSnippet code={k8sSecret(token)} />
+                      <Note>Set the variables on the sidecar container. It takes no arguments:</Note>
+                      <CodeSnippet code={k8sEnv(imageRef, controlPlaneUrl)} />
+                      <Note>
+                        {
+                          'The container also needs the config file, from a ConfigMap mounted at /etc/hoop-inspect/config.yaml: at least one entry in listeners, and admin.listen on 0.0.0.0. '
+                        }
+                        <DocLink href={docsUrl.sidecar.kubernetesManifest}>Running as Sidecar</DocLink>
+                        {' has the full Deployment and ConfigMap.'}
+                      </Note>
                     </Stack>
                   ),
                 },
               ]}
             />
-            <Text size="xs" c="dimmed">
-              {'Run it from the folder that holds your config.yaml. '}
-              <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
-                Running the Sidecar
-              </Anchor>
-              {' walks through the config file itself.'}
-            </Text>
+          </>
+        ),
+      },
+    ],
+    docker: [
+      tokenBlock,
+      {
+        key: 'config',
+        title: 'Write the config file',
+        node: (
+          <>
+            <Note>
+              Create config.yaml in the folder where you run docker run. The Control Plane copies it once, on the
+              first start.
+            </Note>
+            <CodeSnippet code={dockerConfig} />
+            <Note>
+              {
+                'listeners names the database the sidecar sits in front of; the file needs at least one. admin.listen sets the port of the admin API. In a container, use 0.0.0.0: a published port cannot reach the container 127.0.0.1. The '
+              }
+              {configFileLink}
+              {' has every key.'}
+            </Note>
+          </>
+        ),
+      },
+      {
+        key: 'run',
+        title: 'Run it',
+        node: (
+          <>
+            <CodeSnippet code={dockerRun(imageRef, controlPlaneUrl, token)} />
+            <Note>
+              <DocLink href={docsUrl.sidecar.containerImages}>Container Images</DocLink>
+              {' has the image flavours.'}
+            </Note>
           </>
         ),
       },
@@ -278,25 +323,27 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         key: 'install',
         title: 'Install the hoop CLI',
         node: (
-          <Text size="xs" c="dimmed">
+          <Note>
             {'See the '}
-            <Anchor href={docsUrl.clients.commandLine.overview} target="_blank" rel="noopener noreferrer" size="xs">
-              installation docs for your OS
-            </Anchor>
+            <DocLink href={docsUrl.clients.commandLine.overview}>installation docs for your OS</DocLink>
             {'.'}
-          </Text>
+          </Note>
         ),
       },
       tokenBlock,
       {
         key: 'config',
-        title: 'Point the sidecar at Hoop',
+        title: 'Write the config file',
         node: (
           <>
-            <CodeSnippet code={`control_plane_url: ${controlPlaneUrl}`} />
-            <Text size="xs" c="dimmed">
-              config.yaml. The token is a flag, not a config file key.
-            </Text>
+            <CodeSnippet code={cliConfig(controlPlaneUrl)} />
+            <Note>
+              {
+                'The Control Plane copies this file once, on the first start. It needs at least one entry in listeners. The token is a flag, not a config file key. The '
+              }
+              {configFileLink}
+              {' has every key.'}
+            </Note>
           </>
         ),
       },
@@ -305,62 +352,60 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         title: 'Start the sidecar with the token',
         node: (
           <>
-            <CodeSnippet code={`hoop start sidecar --config config.yaml --token "${token}"`} variant="black" />
-            <Text size="xs" c="dimmed">
-              {
-                'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
-              }
-            </Text>
+            <CodeSnippet code={`hoop start sidecar --config config.yaml --token "${token}"`} />
+            <Note>{RUN_NOTE}</Note>
           </>
         ),
       },
     ],
   }
 
-  // The secret step is the same in both flows: a running pod reads the token
-  // from it just like a new one.
-  const k8sSecretBlock = targetBlocks.k8s[1]
-  const keepsFileNote = (
-    <Text size="xs" c="dimmed">
-      It keeps running its config file until you move the configuration to Hoop from the sidecar page.
-    </Text>
-  )
-
   // The connect flow is for a sidecar that already runs, so nothing is
   // installed: point it at Hoop, take the token, restart it where it runs.
   const connectBlocks = {
     k8s: [
       tokenBlock,
-      k8sSecretBlock,
-      {
-        key: 'config',
-        title: 'Point the container at Hoop',
-        node: (
-          <>
-            <CodeSnippet code={k8sConnectEnv(controlPlaneUrl)} />
-            <Text size="xs" c="dimmed">
-              {'Keep its image and config file as they are. Installed with the Helm chart? Set '}
-              <Anchor href={docsUrl.sidecar.kubernetesControlPlane} target="_blank" rel="noopener noreferrer" size="xs">
-                controlPlane in your values
-              </Anchor>
-              {' instead.'}
-            </Text>
-          </>
-        ),
-      },
       {
         key: 'start',
-        title: 'Restart it',
+        title: 'Point it at Hoop and restart it',
         node: (
-          <>
-            <CodeSnippet code="kubectl rollout restart deployment/<your-sidecar-deployment>" />
-            {keepsFileNote}
-          </>
+          <SourceTabs
+            sources={[
+              {
+                value: 'helm',
+                label: 'Helm chart',
+                node: (
+                  <Stack gap="sm">
+                    <Note>Add the controlPlane block to its values:</Note>
+                    <CodeSnippet code={helmConnectValues(controlPlaneUrl, token)} />
+                    <Note>
+                      {`Then run the helm upgrade you deployed it with. The chart restarts the pods. ${HOLDS_TOKEN} `}
+                      <DocLink href={docsUrl.sidecar.kubernetesControlPlane}>Kubernetes</DocLink>
+                      {' has every value.'}
+                    </Note>
+                  </Stack>
+                ),
+              },
+              {
+                value: 'yaml',
+                label: 'Your own YAML',
+                node: (
+                  <Stack gap="sm">
+                    <Note>Put the token in a Secret:</Note>
+                    <CodeSnippet code={k8sSecret(token)} />
+                    <Note>Add the variables to the sidecar container. Keep its image and config file as they are:</Note>
+                    <CodeSnippet code={k8sConnectEnv(controlPlaneUrl)} />
+                    <Note>Restart it to pick them up:</Note>
+                    <CodeSnippet code="kubectl rollout restart deployment/<your-sidecar-deployment>" />
+                  </Stack>
+                ),
+              },
+            ]}
+          />
         ),
       },
     ],
-    // A container keeps the variables it started with, so both spellings
-    // create it again: docker run by hand, compose by noticing the change.
+    // A container keeps the variables it started with, so it is created again.
     docker: [
       tokenBlock,
       {
@@ -368,40 +413,13 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         title: 'Point it at Hoop and restart it',
         node: (
           <>
-            <SourceTabs
-              sources={[
-                {
-                  value: 'run',
-                  label: 'docker run',
-                  node: (
-                    <Stack gap="sm">
-                      <CodeSnippet
-                        code={`docker rm -f <your-sidecar-container>\n${dockerRun(imageRef, controlPlaneUrl, token, '<your-sidecar-container>')}`}
-                      />
-                      <Text size="xs" c="dimmed">
-                        A container keeps the variables it started with, so this creates it again. Keep the mounts
-                        and ports it runs with now.
-                      </Text>
-                    </Stack>
-                  ),
-                },
-                {
-                  value: 'compose',
-                  label: 'Docker Compose',
-                  node: (
-                    <Stack gap="sm">
-                      <CodeSnippet code={composeConnectEnv(controlPlaneUrl, token)} />
-                      <Text size="xs" c="dimmed">
-                        Add the two variables to the service in your compose.yaml. Keep its config file mount, then
-                        restart it:
-                      </Text>
-                      <CodeSnippet code="docker compose up -d" />
-                    </Stack>
-                  ),
-                },
-              ]}
+            <CodeSnippet
+              code={`docker rm -f <your-sidecar-container>\n${dockerRun(imageRef, controlPlaneUrl, token, '<your-sidecar-container>')}`}
             />
-            {keepsFileNote}
+            <Note>
+              A container keeps the variables it started with, so this creates it again. Keep the mounts and ports it
+              runs with now.
+            </Note>
           </>
         ),
       },
@@ -418,9 +436,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
                 { value: 'env', label: 'Environment Variables', code: `export HOOP_CONTROL_PLANE_URL=${controlPlaneUrl}` },
               ]}
             />
-            <Text size="xs" c="dimmed">
-              The environment variable outranks the config file.
-            </Text>
+            <Note>The environment variable outranks the config file.</Note>
           </>
         ),
       },
@@ -436,21 +452,15 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
                   value: 'flag',
                   label: 'CLI Options',
                   code: `hoop start sidecar --config config.yaml --token "${token}"`,
-                  variant: 'black',
                 },
                 {
                   value: 'env',
                   label: 'Environment Variables',
                   code: `export HOOP_SIDECAR_TOKEN=${token}\nhoop start sidecar --config config.yaml`,
-                  variant: 'black',
                 },
               ]}
             />
-            <Text size="xs" c="dimmed">
-              {
-                'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
-              }
-            </Text>
+            <Note>{`Stop it, then start it again with the token. ${RUN_NOTE}`}</Note>
           </>
         ),
       },

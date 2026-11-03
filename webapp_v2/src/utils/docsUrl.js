@@ -36,6 +36,9 @@ export const docsUrl = {
     connectToControlPlane: 'https://hoop.dev/docs/control-plane/connect-sidecar',
     // The Helm chart's controlPlane values, for a sidecar already on Kubernetes.
     kubernetesControlPlane: 'https://hoop.dev/docs/install/kubernetes#control-plane',
+    // The full Deployment and ConfigMap, for Kubernetes without the chart.
+    kubernetesManifest: 'https://hoop.dev/docs/install/kubernetes#running-as-sidecar',
+    containerImages: 'https://hoop.dev/docs/install/container-images',
     // The three rule vocabularies a control plane distributes. They are the
     // SIDECAR's, not the gateway's: features.guardrails and
     // features.aiDatamasking above document a different implementation.
