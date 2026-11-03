@@ -38,12 +38,13 @@ async function ownerOf(token) {
 
 async function onStorage(event) {
   const token = event.newValue
-  if (event.key !== 'jwt-token' || !token || !useUserStore.getState().user) return
+  if (event.key !== 'jwt-token' || !token) return
   // A newer token replaced this one before or while it is checked: its own
   // event decides.
   if (storedToken() !== token) return
 
-  // Two JWTs: their `sub` tells the account, with no request.
+  // Two JWTs: their `sub` tells the account, with no request, also while this
+  // tab still loads its user.
   const signedIn = tokenSubject(useAuthStore.getState().token)
   const stored = tokenSubject(token)
   if (signedIn && stored) {
@@ -51,7 +52,8 @@ async function onStorage(event) {
     return
   }
 
-  // An opaque token: ask the gateway whose it is.
+  // An opaque token: ask the gateway whose it is, once this tab shows a user.
+  if (!useUserStore.getState().user) return
   const owner = await ownerOf(token)
   if (storedToken() !== token) return
   const shown = useUserStore.getState().user?.id

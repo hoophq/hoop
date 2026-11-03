@@ -88,6 +88,12 @@ describe('a JWT another tab stores', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('of another account reloads this tab while it still loads its user', async () => {
+    useUserStore.setState({ user: null })
+    await otherTab('jwt-token', jwt('sub-b'))
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
   it('of the same account (a renewal) changes nothing, with no request', async () => {
     await otherTab('jwt-token', jwt('sub-a', 2))
     expect(reload).not.toHaveBeenCalled()
