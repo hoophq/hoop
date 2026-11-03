@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Group, Stack, Text } from '@mantine/core'
 import { CircleHelp } from 'lucide-react'
 import TextInput from '@/components/TextInput'
@@ -45,8 +46,9 @@ export default function SourcedInput({
   // pasted service-account JSON). The wrapper's autosize default caps
   // at 6 rows, so the max is raised alongside the min.
   const textareaSizing = minRows ? { minRows, maxRows: minRows } : {}
+  const id = useId()
 
-  const labelNode = label ? <FieldLabel label={label} required={required} tooltip={tooltip} /> : null
+  const labelNode = label ? <FieldLabel htmlFor={id} label={label} required={required} tooltip={tooltip} /> : null
 
   if (isTextarea) {
     return (
@@ -64,6 +66,7 @@ export default function SourcedInput({
           />
         )}
         <Textarea
+          id={id}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange?.(e.currentTarget.value)}
@@ -92,6 +95,7 @@ export default function SourcedInput({
           />
         )}
         <Input
+          id={id}
           flex={1}
           placeholder={placeholder}
           value={value}
@@ -114,10 +118,10 @@ export default function SourcedInput({
 // setup wizard) resizes these too.
 const LABEL_SIZE = 'var(--input-label-size, var(--mantine-font-size-sm))'
 
-function FieldLabel({ label, required, tooltip }) {
+function FieldLabel({ htmlFor, label, required, tooltip }) {
   return (
     <Group gap={4}>
-      <Text fz={LABEL_SIZE} fw={700}>
+      <Text component="label" htmlFor={htmlFor} fz={LABEL_SIZE} fw={700}>
         {label}
       </Text>
       {required && (

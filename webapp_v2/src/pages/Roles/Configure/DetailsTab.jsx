@@ -54,6 +54,7 @@ export default function DetailsTab({ connection }) {
           </Text>
         </Stack>
         <AttributesSelect
+          aria-label="Attributes"
           placeholder="Select attributes"
           options={attributeOptions}
           value={drafts.attributes}

@@ -25,16 +25,6 @@ function roleName(resourceName, suffix) {
 
 let lastRoleId = 0
 
-// A response commits only while its wizard run and its request are still the
-// latest of their kind. latest(kind) starts a request and answers its check.
-let run = 0
-const requests = {}
-function latest(kind) {
-  const id = (requests[kind] = (requests[kind] ?? 0) + 1)
-  const started = run
-  return () => started === run && requests[kind] === id
-}
-
 function newRole(setup, resourceName) {
   const suffix = String(Math.floor(1000 + Math.random() * 9000))
   lastRoleId += 1
@@ -68,7 +58,7 @@ const initialState = {
   roles: [],
   attributes: [],
   profile: null,
-  // Save waits for 'ready': an unknown profile would drop its attribute.
+  // Save waits for 'ready': the attributes and the protection profile loaded.
   roleOptions: 'idle',
   submitting: false,
   createdRoles: [],
@@ -83,13 +73,21 @@ export const useResourceSetupStore = create((set, get) => {
       roles: state.roles.map((role) => (role.id === id ? { ...role, ...patch } : role)),
     }))
 
+  // A response commits only while its wizard run and its request are still the
+  // latest of their kind. latest(kind) starts a request and answers its check.
+  const latest = (kind) => {
+    const { run, requests } = get()
+    const id = (requests[kind] ?? 0) + 1
+    set({ requests: { ...requests, [kind]: id } })
+    return () => get().run === run && get().requests[kind] === id
+  }
+
   return {
     ...initialState,
+    run: 0,
+    requests: {},
 
-    start: (setup) => {
-      run += 1
-      set({ ...initialState, setup })
-    },
+    start: (setup) => set((state) => ({ ...initialState, setup, run: state.run + 1 })),
 
     setStep: (step) => set({ step }),
 
@@ -145,7 +143,8 @@ export const useResourceSetupStore = create((set, get) => {
 
     selectAgent: (agentId) => set({ agentId }),
 
-    setAgentMode: (agentMode) => set({ agentMode }),
+    // A new agent replaces the selected one: Next waits for the new agent's id.
+    setAgentMode: (agentMode) => set({ agentMode, agentId: null }),
 
     setNewAgentName: (name) => set((state) => ({ newAgent: { ...state.newAgent, name } })),
 
@@ -214,10 +213,11 @@ export const useResourceSetupStore = create((set, get) => {
         protectionProfilesService.get(),
       ])
       if (!current()) return
+      const loaded = attributes.status === 'fulfilled' && profile.status === 'fulfilled'
       set({
         attributes: attributes.status === 'fulfilled' ? attributes.value : [],
         profile: profile.status === 'fulfilled' ? profile.value : null,
-        roleOptions: profile.status === 'fulfilled' ? 'ready' : 'error',
+        roleOptions: loaded ? 'ready' : 'error',
       })
     },
 
@@ -273,14 +273,17 @@ export const useResourceSetupStore = create((set, get) => {
         connections,
         profileAttribute: profile?.attribute_name ?? null,
       })
+      const current = latest('submit')
       set({ submitting: true })
       try {
         await resourcesService.create(payload)
       } catch (error) {
+        if (!current()) return
         set({ submitting: false })
         showSnackbar({ level: 'error', text: 'Failed to create resource', description: errorText(error) })
         return
       }
+      if (!current()) return
       showSnackbar({ level: 'success', text: 'Resource created successfully!' })
       set({ submitting: false, createdRoles: payload.roles, step: 'success' })
     },

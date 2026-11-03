@@ -22,6 +22,7 @@ export default function AttributesSelect({
   onCreate,
   placeholder,
   label,
+  'aria-label': ariaLabel,
 }) {
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
@@ -130,6 +131,7 @@ export default function AttributesSelect({
             {pills}
             <Combobox.EventsTarget>
               <PillsInput.Field
+                aria-label={ariaLabel}
                 value={search}
                 placeholder={value.length === 0 ? placeholder : ''}
                 onFocus={() => combobox.openDropdown()}

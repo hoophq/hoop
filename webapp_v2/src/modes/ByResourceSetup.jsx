@@ -27,6 +27,9 @@ export default function ByResourceSetup({ react, cljs }) {
   }, [catalogId, load])
 
   if (!catalogId) return <Navigate to="/resource-catalog" replace />
+  // A mapped CLJS type needs no metadata, so a failed load does not block it.
+  const config = setupConfigFor(catalogId, metadata?.connections)
+  if (config && !isReactSetup(config)) return cljs
   if (!metadata) {
     if (!error) return <PageLoader h={400} />
     return (
@@ -37,7 +40,6 @@ export default function ByResourceSetup({ react, cljs }) {
       />
     )
   }
-  const config = setupConfigFor(catalogId, metadata.connections)
   if (!config) return <Navigate to="/resource-catalog" replace />
-  return isReactSetup(config) ? react : cljs
+  return react
 }

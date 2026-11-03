@@ -109,6 +109,11 @@ describe('setupConfigFor', () => {
     expect(setupConfigFor('', connections)).toBeNull()
     expect(setupConfigFor('not-a-catalog-id', connections)).toBeNull()
   })
+
+  it('resolves a mapped id before the metadata loads', () => {
+    expect(setupConfigFor('linux-vm', undefined)).toEqual({ type: 'custom', subtype: 'linux-vm', command: ['bash'] })
+    expect(setupConfigFor('aws-ssm-script', undefined)).toBeNull()
+  })
 })
 
 describe('isReactSetup', () => {
@@ -415,6 +420,35 @@ describe('wizard store', () => {
     resourcesService.create.mockResolvedValueOnce({})
     await store().submit(connections)
     expect(resourcesService.create.mock.calls[0][0].roles[0].attributes).toContain(PROFILE.attribute_name)
+  })
+
+  it('saves only once the attributes are known', async () => {
+    const { attributesService } = await import('@/services/attributes')
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    attributesService.listAll.mockRejectedValueOnce(new Error('down'))
+    await store().loadRoleOptions()
+    expect(store().roleOptions).toBe('error')
+    await store().submit(connections)
+    expect(resourcesService.create).not.toHaveBeenCalled()
+  })
+
+  it('drops the selected agent when the admin creates a new one', () => {
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    store().setAgentMode('create')
+    expect(store().agentId).toBeNull()
+  })
+
+  it('drops a save that answers after a new run started', async () => {
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    await store().loadRoleOptions()
+    let answer
+    resourcesService.create.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    const saving = store().submit(connections)
+    store().start(setupConfigFor('mysql', connections))
+    answer({})
+    await saving
+    expect(store()).toMatchObject({ step: 'name', submitting: false, createdRoles: [] })
+    expect(showSnackbar).not.toHaveBeenCalled()
   })
 
   it('drops activation data of an earlier run', async () => {

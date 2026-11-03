@@ -27,8 +27,8 @@ export default function RolesStep() {
 
       {roleOptions === 'error' && (
         <RetryAlert
-          title="Protection profile unavailable"
-          text="Save waits for the protection profile, so its attribute reaches every role."
+          title="Attributes unavailable"
+          text="Save waits for the attributes and the protection profile."
           onRetry={loadRoleOptions}
         />
       )}
