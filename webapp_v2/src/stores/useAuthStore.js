@@ -19,8 +19,24 @@ const clearCookie = (cookieName) => {
 const REDIRECT_KEY = 'redirect-after-auth'
 
 export const useAuthStore = create((set, get) => ({
+  // The token of this tab's sign-in. Stores reset when it changes, as an
+  // account change, so a renewal leaves it as it was. Never send it: getToken()
+  // returns the current one.
   token: localStorage.getItem('jwt-token') || null,
   isAuthenticated: !!localStorage.getItem('jwt-token'),
+
+  // The token to send. Read on every call, never kept in memory: the gateway
+  // renews it (X-New-Access-Token) and the CLJS app stores its renewals here.
+  getToken: () => localStorage.getItem('jwt-token'),
+
+  // Stores the token the gateway renewed for a request sent with `sent`, only
+  // while `sent` is still the current token: a response that lands after a
+  // logout or another sign-in must not bring the old token back.
+  renewToken: (sent, renewed) => {
+    if (renewed && sent && localStorage.getItem('jwt-token') === sent) {
+      localStorage.setItem('jwt-token', renewed)
+    }
+  },
 
   // Initialize token from cookies or query params (used on callback)
   initializeToken: () => {

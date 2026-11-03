@@ -903,7 +903,7 @@ directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
-useAuthStore.getState().token
+useAuthStore.getState().isAuthenticated
 ```
 
 Non-obvious notes only:
@@ -986,8 +986,9 @@ when adding one, follow the pattern in `services/agents.js`.
 
 Non-obvious notes only:
 
-- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
-  URL + logout). Every other service imports it; never call axios directly.
+- `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
+  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
+  imports it; never call axios directly.
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
