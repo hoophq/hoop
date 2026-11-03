@@ -421,7 +421,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         title: 'Point it at Hoop and restart it',
         node: (
           <>
-            <Note>Add these two flags to the docker run you started it with:</Note>
+            <Note>Add these two flags to the docker run you started it with, before the image name:</Note>
             <CodeSnippet code={dockerConnectFlags(controlPlaneUrl, token)} />
             <Note>
               A container keeps the variables it started with, so create it again: remove it with docker rm -f, then
