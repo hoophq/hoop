@@ -1,58 +1,17 @@
-/* An insight card: a header that toggles its details. A subtle surface for
-   the analyzer and guardrails (theme.js); violet for data masking (Figma
-   "AI Data Masking"). */
-.card {
-  border-radius: var(--mantine-radius-md);
-  padding: var(--mantine-spacing-sm);
-}
-
-.card[data-variant='gray'] {
-  background-color: var(--hoop-surface-subtle);
-  border: 1px solid var(--hoop-border-subtle);
-}
-
-.card[data-variant='violet'] {
-  background-color: var(--mantine-color-violet-0);
-}
-
+/* The insight cards' layout; their surfaces are Paper variants (theme). */
 .header {
   width: 100%;
   border-radius: var(--mantine-radius-sm);
 }
 
-.header:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-6);
-  outline-offset: 2px;
-}
-
 .chevron {
   flex-shrink: 0;
-  color: var(--mantine-color-gray-5);
+  color: var(--mantine-color-dimmed);
   transition: transform 150ms ease;
 }
 
 .chevron[data-open] {
   transform: rotate(180deg);
-}
-
-.divider {
-  border-top: 1px solid var(--hoop-border-divider);
-  padding-top: var(--mantine-spacing-sm);
-}
-
-.tile {
-  flex: 1;
-  border-radius: var(--mantine-radius-md);
-  background-color: var(--mantine-color-violet-1);
-  padding: var(--mantine-spacing-sm);
-}
-
-.chip {
-  border-radius: var(--mantine-radius-sm);
-  background-color: var(--hoop-surface-strong);
-  padding: var(--mantine-spacing-smAlt);
-  font-family: var(--mantine-font-family-monospace);
-  font-size: var(--mantine-font-size-xs);
 }
 
 .trace {

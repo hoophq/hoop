@@ -1,9 +1,6 @@
+/* The frame is a Paper (theme outline variant); these set the layout. */
 .header {
   padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
-  border: 1px solid var(--hoop-border-subtle);
-  border-top-left-radius: var(--mantine-radius-md);
-  border-top-right-radius: var(--mantine-radius-md);
-  background: var(--mantine-color-body);
 }
 
 .body {
@@ -11,10 +8,6 @@
   min-height: 200px;
   max-height: 60vh;
   overflow-y: auto;
-  border: 1px solid var(--hoop-border-subtle);
-  border-top: 0;
-  border-bottom-left-radius: var(--mantine-radius-md);
-  border-bottom-right-radius: var(--mantine-radius-md);
 }
 
 .row {
@@ -53,8 +46,8 @@
 .terminal {
   min-height: 200px;
   padding: var(--mantine-spacing-mdAlt);
-  background: var(--mantine-color-dark-8);
-  color: var(--mantine-color-gray-2);
+  background: var(--hoop-terminal-bg);
+  color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-sm);
   white-space: pre;

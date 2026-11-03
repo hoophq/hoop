@@ -1,10 +1,9 @@
 /* The RDP replay: the recording scaled into a fixed stage, the PII overlay
-   drawn on a second canvas of the same size, centred the same way. */
+   drawn on a second canvas of the same size, centred the same way. The frame
+   is a Paper (theme outline variant). */
 .player {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--hoop-border-subtle);
-  border-radius: var(--mantine-radius-md);
   overflow: hidden;
 }
 
@@ -17,6 +16,8 @@
   background: var(--mantine-color-body);
 }
 
+/* The one dark surface the theme does not name: a video stage behind the
+   recording, as a media player draws it. */
 .stage {
   position: relative;
   display: flex;
@@ -55,14 +56,6 @@
   right: var(--mantine-spacing-smAlt);
 }
 
-.controls {
-  background: var(--hoop-surface-muted);
-}
-
-.legend {
-  border-top: 1px solid var(--hoop-border-subtle);
-  background: var(--mantine-color-body);
-}
 
 .legendLabel {
   letter-spacing: 0.08em;

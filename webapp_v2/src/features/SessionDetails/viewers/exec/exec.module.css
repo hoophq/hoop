@@ -3,8 +3,8 @@
 .terminal {
   position: relative;
   border-radius: var(--mantine-radius-md);
-  background-color: var(--mantine-color-dark-8);
-  color: var(--mantine-color-gray-2);
+  background-color: var(--hoop-terminal-bg);
+  color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-sm);
   padding: var(--mantine-spacing-sm);
@@ -41,15 +41,3 @@
   z-index: 1;
 }
 
-/* Figma "Preview Not Available": the file facts and a download. */
-.preview {
-  border-radius: var(--mantine-radius-md);
-  background-color: var(--hoop-surface-muted);
-  padding: var(--mantine-spacing-lgAlt);
-}
-
-.notice {
-  border-radius: var(--mantine-radius-sm);
-  background-color: var(--hoop-surface-strong);
-  padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-smAlt);
-}

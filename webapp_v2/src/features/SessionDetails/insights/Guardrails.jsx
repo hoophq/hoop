@@ -1,9 +1,8 @@
-import { Box, Group, Stack, Text, ThemeIcon } from '@mantine/core'
+import { Box, Group, Paper, Stack, Text, ThemeIcon } from '@mantine/core'
 import Badge from '@/components/Badge'
 import { ShieldCheck } from 'lucide-react'
 import { blockedMessage } from './helpers'
-import InsightCard from './InsightCard'
-import classes from './insights.module.css'
+import InsightCard, { CardSection } from './InsightCard'
 
 const RULE_TYPES = {
   pattern_match: { label: 'PATTERN MATCH', color: 'pink' },
@@ -30,9 +29,11 @@ function Words({ entry }) {
   const chips = (
     <Group gap={4}>
       {words.map((word) => (
-        <Box key={word} className={classes.chip}>
-          {word}
-        </Box>
+        <Paper key={word} variant="strong" radius="sm" p="smAlt">
+          <Text ff="monospace" size="xs">
+            {word}
+          </Text>
+        </Paper>
       ))}
     </Group>
   )
@@ -119,11 +120,15 @@ export default function Guardrails({ entries }) {
         </Group>
       )}
     >
-      {entries.map((entry, i) => (
-        <Box key={i} className={i > 0 ? classes.divider : undefined}>
-          <Entry entry={entry} withName />
-        </Box>
-      ))}
+      {entries.map((entry, i) =>
+        i > 0 ? (
+          <CardSection key={i}>
+            <Entry entry={entry} withName />
+          </CardSection>
+        ) : (
+          <Entry key={i} entry={entry} withName />
+        ),
+      )}
     </InsightCard>
   )
 }

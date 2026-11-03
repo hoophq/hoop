@@ -4,8 +4,8 @@
   overflow: auto;
   padding: var(--mantine-spacing-mdAlt);
   border-radius: var(--mantine-radius-lg);
-  background: var(--mantine-color-dark-8);
-  color: var(--mantine-color-gray-2);
+  background: var(--hoop-terminal-bg);
+  color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-sm);
   white-space: pre;
@@ -40,7 +40,7 @@
 }
 
 .row[data-type='e'] {
-  background: var(--mantine-color-red-0);
+  background: var(--mantine-color-red-light);
 }
 
 .rowHead {
@@ -56,8 +56,8 @@
   margin: 0 var(--mantine-spacing-mdAlt) var(--mantine-spacing-mdAlt);
   padding: var(--mantine-spacing-mdAlt);
   border-radius: var(--mantine-radius-lg);
-  background: var(--mantine-color-dark-6);
-  color: var(--mantine-color-white);
+  background: var(--hoop-terminal-bg);
+  color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-sm);
   white-space: pre;

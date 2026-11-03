@@ -24,7 +24,7 @@ export default function AnalysisStatus({ analysis, retrying, onRetry, showNoEnti
         </Badge>
       )}
       {badges.error && (
-        <Text size="xs" c="red.8">
+        <Text size="xs" c="red">
           {badges.error}
         </Text>
       )}

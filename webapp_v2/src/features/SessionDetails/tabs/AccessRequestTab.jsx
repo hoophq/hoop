@@ -1,4 +1,5 @@
 import { Box, Group, Stack, Text } from '@mantine/core'
+import Alert from '@/components/Alert'
 import { CalendarX2, CircleUser, Users } from 'lucide-react'
 import Tooltip from '@/components/Tooltip'
 import { formatRelativeTime } from '@/utils/datetime'
@@ -54,14 +55,11 @@ export default function AccessRequestTab({ session }) {
         </InfoRow>
       )}
       {review.status === 'REJECTED' && reason && (
-        <Box bg="red.0" p="sm" bdrs="md">
-          <Text size="sm" fw={500} c="red.9" mb="xs">
-            Comments
-          </Text>
-          <Text size="sm" c="red.9" className={classes.preWrap}>
+        <Alert color="red" title="Comments">
+          <Text size="sm" className={classes.preWrap}>
             {reason}
           </Text>
-        </Box>
+        </Alert>
       )}
     </Stack>
   )

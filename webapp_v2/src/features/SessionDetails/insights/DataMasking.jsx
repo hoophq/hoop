@@ -1,4 +1,4 @@
-import { Anchor, Box, Group, Stack, Text } from '@mantine/core'
+import { Anchor, Group, Paper, Stack, Text, ThemeIcon } from '@mantine/core'
 import { ArrowRightLeft, ArrowUpRight, LayoutList, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionDetailsStore } from '@/stores/useSessionDetailsStore'
@@ -7,7 +7,6 @@ import { docsUrl } from '@/utils/docsUrl'
 import RdpAnalysisStatus from '../viewers/rdp/RdpAnalysisStatus'
 import InsightCard from './InsightCard'
 import { categoriesText, itemsText, maskingAnalytics } from './helpers'
-import classes from './insights.module.css'
 
 const DATA_MASKING_PATH = '/features/data-masking'
 
@@ -34,12 +33,21 @@ function ConfigureLink({ size = 'sm' }) {
   )
 }
 
+// The AI Data Masking icons take the theme's violet (Figma).
+function AccentIcon({ icon: Icon }) {
+  return (
+    <ThemeIcon variant="transparent" color="violet" size={16} aria-hidden>
+      <Icon size={16} />
+    </ThemeIcon>
+  )
+}
+
 // Matrix I08: masking is not configured and the session holds no masking data.
 function UnlockCallout() {
   return (
-    <Box className={classes.card} data-variant="violet">
+    <Paper variant="accent" radius="md" p="sm">
       <Group gap="sm" align="flex-start" wrap="nowrap">
-        <Sparkles size={16} color="var(--mantine-color-violet-5)" aria-hidden />
+        <AccentIcon icon={Sparkles} />
         <Stack gap="xs">
           <Text size="sm" fw={700}>
             Unlock Live Data Masking
@@ -56,21 +64,23 @@ function UnlockCallout() {
           </Anchor>
         </Stack>
       </Group>
-    </Box>
+    </Paper>
   )
 }
 
 function Tile({ icon: Icon, label, value }) {
   return (
-    <Stack gap={4} align="center" className={classes.tile}>
-      <Icon size={16} color="var(--mantine-color-violet-5)" aria-hidden />
-      <Text size="sm" ta="center">
-        {label}
-      </Text>
-      <Text size="sm" fw={500} ta="center">
-        {value}
-      </Text>
-    </Stack>
+    <Paper variant="accent-strong" radius="md" p="sm" flex={1}>
+      <Stack gap={4} align="center">
+        <AccentIcon icon={Icon} />
+        <Text size="sm" ta="center">
+          {label}
+        </Text>
+        <Text size="sm" fw={500} ta="center">
+          {value}
+        </Text>
+      </Stack>
+    </Paper>
   )
 }
 
@@ -102,7 +112,7 @@ export default function DataMasking({ session }) {
   const title = (
     <Stack gap={4} align="flex-start">
       <Group gap="xs" wrap="nowrap">
-        <Sparkles size={16} color="var(--mantine-color-violet-5)" aria-hidden />
+        <AccentIcon icon={Sparkles} />
         <Text size="sm" fw={700}>
           {promote ? 'Enable Live Data Masking' : 'Live Data Masking'}
         </Text>
@@ -117,7 +127,7 @@ export default function DataMasking({ session }) {
 
   return (
     <InsightCard
-      variant="violet"
+      variant="accent"
       title={title}
       summary={
         !promote && (

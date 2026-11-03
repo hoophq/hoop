@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Box, Group, Stack, Text } from '@mantine/core'
+import { Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import { AnsiHtml } from 'fancy-ansi/react'
 import { ArrowDown, Database, Search, Terminal, Zap } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
@@ -116,7 +116,7 @@ function TextRow({ row }) {
 function Waiting({ postgres }) {
   return (
     <Group justify="center" gap="xs" py="lgAlt" c="dimmed">
-      <Box component="span" bg="green.6" className={`${classes.dot} ${classes.pulse}`} aria-hidden />
+      <Box component="span" bg="green" className={`${classes.dot} ${classes.pulse}`} aria-hidden />
       <Text size="sm" fs="italic">
         {postgres ? 'Waiting for the next query…' : 'Waiting for events…'}
       </Text>
@@ -199,7 +199,7 @@ export default function LiveTail({ session, largeOutput }) {
   const duration = durationBetween(session.start_date, session.end_date, now)
 
   return (
-    <Stack gap={0}>
+    <Paper withBorder variant="outline" radius="md">
       <Group justify="space-between" gap="sm" className={classes.header}>
         <Group gap="md">
           <StatusPill state={state} />
@@ -247,6 +247,7 @@ export default function LiveTail({ session, largeOutput }) {
           )}
         </Group>
       </Group>
+      <Divider />
       <div ref={scrollRef} className={classes.body} onScroll={onScroll}>
         {body}
         {!following && state === 'live' && (
@@ -266,6 +267,6 @@ export default function LiveTail({ session, largeOutput }) {
           </div>
         )}
       </div>
-    </Stack>
+    </Paper>
   )
 }

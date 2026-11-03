@@ -1,6 +1,6 @@
 import { Box, Group, Image, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
-import InsightCard from './InsightCard'
+import InsightCard, { CardSection } from './InsightCard'
 import classes from './insights.module.css'
 
 const RISK_COLORS = { low: 'green', medium: 'orange', high: 'red' }
@@ -33,7 +33,7 @@ function Step({ step }) {
   if (step.type === 'tool_result') {
     return (
       <Box className={classes.trace}>
-        <Text size="xs" ff="monospace" c={step.is_error ? 'red.7' : 'dimmed'} className={classes.preWrap}>
+        <Text size="xs" ff="monospace" c={step.is_error ? 'red' : 'dimmed'} className={classes.preWrap}>
           {step.tool_output}
         </Text>
       </Box>
@@ -73,31 +73,35 @@ export default function AiAnalysis({ analysis }) {
       </Group>
       {explanation && <Text size="xs">{explanation}</Text>}
       {summary && (
-        <Stack gap={4} className={classes.divider}>
-          <Text size="xs" fw={500}>
-            Summary
-          </Text>
-          <Text size="xs" c="dimmed">
-            {summary}
-          </Text>
-        </Stack>
+        <CardSection>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              Summary
+            </Text>
+            <Text size="xs" c="dimmed">
+              {summary}
+            </Text>
+          </Stack>
+        </CardSection>
       )}
       {known.length > 0 && (
-        <Stack gap={4} className={classes.divider}>
-          <Text size="xs" fw={500}>
-            Investigation trace
-          </Text>
-          {known.map((step, i) => (
-            <Step key={i} step={step} />
-          ))}
-        </Stack>
+        <CardSection>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              Investigation trace
+            </Text>
+            {known.map((step, i) => (
+              <Step key={i} step={step} />
+            ))}
+          </Stack>
+        </CardSection>
       )}
       {ACTIONS[action] && (
-        <Box className={classes.divider}>
+        <CardSection>
           <Badge color={ACTIONS[action].color}>
             {ACTIONS[action].label}
           </Badge>
-        </Box>
+        </CardSection>
       )}
     </InsightCard>
   )

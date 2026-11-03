@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Group, Loader, Text } from '@mantine/core'
+import { Alert, Box, Group, Loader, Paper, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { sessionsService } from '@/services/sessions'
@@ -314,7 +314,14 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
   }
 
   return (
-    <Box ref={containerRef} className={classes.player} data-fullscreen={fullscreen || undefined}>
+    <Paper
+      ref={containerRef}
+      withBorder
+      variant="outline"
+      radius="md"
+      className={classes.player}
+      data-fullscreen={fullscreen || undefined}
+    >
       <RdpCanvas
         frames={frames}
         index={index}
@@ -363,6 +370,6 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
         enabledTypes={enabledTypes}
         onToggle={toggleType}
       />
-    </Box>
+    </Paper>
   )
 }
