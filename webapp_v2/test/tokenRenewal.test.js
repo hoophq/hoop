@@ -110,6 +110,17 @@ describe('a token the CLJS app stored', () => {
 })
 
 describe('a 401', () => {
+  // A JWT that names `sub`; the retry compares accounts, not strings.
+  const jwt = (sub, n) => `h.${btoa(JSON.stringify({ sub, n })).replace(/=+$/, '')}.s`
+  const alice1 = jwt('alice', 1)
+  const alice2 = jwt('alice', 2)
+  const bob = jwt('bob', 1)
+
+  beforeEach(() => {
+    storage.set('jwt-token', alice1)
+    useAuthStore.setState({ token: alice1, isAuthenticated: true })
+  })
+
   // The token changes while the first request is in flight: another response
   // stored a renewal (`renewed`), or the user logged out (`renewed` null).
   const gatewayThatRenewsMeanwhile = (renewed, ...statuses) => (config) => {
@@ -122,19 +133,35 @@ describe('a 401', () => {
   }
 
   it('for a token renewed meanwhile: sent once more with the current token, no logout', async () => {
-    api.defaults.adapter = gatewayThatRenewsMeanwhile('token-2', 401, 200)
+    api.defaults.adapter = gatewayThatRenewsMeanwhile(alice2, 401, 200)
     const res = await api.get('/userinfo')
     expect(res.status).toBe(200)
-    expect(sent).toEqual(['Bearer token-1', 'Bearer token-2'])
-    expect(localStorage.getItem('jwt-token')).toBe('token-2')
+    expect(sent).toEqual([`Bearer ${alice1}`, `Bearer ${alice2}`])
+    expect(localStorage.getItem('jwt-token')).toBe(alice2)
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
     expect(window.location.href).toBe('http://gateway.test/sessions')
+  })
+
+  it("for another account's token stored meanwhile: not sent again, not logged out", async () => {
+    api.defaults.adapter = gatewayThatRenewsMeanwhile(bob, 401, 200)
+    await expect(api.post('/guardrails', { name: 'x' })).rejects.toThrow()
+    expect(sent).toEqual([`Bearer ${alice1}`])
+    expect(localStorage.getItem('jwt-token')).toBe(bob)
+    expect(window.location.href).toBe('http://gateway.test/sessions')
+  })
+
+  it('for an opaque token: not sent again, not logged out', async () => {
+    storage.set('jwt-token', 'token-1')
+    api.defaults.adapter = gatewayThatRenewsMeanwhile('token-2', 401, 200)
+    await expect(api.get('/userinfo')).rejects.toThrow()
+    expect(sent).toEqual(['Bearer token-1'])
+    expect(localStorage.getItem('jwt-token')).toBe('token-2')
   })
 
   it('with the current token logs out', async () => {
     reply = { status: 401 }
     await expect(api.get('/userinfo')).rejects.toThrow()
-    expect(sent).toEqual(['Bearer token-1'])
+    expect(sent).toEqual([`Bearer ${alice1}`])
     expect(localStorage.getItem('jwt-token')).toBeNull()
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(sessionStorage.getItem('redirect-after-auth')).toBe('http://gateway.test/sessions')
@@ -142,9 +169,9 @@ describe('a 401', () => {
   })
 
   it('on the retry logs out', async () => {
-    api.defaults.adapter = gatewayThatRenewsMeanwhile('token-2', 401, 401)
+    api.defaults.adapter = gatewayThatRenewsMeanwhile(alice2, 401, 401)
     await expect(api.get('/userinfo')).rejects.toThrow()
-    expect(sent).toEqual(['Bearer token-1', 'Bearer token-2'])
+    expect(sent).toEqual([`Bearer ${alice1}`, `Bearer ${alice2}`])
     expect(localStorage.getItem('jwt-token')).toBeNull()
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(window.location.href).toBe('/login')
@@ -156,7 +183,7 @@ describe('a 401', () => {
     api.defaults.adapter = gatewayThatRenewsMeanwhile(null, 401)
     await expect(api.get('/userinfo')).rejects.toThrow()
     unsubscribe()
-    expect(sent).toEqual(['Bearer token-1'])
+    expect(sent).toEqual([`Bearer ${alice1}`])
     expect(listener).toHaveBeenCalledTimes(1) // the logout in flight, no other
     expect(sessionStorage.getItem('redirect-after-auth')).toBeNull()
     expect(window.location.href).toBe('http://gateway.test/sessions')
