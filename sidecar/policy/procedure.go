@@ -91,22 +91,30 @@ func trailingParts(got, want []string) bool {
 // procedureParts normalizes a procedure name as the client or the operator
 // wrote it: parts split on `.` outside delimiters, with the bracket, double
 // quote and backtick delimiters removed and a doubled close inside one
-// (`]]`, `""`, two backticks) resolved to one byte, each part then trimmed
-// and lowercased. A dot inside a delimiter stays in its part, so
-// `[dbo.sys].x` is two parts. An empty name gives nil.
+// (`]]`, `""`, two backticks) resolved to one byte, each part lowercased.
+// Whitespace is trimmed around a part, never inside a delimiter: SQL Server
+// keeps the spaces in `[ secret ]`, which names a different procedure from
+// `secret`. A dot inside a delimiter stays in its part, so `[dbo.sys].x` is
+// two parts. An empty name gives nil.
 func procedureParts(name string) []string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
 	var (
-		parts []string
-		part  strings.Builder
-		close byte // the delimiter a part is inside, or 0
+		parts     []string
+		part      strings.Builder
+		close     byte // the delimiter a part is inside, or 0
+		delimited bool // the part being built came from a delimiter
 	)
 	flush := func() {
-		parts = append(parts, strings.ToLower(strings.TrimSpace(part.String())))
+		p := part.String()
+		if !delimited {
+			p = strings.TrimSpace(p)
+		}
+		parts = append(parts, strings.ToLower(p))
 		part.Reset()
+		delimited = false
 	}
 	for i := 0; i < len(name); i++ {
 		c := name[i]
@@ -123,11 +131,13 @@ func procedureParts(name string) []string {
 			}
 			close = 0
 		case c == '[':
-			close = ']'
+			close, delimited = ']', true
 		case c == '"', c == '`':
-			close = c
+			close, delimited = c, true
 		case c == '.':
 			flush()
+		case delimited && (c == ' ' || c == '\t'):
+			// Whitespace between a closed delimiter and the next dot.
 		default:
 			part.WriteByte(c)
 		}

@@ -4542,7 +4542,7 @@ the form a driver's parameterized call takes, also carries
 text only.
 
 A `procedure` rule names the procedures and reads the name from the metadata
-or, for a batch, from every top-level `EXEC`/`EXECUTE`/`CALL` in the text (`SET NOCOUNT ON; EXEC p` names `p`). Names
+and from every top-level `EXEC`/`EXECUTE` (T-SQL) or `CALL` in the text, so `SET NOCOUNT ON EXEC p` names `p` with or without a semicolon, and so does an `EXEC p` carried inside `sp_executesql`, `sp_prepexec` or a prepared handle's text. In PostgreSQL and MySQL `EXECUTE` runs a prepared statement and names nothing. Names
 compare case-insensitively with the `[...]`, `"..."` and `` `...` `` delimiters
 removed, and a configured name matches the trailing parts of the called one:
 `get_secrets` matches `dbo.get_secrets` and `appdb.dbo.get_secrets`;

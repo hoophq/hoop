@@ -632,6 +632,14 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 		return sparkScriptDML[word] && !a.plsqlNotDML(i) && !a.sparkNotDML(i)
 	case a.fromFirst:
 		return (word == "insert" || word == "select") && len(a.stack) == 1
+	case a.d == MSSQL:
+		// T-SQL separates statements with whitespace as readily as with
+		// `;`: `SET NOCOUNT ON EXEC dbo.p`, `IF 1=1 EXEC dbo.p` and
+		// `DECLARE @x INT EXEC dbo.p` each run p. EXEC and EXECUTE are
+		// reserved, so one at the top level is a statement wherever it
+		// sits, and it is read as a head there: the batch is then an
+		// unreadable call, not the SET it opened with.
+		return (word == "exec" || word == "execute") && len(a.stack) == 1
 	}
 	return false
 }
@@ -765,10 +773,14 @@ func (a *analyzer) head(t Token, i int) bool {
 
 	// Every top-level call in the statement. `SET NOCOUNT ON; EXEC p` runs
 	// p; a CALL inside a block or a subquery is not what the client asked
-	// to run, and EXPLAIN plans without running.
+	// to run, and EXPLAIN plans without running. Which words call is the
+	// dialect's: CALL everywhere, EXEC and EXECUTE in T-SQL only. In
+	// PostgreSQL and MySQL `EXECUTE name` runs a prepared statement, and
+	// a rule naming a procedure must not fire on a query that happens to
+	// share its name.
 	if verb == Call && !a.explainSeen && a.top().kind == regTop {
-		switch t.Text {
-		case "exec", "execute", "call":
+		call := t.Text == "call" || a.d == MSSQL && (t.Text == "exec" || t.Text == "execute")
+		if call {
 			if name := a.calleeAt(i + 1); name != "" {
 				a.callees = append(a.callees, name)
 			}
@@ -1292,13 +1304,14 @@ func (a *analyzer) tableChanges(j int) (int, Relation, bool) {
 // calleeAt returns the source text of the name that starts at token j: name
 // tokens joined by dots, read from the bytes so brackets, quotes and case
 // survive. Empty when j names nothing: a parenthesis (`EXEC ('...')`), a
-// string, or IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure.
+// string, IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure, or
+// AS, which makes T-SQL's `EXECUTE AS USER = 'x'` a context switch.
 // T-SQL's `EXEC @status = dbo.proc` is read past its return variable.
 func (a *analyzer) calleeAt(j int) string {
 	if a.puncts(j, "@") && j+1 < len(a.toks) && a.toks[j+1].isName() && a.puncts(j+2, "=") {
 		j += 3
 	}
-	if j >= len(a.toks) || !a.toks[j].isName() || a.toks[j].isWord("immediate") {
+	if j >= len(a.toks) || !a.toks[j].isName() || a.toks[j].isWord("immediate") || a.toks[j].isWord("as") {
 		return ""
 	}
 	k := j

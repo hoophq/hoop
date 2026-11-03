@@ -1455,20 +1455,35 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
-	g.recordDeclined(ctx, res)
+	if g.recordDeclined(ctx, res) {
+		// The one record of a masking gap could not be written, on a
+		// lane that refuses to run unrecorded. The values after it would
+		// travel unmasked with nothing in the trail saying so.
+		d.Allowed = false
+		d.Rule = "audit"
+		d.Message = "audit trail unavailable; response refused"
+		d.Payload = nil
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceAudit)
+		return
+	}
 	g.recordMasked(ctx, d, entities, res.Cells)
 }
 
 // recordDeclined writes the one record a codec produces when it stops
 // rewriting for the rest of the connection. Values keep travelling after
 // it, unmasked, and the client sees nothing different: this row is the only
-// place the gap shows.
-func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) {
+// place the gap shows. It reports true when the write failed on a lane
+// configured to refuse rather than run unrecorded.
+func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) (refused bool) {
 	if res.Declined == "" {
-		return
+		return false
 	}
-	g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
+	err := g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
 		map[string]string{"reason": res.Declined}))
+	return err != nil && g.cfg.FailOnAuditError
 }
 
 // recordMasked counts and audits the cells the codec masked in bytes that

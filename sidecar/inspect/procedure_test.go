@@ -16,11 +16,21 @@ func TestProceduresOf(t *testing.T) {
 		stmt inspect.Statement
 		want string
 	}{
-		{"rpc metadata wins", inspect.Statement{
+		{"rpc metadata and the text", inspect.Statement{
 			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
 			Text: "EXEC get_secrets", Operation: inspect.OpUnknown,
 			Metadata: map[string]string{inspect.MetadataMSSQLProc: "[dbo].[get_secrets]"},
-		}, "[dbo].[get_secrets]"},
+		}, "[dbo].[get_secrets],get_secrets"},
+		{"a procedure carried by sp_executesql", inspect.Statement{
+			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
+			Text: "EXEC dbo.get_secrets", Operation: inspect.OpUnknown,
+			Metadata: map[string]string{inspect.MetadataMSSQLProc: "sp_executesql"},
+		}, "sp_executesql,dbo.get_secrets"},
+		{"a procedure in a prepared handle's text", inspect.Statement{
+			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
+			Text: "exec dbo.delete_customer @P0", Operation: inspect.OpUnknown,
+			Metadata: map[string]string{inspect.MetadataMSSQLProc: "sp_execute", "mssql.handle": "3"},
+		}, "sp_execute,dbo.delete_customer"},
 		{"batch text", inspect.Statement{
 			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
 			Text: "exec dbo.get_secrets", Operation: inspect.OpUnknown,

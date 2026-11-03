@@ -54,6 +54,9 @@ func TestProcedureMatchesAcrossSpellings(t *testing.T) {
 		{"get_secrets", "GET_SECRETS", true},
 		{"get_secrets", `"dbo"."Get_Secrets"`, true},
 		{"dbo.get_secrets", "appdb.dbo.get_secrets", true},
+		{"get_secrets", "[ get_secrets ]", false},
+		{"[ get_secrets ]", "[ get_secrets ]", true},
+		{"get_secrets", " dbo . get_secrets ", true},
 		{"dbo.get_secrets", "[dbo].[get_secrets]", true},
 		{"[dbo].[get_secrets]", "dbo.get_secrets", true},
 		{"dbo.get_secrets", "custom.get_secrets", false},
@@ -235,5 +238,24 @@ func TestUnknownDenialMessageCarriesTheReason(t *testing.T) {
 	if v := strict.Evaluate(stmt("DELETE FROM customers", inspect.OpDelete, "customers")); !v.Denied ||
 		strings.Contains(v.Message, "unknown") {
 		t.Errorf("message = %q", v.Message)
+	}
+}
+
+// The procedure rule reaches a call the driver wrapped: .NET and JDBC send
+// `EXEC dbo.get_secrets` as the statement parameter of sp_executesql or
+// sp_prepexec, and a later sp_execute carries it as the prepared text. The
+// metadata names the wrapper; the text names the procedure.
+func TestProcedureMatchesACallWrappedInASystemProcedure(t *testing.T) {
+	rules := procedureRule("get_secrets")
+	for _, wrapper := range []string{"sp_executesql", "sp_prepexec", "sp_execute"} {
+		stmt := call(wrapper)
+		stmt.Text = "EXEC dbo.get_secrets @id = 1"
+		if !rules.Evaluate(stmt).Denied {
+			t.Errorf("EXEC dbo.get_secrets inside %s was allowed", wrapper)
+		}
+		stmt.Text = "SELECT name FROM customers"
+		if rules.Evaluate(stmt).Denied {
+			t.Errorf("a SELECT inside %s was denied", wrapper)
+		}
 	}
 }

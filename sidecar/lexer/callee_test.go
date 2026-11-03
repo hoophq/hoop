@@ -39,6 +39,18 @@ func TestCalleesOfTopLevelCalls(t *testing.T) {
 		// Behind another statement, still top level: it runs.
 		{`SET NOCOUNT ON; EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
 		{`EXEC dbo.a; EXEC dbo.b`, lexer.MSSQL, "dbo.a,dbo.b"},
+		// T-SQL needs no semicolon between statements.
+		{`SET NOCOUNT ON EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		{`IF 1=1 EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		{`DECLARE @x INT EXEC dbo.delete_customer 3`, lexer.MSSQL, "dbo.delete_customer"},
+		{`INSERT INTO t EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		{`SELECT (1) EXECUTE dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		// A context switch, not a call.
+		{`EXECUTE AS USER = 'alice'`, lexer.MSSQL, ""},
+		{`EXECUTE AS LOGIN = 'alice'; EXEC dbo.get_secrets`, lexer.MSSQL, "dbo.get_secrets"},
+		// EXECUTE runs a prepared statement there, not a procedure.
+		{`EXECUTE get_secrets`, lexer.Postgres, ""},
+		{`EXECUTE get_secrets USING 1`, lexer.MySQL, ""},
 		{`SELECT * FROM t`, lexer.Postgres, ""},
 		{`BEGIN pkg.purge(); END;`, lexer.Oracle, ""},
 		{`EXPLAIN CALL purge()`, lexer.Postgres, ""},
