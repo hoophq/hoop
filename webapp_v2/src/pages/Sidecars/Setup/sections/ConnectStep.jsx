@@ -135,13 +135,10 @@ const dockerRun = (image, url, token) => `docker run -d --name hoop-sidecar \\
   ${image}`
 
 // A container keeps the variables it started with, so connect creates it
-// again. Only the two variables are new; its image, mounts and ports are the
-// reader's own, and an example in their place would cut off its listeners.
-const dockerConnectRun = (url, token) => `docker rm -f <your-sidecar-container>
-docker run -d --name <your-sidecar-container> \\
-  -e HOOP_CONTROL_PLANE_URL=${url} \\
-  -e HOOP_SIDECAR_TOKEN=${token} \\
-  <the mounts, ports and image it runs with now>`
+// again. Only the two flags are new; the rest of the command is the reader's
+// own, so the snippet holds no placeholder a shell would misread.
+const dockerConnectFlags = (url, token) => `-e HOOP_CONTROL_PLANE_URL=${url} \\
+-e HOOP_SIDECAR_TOKEN=${token} \\`
 
 // The chart's `config` is the sidecar's config file, indented under one key.
 // The chart's own Service publishes only the admin port: each listener needs a
@@ -424,10 +421,11 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         title: 'Point it at Hoop and restart it',
         node: (
           <>
-            <CodeSnippet code={dockerConnectRun(controlPlaneUrl, token)} />
+            <Note>Add these two flags to the docker run you started it with:</Note>
+            <CodeSnippet code={dockerConnectFlags(controlPlaneUrl, token)} />
             <Note>
-              A container keeps the variables it started with, so this creates it again. Add the two variables to the
-              docker run you started it with. Keep its image, mounts and ports as they are.
+              A container keeps the variables it started with, so create it again: remove it with docker rm -f, then
+              run that command. Keep its image, mounts and ports as they are.
             </Note>
           </>
         ),
