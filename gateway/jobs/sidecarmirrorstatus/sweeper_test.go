@@ -61,22 +61,3 @@ func TestASweepSetsASilentSidecarsMirrorOffline(t *testing.T) {
 	sweep(ctx, models.DB)
 	require.Equal(t, models.ConnectionStatusOffline, status(t), "silent sidecar: offline")
 }
-
-// The same sweep drops an instance row silent past its retention, and keeps
-// one that checked in.
-func TestASweepPrunesSilentInstances(t *testing.T) {
-	startDB(t)
-	ctx := context.Background()
-	sc := &models.Sidecar{OrgID: testOrgID, Name: "pods", KeyHash: models.HashAPIKey("hsc_pods"), CreatedBy: "tests@hoop.dev"}
-	require.NoError(t, models.CreateSidecar(models.DB, sc))
-	for _, name := range []string{"gone", "alive"} {
-		require.NoError(t, models.RecordSidecarInstanceHandshake(models.DB, testOrgID, sc.ID, name, "1.0.0", "", "", ""))
-	}
-	require.NoError(t, models.DB.Exec(`UPDATE private.sidecar_instances SET last_seen_at = NOW() - interval '25 hours' WHERE name = 'gone'`).Error)
-
-	sweep(ctx, models.DB)
-	items, err := models.ListSidecarInstances(models.DB, sc.ID)
-	require.NoError(t, err)
-	require.Len(t, items, 1)
-	require.Equal(t, "alive", items[0].Name)
-}

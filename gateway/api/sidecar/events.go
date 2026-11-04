@@ -26,11 +26,10 @@ import (
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token			header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
-//	@Param			hoop-sidecar-identity		header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			hoop-sidecar-instance		header		string								false	"The hostname of the process, the pod name on Kubernetes. Recorded on each session as metadata.sidecar.instance."
-//	@Param			request						body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
-//	@Success		200							{object}	openapi.SidecarSessionEventsResponse
+//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
+//	@Param			request				body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
+//	@Success		200					{object}	openapi.SidecarSessionEventsResponse
 //	@Failure		400,401,403,412,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/events [post]
 func PostEvents(c *gin.Context) {
@@ -76,7 +75,7 @@ func PostEvents(c *gin.Context) {
 		return
 	}
 
-	result, err := services.ApplySidecarSessionEvents(models.DB, sidecar, apiroutes.SidecarInstanceFromContext(c), req.Events)
+	result, err := services.ApplySidecarSessionEvents(models.DB, sidecar, req.Events)
 	if err != nil {
 		var refused services.SidecarEventsRefused
 		if errors.As(err, &refused) {

@@ -62,22 +62,12 @@ func configRevision(served daemon.Config) string {
 //
 // It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
 // them offline when the handshakes stop.
-//
-// instance is the pod behind this handshake, empty for a build too old to
-// name itself. Pods sharing one credential share the sidecar row, so each
-// one is also recorded apart.
-func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string, instance string) {
+func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
 	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
 		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 		return
-	}
-	if instance != "" {
-		if err := models.RecordSidecarInstanceHandshake(models.DB, sc.OrgID, sc.ID, instance,
-			req.Version, req.AppliedRevision, req.LastOutcome, req.LastError); err != nil {
-			log.With("sidecar", sc.ID, "instance", instance).Warnf("failed recording the sidecar instance, reason=%v", err)
-		}
 	}
 	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
 		log.With("sidecar", sc.ID).Warnf("%v", err)
@@ -390,12 +380,6 @@ func Get(c *gin.Context) {
 	resp := toResponse(*item)
 	bindings, bindingsRead := bindingsBySidecar(ctx.OrgID, item.ID)
 	setBoundRules(&resp, bindings, bindingsRead)
-	instances, err := models.ListSidecarInstances(models.DB, item.ID)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching sidecar instances")
-		return
-	}
-	resp.Instances = toInstanceResponses(instances, time.Now().UTC())
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -656,7 +640,6 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 //	@Param			hoop-sidecar-token			header		string							false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity		header		string							false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report."
-//	@Param			hoop-sidecar-instance		header		string							false	"The hostname of the process, the pod name on Kubernetes. Pods sharing one credential are listed apart under instances on GET /sidecars/{nameOrID}. Absent means a build too old to report."
 //	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200							{object}	map[string]interface{}
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
@@ -715,7 +698,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar, req, "", capabilities, apiroutes.SidecarInstanceFromContext(c))
+		recordHandshake(sidecar, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
 		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
@@ -746,7 +729,7 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	revision := configRevision(served)
-	recordHandshake(sidecar, req, revision, capabilities, apiroutes.SidecarInstanceFromContext(c))
+	recordHandshake(sidecar, req, revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
 	offerSessionEvents(c, sidecar)
@@ -1131,32 +1114,6 @@ func configDeprecations(cfg models.SidecarConfiguration) []string {
 		return nil
 	}
 	return deps
-}
-
-// toInstanceResponses renders the pods behind a sidecar. An instance is
-// online while its last handshake is within SidecarMirrorOfflineAfter, the
-// same limit that sets the mirrors offline.
-func toInstanceResponses(items []models.SidecarInstance, now time.Time) []openapi.SidecarInstance {
-	if len(items) == 0 {
-		return nil
-	}
-	out := make([]openapi.SidecarInstance, 0, len(items))
-	for _, it := range items {
-		status := openapi.SidecarInstanceOffline
-		if now.Sub(it.LastSeenAt) <= models.SidecarMirrorOfflineAfter {
-			status = openapi.SidecarInstanceOnline
-		}
-		out = append(out, openapi.SidecarInstance{
-			Name:            it.Name,
-			Status:          status,
-			Version:         derefOrEmpty(it.ReportedVersion),
-			LastSeenAt:      it.LastSeenAt,
-			AppliedRevision: derefOrEmpty(it.AppliedRevision),
-			LastOutcome:     derefOrEmpty(it.LastOutcome),
-			LastError:       derefOrEmpty(it.LastError),
-		})
-	}
-	return out
 }
 
 func derefOrEmpty(s *string) string {

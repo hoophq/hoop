@@ -691,7 +691,6 @@ func (s *sessionEventSink) post(ctx context.Context, body []byte) (status int, m
 		return 0, "", err
 	}
 	req.Header.Set(header, value)
-	setSidecarInstance(req.Header)
 
 	resp, err := s.http.Do(req)
 	if err != nil {

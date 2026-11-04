@@ -41,7 +41,6 @@ const (
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
-	eventsInstanceOrgID  = "00000000-0000-0000-0000-0000000000ed"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed

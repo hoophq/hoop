@@ -8748,13 +8748,6 @@
             "example": "system:serviceaccount:ws-123:hoop-sidecar",
             "type": "string"
           },
-          "instances": {
-            "description": "Instances lists the processes behind this sidecar, one per hostname\nsent in hoop-sidecar-instance: the pods sharing its credential.\nAbsent until one names itself, and on the list endpoint. The fields\nabove merge every instance; a row here says what one pod said last.",
-            "items": {
-              "$ref": "#/components/schemas/openapi.SidecarInstance"
-            },
-            "type": "array"
-          },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
             "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
@@ -8876,46 +8869,6 @@
         "required": [
           "version"
         ],
-        "type": "object"
-      },
-      "openapi.SidecarInstance": {
-        "properties": {
-          "applied_revision": {
-            "description": "AppliedRevision is the configuration this instance says it is running;\nLastOutcome and LastError are what it did with the last one it\nhandled, as on the sidecar. Empty must read as unknown.",
-            "example": "8f14e45fceea167a5a36dedd4bea2543",
-            "type": "string"
-          },
-          "last_error": {
-            "type": "string"
-          },
-          "last_outcome": {
-            "example": "applied",
-            "type": "string"
-          },
-          "last_seen_at": {
-            "description": "Last time this instance handshook.",
-            "type": "string"
-          },
-          "name": {
-            "description": "The hostname the process sent, the pod name on Kubernetes.",
-            "example": "hoop-sidecar-7d9f-abc12",
-            "type": "string"
-          },
-          "status": {
-            "description": "online while the last handshake is within three minutes, else offline.",
-            "enum": [
-              "online",
-              "offline"
-            ],
-            "example": "online",
-            "type": "string"
-          },
-          "version": {
-            "description": "Version reported at the last handshake. Empty for a build too old to report.",
-            "example": "1.2.3",
-            "type": "string"
-          }
-        },
         "type": "object"
       },
       "openapi.SidecarListenerSlackChannels": {
@@ -9123,13 +9076,6 @@
           "identity_subject": {
             "example": "system:serviceaccount:ws-123:hoop-sidecar",
             "type": "string"
-          },
-          "instances": {
-            "description": "Instances lists the processes behind this sidecar, one per hostname\nsent in hoop-sidecar-instance: the pods sharing its credential.\nAbsent until one names itself, and on the list endpoint. The fields\nabove merge every instance; a row here says what one pod said last.",
-            "items": {
-              "$ref": "#/components/schemas/openapi.SidecarInstance"
-            },
-            "type": "array"
           },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
@@ -24113,14 +24059,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "The hostname of the process, the pod name on Kubernetes. Recorded on each session as metadata.sidecar.instance.",
-            "in": "header",
-            "name": "hoop-sidecar-instance",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -24247,14 +24185,6 @@
             "description": "Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report.",
             "in": "header",
             "name": "hoop-sidecar-capabilities",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The hostname of the process, the pod name on Kubernetes. Pods sharing one credential are listed apart under instances on GET /sidecars/{nameOrID}. Absent means a build too old to report.",
-            "in": "header",
-            "name": "hoop-sidecar-instance",
             "schema": {
               "type": "string"
             }

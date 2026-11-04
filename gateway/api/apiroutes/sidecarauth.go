@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
@@ -28,14 +26,6 @@ const SidecarIdentityHeader = daemon.SidecarIdentityHeader
 
 const sidecarContextKey = "sidecar-auth"
 
-// sidecarInstanceContextKey holds the trimmed daemon.SidecarInstanceHeader
-// value, empty for a build that sends none.
-const sidecarInstanceContextKey = "sidecar-instance"
-
-// maxSidecarInstanceChars is the column width: a hostname is at most 253
-// characters.
-const maxSidecarInstanceChars = 253
-
 // SidecarAuthMiddleware authenticates a sidecar and installs an org-scoped
 // context with no user, carrying the organization's license so
 // EnterpriseLicenseOnly can run after it. It records nothing: reporting what
@@ -44,14 +34,6 @@ const maxSidecarInstanceChars = 253
 // A sidecar sends a token or a service account identity, never both: with
 // two credentials there is no answer to which sidecar is calling.
 func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
-	instance := strings.TrimSpace(c.GetHeader(daemon.SidecarInstanceHeader))
-	if len(instance) > maxSidecarInstanceChars {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"message": "the " + daemon.SidecarInstanceHeader +
-			" header is longer than " + strconv.Itoa(maxSidecarInstanceChars) + " characters"})
-		return
-	}
-	c.Set(sidecarInstanceContextKey, instance)
-
 	token := c.GetHeader(SidecarTokenHeader)
 	identity := c.GetHeader(SidecarIdentityHeader)
 	if token != "" && identity != "" {
@@ -136,12 +118,6 @@ func SidecarFromContext(c *gin.Context) *models.Sidecar {
 	}
 	sidecar, _ := obj.(*models.Sidecar)
 	return sidecar
-}
-
-// SidecarInstanceFromContext returns the hostname the sidecar sent in
-// daemon.SidecarInstanceHeader, or "" when it sent none.
-func SidecarInstanceFromContext(c *gin.Context) string {
-	return c.GetString(sidecarInstanceContextKey)
 }
 
 // SidecarSeatOnly replaces EnterpriseLicenseOnly on the routes a sidecar

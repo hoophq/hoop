@@ -483,13 +483,6 @@ logs `restart to apply it`. A failed heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
-Every request to the plane carries `hoop-sidecar-instance: <hostname>`,
-the pod name on Kubernetes. Pods that share one token or one service
-account identity reach one sidecar row, and the header is how the plane
-lists each of them (`instances` on `GET /api/sidecars/<name>`) and files
-each session under the pod that ran it. A process with no hostname sends
-no header; a plane older than the header ignores it.
-
 #### Upgrading: the control plane first
 
 Upgrade the control plane, then the sidecars. A sidecar refuses a whole

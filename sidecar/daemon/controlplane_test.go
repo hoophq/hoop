@@ -28,7 +28,6 @@ type handshakeCall struct {
 	version      string
 	path         string
 	capabilities string
-	instance     string
 }
 
 // planeServer serves the handshake with body, capturing each call. A nil
@@ -61,7 +60,6 @@ func planeServerWith(t *testing.T, status int, body string, managesLicense bool)
 			version:      req.Version,
 			path:         r.URL.Path,
 			capabilities: r.Header.Get(CapabilitiesHeader),
-			instance:     r.Header.Get(SidecarInstanceHeader),
 		})
 		if managesLicense && status == http.StatusOK {
 			w.Header().Set(LicenseManagedHeader, "true")
@@ -112,14 +110,6 @@ func TestSetupFetchesTheConfigFromTheControlPlane(t *testing.T) {
 		if !strings.Contains(got.capabilities, entry) {
 			t.Errorf("capabilities %q lack %q", got.capabilities, entry)
 		}
-	}
-	// Pods sharing one credential reach one sidecar row; the hostname is
-	// what tells them apart on the plane.
-	if got.instance != sidecarInstance {
-		t.Errorf("instance = %q, want the hostname %q", got.instance, sidecarInstance)
-	}
-	if host, _ := os.Hostname(); host != "" && got.instance == "" {
-		t.Errorf("the handshake carries no %s header on a host named %q", SidecarInstanceHeader, host)
 	}
 }
 

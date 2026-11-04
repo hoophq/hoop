@@ -434,34 +434,6 @@ type SidecarResponse struct {
 	ReportedConfiguration *daemon.Config `json:"reported_configuration,omitempty" swaggertype:"object"`
 	// When the sidecar last reported ReportedConfiguration.
 	ReportedConfigurationAt *time.Time `json:"reported_configuration_at,omitempty"`
-	// Instances lists the processes behind this sidecar, one per hostname
-	// sent in hoop-sidecar-instance: the pods sharing its credential.
-	// Absent until one names itself, and on the list endpoint. The fields
-	// above merge every instance; a row here says what one pod said last.
-	Instances []SidecarInstance `json:"instances,omitempty"`
-}
-
-const (
-	SidecarInstanceOnline  = "online"
-	SidecarInstanceOffline = "offline"
-)
-
-// SidecarInstance is one process behind a sidecar, as it last reported.
-type SidecarInstance struct {
-	// The hostname the process sent, the pod name on Kubernetes.
-	Name string `json:"name" example:"hoop-sidecar-7d9f-abc12"`
-	// online while the last handshake is within three minutes, else offline.
-	Status string `json:"status" enums:"online,offline" example:"online"`
-	// Version reported at the last handshake. Empty for a build too old to report.
-	Version string `json:"version,omitempty" example:"1.2.3"`
-	// Last time this instance handshook.
-	LastSeenAt time.Time `json:"last_seen_at"`
-	// AppliedRevision is the configuration this instance says it is running;
-	// LastOutcome and LastError are what it did with the last one it
-	// handled, as on the sidecar. Empty must read as unknown.
-	AppliedRevision string `json:"applied_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
-	LastOutcome     string `json:"last_outcome,omitempty" example:"applied"`
-	LastError       string `json:"last_error,omitempty"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one

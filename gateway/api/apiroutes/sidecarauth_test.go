@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/hoophq/hoop/gateway/pglite"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/sidecar/daemon"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,19 +86,6 @@ func TestSidecarAuthRefusesAnIdentityThatIsNotAJWT(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Nil(t, reached)
 	assert.JSONEq(t, `{"message": "`+services.SidecarIdentityUnverifiedMessage+`"}`, w.Body.String())
-}
-
-// A hostname is at most 253 characters, and so is the column; a longer
-// header is refused before any lookup.
-func TestSidecarAuthRefusesAnOverlongInstance(t *testing.T) {
-	r := &Router{sidecarIdentity: externaljwt.NewOIDCVerifier(externaljwt.OIDCOptions{HTTPClient: noNetwork(t)})}
-	w, reached, _ := callSidecarAuth(r, map[string]string{
-		SidecarTokenHeader:           "hsc_token",
-		daemon.SidecarInstanceHeader: strings.Repeat("h", maxSidecarInstanceChars+1),
-	})
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Nil(t, reached)
-	assert.Contains(t, w.Body.String(), daemon.SidecarInstanceHeader)
 }
 
 type testIssuer struct {

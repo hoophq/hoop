@@ -376,7 +376,6 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 		return nil, nil, err
 	}
 	req.Header.Set(header, value)
-	setSidecarInstance(req.Header)
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
