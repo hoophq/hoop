@@ -42,7 +42,24 @@ func TestMarkReviewProcessing(t *testing.T) {
 	require.NotNil(t, sess.Review)
 	require.Equal(t, "admin@example.com", *sess.Review.ExecutedBy)
 
+	// A second run of a review already in PROCESSING keeps the first executor.
+	require.NoError(t, models.MarkReviewProcessing(models.DB, testOrgID, rev.ID, "other@example.com"))
+	require.Equal(t, "admin@example.com", *executedBy())
+
+	setStatus := func(status models.ReviewStatusType) {
+		t.Helper()
+		require.NoError(t, models.DB.Exec(`UPDATE private.reviews SET status = ? WHERE id = ?`, status, rev.ID).Error)
+	}
+
+	// A review rejected after the caller read it does not run.
+	setStatus(models.ReviewStatusRejected)
+	require.Error(t, models.MarkReviewProcessing(models.DB, testOrgID, rev.ID, "admin@example.com"))
+	got, err = models.GetReviewByIdOrSid(testOrgID, rev.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.ReviewStatusRejected, got.Status)
+
 	// A run with no email stores no executor.
+	setStatus(models.ReviewStatusApproved)
 	require.NoError(t, models.MarkReviewProcessing(models.DB, testOrgID, rev.ID, ""))
 	require.Nil(t, executedBy())
 

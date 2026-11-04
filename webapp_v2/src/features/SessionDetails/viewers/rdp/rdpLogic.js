@@ -110,6 +110,13 @@ export function needsMoreFrames(index, loaded, total) {
   return loaded < total && index >= loaded - PREFETCH_MARGIN
 }
 
+// Playback ends at the duration once no frame is left to load: all are in, or
+// the next page failed (Try again is the user's). Before that the clock holds
+// at the duration and the frames still on their way draw.
+export function playbackDone(elapsed, { duration, loaded, total, failed }) {
+  return elapsed >= duration && (loaded >= total || failed)
+}
+
 // "01:05" for 65 seconds.
 export function formatClock(seconds) {
   const safe = Math.max(0, seconds || 0)

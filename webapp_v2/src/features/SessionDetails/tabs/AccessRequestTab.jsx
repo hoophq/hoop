@@ -1,6 +1,6 @@
 import { Box, Group, Stack, Text } from '@mantine/core'
-import Alert from '@/components/Alert'
 import { CalendarX2, CircleUser, Users } from 'lucide-react'
+import Alert from '@/components/Alert'
 import Tooltip from '@/components/Tooltip'
 import { formatRelativeTime } from '@/utils/datetime'
 import InfoRow from '../components/InfoRow'

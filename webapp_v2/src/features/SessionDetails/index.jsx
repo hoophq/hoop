@@ -29,6 +29,8 @@ export default function SessionDetailsHost() {
     const onOpen = (event) => {
       const { sessionId, verb, closeTo } = event.detail || {}
       if (!sessionId) return
+      // Taken here: the ClojureScript bridge opens its own details otherwise.
+      event.preventDefault()
       const state = useSessionDetailsStore.getState()
       // The /sessions/:id page asks again on every render.
       if (state.opened && state.sessionId === sessionId) return

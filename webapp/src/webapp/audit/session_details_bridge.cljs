@@ -30,24 +30,35 @@
    (let [{:keys [loading data]} (:gateway->info db)]
      (or (some? data) (not loading)))))
 
+;; The ClojureScript details, in the app's modal.
+(rf/reg-event-fx
+ :session-details/open-cljs
+ (fn [_ [_ session]]
+   {:fx [[:dispatch [:modal->open {:id "session-details"
+                                   :maxWidth "95vw"
+                                   :content [session-details/main session]}]]]}))
+
 ;; close-to: the path React opens when the details close (the /sessions/:id page).
+;; React cancels the event when its details take it. Not cancelled (React has
+;; the flag off, or no listener): the ClojureScript details open.
 (rf/reg-fx
  :session-details-bridge/emit
- (fn [{:keys [id verb close-to]}]
-   (.dispatchEvent js/window
-                   (js/CustomEvent. open-event
-                                    (clj->js {:detail {:sessionId id :verb verb :closeTo close-to}})))))
+ (fn [{:keys [id verb close-to] :as session}]
+   (when (.dispatchEvent js/window
+                         (js/CustomEvent. open-event
+                                          (clj->js {:detail {:sessionId id :verb verb :closeTo close-to}
+                                                    :cancelable true})))
+     (rf/dispatch [:session-details/open-cljs session]))))
 
-;; Opens the details of a session: the React modal when the flag is on, the
-;; ClojureScript one otherwise.
-(rf/reg-event-fx
- :session-details/open
- (fn [{:keys [db]} [_ session]]
-   (if (react-details? db)
-     {:session-details-bridge/emit session}
-     {:fx [[:dispatch [:modal->open {:id "session-details"
-                                     :maxWidth "95vw"
-                                     :content [session-details/main session]}]]]})))
+;; Opens the details of a session. Under the shell React decides with its own
+;; copy of the flag, read before this app mounts (ProtectedRoute); its copy and
+;; this one can differ after an admin flips the flag.
+(defn- open-fx [_ [_ session]]
+  (if (shell/react-shell?)
+    {:session-details-bridge/emit session}
+    {:fx [[:dispatch [:session-details/open-cljs session]]]}))
+
+(rf/reg-event-fx :session-details/open open-fx)
 
 ;; The list behind the React details reads its rows again, as it does after the
 ;; same actions in the ClojureScript details. Other pages fetch nothing.

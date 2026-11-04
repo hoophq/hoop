@@ -161,11 +161,11 @@ export const useSessionDetailsStore = create((set, get) => ({
       const largeOutput = (base.event_size ?? 0) > LARGE_PAYLOAD_BYTES
       const largeInput = (base.script_size ?? 0) > LARGE_PAYLOAD_BYTES
       let session = base
-      if (!(largeOutput && largeInput)) {
-        // The RDP player reads /rdp-frames, open session or not (P2): it never shows the stream.
-        const rdpReplay = outputViewer(base) === 'rdp'
-        const skipStream = largeOutput || rdpReplay
-        const expand = [!skipStream && 'event_stream', !largeInput && 'session_input'].filter(Boolean)
+      // The RDP player reads /rdp-frames, open session or not (P2): it never shows the stream.
+      const skipStream = largeOutput || outputViewer(base) === 'rdp'
+      const expand = [!skipStream && 'event_stream', !largeInput && 'session_input'].filter(Boolean)
+      // Nothing to expand: an empty expand would load the input again.
+      if (expand.length) {
         const encoding = skipStream ? null : streamEncoding(base)
         const { data } = await sessionsService.get(id, {
           expand: expand.join(','),
@@ -175,7 +175,6 @@ export const useSessionDetailsStore = create((set, get) => ({
         session = { ...base, ...data }
       }
       set({ session, status: 'ready', error: null, largeOutput, largeInput })
-      if (largeOutput && largeInput) return
       get().loadReport(session, requestId)
       if (session.review?.id) {
         get().loadReviewSource(session, requestId)
@@ -253,16 +252,19 @@ export const useSessionDetailsStore = create((set, get) => ({
     try {
       await reviewsService.update(session.review.id, body)
       showSnackbar({ level: 'success', text: rejected ? 'Your rejection was recorded' : 'Your approval was recorded' })
-      setTimeout(() => {
-        get().refresh()
+      // The review reads PENDING until the refresh: the controls stay busy, or
+      // a second click sends a second decision.
+      setTimeout(async () => {
         get().bumpRevision()
+        if (get().sessionId !== session.id) return
+        await get().refresh()
+        if (get().sessionId === session.id) set({ deciding: false })
       }, REFETCH_DELAY_MS)
       return true
     } catch (err) {
       showSnackbar({ level: 'error', text: rejected ? 'Failed to reject' : 'Failed to approve', description: messageOf(err) })
+      if (get().sessionId === session.id) set({ deciding: false })
       return false
-    } finally {
-      set({ deciding: false })
     }
   },
 
@@ -324,6 +326,8 @@ export const useSessionDetailsStore = create((set, get) => ({
     get().setExecution(id, { ...execution, attempts: (execution.attempts ?? 0) + 1 })
     try {
       const { data } = await sessionsService.get(id)
+      // The modal closed or shows another session: its watch is not this one.
+      if (get().sessionId !== id) return
       if (data?.status === 'done') {
         get().setExecution(id, { status: 'done' })
         get().refresh()
@@ -331,7 +335,8 @@ export const useSessionDetailsStore = create((set, get) => ({
         return
       }
     } catch {
-      // A transient error: keep polling.
+      // A transient error: keep polling, while the modal shows this session.
+      if (get().sessionId !== id) return
     }
     get().scheduleWatch(id)
   },
@@ -349,7 +354,8 @@ export const useSessionDetailsStore = create((set, get) => ({
     } catch (err) {
       showSnackbar({ level: 'error', text: 'Failed to kill session', description: messageOf(err) })
     } finally {
-      set({ killing: false })
+      // open() reset the flag of another session; its own kill may be pending.
+      if (get().sessionId === session.id) set({ killing: false })
     }
   },
 
@@ -358,12 +364,19 @@ export const useSessionDetailsStore = create((set, get) => ({
   // A runbook session runs its runbook again on its own resource, with its own
   // parameters: nothing from the runner page (parallel selection, metadata).
   rerun: async (extra = {}) => {
-    const { session } = get()
+    const { session, largeInput } = get()
     if (!session?.id) return
     const correlation = session.correlation_id?.trim() ? { correlation_id: session.correlation_id } : {}
     const labels = session.labels || {}
     set({ rerunning: true })
     try {
+      // load() does not read an input above 4 MB: read it now, never post an empty script.
+      let script = session.script?.data
+      if (largeInput && !labels.runbookFile) {
+        const { data: full } = await sessionsService.get(session.id, { expand: 'session_input' })
+        script = full?.script?.data
+        if (!script) throw new Error('Failed to read the input of the session')
+      }
       const { data } = labels.runbookFile
         ? await runbooksService.exec({
             file_name: labels.runbookFile,
@@ -374,7 +387,7 @@ export const useSessionDetailsStore = create((set, get) => ({
             ...extra,
           })
         : await sessionsService.create({
-            script: session.script?.data,
+            script,
             labels: { 're-run-from': session.id },
             connection: session.connection,
             ...correlation,
@@ -388,7 +401,7 @@ export const useSessionDetailsStore = create((set, get) => ({
       if (sessionId) get().showRerun(sessionId, session.id)
       else showSnackbar({ level: 'error', text: messageOf(err) || 'Failed to re-run the session' })
     } finally {
-      set({ rerunning: false })
+      if (get().sessionId === session.id) set({ rerunning: false })
     }
   },
 

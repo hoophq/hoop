@@ -1,7 +1,12 @@
 import { splitSse } from '../../decoders/liveTail'
 
 // The stream answered with an HTTP error: the session is gone or not visible.
-export class StreamRefused extends Error {}
+export class StreamRefused extends Error {
+  constructor(status) {
+    super(`stream answered ${status}`)
+    this.status = status
+  }
+}
 // The stream closed without session_end: a proxy or the network dropped it.
 export class StreamDropped extends Error {}
 
@@ -18,7 +23,7 @@ export async function readSessionStream(url, { token, signal, onResponse, onOpen
     signal,
   })
   onResponse?.(response.headers)
-  if (!response.ok || !response.body) throw new StreamRefused(`stream answered ${response.status}`)
+  if (!response.ok || !response.body) throw new StreamRefused(response.status)
   onOpen()
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

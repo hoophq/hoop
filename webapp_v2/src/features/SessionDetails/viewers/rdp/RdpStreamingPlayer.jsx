@@ -12,6 +12,7 @@ import {
   groupDetectionsBySnapshot,
   mergeEnabledTypes,
   needsMoreFrames,
+  playbackDone,
 } from './rdpLogic'
 import { loadRleDecoder } from './rleDecoder'
 import { useRdpAnalysis } from './useRdpAnalysis'
@@ -167,13 +168,14 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
   const tick = useCallback(() => {
     const l = live.current
     if (!l.playing || !l.mounted) return
-    const t = l.startOffset + ((performance.now() - l.startPerf) * l.speed) / 1000
-    if (t >= l.duration) {
+    const elapsed = l.startOffset + ((performance.now() - l.startPerf) * l.speed) / 1000
+    if (playbackDone(elapsed, { duration: l.duration, loaded: l.frames.length, total: l.total, failed: l.moreFailed })) {
       // The end: the last frame, stopped.
       stopLoop()
       moveTo(Math.max(0, l.frames.length - 1), l.duration)
       return
     }
+    const t = Math.min(elapsed, l.duration)
     const nextIndex = frameIndexAt(l.frames, t)
     if (nextIndex !== l.index) {
       l.index = nextIndex

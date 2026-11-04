@@ -213,4 +213,8 @@ describe('downloads', () => {
       { id: '2' },
     ])
   })
+
+  it('keeps a repeated header as name_N, past a name that is taken', () => {
+    expect(JSON.parse(matrixToJson([['id', 'id', 'id_2'], ['1', '2', '3']]))).toEqual([{ id: '1', id_3: '2', id_2: '3' }])
+  })
 })

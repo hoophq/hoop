@@ -196,10 +196,23 @@ export function buildFilename({ connectionName, sessionId }, ext, date) {
 
 export const matrixToCsv = (matrix) => Papa.unparse(matrix)
 
-// An array of objects; a blank header becomes column_N (1-based).
+// An array of objects; a blank header becomes column_N (1-based) and a repeated
+// one name_2, name_3..., so no column is lost (SELECT a.id, b.id).
 export function matrixToJson(matrix) {
   const [heads = [], ...rows] = matrix
-  const keys = heads.map((head, i) => (head == null || !String(head).trim() ? `column_${i + 1}` : head))
+  const names = heads.map((head, i) => (head == null || !String(head).trim() ? `column_${i + 1}` : String(head)))
+  const taken = new Set(names)
+  const seen = new Set()
+  const keys = names.map((name) => {
+    if (!seen.has(name)) {
+      seen.add(name)
+      return name
+    }
+    let n = 2
+    while (taken.has(`${name}_${n}`)) n += 1
+    taken.add(`${name}_${n}`)
+    return `${name}_${n}`
+  })
   const out = rows.map((row) => {
     const entry = {}
     const size = Math.min(keys.length, row.length)

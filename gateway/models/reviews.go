@@ -678,21 +678,32 @@ func UpdateReviewStatus(orgID, id string, status ReviewStatusType) error {
 	return nil
 }
 
-// MarkReviewProcessing sets a one-time review to PROCESSING and records who runs
-// it, in one update. Callers call it on an APPROVED review, as they did with
-// UpdateReviewStatus. executedBy is an email; an empty one stores NULL. It
-// returns gorm.ErrRecordNotFound when no review has this id.
+// MarkReviewProcessing moves an APPROVED one-time review to PROCESSING and
+// records who runs it, in one update. executedBy is an email; an empty one
+// stores NULL. A review another run already moved to PROCESSING keeps its
+// executor and returns nil. Any other status is an error; no review with this
+// id returns gorm.ErrRecordNotFound.
 func MarkReviewProcessing(db *gorm.DB, orgID, id, executedBy string) error {
 	res := db.Exec(`UPDATE private.reviews SET status = ?, executed_by = NULLIF(?, '')
-	WHERE org_id = ? AND id = ?`,
-		ReviewStatusProcessing, executedBy, orgID, id)
+	WHERE org_id = ? AND id = ? AND type = ? AND status = ?`,
+		ReviewStatusProcessing, executedBy, orgID, id, ReviewTypeOneTime, ReviewStatusApproved)
 	if res.Error != nil {
 		return res.Error
 	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+	if res.RowsAffected > 0 {
+		return nil
 	}
-	return nil
+	var status string
+	err := db.Raw(`SELECT status FROM private.reviews WHERE org_id = ? AND id = ?`, orgID, id).Row().Scan(&status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return gorm.ErrRecordNotFound
+	case err != nil:
+		return err
+	case ReviewStatusType(status) == ReviewStatusProcessing:
+		return nil
+	}
+	return fmt.Errorf("approval request %s is %s, not %s", id, status, ReviewStatusApproved)
 }
 
 // SetReviewStatusExecutedIfFinished settles the one-time review of the given

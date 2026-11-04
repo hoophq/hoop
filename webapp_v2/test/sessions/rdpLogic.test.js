@@ -10,6 +10,7 @@ import {
   mergeEnabledTypes,
   needsMoreFrames,
   normalizeAnalysis,
+  playbackDone,
   recordingSize,
 } from '@/features/SessionDetails/viewers/rdp/rdpLogic'
 
@@ -40,6 +41,21 @@ describe('needsMoreFrames', () => {
 
   it('stops when everything is loaded', () => {
     expect(needsMoreFrames(299, 300, 300)).toBe(false)
+  })
+})
+
+describe('playbackDone', () => {
+  it('holds at the duration while frames are still loading', () => {
+    expect(playbackDone(10, { duration: 10, loaded: 100, total: 300, failed: false })).toBe(false)
+  })
+
+  it('ends at the duration once every frame is in, or the next page failed', () => {
+    expect(playbackDone(10, { duration: 10, loaded: 300, total: 300, failed: false })).toBe(true)
+    expect(playbackDone(10, { duration: 10, loaded: 100, total: 300, failed: true })).toBe(true)
+  })
+
+  it('does not end before the duration', () => {
+    expect(playbackDone(9.9, { duration: 10, loaded: 300, total: 300, failed: false })).toBe(false)
   })
 })
 

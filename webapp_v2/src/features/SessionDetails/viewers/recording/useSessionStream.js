@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import api, { storeRenewedToken } from '@/services/api'
+import api, { redirectToLogin, storeRenewedToken } from '@/services/api'
 import { sessionsService } from '@/services/sessions'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useSessionDetailsStore } from '@/stores/useSessionDetailsStore'
@@ -95,6 +95,7 @@ export function useSessionStream(session, { enabled, catchUp }) {
     // when the session ended meanwhile, and the history fills the gap.
     const run = async () => {
       let failures = 0
+      let historyRead = Promise.resolve()
       while (!signal.aborted) {
         setValue('connecting')
         try {
@@ -107,14 +108,19 @@ export function useSessionStream(session, { enabled, catchUp }) {
             onOpen: () => {
               setValue('live')
               failures = 0
-              readHistory()
+              historyRead = readHistory()
             },
             onMessage,
           })
+          // session_end can come at once (the session ended while the stream
+          // was down): end with the history this (re)connect read.
+          await historyRead
           if (!signal.aborted) end()
           return
         } catch (err) {
           if (signal.aborted) return
+          // As services/api.js does for every other request.
+          if (err instanceof StreamRefused && err.status === 401) redirectToLogin()
           if (err instanceof StreamRefused || failures >= RECONNECT_DELAYS_MS.length) {
             setValue('error')
             return
