@@ -255,6 +255,9 @@ func (h *handler) LoginCallback(c *gin.Context) {
 				c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 				return
 			}
+			if isNewUser {
+				ctx = reloadSignupContext(ctx, uinfo.Subject)
+			}
 		}
 
 		h.analyticsTrack(isNewUser, userAgent, ctx)
@@ -521,6 +524,19 @@ func updateLoginState(login *models.Login) {
 	}
 }
 
+// reloadSignupContext returns the context of a user that registerMultiTenantUser
+// just created or activated. The context the callback loaded earlier predates
+// the user and their org, so it has no org, email or analytics mode, and the
+// signup Identify would be skipped. On error it keeps the old context.
+func reloadSignupContext(ctx *models.Context, subject string) *models.Context {
+	newCtx, err := models.GetUserContext(subject)
+	if err != nil || newCtx == nil || newCtx.OrgID == "" {
+		log.With("multitenant", true).Warnf("failed reloading user context after signup, subject=%s, reason=%v", subject, err)
+		return ctx
+	}
+	return newCtx
+}
+
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := ctx.GetLicenseType()
@@ -535,12 +551,16 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		})
 		return
 	}
+	// A new org is not in the analytics mode cache yet: pass its stored mode
+	// so Identify honours it instead of falling back to anonymous.
+	analytics.SetMode(ctx.OrgID, ctx.OrgAnalyticsMode)
 	trackClient.Identify(&types.APIContext{
-		OrgID:          ctx.OrgID,
-		OrgLicenseData: &ctx.OrgLicenseData,
-		UserID:         ctx.UserSubject,
-		UserEmail:      ctx.UserEmail,
-		UserName:       ctx.UserName,
+		OrgID:            ctx.OrgID,
+		OrgLicenseData:   &ctx.OrgLicenseData,
+		OrgAnalyticsMode: ctx.OrgAnalyticsMode,
+		UserID:           ctx.UserSubject,
+		UserEmail:        ctx.UserEmail,
+		UserName:         ctx.UserName,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
