@@ -133,13 +133,18 @@
             selected-name (some #(when (= (:id %) selected-id) (:name %)) agents)
             set-open! (fn [open]
                         (reset! open? open)
-                        (when-not open (reset! search "")))]
+                        (when-not open (reset! search "")))
+            pick! (fn [value]
+                    (on-select value)
+                    (set-open! false))]
         [:> Box {:class "w-full"}
-         [:> Text {:as "label" :size "2" :weight "bold" :class "block mb-1 text-[--gray-12]"}
+         [:> Text {:as "label" :html-for "agent-dropdown-trigger"
+                   :size "2" :weight "bold" :class "block mb-1 text-[--gray-12]"}
           "Agent Name"]
          [:> Popover.Root {:open @open? :on-open-change set-open!}
           [:> Popover.Trigger
            [:> Button {:type "button"
+                       :id "agent-dropdown-trigger"
                        :variant "surface"
                        :color "gray"
                        :size "3"
@@ -173,11 +178,14 @@
                            :justify "between"
                            :gap "2"
                            :role "option"
+                           :tab-index 0
                            :aria-selected (= value selected-id)
-                           :class "cursor-pointer hover:bg-[--gray-a3] rounded px-3 py-2"
-                           :on-click (fn []
-                                       (on-select value)
-                                       (set-open! false))}
+                           :class "cursor-pointer hover:bg-[--gray-a3] focus:bg-[--gray-a3] focus:outline-none rounded px-3 py-2"
+                           :on-click #(pick! value)
+                           :on-key-down (fn [e]
+                                          (when (#{"Enter" " "} (.-key e))
+                                            (.preventDefault e)
+                                            (pick! value)))}
                   [:> Text {:size "2" :class "truncate"} text]
                   (when (= value selected-id)
                     [:> Check {:size 14}])]))]
