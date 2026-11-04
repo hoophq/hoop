@@ -50,12 +50,20 @@ func UpdateOrgLicense(c *gin.Context) {
 }
 
 // ApplyOrgLicense stores a signed document after the checks an upload goes
-// through: signature, validity window and this gateway's host.
+// through: signature, validity window and this gateway's host. It stores the
+// marshaled document, as the upload does, so both paths yield the same bytes.
 func ApplyOrgLicense(orgID string, licenseData []byte) error {
-	if _, err := license.Parse(licenseData, appconfig.Get().ApiHostname()); err != nil {
+	l, err := license.Parse(licenseData, appconfig.Get().ApiHostname())
+	if err != nil {
 		return err
 	}
-	return models.UpdateOrgLicense(orgID, licenseData)
+
+	data, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+
+	return models.UpdateOrgLicense(orgID, data)
 }
 
 type SignRequest struct {

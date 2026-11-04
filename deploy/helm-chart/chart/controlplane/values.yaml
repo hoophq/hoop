@@ -123,6 +123,15 @@ config:
   # TLS_CERT: ''
   # TLS_KEY: ''
 
+  ## Boot-time organization settings, applied to the default organization at
+  ## every boot, so a rotated value replaces the stored one.
+  # The signed license JSON itself (starts with '{') or the path of a file
+  # that holds it, such as one mounted by extraVolumes. A bad document stops
+  # startup.
+  # HOOP_LICENSE: ''
+  # identified | anonymous | disabled. Unset leaves the stored value alone.
+  # ANALYTICS_MODE: ''
+
 # -- Define extra secret as environment variables.
 #
 # Also the way through for any key this chart declines to render: the exclusion

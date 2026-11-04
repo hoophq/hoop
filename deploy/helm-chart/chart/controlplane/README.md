@@ -298,6 +298,8 @@ are rendered by the gateway chart and not by this one; naming one under
 | `config.LOG_ENCODING` / `config.LOG_LEVEL` | `json` / `info` | |
 | `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 9. Outside that range falls back to 3 |
 | `config.TLS_CERT` / `config.TLS_KEY` | `''` | Both set = HTTPS, both empty = plaintext |
+| `config.HOOP_LICENSE` | `''` | The signed license JSON or the path of a file that holds it, stored on the default organization at every boot after the signature, window and `API_URL` host are verified |
+| `config.ANALYTICS_MODE` | `''` | `identified`, `anonymous` or `disabled`, set on the default organization at every boot. Unset leaves the stored value alone |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |
 | `replicas` | `1` | See Replicas |
