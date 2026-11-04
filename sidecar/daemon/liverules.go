@@ -61,6 +61,8 @@ type ruleSet struct {
 	// lane then exposes analyzer.ClientModeHeaders to policy; it rides here
 	// because the analyzer block swaps with the rules.
 	holds bool
+	// mcpHide is the mcp lane's catalog filter; it swaps with the rules.
+	mcpHide *policy.Rules
 
 	// Guarded by liveRules.mu. users counts gates built from this set and
 	// not yet closed; drained is set when a swap retires the set, and runs
@@ -76,9 +78,10 @@ func newLiveRules(ln lane) *liveRules {
 
 func newRuleSet(ln lane) *ruleSet {
 	return &ruleSet{
-		policy: ln.policy,
-		masker: ln.masker,
-		holds:  analyzerHolds(ln.cfg.Analyzer),
+		policy:  ln.policy,
+		masker:  ln.masker,
+		holds:   analyzerHolds(ln.cfg.Analyzer),
+		mcpHide: ln.mcpHide,
 	}
 }
 

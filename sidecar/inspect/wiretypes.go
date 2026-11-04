@@ -66,6 +66,9 @@ const (
 	// module, and Protocol is a string type, so the value has the same type
 	// in every module without a libhoop definition.
 	ICA Protocol = "ica"
+	// MCP has no codec: the lane embeds mcpproxy, which terminates MCP and
+	// hands each tool call to the daemon as a statement.
+	MCP Protocol = "mcp"
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer

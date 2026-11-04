@@ -34,6 +34,7 @@ func TestProjectListenersMapsEveryProtocol(t *testing.T) {
 		{"grpc", "custom", "grpc"},
 		{"spanner", "custom", "spanner"},
 		{"ica", "custom", "ica"},
+		{"mcp", "custom", "mcp"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.protocol, func(t *testing.T) {

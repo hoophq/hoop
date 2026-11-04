@@ -492,7 +492,7 @@ func RuleTypes() []MatchType {
 	return []MatchType{
 		MatchDenyWords, MatchPattern, MatchOperation, MatchTable, MatchPII,
 		MatchAIAnalysis, MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader,
-		MatchGRPCStatus, MatchMetadata, MatchProcedure,
+		MatchGRPCStatus, MatchMetadata, MatchProcedure, MatchMCPTool,
 	}
 }
 
@@ -672,6 +672,8 @@ type Rule struct {
 	// evaluators with two orderings.
 	httpRuleFields
 
+	mcpRuleFields
+
 	// compiled caches the Pattern regex; procedures the normalized
 	// Procedures.
 	compiled   *regexp.Regexp
@@ -824,6 +826,10 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 				problems = append(problems, err.Error())
 			}
 			r.procedures = parts
+		case MatchMCPTool:
+			if err := r.validateMCPTool(); err != nil {
+				problems = append(problems, err.Error())
+			}
 		default:
 			// A new case here goes in RuleTypes too, or no control plane
 			// ever serves it to this build.
@@ -1080,6 +1086,9 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	if matched, ok := r.matchesMetadata(stmt); ok {
 		return matched, nil
 	}
+	if matched, ok := r.matchesMCPTool(stmt); ok {
+		return matched, nil
+	}
 	switch r.Type {
 	case MatchDenyWords:
 		upper := strings.ToUpper(stmt.Text)
@@ -1104,6 +1113,11 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
+			// An MCP statement without a tool is the catalog: there is no
+			// relation to determine.
+			if stmt.Protocol == inspect.MCP {
+				return false, nil
+			}
 			// Could not determine the relations. Deny only when the rule
 			// opted into that strictness.
 			return r.RequireTableMatch, nil

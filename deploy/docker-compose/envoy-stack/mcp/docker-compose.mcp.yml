@@ -1,0 +1,39 @@
+# The mcp lane demo. Start it with ./demo-mcp.sh, which builds the binaries
+# on the host first: libhoop and libhoop-ica are private modules.
+#
+# The three services share one network namespace. The lane binds loopback
+# only until it authenticates callers, and takes a plain http
+# upstream on loopback only, so Envoy cannot sit in front of it yet.
+
+name: hoop-mcp-demo
+
+services:
+  mcp-upstream:
+    image: alpine:3.20
+    command: ["/demo/bin/upstream", "-listen", "127.0.0.1:18900"]
+    volumes:
+      - .:/demo:ro
+
+  hoop-inspect:
+    image: alpine:3.20
+    network_mode: service:mcp-upstream
+    command: ["/demo/bin/hoop-inspect", "-config", "/demo/config-mcp.yaml"]
+    volumes:
+      - .:/demo:ro
+    depends_on: [mcp-upstream]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:19000/healthz"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 15
+
+  client:
+    image: alpine:3.20
+    network_mode: service:mcp-upstream
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["apk add --no-cache curl jq >/dev/null && exec sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v curl && command -v jq"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 30

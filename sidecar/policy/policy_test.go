@@ -142,6 +142,15 @@ func TestRequireTableMatchFailsClosed(t *testing.T) {
 	if v.Message != "cannot verify which tables this statement touches" {
 		t.Errorf("Message = %q", v.Message)
 	}
+
+	catalog := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromServer, Operation: inspect.OpShow, Text: "get_file_contents: Read a file\n"}
+	if strict.Evaluate(catalog).Denied {
+		t.Error("strict rule denied the MCP tool catalog, which names no tool")
+	}
+	call := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromClient, Operation: inspect.OpCall, Text: "customers\n{}", Tables: []string{"customers"}}
+	if !strict.Evaluate(call).Denied {
+		t.Error("strict rule allowed an MCP call to the tool it names")
+	}
 }
 
 func TestPatternMatch(t *testing.T) {

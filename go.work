@@ -16,6 +16,7 @@ use (
 	./sidecar/ica
 	./sidecar/lexer/conformance
 	./sidecar/mcp
+	./sidecar/mcpgateway
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite
 	./sidecar/telemetry/otlp
