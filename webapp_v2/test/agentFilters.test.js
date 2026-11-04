@@ -42,6 +42,16 @@ describe('sortAgents', () => {
     expect(names(sortAgents(AGENTS, SORT_VERSION))).toEqual(['agent10', 'prod-eu', 'prod-us', 'Dev-br', 'agent2'])
   })
 
+  it('groups empty and unknown versions last, ordered by name', () => {
+    const list = [
+      { id: 'a', name: 'zeta', version: 'unknown' },
+      { id: 'b', name: 'alpha', version: '' },
+      { id: 'c', name: 'mid', version: '1.0.0' },
+      { id: 'd', name: 'beta' },
+    ]
+    expect(names(sortAgents(list, SORT_VERSION))).toEqual(['mid', 'alpha', 'beta', 'zeta'])
+  })
+
   it('falls back to name A–Z for an unknown sort and does not mutate the input', () => {
     const input = [...AGENTS]
     expect(names(sortAgents(input, 'bogus'))).toEqual(names(sortAgents(AGENTS, SORT_NAME_ASC)))

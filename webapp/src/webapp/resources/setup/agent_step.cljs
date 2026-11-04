@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link TextField]]
    ["lucide-react" :refer [Plus ArrowUpRight Search]]
    [clojure.string :as cs]
+   [webapp.resources.setup.agent-options :refer [agent-options]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -120,20 +121,6 @@
     (finally
       ;; Cleanup watcher on component unmount
       (remove-watch agent-key :agent-watcher))))
-
-(defn agent-options
-  "Select options for the agents, sorted by name (case-insensitive) and
-  narrowed to names that contain `search`. The selected agent stays in the
-  list, so the select keeps showing it while a search hides the others."
-  [agents search selected-id]
-  (let [term (cs/lower-case (cs/trim (or search "")))]
-    (->> agents
-         (filter #(or (= (:id %) selected-id)
-                      (cs/blank? term)
-                      (cs/includes? (cs/lower-case (or (:name %) "")) term)))
-         (sort-by #(cs/lower-case (or (:name %) "")))
-         (mapv #(hash-map :value (:id %)
-                          :text (:name %))))))
 
 (defn agent-selector [_creation-mode]
   (let [agents (rf/subscribe [:agents])

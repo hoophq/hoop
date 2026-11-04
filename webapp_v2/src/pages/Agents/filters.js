@@ -40,11 +40,12 @@ function versionParts(version) {
   return match.slice(1).map((part) => Number(part ?? 0))
 }
 
-// Newest version first; unknown versions last.
+// Newest version first. Unknown versions ("", "unknown", ...) are equal to
+// each other and go last, so the caller's tie-break orders them by name.
 export function compareVersionsDesc(a, b) {
   const pa = versionParts(a)
   const pb = versionParts(b)
-  if (!pa && !pb) return collator.compare(a ?? '', b ?? '')
+  if (!pa && !pb) return 0
   if (!pa) return 1
   if (!pb) return -1
   for (let i = 0; i < 3; i++) {
