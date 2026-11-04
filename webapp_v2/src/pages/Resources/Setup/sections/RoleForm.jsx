@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { Anchor, Group, Stack, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
 import { useStore } from 'zustand'
-import { ExternalLink, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import AttributesSelect from '@/components/AttributesSelect'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
@@ -14,6 +14,7 @@ import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 import {
   ConnectionMethodSection,
   SecretsManagerProviderSection,
+  SetupDocsHint,
 } from '@/pages/Roles/Configure/components/ConnectionMethod'
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
@@ -110,18 +111,7 @@ function RoleCredentials({ form, role, fields }) {
             />
           )}
           {role.method === CONNECTION_METHODS.AWS_IAM && (
-            <Anchor
-              size="sm"
-              href={docsUrl.setup.configuration.rdsIamAuth}
-              target="_blank"
-              rel="noopener noreferrer"
-              w="fit-content"
-            >
-              <Group gap={4} component="span" wrap="nowrap">
-                <ExternalLink size={12} />
-                Learn more about AWS IAM Role setup
-              </Group>
-            </Anchor>
+            <SetupDocsHint topic="AWS IAM Role" href={docsUrl.setup.configuration.rdsIamAuth} />
           )}
         </Stack>
       )}
