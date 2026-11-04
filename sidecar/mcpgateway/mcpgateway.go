@@ -49,7 +49,12 @@ const (
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
 func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
-	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}}
+	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}, renamed: map[string]string{}}
+	for real, ov := range lane.Policy.Overrides {
+		if ov.Name != "" {
+			s.renamed[ov.Name] = real
+		}
+	}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -133,6 +138,9 @@ type server struct {
 	lane daemon.MCPGatewayLane
 	log  *slog.Logger
 	gw   *mcpgw.Gateway
+	// renamed maps an overrides name to the real tool name. A hidden tool
+	// never reaches overrides, so its session holds no rename for it.
+	renamed map[string]string
 
 	mu       sync.Mutex
 	ln       net.Listener
@@ -438,6 +446,9 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 		return inspect.AllowAll
 	}
 	tool := checks.RealToolName(ms, p.Name)
+	if real, ok := c.s.renamed[p.Name]; ok && tool == p.Name {
+		tool = real
+	}
 	if !ls.Hidden(tool) {
 		return inspect.AllowAll
 	}

@@ -303,6 +303,24 @@ func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
 	}
 }
 
+// A call to a hidden tool under the name overrides gives it is denied under
+// the rule too, though the client never saw that name.
+func TestARenamedHiddenToolIsDeniedUnderItsNewName(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"customer_lookup": "no-lookup"}, hide: map[string]bool{"customer_lookup": true}}
+	policy := daemon.MCPGatewayConfig{Overrides: map[string]daemon.MCPToolOverride{"customer_lookup": {Name: "find_customer"}}}
+	_, url := startLane(t, policy, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	body := c.call(t, 3, "find_customer", `{"id":"7"}`)
+	if !strings.Contains(body, `"isError":true`) || !strings.Contains(body, "(rule no-lookup)") {
+		t.Fatalf("call under the new name: %s", body)
+	}
+	if calls, _, _ := ln.session(0).snapshot(); strings.Join(calls, ",") != "customer_lookup" {
+		t.Fatalf("statements %v, want the real name", calls)
+	}
+}
+
 // A call a sidecar rule denies answers as a tool error, so the agent keeps
 // the server; an allowed call goes through. One
 // statement per call, either way.
