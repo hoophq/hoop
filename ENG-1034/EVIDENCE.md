@@ -1,6 +1,6 @@
 # ENG-1034 · Sort and filter agents on the Agents page and agent pickers
 
-PR #2109 · tested on `a8b0c2b` against `origin/main` `ff3ac67` · 2026-11-04
+PR #2109 · tested on `a8b0c2b` (QA), picker re-checked on `5d380ada` against `origin/main` `ff3ac67` · 2026-11-04
 
 **Result: with 13 agents, the Agents page can be searched, filtered by status and version, and sorted; both agent pickers list agents by name, and the Create Resource picker can be searched.**
 
@@ -17,7 +17,7 @@ Status Online keeps the 5 online agents; search "prod" keeps prod-eu and prod-us
 
 ## 3. Is the Create Resource picker sorted and searchable?
 ![Create Resource picker](3-create-resource-picker.png)
-Left: no search, uppercase first. Middle: sorted by name. Right: "prod" narrows the list.
+Left: no search, uppercase first. Middle: sorted by name, search inside the dropdown (reviewer ask). Right: "prod" narrows the list.
 
 ## 4. Is the Configure Resource picker sorted?
 ![Configure Resource picker](4-configure-resource-picker.png)
@@ -31,6 +31,7 @@ Left: no search, uppercase first. Middle: sorted by name. Right: "prod" narrows 
 Admins with tens of agents (the ticket's customer runs ~30) find an agent by name, status or version instead of scanning an unordered list.
 
 ## Open items
+- The dropdown search (`5d380ada`, after review) was checked by the author on a sandbox stack, not by a new QA round.
 - Still screenshots, not a recorded flow: no Docker in this sandbox, and QA's stacks were stopped.
 - CLJS karma tests run by hand only: no CI job runs them (true before this PR).
 - `Integration Test (mysql)` failed on `a8b0c2b` in `TestMySQL_ParallelSessions` (Go agent code this PR does not touch; it passed on `4764b4d`). It needs a re-run by a person.
