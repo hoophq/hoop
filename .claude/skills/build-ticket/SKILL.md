@@ -67,17 +67,16 @@ schedule and no person reads the session. Then:
   route of a cloud session; a capture left in the sandbox is lost with it.
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
-  It opens as a draft, so nobody reviews it before QA. When QA passed, its
-  evidence is in "Testing" and CI is green, mark it ready for review
-  (`update_pull_request`, `draft: false`): Qodo reviews it while this session
-  listens. A person merges it.
-- Once the draft PR exists, `subscribe_pr_activity` on it. Its CI results and
-  review comments (Qodo once it is ready, reviewers) wake this session after
-  the run ends. On each wake: fix a red check this PR caused and push; verify
-  each review finding, then fix and push it or reply why not; reply on each
-  thread you addressed and resolve it. Each reply starts with
-  `Support agent (AI):`. Never merge it. Unsubscribe when it is merged or
-  closed.
+  Step 5 opens it ready for review, not as a draft, and adds the label
+  `from-agent-support` next to the release label (`issue_write`): it counts
+  the agent's PRs. After 3 QA `FAIL` rounds, turn it back into a draft
+  (`update_pull_request`, `draft: true`). A person merges it.
+- Once the PR exists, `subscribe_pr_activity` on it. Its CI results and
+  review comments (Qodo, reviewers) wake this session after the run ends. On
+  each wake: fix a red check this PR caused and push; verify each review
+  finding, then fix and push it or reply why not; reply on each thread you
+  addressed and resolve it. Each reply starts with `Support agent (AI):`.
+  Never merge it. Unsubscribe when it is merged or closed.
 
 ## 1. Context
 
