@@ -33,10 +33,21 @@ type handler struct {
 	// newVerifier loads the OIDC verifier. Tests replace it to run the
 	// callback without an identity provider.
 	newVerifier func() (idp.OidcVerifier, error)
+	// newAnalytics builds the analytics client a sign-in reports to. Tests
+	// replace it to read what a sign-in sends. nil means analytics.New.
+	newAnalytics func() *analytics.Segment
 }
 
+// signupTrackDelay gives the signup Identify time to reach Intercom before the
+// hoop-signup event. Tests set it to zero.
+var signupTrackDelay = 10 * time.Second
+
 func New() *handler {
-	return &handler{apiURL: appconfig.Get().ApiURL(), newVerifier: idp.NewOidcVerifierProvider}
+	return &handler{
+		apiURL:       appconfig.Get().ApiURL(),
+		newVerifier:  idp.NewOidcVerifierProvider,
+		newAnalytics: analytics.New,
+	}
 }
 
 func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
@@ -540,8 +551,11 @@ func reloadSignupContext(ctx *models.Context, subject string) *models.Context {
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := ctx.GetLicenseType()
-	trackClient := analytics.New()
-	defer trackClient.Close()
+	newAnalytics := h.newAnalytics
+	if newAnalytics == nil {
+		newAnalytics = analytics.New
+	}
+	trackClient := newAnalytics()
 	if !isNewUser {
 		trackClient.Track(ctx.UserSubject, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
@@ -549,6 +563,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 		})
+		trackClient.Close()
 		return
 	}
 	// A new org is not in the analytics mode cache yet: pass its stored mode
@@ -564,13 +579,15 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
-		time.Sleep(time.Second * 10)
+		time.Sleep(signupTrackDelay)
 		trackClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 		})
+		// Close only after the Track: a closed client drops what it is given.
+		trackClient.Close()
 	}()
 }
 
