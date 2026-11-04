@@ -332,17 +332,18 @@ func (s *sidecar) auditEvents() []auditEvent {
 	return append([]auditEvent(nil), s.events...)
 }
 
-// waitForAudit polls until match finds an event or the deadline passes.
-//
-// The audit sink is asynchronous — it buffers and flushes on its own clock —
-// so a test that read the trail immediately after a query would race the
-// flush and fail intermittently, which is worse than no assertion.
 // auditLines is every line the relay wrote to stdout, as written.
 func (s *sidecar) auditLines() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.lines...)
 }
+
+// waitForAudit polls until match finds an event or the deadline passes.
+//
+// The audit sink is asynchronous — it buffers and flushes on its own clock —
+// so a test that read the trail immediately after a query would race the
+// flush and fail intermittently, which is worse than no assertion.
 
 func (s *sidecar) waitForAudit(t *testing.T, what string, match func(auditEvent) bool) auditEvent {
 	t.Helper()

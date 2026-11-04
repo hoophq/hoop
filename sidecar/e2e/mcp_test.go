@@ -187,6 +187,10 @@ func TestMCPCallerTokenNeverLeavesTheLane(t *testing.T) {
 	if upN == 0 || opaN == 0 || !strings.Contains(logs.String(), "mcp request refused") {
 		t.Fatalf("nothing to check: %d upstream requests, %d OPA queries, log %q", upN, opaN, logs.String())
 	}
+	// An mcp lane calls no analyzer. When one does, its requests join the scan below.
+	if modelN != 0 {
+		t.Fatalf("the analyzer got %d requests; check them for the token", modelN)
+	}
 	t.Logf("checked %d upstream requests, %d OPA queries, %d analyzer requests, %d audit lines, %d log bytes",
 		upN, opaN, modelN, len(s.auditLines()), len(logs.String()))
 	for where, text := range map[string]string{
