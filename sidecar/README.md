@@ -3344,12 +3344,12 @@ listeners:
   - name: github-mcp
     protocol: mcp
     listen: 127.0.0.1:18901      # loopback only until the lane authenticates callers
-    upstream: https://api.githubcopilot.com/mcp/   # the MCP endpoint, with its path
+    upstream: https://mcp.example.com/mcp   # the MCP endpoint, with its path; see Auth
     upstream_tls: {ca_file: /etc/ssl/cert.pem}
     idle_timeout_sec: 1800       # an idle MCP session ends after this; default 30 minutes
     mcp_gateway:
       transport: streamable-http # or sse
-      allowed_tools: ["get_*", "list_*", "search_*"]   # from here on, mcpproxy policy keys, as they are
+      allowed_tools: ["get_*", "list_*", "search_*"]   # each key: see "mcp_gateway keys"
       denied_tools: ["*delete*"]
       block_sampling: true
       block_elicitation: true
@@ -3360,6 +3360,18 @@ listeners:
       overrides:
         get_file_contents: {description: Read one file from a repository.}
 ```
+
+#### Listener keys
+
+| Key | Default | Effect |
+|---|---|---|
+| `listen` | required | `host:port` on loopback: `127.0.0.1`, `::1` or `localhost`. MCP clients connect to `http://<listen>/mcp`. |
+| `upstream` | required | The MCP endpoint, with its path. `https`, or `http` on loopback. |
+| `upstream_tls` | the host trust store | The CA, the client certificate and the server name for the hop to the upstream. |
+| `idle_timeout_sec` | `1800` | An MCP session with no message for this long ends, with its sidecar session. |
+| `identity_header` | none | The header whose value names the caller. See Auth. |
+| `guardrails`, `opa` | the top-level blocks | The rules and OPA for this lane. |
+| `mcp_gateway` | none | The upstream transport and the tool policy. See "`mcp_gateway` keys". |
 
 Tool allow and deny have two layers with different jobs. The `mcp_gateway`
 block is mcpproxy policy, key for key: it filters `tools/list`, so the
@@ -3377,9 +3389,37 @@ drop one that returns a protocol error.
 | reload | restart | hot, ends the open sessions |
 | control plane | no form yet | the rules screen |
 
-An empty `allowed_tools` allows every tool, and `denied_tools` wins over
-it. Tool allow and deny stay in `mcp_gateway` because a rule cannot
-filter the catalog.
+Tool allow and deny stay in `mcp_gateway` because a rule cannot filter the
+catalog.
+
+#### `mcp_gateway` keys
+
+| Key | Default | Effect | The client gets |
+|---|---|---|---|
+| `transport` | `streamable-http` | How the lane reaches the upstream: `streamable-http` or `sse`. | |
+| `allowed_tools` | empty: every tool | Globs. `tools/list` keeps only the tools that match, and a call to any other tool is refused. | JSON-RPC error `-32010`, `tool "x" is not in the allowed set` |
+| `denied_tools` | empty | Globs. Matching tools leave `tools/list`, and a call to one is refused. It wins over `allowed_tools`. | `-32010`, `tool "x" is denied by policy` |
+| `overrides` | none | Per tool: `name` renames it and `description` replaces its description in `tools/list`. A call to the new name reaches the real tool. | |
+| `block_sampling` | `true` | Refuses the server's `sampling/createMessage` requests, which ask the client's model to generate text. | Nothing: the client never sees the request, and the server gets `-32010`. |
+| `block_elicitation` | `true` | Refuses the server's `elicitation/create` requests, which ask the user for input. | As for `block_sampling`. |
+| `on_rug_pull` | `kill` | A rug pull is a later `tools/list` that changes the description or input schema of a tool this session already listed. `kill` ends the session; `alert` records it and goes on. | `kill`: `-32010` with the reason, then 404 on the session |
+| `max_calls_per_session` | `0`: no limit | The tool calls one MCP session may attempt. A refused call counts too. | Past the limit: `-32012`, `session tool-call budget exhausted (N calls)` |
+| `tool_rate_limits` | none | Tool glob to calls per minute, per session. When several globs match a tool, the lowest limit applies. | Over the limit: `-32012`, `tool "x" rate limit exceeded (N calls/min)` |
+| `max_result_kb` | `0`: no limit | The text of a tool result is cut to this size and ends with `[truncated by gateway]`. | The cut result |
+
+A glob has one metacharacter: `*` matches any run of characters, including
+none. Every other character matches literally, and case counts: `*delete*`
+matches `bulk_delete_rows`, and `get_*` does not match `Get_file`.
+
+On a call, `allowed_tools`, `denied_tools` and the sidecar rules read the
+real tool name, not the name `overrides` gives it.
+
+Once the session has listed tools, a call to a tool the server did not list
+is refused too: `-32010`, `tool "x" was not advertised by the server`.
+
+A refused call, a budget hit or a truncated result, and a rug pull reach the
+sidecar session as activities: `mcp.tool_denied`, `mcp.budget_exceeded`,
+`mcp.tools_changed`.
 
 Each `tools/call` is one statement: `operation: call`, `tables: [<tool>]`,
 the text `<tool>` and its arguments JSON on the next line, and the metadata
@@ -3426,6 +3466,46 @@ it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
 
+#### Auth
+
+The lane checks no credential on either side yet.
+
+**Caller to lane.**
+
+| Option | Config | The audit names |
+|---|---|---|
+| none, the default | | `anonymous` |
+| `identity_header` | `identity_header: x-forwarded-email` | the header's value |
+
+`identity_header` names a caller and verifies nothing: any process that
+reaches the port can set it. Use it only behind a proxy on the same host or
+pod that authenticates the caller and sets the header.
+
+Callers the lane cannot tell apart share the `anonymous` identity, so any of
+them that holds a session id can use that session.
+
+Not supported yet: a token the lane checks, a verified identity per user,
+and OAuth login of MCP clients. Until the lane checks callers, it binds
+loopback only.
+
+**Lane to upstream.**
+
+| Option | Config |
+|---|---|
+| no credential: a server on a private network, or one that holds its own credential | `upstream: https://mcp.internal.example.com/mcp` |
+| mutual TLS | `upstream_tls: {cert_file: /etc/tls/client.crt, key_file: /etc/tls/client.key, ca_file: /etc/tls/ca.pem}` |
+
+The lane sends no `Authorization` header to the upstream, the caller's
+included. It refuses `headers`, because the config holds no inline secret.
+
+For a server that needs a bearer token or OAuth: run the MCP server
+yourself with its credential, or run a proxy on loopback that adds the
+credential, and point `upstream` at that proxy (`http://127.0.0.1:<port>/mcp`
+is accepted on loopback).
+
+Not supported yet: a token from a file or a secret source, OAuth to the
+upstream, the caller's own token, and AWS SigV4.
+
 What the lane refuses at validate, and why: a `listen` off loopback (no
 caller check yet) or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
@@ -3434,8 +3514,7 @@ the lane and an `analyzer` block until those land; a
 pasted mcpproxy key the block does not map, such as `approval_tools`,
 `command` or `headers`, as `unknown field`. Mask rules inherited from the
 top-level block are accepted, so one file serves every lane, and `-validate`
-notes that they do not apply to this lane yet. `identity_header`
-is accepted and names the caller, only behind a proxy that sets it.
+notes that they do not apply to this lane yet.
 Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
 
 ### Postgres: trace ids from the startup packet
