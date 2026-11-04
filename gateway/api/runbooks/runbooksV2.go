@@ -446,6 +446,10 @@ func RunbookExec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	if err := validateNotRedacted(req.Parameters); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 
 	allowed, err := models.IsUserAllowedToRunRunbook(ctx.OrgID, req.ConnectionName, req.Repository, req.FileName, ctx.UserGroups)
 	if err != nil {
@@ -738,6 +742,22 @@ func validateGitURL(urlStr string) error {
 	return nil
 }
 
+// redactedParamPrefix starts the value that replaces a secret input in the
+// runbookParameters label.
+const redactedParamPrefix = "[param redacted. type = "
+
+// validateNotRedacted refuses a parameter that holds a redacted label value.
+// A re-run sends the label back as parameters, and the marker must not run in
+// place of the secret.
+func validateNotRedacted(params map[string]string) error {
+	for key, val := range params {
+		if strings.HasPrefix(val, redactedParamPrefix) {
+			return fmt.Errorf("input %q holds a redacted value from an earlier session; run the runbook from its form and enter it again", key)
+		}
+	}
+	return nil
+}
+
 // encodeRequestParams returns the runbook parameters for the session label.
 // It redacts the values of the file and password inputs.
 func encodeRequestParams(params map[string]string, runbook *runbooks.File) []byte {
@@ -755,10 +775,10 @@ func encodeRequestParams(params map[string]string, runbook *runbooks.File) []byt
 			}
 			switch attrType, _ := attr["type"].(string); attrType {
 			case "file":
-				newParams[key] = fmt.Sprintf("[param redacted. type = file, size = %v byte(s)]", len(val))
+				newParams[key] = fmt.Sprintf(redactedParamPrefix+"file, size = %v byte(s)]", len(val))
 			case "password":
 				// no length: it would leak how long the secret is
-				newParams[key] = "[param redacted. type = password]"
+				newParams[key] = redactedParamPrefix + "password]"
 			}
 		}
 	}

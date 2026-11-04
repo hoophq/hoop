@@ -38,3 +38,18 @@ func TestEncodeRequestParamsWithoutAttributes(t *testing.T) {
 	require.NoError(t, json.Unmarshal(encodeRequestParams(map[string]string{"a": "b"}, &runbooks.File{}), &got))
 	assert.Equal(t, map[string]string{"a": "b"}, got)
 }
+
+func TestValidateNotRedactedRefusesLabelMarkers(t *testing.T) {
+	rb := &runbooks.File{TemplateAttributes: map[string]any{
+		"secret": map[string]any{"type": "password"},
+		"cert":   map[string]any{"type": "file"},
+	}}
+	var label map[string]string
+	require.NoError(t, json.Unmarshal(encodeRequestParams(map[string]string{"secret": "x", "cert": "y"}, rb), &label))
+
+	// a re-run sends the label back as parameters
+	for key, val := range label {
+		assert.Error(t, validateNotRedacted(map[string]string{key: val}), key)
+	}
+	assert.NoError(t, validateNotRedacted(map[string]string{"secret": "s3cr3t", "name": "redacted"}))
+}
