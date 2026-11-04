@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -434,30 +435,52 @@ func (c *hideCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.
 }
 
 func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
-	var p struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if json.Unmarshal(m.Env.Params, &p) != nil || p.Name == "" {
-		return inspect.AllowAll // hoopCheck refuses it as invalid params
-	}
 	ls, err := c.s.laneSession(ctx, ms)
 	if err != nil {
-		return inspect.AllowAll
+		return inspect.AllowAll // hoopCheck refuses the message
 	}
-	tool := checks.RealToolName(ms, p.Name)
-	if real, ok := c.s.renamed[p.Name]; ok && tool == p.Name {
+	name, args, err := toolCallParams(m.Env.Params)
+	if err != nil {
+		c.s.denied.Add(1)
+		ls.Record(ctx, "mcp_invalid_params", map[string]string{"reason": err.Error()})
+		return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+	}
+	tool := checks.RealToolName(ms, name)
+	if real, ok := c.s.renamed[name]; ok && tool == name {
 		tool = real
 	}
 	if !ls.Hidden(tool) {
 		return inspect.AllowAll
 	}
-	v := ls.ToolCall(ctx, tool, p.Arguments)
+	v := ls.ToolCall(ctx, tool, args)
 	if v.Allowed {
 		return inspect.AllowAll
 	}
 	c.s.denied.Add(1)
 	return deniedToolResult(m.Env, v)
+}
+
+// toolCallParams reads a tools/call's tool name and arguments by their exact
+// keys, as an MCP server does. Params with keys that differ only in case are
+// refused: every later check reads them without case, as Go does, and would
+// judge a different tool than the server runs.
+func toolCallParams(params json.RawMessage) (string, json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(params, &fields); err != nil {
+		return "", nil, errors.New("params are not an object")
+	}
+	seen := make(map[string]string, len(fields))
+	for k := range fields {
+		if prev, dup := seen[strings.ToLower(k)]; dup {
+			return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
+		}
+		seen[strings.ToLower(k)] = k
+	}
+	var name string
+	if err := json.Unmarshal(fields["name"], &name); err != nil || name == "" {
+		return "", nil, errors.New("a tool name is required")
+	}
+	return name, fields["arguments"], nil
 }
 
 // hideTools drops from a tools/list result every tool ls hides, keeping the

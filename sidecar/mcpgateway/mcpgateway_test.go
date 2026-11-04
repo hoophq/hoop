@@ -303,6 +303,32 @@ func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
 	}
 }
 
+// A tools/call is judged by its exact "name" key, as an MCP server reads it.
+// Params whose keys differ only in case are refused: Go reads them without
+// case, so the lane would judge one tool and a server in another language
+// would run the other.
+func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
+	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	for i, params := range []string{
+		`{"name":"delete_customer","Name":"echo","arguments":{"message":"x"}}`,
+		`{"Name":"echo","name":"delete_customer","arguments":{"message":"x"}}`,
+		`{"name":"echo","arguments":{"message":"x"},"ARGUMENTS":{"message":"y"}}`,
+		`{"Name":"echo","arguments":{"message":"x"}}`,
+	} {
+		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
+		if code != 200 || !strings.Contains(body, "-32602") {
+			t.Errorf("params %s: %d %s", params, code, body)
+		}
+	}
+	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
+		t.Fatalf("the lane judged %v, want no call", calls)
+	}
+}
+
 // A call to a hidden tool under the name overrides gives it is denied under
 // the rule too, though the client never saw that name.
 func TestARenamedHiddenToolIsDeniedUnderItsNewName(t *testing.T) {
