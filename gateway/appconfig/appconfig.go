@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/license"
 
@@ -49,6 +50,7 @@ type Config struct {
 	licenseSignerOrgID              string
 	licenseData                     []byte
 	analyticsTracking               string
+	orgID                           string
 	orgMultitenant                  bool
 	apiURL                          string
 	grpcURL                         string
@@ -144,12 +146,19 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	orgID, err := loadOrgID()
+	if err != nil {
+		return err
+	}
 	orgMultitenant := os.Getenv("ORG_MULTI_TENANT") == "true"
 	if orgMultitenant && licenseData != nil {
 		return fmt.Errorf("HOOP_LICENSE is not supported with ORG_MULTI_TENANT")
 	}
 	if orgMultitenant && analyticsTracking == "disabled" {
 		return fmt.Errorf("ANALYTICS_TRACKING=disabled is not supported with ORG_MULTI_TENANT")
+	}
+	if orgMultitenant && orgID != "" {
+		return fmt.Errorf("ORG_ID is not supported with ORG_MULTI_TENANT")
 	}
 	gcpJsonCred, err := loadGcpDLPCredentials()
 	if err != nil {
@@ -307,6 +316,7 @@ func Load() error {
 		licenseSignerOrgID:              allowedOrgID,
 		licenseData:                     licenseData,
 		analyticsTracking:               analyticsTracking,
+		orgID:                           orgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
 		orgMultitenant:                  orgMultitenant,
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
@@ -503,6 +513,18 @@ func loadAnalyticsTracking() (string, error) {
 	}
 }
 
+// loadOrgID reads ORG_ID, the id the default organization is created with.
+func loadOrgID() (string, error) {
+	v := strings.TrimSpace(os.Getenv("ORG_ID"))
+	if v == "" {
+		return "", nil
+	}
+	if _, err := uuid.Parse(v); err != nil {
+		return "", fmt.Errorf("invalid ORG_ID %q: it is not a UUID", v)
+	}
+	return v, nil
+}
+
 func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
@@ -515,6 +537,10 @@ func (c Config) LicenseData() []byte { return c.licenseData }
 // then sets the default organization's analytics mode to disabled at every
 // boot; enabled or unset leaves the stored mode alone.
 func (c Config) AnalyticsTrackingDisabled() bool { return c.analyticsTracking == "disabled" }
+
+// OrgID is the ORG_ID the default organization is created with on a fresh
+// database, empty when unset. It never renames an existing organization.
+func (c Config) OrgID() string { return c.orgID }
 
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }

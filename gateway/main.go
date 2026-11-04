@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/log/bootstrap"
@@ -133,7 +134,15 @@ func Run() {
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
 
-		org, isNewOrg, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
+		wantOrgID := appconfig.Get().OrgID()
+		orgID := wantOrgID
+		if orgID == "" {
+			orgID = uuid.NewString()
+		}
+		org, isNewOrg, err := models.CreateOrgGetOrganizationWithID(orgID, proto.DefaultOrgName, nil)
+		if err == nil && wantOrgID != "" && org.ID != wantOrgID {
+			err = fmt.Errorf("ORG_ID=%s cannot rename the default organization, it already exists with id %s", wantOrgID, org.ID)
+		}
 		if err != nil {
 			orgStep.Fail(err)
 			log.Fatal(err)

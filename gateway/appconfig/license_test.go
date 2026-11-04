@@ -95,3 +95,43 @@ func TestLoadAnalyticsTracking(t *testing.T) {
 		})
 	}
 }
+
+// ORG_ID semantics: empty is unset, any other value must be a UUID. It is
+// refused with ORG_MULTI_TENANT.
+func TestLoadOrgID(t *testing.T) {
+	const id = "2f0f2b1e-5d8e-4f2a-9b0c-6a1d3e4f5a6b"
+	for _, tc := range []struct {
+		name        string
+		env         string
+		multiTenant string
+		wantErr     bool
+		want        string
+	}{
+		{"unset", "", "", false, ""},
+		{"valid", id, "", false, id},
+		{"surrounding space", " " + id + "\n", "", false, id},
+		{"not a uuid", "default", "", true, ""},
+		{"refused with multi tenant", id, "true", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("POSTGRES_DB_URI", "postgres://u:p@localhost:5432/db")
+			t.Setenv("ORG_ID", tc.env)
+			t.Setenv("ORG_MULTI_TENANT", tc.multiTenant)
+			runtimeConfig = Config{}
+
+			err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected Load to fail, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if got := Get().OrgID(); got != tc.want {
+				t.Fatalf("OrgID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

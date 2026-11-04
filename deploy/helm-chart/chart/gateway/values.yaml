@@ -156,6 +156,9 @@ config:
   # 'disabled' turns analytics off for the default organization at every
   # boot; 'enabled' (the default) leaves the stored mode alone.
   # ANALYTICS_TRACKING: 'enabled'
+  # UUID the default organization is created with on a fresh database, so
+  # API_KEY can be set before the first boot. It never renames an existing one.
+  # ORG_ID: ''
   # Data masking provider: 'mspresidio' (or dataMasking.enabled above),
   # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
   # (in-process pattern engine on the agent, no extra services or

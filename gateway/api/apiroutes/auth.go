@@ -22,7 +22,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
-	"gorm.io/gorm"
 )
 
 func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, idptypes.ServerConfig, bool) {
@@ -81,27 +80,20 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 			return
 		}
 
-		// legacy api key format: orgID|key
-		orgID := strings.Split(apiKey, "|")[0]
-		if strings.HasPrefix(apiKey, "xapi-") {
-			// the new format is derived from the server config database
-			orgID = serverConfig.OrgID
-		}
-
-		// private.authconfig has no row under env-only auth, so the server
-		// config carries no license; the organization row always does.
-		orgLicenseData, err := models.GetOrgLicenseData(models.DB, orgID)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Errorf("failed looking up org license, err=%v", err)
+		// Single tenant: the key prefix is any UUID, the organization is
+		// the default one, which the gateway creates at boot.
+		org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
+		if err != nil {
+			log.Errorf("failed looking up the default organization, err=%v", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 			return
 		}
 
 		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 		r.setUserContext(&models.Context{
-			OrgID:          orgID,
-			OrgName:        proto.DefaultOrgName,
-			OrgLicenseData: orgLicenseData,
+			OrgID:          org.ID,
+			OrgName:        org.Name,
+			OrgLicenseData: org.LicenseData,
 			UserID:         deterministicUuid.String(),
 			UserSubject:    "API_KEY",
 			UserName:       "API_KEY",

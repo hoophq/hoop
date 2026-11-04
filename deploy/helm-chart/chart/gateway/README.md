@@ -37,11 +37,12 @@ Setup steps: "Entra ID without a client secret" in [../../README.md](../../READM
 
 ## Boot-time organization settings
 
-Both keys apply to the default organization at every gateway boot, so a
-rotated value replaces the stored one. Neither takes effect with
-`ORG_MULTI_TENANT=true`: `HOOP_LICENSE` and `ANALYTICS_TRACKING=disabled` are refused.
+All keys apply to the default organization at every gateway boot, so a
+rotated value replaces the stored one. None takes effect with
+`ORG_MULTI_TENANT=true`: `ORG_ID`, `HOOP_LICENSE` and `ANALYTICS_TRACKING=disabled` are refused.
 
 | Value | Default | Description |
 |---|---|---|
 | `config.HOOP_LICENSE` | empty | The signed license JSON itself (starts with `{`) or the path of a file that holds it. The gateway verifies the signature, the validity window and `API_URL`'s host, then stores it; a bad document stops startup. |
 | `config.ANALYTICS_TRACKING` | `enabled` | `disabled` sets the organization's analytics mode to `disabled`. `enabled` leaves the stored mode alone, so `PUT /api/orgs/analytics-mode` decides it. |
+| `config.ORG_ID` | empty | UUID the default organization is created with on a fresh database, so `config.API_KEY` can be written before the first boot. An existing organization with another id stops startup: it never renames one. |
