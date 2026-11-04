@@ -1,7 +1,8 @@
 (ns webapp.resources.setup.agent-step
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link]]
-   ["lucide-react" :refer [Plus ArrowUpRight]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link TextField]]
+   ["lucide-react" :refer [Plus ArrowUpRight Search]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -120,37 +121,62 @@
       ;; Cleanup watcher on component unmount
       (remove-watch agent-key :agent-watcher))))
 
-(defn agent-selector [creation-mode]
+(defn agent-options
+  "Select options for the agents, sorted by name (case-insensitive) and
+  narrowed to names that contain `search`. The selected agent stays in the
+  list, so the select keeps showing it while a search hides the others."
+  [agents search selected-id]
+  (let [term (cs/lower-case (cs/trim (or search "")))]
+    (->> agents
+         (filter #(or (= (:id %) selected-id)
+                      (cs/blank? term)
+                      (cs/includes? (cs/lower-case (or (:name %) "")) term)))
+         (sort-by #(cs/lower-case (or (:name %) "")))
+         (mapv #(hash-map :value (:id %)
+                          :text (:name %))))))
+
+(defn agent-selector [_creation-mode]
   (let [agents (rf/subscribe [:agents])
         agent-id (rf/subscribe [:resource-setup/agent-id])
-        is-creating? (= creation-mode :create)]
-    [:> Grid {:columns "7" :gap "7"}
-     [:> Box {:grid-column "span 3 / span 3"}
-      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-       "Select an Agent"]
-      [:> Text {:size "2" :class "text-[--gray-11]"}
-       "This name is used to identify your Agent in your environment."]]
+        search (r/atom "")]
+    (fn [creation-mode]
+      (let [is-creating? (= creation-mode :create)
+            options (agent-options (:data @agents) @search @agent-id)]
+        [:> Grid {:columns "7" :gap "7"}
+         [:> Box {:grid-column "span 3 / span 3"}
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+           "Select an Agent"]
+          [:> Text {:size "2" :class "text-[--gray-11]"}
+           "This name is used to identify your Agent in your environment."]]
 
-     [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
-      [forms/select
-       {:label "Agent Name"
-        :placeholder "Select an Agent"
-        :required true
-        :full-width? true
-        :disabled is-creating?
-        :options (mapv #(hash-map :value (:id %)
-                                  :text (:name %))
-                       (:data @agents))
-        :selected (or @agent-id "")
-        :on-change #(when (and % (not= % @agent-id) (not= % ""))
-                      (rf/dispatch [:resource-setup->set-agent-id %]))}]
+         [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
+          [:> TextField.Root {:placeholder "Search agents"
+                              :aria-label "Search agents"
+                              :size "3"
+                              :disabled is-creating?
+                              :value @search
+                              :on-change #(reset! search (-> % .-target .-value))}
+           [:> TextField.Slot
+            [:> Search {:size 16}]]]
+          [forms/select
+           {:label "Agent Name"
+            :placeholder (if (and (empty? options) (not (cs/blank? @search)))
+                           "No agents match the search"
+                           "Select an Agent")
+            :required true
+            :full-width? true
+            :disabled is-creating?
+            :options options
+            :selected (or @agent-id "")
+            :on-change #(when (and % (not= % @agent-id) (not= % ""))
+                          (rf/dispatch [:resource-setup->set-agent-id %]))}]
 
-      (when-not is-creating?
-        [:> Button {:variant "ghost"
-                    :size "2"
-                    :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
-         [:> Plus {:size 16}]
-         "Create new Agent"])]]))
+          (when-not is-creating?
+            [:> Button {:variant "ghost"
+                        :size "2"
+                        :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
+             [:> Plus {:size 16}]
+             "Create new Agent"])]]))))
 
 (defn main []
   (r/with-let [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])
