@@ -55,26 +55,27 @@ func TestLoadLicense(t *testing.T) {
 	}
 }
 
-// ANALYTICS_MODE semantics: unset leaves the stored mode alone, otherwise it
-// must be one of the three modes. It is refused with ORG_MULTI_TENANT.
-func TestLoadAnalyticsMode(t *testing.T) {
+// ANALYTICS_TRACKING semantics: disabled turns the stored mode off at boot,
+// enabled or unset leaves it alone. disabled is refused with ORG_MULTI_TENANT.
+func TestLoadAnalyticsTracking(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		env         string
-		multiTenant string
-		wantErr     bool
+		name         string
+		env          string
+		multiTenant  string
+		wantErr      bool
+		wantDisabled bool
 	}{
-		{"unset", "", "", false},
-		{"identified", "identified", "", false},
-		{"anonymous", "anonymous", "", false},
-		{"disabled", "disabled", "", false},
-		{"unknown mode", "enabled", "", true},
-		{"wrong case", "Disabled", "", true},
-		{"refused with multi tenant", "disabled", "true", true},
+		{"unset", "", "", false, false},
+		{"enabled", "enabled", "", false, false},
+		{"disabled", "disabled", "", false, true},
+		{"enabled with multi tenant", "enabled", "true", false, false},
+		{"unknown value", "anonymous", "", true, false},
+		{"wrong case", "Disabled", "", true, false},
+		{"disabled refused with multi tenant", "disabled", "true", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("POSTGRES_DB_URI", "postgres://u:p@localhost:5432/db")
-			t.Setenv("ANALYTICS_MODE", tc.env)
+			t.Setenv("ANALYTICS_TRACKING", tc.env)
 			t.Setenv("ORG_MULTI_TENANT", tc.multiTenant)
 			runtimeConfig = Config{}
 
@@ -88,8 +89,8 @@ func TestLoadAnalyticsMode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load failed: %v", err)
 			}
-			if got := Get().AnalyticsMode(); got != tc.env {
-				t.Fatalf("AnalyticsMode() = %q, want %q", got, tc.env)
+			if got := Get().AnalyticsTrackingDisabled(); got != tc.wantDisabled {
+				t.Fatalf("AnalyticsTrackingDisabled() = %v, want %v", got, tc.wantDisabled)
 			}
 		})
 	}

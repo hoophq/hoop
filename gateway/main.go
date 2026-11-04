@@ -147,12 +147,12 @@ func Run() {
 				log.Fatalf("failed applying HOOP_LICENSE, reason=%v", err)
 			}
 		}
-		if mode := appconfig.Get().AnalyticsMode(); mode != "" {
-			if err := models.UpdateOrgAnalyticsMode(org.ID, mode); err != nil {
+		if appconfig.Get().AnalyticsTrackingDisabled() {
+			if err := models.UpdateOrgAnalyticsMode(org.ID, models.AnalyticsModeDisabled); err != nil {
 				orgStep.Fail(err)
-				log.Fatalf("failed applying ANALYTICS_MODE, reason=%v", err)
+				log.Fatalf("failed applying ANALYTICS_TRACKING, reason=%v", err)
 			}
-			org.AnalyticsMode = mode
+			org.AnalyticsMode = models.AnalyticsModeDisabled
 		}
 		analytics.SetMode(org.ID, org.AnalyticsMode)
 

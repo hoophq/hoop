@@ -129,8 +129,9 @@ config:
   # that holds it, such as one mounted by extraVolumes. A bad document stops
   # startup.
   # HOOP_LICENSE: ''
-  # identified | anonymous | disabled. Unset leaves the stored value alone.
-  # ANALYTICS_MODE: ''
+  # 'disabled' turns analytics off for the default organization at every
+  # boot; 'enabled' (the default) leaves the stored mode alone.
+  # ANALYTICS_TRACKING: 'enabled'
 
 # -- Define extra secret as environment variables.
 #

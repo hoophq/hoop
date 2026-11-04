@@ -48,7 +48,7 @@ type Config struct {
 	licenseSigningKey               *rsa.PrivateKey
 	licenseSignerOrgID              string
 	licenseData                     []byte
-	analyticsMode                   string
+	analyticsTracking               string
 	orgMultitenant                  bool
 	apiURL                          string
 	grpcURL                         string
@@ -140,7 +140,7 @@ func Load() error {
 	if err != nil {
 		return err
 	}
-	analyticsMode, err := loadAnalyticsMode()
+	analyticsTracking, err := loadAnalyticsTracking()
 	if err != nil {
 		return err
 	}
@@ -148,8 +148,8 @@ func Load() error {
 	if orgMultitenant && licenseData != nil {
 		return fmt.Errorf("HOOP_LICENSE is not supported with ORG_MULTI_TENANT")
 	}
-	if orgMultitenant && analyticsMode != "" {
-		return fmt.Errorf("ANALYTICS_MODE is not supported with ORG_MULTI_TENANT")
+	if orgMultitenant && analyticsTracking == "disabled" {
+		return fmt.Errorf("ANALYTICS_TRACKING=disabled is not supported with ORG_MULTI_TENANT")
 	}
 	gcpJsonCred, err := loadGcpDLPCredentials()
 	if err != nil {
@@ -306,7 +306,7 @@ func Load() error {
 		licenseSigningKey:               licensePrivKey,
 		licenseSignerOrgID:              allowedOrgID,
 		licenseData:                     licenseData,
-		analyticsMode:                   analyticsMode,
+		analyticsTracking:               analyticsTracking,
 		gcpDLPJsonCredentials:           gcpJsonCred,
 		orgMultitenant:                  orgMultitenant,
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
@@ -494,13 +494,12 @@ func loadLicense() ([]byte, error) {
 	return data, nil
 }
 
-// The values mirror models.AnalyticsMode*; models imports this package.
-func loadAnalyticsMode() (string, error) {
-	switch v := os.Getenv("ANALYTICS_MODE"); v {
-	case "", "identified", "anonymous", "disabled":
+func loadAnalyticsTracking() (string, error) {
+	switch v := os.Getenv("ANALYTICS_TRACKING"); v {
+	case "", "enabled", "disabled":
 		return v, nil
 	default:
-		return "", fmt.Errorf("invalid ANALYTICS_MODE %q (want identified|anonymous|disabled)", v)
+		return "", fmt.Errorf("invalid ANALYTICS_TRACKING %q (want enabled|disabled)", v)
 	}
 }
 
@@ -512,9 +511,10 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 // stores it on the default organization at every boot.
 func (c Config) LicenseData() []byte { return c.licenseData }
 
-// AnalyticsMode is the ANALYTICS_MODE value, empty when unset. The gateway
-// sets it on the default organization at every boot.
-func (c Config) AnalyticsMode() string { return c.analyticsMode }
+// AnalyticsTrackingDisabled reports ANALYTICS_TRACKING=disabled. The gateway
+// then sets the default organization's analytics mode to disabled at every
+// boot; enabled or unset leaves the stored mode alone.
+func (c Config) AnalyticsTrackingDisabled() bool { return c.analyticsTracking == "disabled" }
 
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
