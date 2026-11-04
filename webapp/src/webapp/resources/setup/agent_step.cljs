@@ -1,7 +1,7 @@
 (ns webapp.resources.setup.agent-step
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link TextField]]
-   ["lucide-react" :refer [Plus ArrowUpRight Search]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link Popover TextField]]
+   ["lucide-react" :refer [Plus ArrowUpRight Check ChevronDown Search]]
    [clojure.string :as cs]
    [webapp.resources.setup.agent-options :refer [agent-options]]
    [re-frame.core :as rf]
@@ -122,48 +122,95 @@
       ;; Cleanup watcher on component unmount
       (remove-watch agent-key :agent-watcher))))
 
-(defn agent-selector [_creation-mode]
+(defn- agent-dropdown
+  "Agent select with the search inside its dropdown. Radix Select has no
+  search, so this is a Popover with a search field and the option list."
+  [_]
+  (let [open? (r/atom false)
+        search (r/atom "")]
+    (fn [{:keys [agents selected-id disabled? on-select]}]
+      (let [options (agent-options agents @search)
+            selected-name (some #(when (= (:id %) selected-id) (:name %)) agents)
+            set-open! (fn [open]
+                        (reset! open? open)
+                        (when-not open (reset! search "")))]
+        [:> Box {:class "w-full"}
+         [:> Text {:as "label" :size "2" :weight "bold" :class "block mb-1 text-[--gray-12]"}
+          "Agent Name"]
+         [:> Popover.Root {:open @open? :on-open-change set-open!}
+          [:> Popover.Trigger
+           [:> Button {:type "button"
+                       :variant "surface"
+                       :color "gray"
+                       :size "3"
+                       :disabled disabled?
+                       :aria-label "Agent Name"
+                       :class "w-full justify-between font-normal"}
+            [:> Text {:size "3"
+                      :class (str "truncate " (when-not selected-name "text-[--gray-a10]"))}
+             (or selected-name "Select an Agent")]
+            [:> ChevronDown {:size 16}]]]
+          [:> Popover.Content {:size "1"
+                               :align "start"
+                               :style {:width "var(--radix-popover-trigger-width)"}}
+           [:> Box {:mb "2"}
+            ;; Uncontrolled: a controlled Radix TextField under Reagent drops
+            ;; keys typed fast. The content unmounts on close, so it starts
+            ;; empty on every open.
+            [:> TextField.Root {:placeholder "Search agents"
+                                :aria-label "Search agents"
+                                :auto-focus true
+                                :default-value ""
+                                :on-change #(reset! search (-> % .-target .-value))}
+             [:> TextField.Slot
+              [:> Search {:size 14}]]]]
+           (if (seq options)
+             [:> Box {:class "max-h-72 overflow-y-auto" :role "listbox"}
+              (doall
+               (for [{:keys [value text]} options]
+                 ^{:key value}
+                 [:> Flex {:align "center"
+                           :justify "between"
+                           :gap "2"
+                           :role "option"
+                           :aria-selected (= value selected-id)
+                           :class "cursor-pointer hover:bg-[--gray-a3] rounded px-3 py-2"
+                           :on-click (fn []
+                                       (on-select value)
+                                       (set-open! false))}
+                  [:> Text {:size "2" :class "truncate"} text]
+                  (when (= value selected-id)
+                    [:> Check {:size 14}])]))]
+             [:> Box {:px "3" :py "4"}
+              [:> Text {:size "1" :class "text-[--gray-11] italic"}
+               (if (cs/blank? @search)
+                 "No agents available"
+                 "No agents match the search")]])]]]))))
+
+(defn agent-selector [creation-mode]
   (let [agents (rf/subscribe [:agents])
         agent-id (rf/subscribe [:resource-setup/agent-id])
-        search (r/atom "")]
-    (fn [creation-mode]
-      (let [is-creating? (= creation-mode :create)
-            options (agent-options (:data @agents) @search @agent-id)]
-        [:> Grid {:columns "7" :gap "7"}
-         [:> Box {:grid-column "span 3 / span 3"}
-          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Select an Agent"]
-          [:> Text {:size "2" :class "text-[--gray-11]"}
-           "This name is used to identify your Agent in your environment."]]
+        is-creating? (= creation-mode :create)]
+    [:> Grid {:columns "7" :gap "7"}
+     [:> Box {:grid-column "span 3 / span 3"}
+      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+       "Select an Agent"]
+      [:> Text {:size "2" :class "text-[--gray-11]"}
+       "This name is used to identify your Agent in your environment."]]
 
-         [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
-          [:> TextField.Root {:placeholder "Search agents"
-                              :aria-label "Search agents"
-                              :size "3"
-                              :disabled is-creating?
-                              :value @search
-                              :on-change #(reset! search (-> % .-target .-value))}
-           [:> TextField.Slot
-            [:> Search {:size 16}]]]
-          [forms/select
-           {:label "Agent Name"
-            :placeholder (if (and (empty? options) (not (cs/blank? @search)))
-                           "No agents match the search"
-                           "Select an Agent")
-            :required true
-            :full-width? true
-            :disabled is-creating?
-            :options options
-            :selected (or @agent-id "")
-            :on-change #(when (and % (not= % @agent-id) (not= % ""))
-                          (rf/dispatch [:resource-setup->set-agent-id %]))}]
+     [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
+      [agent-dropdown {:agents (:data @agents)
+                       :selected-id @agent-id
+                       :disabled? is-creating?
+                       :on-select #(when (and % (not= % @agent-id))
+                                     (rf/dispatch [:resource-setup->set-agent-id %]))}]
 
-          (when-not is-creating?
-            [:> Button {:variant "ghost"
-                        :size "2"
-                        :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
-             [:> Plus {:size 16}]
-             "Create new Agent"])]]))))
+      (when-not is-creating?
+        [:> Button {:variant "ghost"
+                    :size "2"
+                    :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
+         [:> Plus {:size 16}]
+         "Create new Agent"])]]))
 
 (defn main []
   (r/with-let [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])

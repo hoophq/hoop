@@ -10,14 +10,12 @@
                   #js {:sensitivity "base" :numeric true}))
 
 (defn agent-options
-  "Select options for the agents, sorted by name and narrowed to names that
-  contain `search` (case-insensitive). The selected agent stays in the list,
-  so the select keeps showing it while a search hides the others."
-  [agents search selected-id]
+  "Options for the agents, sorted by name and narrowed to names that contain
+  `search` (case-insensitive)."
+  [agents search]
   (let [term (cs/lower-case (cs/trim (or search "")))]
     (->> agents
-         (filter #(or (= (:id %) selected-id)
-                      (cs/blank? term)
+         (filter #(or (cs/blank? term)
                       (cs/includes? (cs/lower-case (or (:name %) "")) term)))
          (sort-by :name compare-names)
          (mapv #(hash-map :value (:id %)

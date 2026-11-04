@@ -16,20 +16,15 @@
 
 (deftest sorts-by-name-case-insensitive-and-numeric
   (is (= [nil "agent2" "agent10" "Dev-br" "prod-eu" "prod-us"]
-         (texts (ao/agent-options agents "" nil)))))
+         (texts (ao/agent-options agents "")))))
 
 (deftest maps-to-select-options
   (is (= {:value "4" :text "agent2"}
-         (second (ao/agent-options agents nil nil)))))
+         (second (ao/agent-options agents nil)))))
 
 (deftest search-narrows-case-insensitive
   (is (= ["prod-eu" "prod-us"]
-         (texts (ao/agent-options agents "  PROD " nil)))))
+         (texts (ao/agent-options agents "  PROD ")))))
 
-(deftest selected-agent-stays-while-search-hides-it
-  (is (= ["Dev-br" "prod-eu" "prod-us"]
-         (texts (ao/agent-options agents "prod" "2")))))
-
-(deftest no-match-returns-only-the-selected-agent
-  (is (= [] (ao/agent-options agents "zzz" nil)))
-  (is (= ["agent10"] (texts (ao/agent-options agents "zzz" "3")))))
+(deftest no-match-returns-empty
+  (is (= [] (ao/agent-options agents "zzz"))))
