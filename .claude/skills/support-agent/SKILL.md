@@ -49,11 +49,13 @@ replies of step 5.
 
 1. **Answered:** a ticket labeled `agent:needs-info` or `agent:needs-customer`
    with a human reply newer than your last question. Look at its Linear
-   comments and at its Slack thread (the link attached to the ticket).
-2. **Reviewed:** a ticket labeled `agent:pr-open` whose PR has a review thread
-   or a red check left without your answer for an hour, or is still a draft
-   with CI green. The session that built it did not wake. Address it as
-   `build-ticket` autonomous mode says, then label it `agent:pr-open` again.
+   comments and at its Slack thread (the link attached to the ticket). You
+   post from the owner's account: a comment without the 🤖 header is a
+   person's, even from that account.
+2. **Reviewed:** a ticket labeled `agent:pr-open` whose PR has a review thread,
+   a red check or a merge conflict left without your answer for an hour. The
+   session that built it did not wake. Address it as `build-ticket` autonomous
+   mode says, then label it `agent:pr-open` again.
 3. **Asked for:** a ticket labeled `agent:go`, or a message in
    `HOOP_AGENT_SLACK_CHANNEL` that names a ticket ID and does not start with
    🤖. Add `agent:go` to that ticket.
