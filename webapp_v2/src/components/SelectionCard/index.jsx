@@ -7,11 +7,13 @@ import classes from './SelectionCard.module.css'
  * - icon:  lucide component at 20px (mutually exclusive with `image`)
  * - image: logo `src` for the same slot
  * - badge: node pinned to the trailing edge, e.g. a "Recommended" pill
+ * - squareIcon: a rounded square instead of a circle
  */
 function SelectionCard({
   icon: Icon,
   image,
   badge,
+  squareIcon,
   title,
   description,
   selected,
@@ -33,7 +35,7 @@ function SelectionCard({
             // A bordered icon is a pill, like ActionIcon: 100px caps at a circle.
             <ThemeIcon
               size="lg"
-              radius="100px"
+              radius={squareIcon ? 'md' : '100px'}
               variant="light"
               color="gray"
               className={classes.icon}

@@ -64,6 +64,7 @@ export function ConnectionMethodSection({
             key={id}
             icon={icon}
             image={image}
+            squareIcon
             title={title}
             description={description}
             selected={selectedMethod === id}
