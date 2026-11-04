@@ -50,6 +50,10 @@ func installAndActivateIf(target string, accept func(binary string) error) error
 	if err != nil {
 		return err
 	}
+	return installAndActivateIn(layout, target, accept)
+}
+
+func installAndActivateIn(layout upgrade.Layout, target string, accept func(binary string) error) error {
 	store, err := upgrade.LoadStore(layout)
 	if err != nil {
 		return err

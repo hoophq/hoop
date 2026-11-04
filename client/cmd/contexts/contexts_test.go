@@ -1,12 +1,14 @@
 package contexts
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/featureflag"
 )
 
@@ -56,5 +58,53 @@ func TestHasContextCommand(t *testing.T) {
 	newer := write("new", `[ "$1 $2" = "context --help" ] || exit 2; echo usage`)
 	if err := hasContextCommand(newer); err != nil {
 		t.Fatalf("a binary with `context` was refused: %v", err)
+	}
+}
+
+func TestBuildContextFlags(t *testing.T) {
+	home := t.TempDir()
+	s := clientconfig.NewContextStore(home)
+	set := func(api, grpcURL, key, ca string) {
+		apiURLFlag, grpcURLFlag, apiKeyFlag, tlsCAFlag = api, grpcURL, key, ca
+	}
+	t.Cleanup(func() { set("", "", "", "") })
+
+	set("https://dev.example.com/", "grpcs://dev.example.com:8443", "hpk_x", "")
+	ctx, err := buildContext(s, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx.ApiURL != "https://dev.example.com" || ctx.GrpcURL != "grpcs://dev.example.com:8443" || ctx.Token != "hpk_x" {
+		t.Fatalf("context = %+v", ctx)
+	}
+
+	caFile := filepath.Join(home, "ca.pem")
+	if err := os.WriteFile(caFile, []byte("CA"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	set("http://127.0.0.1:8009", "", "", caFile)
+	if ctx, err = buildContext(s, "dev"); err != nil || ctx.TlsCAB64Enc != base64.StdEncoding.EncodeToString([]byte("CA")) {
+		t.Fatalf("tls ca: %+v, %v", ctx, err)
+	}
+
+	for _, tc := range []struct{ name, api, grpcURL, key, ca string }{
+		{"grpc scheme as api url", "grpc://gw:9000", "", "", ""},
+		{"no scheme", "gw:8009", "", "", ""},
+		{"api key without prefix", "https://gw", "", "xapi-1", ""},
+		{"bad grpc url", "https://gw", "::bad", "", ""},
+		{"grpc url without api url", "", "grpc://gw:8010", "", ""},
+		{"missing ca file", "https://gw", "", "", filepath.Join(home, "missing.pem")},
+		{"copy with no current config", "", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set(tc.api, tc.grpcURL, tc.key, tc.ca)
+			if ctx, err := buildContext(s, "dev"); err == nil {
+				t.Fatalf("accepted: %+v", ctx)
+			}
+		})
+	}
+	set("https://gw", "", "", "")
+	if _, err := buildContext(s, "../x"); err == nil {
+		t.Fatal("accepted an invalid name")
 	}
 }

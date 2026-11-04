@@ -166,7 +166,11 @@ func (s *ContextStore) Remove(name string) error {
 		}
 		return err
 	}
-	if active, _ := s.activeName(); active == name {
+	active, err := s.activeName()
+	if err != nil {
+		return fmt.Errorf("context %s removed, but reading the active marker failed: %v", name, err)
+	}
+	if active == name {
 		if err := os.Remove(filepath.Join(s.dir, activeContextKey)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -194,14 +198,44 @@ func (s *ContextStore) Active() (string, error) {
 		return "", err
 	}
 	ctx, err := s.Get(name)
-	if err != nil {
+	if errors.Is(err, ErrContextNotFound) {
+		// the marker names a context that was removed by hand
 		return "", nil
 	}
+	if err != nil {
+		return "", err
+	}
 	current, err := s.ReadConfigFile()
-	if err != nil || current.ApiURL != ctx.ApiURL {
+	if err != nil {
+		return "", err
+	}
+	if current.ApiURL != ctx.ApiURL {
 		return "", nil
 	}
 	return name, nil
+}
+
+// Resolve returns a context as it is in use. For the active context that is
+// config.toml, which holds a login made after the last switch; for any other
+// context it is the context file.
+func (s *ContextStore) Resolve(name string) (*Context, error) {
+	ctx, err := s.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	active, err := s.Active()
+	if err != nil {
+		return nil, err
+	}
+	if active != name {
+		return ctx, nil
+	}
+	current, err := s.ReadConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	current.Name = name
+	return current, nil
 }
 
 // ReadConfigFile reads config.toml as stored, without the HOOP_* env overrides

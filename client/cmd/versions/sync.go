@@ -25,24 +25,27 @@ require any gateway configuration).`,
 	},
 }
 
-// SyncIf installs the CLI version the configured gateway reports, like
+// SyncIf installs the CLI version that the gateway in conf reports, like
 // `hoop versions sync`, but activates it only when accept returns nil for
 // the installed binary. Otherwise it returns a *NotActivatedError.
-func SyncIf(accept func(binary string) error) error { return runSyncIf(accept) }
+func SyncIf(conf *clientconfig.Config, accept func(binary string) error) error {
+	return syncWith(conf, accept)
+}
 
-func runSync() error { return runSyncIf(nil) }
+func runSync() error {
+	conf, err := clientconfig.GetClientConfig()
+	if err != nil {
+		return fmt.Errorf("%v; run `hoop login` first", err)
+	}
+	return syncWith(conf, nil)
+}
 
-func runSyncIf(accept func(binary string) error) error {
+func syncWith(conf *clientconfig.Config, accept func(binary string) error) error {
 	// The version-mismatch warning would otherwise fire right before
 	// the "Installing <new>..." banner we print below. Silence it for
 	// this process so the user only sees the upgrade story we're
 	// actually telling them.
 	upgrade.SuppressVersionWarning()
-
-	conf, err := clientconfig.GetClientConfig()
-	if err != nil {
-		return fmt.Errorf("%v; run `hoop login` first", err)
-	}
 
 	gw, err := upgrade.FetchGatewayInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 	if err != nil {
