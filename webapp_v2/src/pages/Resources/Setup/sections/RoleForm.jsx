@@ -4,6 +4,7 @@ import { useStore } from 'zustand'
 import { Trash2 } from 'lucide-react'
 import AttributesSelect from '@/components/AttributesSelect'
 import Button from '@/components/Button'
+import SetupDocsHint from '@/components/SetupDocsHint'
 import TextInput from '@/components/TextInput'
 import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
@@ -14,7 +15,6 @@ import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 import {
   ConnectionMethodSection,
   SecretsManagerProviderSection,
-  SetupDocsHint,
 } from '@/pages/Roles/Configure/components/ConnectionMethod'
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'

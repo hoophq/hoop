@@ -182,6 +182,8 @@ export default function HttpHeaders({
     if (last in currentSecrets) deleteSecret(last)
     else cancelSecretChange(last)
   }
+  // The only row is removable once saved; a blank row then takes its place.
+  const canRemove = allKeys.length > 1 || allKeys.at(-1) in currentSecrets
 
   return (
     <Stack gap="md">
@@ -251,7 +253,7 @@ export default function HttpHeaders({
           <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
             {addLabel}
           </Button>
-          {allKeys.length > 1 && (
+          {canRemove && (
             <Button variant="light" color="gray" onClick={removeLastRow}>
               Remove
             </Button>

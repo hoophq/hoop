@@ -168,6 +168,8 @@ export default function EnvironmentVariables({ connection, availableSources, hid
     if (last in currentSecrets) deleteSecret(last)
     else cancelSecretChange(last)
   }
+  // The only row is removable once saved; a blank row then takes its place.
+  const canRemove = allKeys.length > 1 || allKeys.at(-1) in currentSecrets
 
   return (
     <Stack gap="xl">
@@ -259,7 +261,7 @@ export default function EnvironmentVariables({ connection, availableSources, hid
           <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
             Add key/value
           </Button>
-          {allKeys.length > 1 && (
+          {canRemove && (
             <Button variant="light" color="gray" onClick={removeLastRow}>
               Remove
             </Button>

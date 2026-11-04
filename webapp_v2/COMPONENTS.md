@@ -139,6 +139,14 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 ```
 Props: `href` (string), `text` (string).
 
+### `SetupDocsHint`
+Inline "Learn more about `<topic>` setup in our Docs ↗" line under a setup choice, as the CLJS wizard shows it.
+```jsx
+import SetupDocsHint from '@/components/SetupDocsHint'
+
+<SetupDocsHint topic="HashiCorp Vault" href={docsUrl.setup.configuration.secretsManager} />
+```
+
 ### `MethodCard`
 Selectable card for picking an installation/deployment method (icon + label + description).
 ```jsx

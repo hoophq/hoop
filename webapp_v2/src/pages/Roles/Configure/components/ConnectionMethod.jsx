@@ -1,7 +1,8 @@
-import { Anchor, Group, Stack, Text, Title } from '@mantine/core'
+import { Stack, Title } from '@mantine/core'
 import { FileSpreadsheet, GlobeLock, Fingerprint } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
+import SetupDocsHint from '@/components/SetupDocsHint'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { docsUrl } from '@/utils/docsUrl'
 import { SOURCES, SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
@@ -72,17 +73,6 @@ export function ConnectionMethodSection({
         ))}
       </Stack>
     </Stack>
-  )
-}
-
-export function SetupDocsHint({ topic, href }) {
-  return (
-    <Group gap={4} wrap="nowrap">
-      <Text size="sm" c="dimmed">{`Learn more about ${topic} setup in`}</Text>
-      <Anchor size="sm" href={href} target="_blank" rel="noopener noreferrer">
-        our Docs ↗
-      </Anchor>
-    </Group>
   )
 }
 
