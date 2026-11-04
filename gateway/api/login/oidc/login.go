@@ -266,9 +266,9 @@ func (h *handler) LoginCallback(c *gin.Context) {
 				c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 				return
 			}
-			if isNewUser {
-				ctx = reloadSignupContext(ctx, uinfo.Subject)
-			}
+			// ctx was loaded before the registration: reload it so the
+			// analytics below carry the user's org, subject and mode.
+			ctx = reloadSignupContext(ctx, uinfo.Subject)
 		}
 
 		h.analyticsTrack(isNewUser, userAgent, ctx)
@@ -385,7 +385,10 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 		if err := models.UpdateUser(iuser); err != nil {
 			return false, fmt.Errorf("failed updating invited user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
 		}
-		return true, nil
+		// Not a new sign-up: the invite (POST /api/users) already sent
+		// hoop-signup. The first sign-in is a login, as on a single-tenant
+		// gateway.
+		return false, nil
 	}
 	// If the user is inactive, they can not login in the system
 	// until an admin changes their status to active
@@ -555,8 +558,8 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	if newAnalytics == nil {
 		newAnalytics = analytics.New
 	}
-	trackClient := newAnalytics()
 	if !isNewUser {
+		trackClient := newAnalytics()
 		trackClient.Track(ctx.UserSubject, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
@@ -566,10 +569,19 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		trackClient.Close()
 		return
 	}
-	// A new org is not in the analytics mode cache yet: pass its stored mode
-	// so Identify honours it instead of falling back to anonymous.
-	analytics.SetMode(ctx.OrgID, ctx.OrgAnalyticsMode)
-	trackClient.Identify(&types.APIContext{
+	// Without an org the per-org analytics mode cannot be checked: send
+	// nothing rather than an event that belongs to no org.
+	if ctx.OrgID == "" {
+		log.Warnf("skipping signup analytics, no organization for subject=%s", ctx.UserSubject)
+		return
+	}
+	// The org's stored mode decides, not the mode cache: a new org is not in
+	// the cache yet, and a disabled org must send nothing.
+	if ctx.OrgAnalyticsMode == models.AnalyticsModeDisabled {
+		return
+	}
+	identifyClient := newAnalytics()
+	identifyClient.Identify(&types.APIContext{
 		OrgID:            ctx.OrgID,
 		OrgLicenseData:   &ctx.OrgLicenseData,
 		OrgAnalyticsMode: ctx.OrgAnalyticsMode,
@@ -577,17 +589,22 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		UserEmail:        ctx.UserEmail,
 		UserName:         ctx.UserName,
 	})
+	// Close flushes the Identify now, so a restart during the wait below
+	// does not lose it.
+	identifyClient.Close()
+	delay := signupTrackDelay
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
-		time.Sleep(signupTrackDelay)
-		trackClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
+		time.Sleep(delay)
+		// A client of its own: a closed client drops what it is given.
+		signupClient := newAnalytics()
+		signupClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 		})
-		// Close only after the Track: a closed client drops what it is given.
-		trackClient.Close()
+		signupClient.Close()
 	}()
 }
 
