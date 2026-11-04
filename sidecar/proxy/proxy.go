@@ -623,7 +623,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 
 	identity := base
 	var requestIdentity gate.RequestIdentity
-	if s.cfg.CredentialHeader != "" {
+	switch {
+	case s.cfg.CredentialHeader != "":
 		requestIdentity = s.requestIdentity(base)
 		// Before session.New on purpose: the gate writes session_start
 		// from the identity it is handed, so a first caller learned later
@@ -650,6 +651,13 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		} else {
 			s.log.Debug("first request's credential did not resolve", "peer", base.PeerAddr, "error", rerr)
 		}
+	case s.cfg.RequestIdentity != nil:
+		// A frame lane: the codec lifts the credential from the frame that
+		// carries it (an mssql LOGIN7), which comes after a handshake the
+		// relay has to forward first, so there is nothing to peek here. The
+		// session opens as the connection and the gate rotates it to the
+		// named caller when the login frame is decoded.
+		requestIdentity = s.requestIdentity(base)
 	}
 
 	sess := session.New(s.cfg.Protocol, identity)

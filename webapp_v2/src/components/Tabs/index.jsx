@@ -2,8 +2,8 @@ import { Tabs as MantineTabs } from '@mantine/core'
 import classes from './Tabs.module.css'
 
 /**
- * Tabs wrapper. Pure passthrough to Mantine, plus a one-line override to make
- * the hover background visible (see Tabs.module.css for the rationale).
+ * Tabs wrapper. Passthrough to Mantine with a visible hover background, the
+ * app's border color under the list, and a medium-weight active tab.
  *
  * Usage:
  *   <Tabs value={tab} onChange={setTab}>
@@ -13,9 +13,10 @@ import classes from './Tabs.module.css'
  *     <Tabs.Panel value="one" pt="md">...</Tabs.Panel>
  *   </Tabs>
  */
-function Tabs({ classNames = {}, ...props }) {
-  const merged = { root: classes.root, ...classNames }
-  return <MantineTabs classNames={merged} {...props} />
+function Tabs({ classNames = {}, unstyled, ...props }) {
+  // Unstyled tabs (the /resources heading tabs) own their look.
+  const merged = { root: classes.root, ...(unstyled ? {} : { tab: classes.tab }), ...classNames }
+  return <MantineTabs classNames={merged} unstyled={unstyled} {...props} />
 }
 
 Tabs.List = MantineTabs.List

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Box, ActionIcon, CopyButton } from '@mantine/core'
 import { Copy, Check } from 'lucide-react'
+import Tooltip from '@/components/Tooltip'
 import { useUserStore } from '@/stores/useUserStore'
 import classes from './CodeSnippet.module.css'
 
@@ -31,14 +32,19 @@ function CodeSnippet({ code, variant = 'black' }) {
         >
           <CopyButton value={code} timeout={2000}>
             {({ copied, copy }) => (
-              <ActionIcon
-                variant="subtle"
-                color={copied ? 'teal' : 'gray'}
-                size="sm"
-                onClick={copy}
-              >
-                {copied ? <Check size={13} /> : <Copy size={13} />}
-              </ActionIcon>
+              <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                <ActionIcon
+                  variant="subtle"
+                  color={copied ? 'teal' : 'gray'}
+                  size="sm"
+                  onClick={copy}
+                  aria-label={copied ? 'Copied' : 'Copy'}
+                  className={classes.copyIcon}
+                  data-copied={copied || undefined}
+                >
+                  {copied ? <Check size={13} /> : <Copy size={13} />}
+                </ActionIcon>
+              </Tooltip>
             )}
           </CopyButton>
         </Box>

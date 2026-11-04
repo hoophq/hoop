@@ -8,34 +8,34 @@
   gap: var(--mantine-spacing-xs);
   padding: 0 var(--mantine-spacing-sm);
   min-height: var(--hoop-control-height-md);
-  background: var(--mantine-color-gray-0);
+  background: var(--mantine-color-white);
   color: var(--mantine-color-text);
-  border: 1px solid var(--mantine-color-gray-4);
+  border: 1px solid var(--mantine-color-gray-2);
   border-right: 0;
-  border-top-left-radius: var(--mantine-radius-sm);
-  border-bottom-left-radius: var(--mantine-radius-sm);
+  border-top-left-radius: var(--mantine-radius-md);
+  border-bottom-left-radius: var(--mantine-radius-md);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  font-size: var(--mantine-font-size-md);
+  font-size: var(--mantine-font-size-sm);
   transition: background-color 100ms ease, border-color 100ms ease;
 }
 
 .pickerSibling[data-size='sm'] {
   min-height: var(--hoop-control-height-sm);
   padding: 0 var(--mantine-spacing-xs);
-  font-size: var(--mantine-font-size-sm);
+  font-size: var(--mantine-font-size-xs);
 }
 
 .pickerSibling[data-size='lg'] {
   min-height: var(--hoop-control-height-lg);
   padding: 0 var(--mantine-spacing-md);
-  font-size: var(--mantine-font-size-lg);
+  font-size: var(--mantine-font-size-md);
 }
 
 .pickerSibling:hover {
-  background: var(--mantine-color-gray-1);
-  border-color: var(--mantine-color-gray-5);
+  background: var(--mantine-color-gray-0);
+  border-color: var(--mantine-color-gray-3);
 }
 
 .pickerSibling:focus-visible {

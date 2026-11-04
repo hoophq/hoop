@@ -1533,3 +1533,83 @@ func TestMalformedOracleTrafficIsDeniedNotForwarded(t *testing.T) {
 		})
 	}
 }
+
+// decliningReframer stops masking on its first pass and says why, the way
+// the mssql codec does on an unmeasurable column.
+type decliningReframer struct{ closeDelimitedCodec }
+
+func (*decliningReframer) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*decliningReframer) Rewrite(data []byte, _ func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{Declined: "column 0 has type 0x62, which this codec cannot measure"}, nil
+}
+
+// A codec that stops masking reports it once; the gate records it as an
+// activity row. On a lane that refuses to run unrecorded, a sink that
+// cannot take that row refuses the response: the values after it would
+// travel unmasked with nothing in the trail saying so.
+func TestMaskingDeclineIsAuditedAndRefusedWhenTheSinkFails(t *testing.T) {
+	for _, failClosed := range []bool{false, true} {
+		sink := &recordingSink{failOn: audit.KindActivity}
+		g, err := gate.New(newSession(), gate.Config{
+			Protocol:         inspect.Postgres,
+			Audit:            sink,
+			Masker:           stubMasker{find: "x", replace: "y"},
+			FailOnAuditError: failClosed,
+			CodecFactory:     func() inspect.Codec { return &decliningReframer{} },
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		d := g.Response(context.Background(), []byte("rows"))
+		if d.Allowed == failClosed {
+			t.Errorf("FailOnAuditError=%v: Allowed=%v", failClosed, d.Allowed)
+		}
+		if failClosed && (d.Rule != "audit" || d.Err == nil) {
+			t.Errorf("refusal rule = %q err = %v, want audit with the sink's error", d.Rule, d.Err)
+		}
+	}
+
+	// The refusal keeps what the codec already handed the client. A
+	// response in flight goes out as rebuilt with no deny frame inside it;
+	// one not yet started keeps the whole responses before it as
+	// Preceding, so the client does not read the deny frame as their
+	// answer.
+	for _, started := range []bool{true, false} {
+		sink := &recordingSink{failOn: audit.KindActivity}
+		codec := &decliningReframer{}
+		codec.started = started
+		g, _ := gate.New(newSession(), gate.Config{
+			Protocol:         inspect.Postgres,
+			Audit:            sink,
+			Masker:           stubMasker{find: "x", replace: "y"},
+			FailOnAuditError: true,
+			CodecFactory:     func() inspect.Codec { return codec },
+		})
+		d := g.Response(context.Background(), []byte("rows"))
+		if d.Allowed {
+			t.Fatalf("started=%v: allowed", started)
+		}
+		switch {
+		case started && (!d.NoFrame || string(d.Payload) != "rows"):
+			t.Errorf("started response: NoFrame=%v Payload=%q, want the bytes and no frame", d.NoFrame, d.Payload)
+		case !started && (d.NoFrame || string(d.Preceding) != "rows" || d.Payload != nil):
+			t.Errorf("unstarted response: NoFrame=%v Preceding=%q Payload=%q, want the bytes as Preceding", d.NoFrame, d.Preceding, d.Payload)
+		}
+	}
+
+	// And with a working sink the row is there, with the reason.
+	sink := &recordingSink{}
+	g, _ := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		Audit:        sink,
+		Masker:       stubMasker{find: "x", replace: "y"},
+		CodecFactory: func() inspect.Codec { return &decliningReframer{} },
+	})
+	if d := g.Response(context.Background(), []byte("rows")); !d.Allowed {
+		t.Fatalf("response refused with a working sink: %+v", d)
+	}
+	ev := sink.find(audit.KindActivity)
+	if ev == nil || ev.Metadata[audit.MetadataActivity] != "masking_declined" || !strings.Contains(ev.Metadata["reason"], "0x62") {
+		t.Fatalf("activity row = %+v, want masking_declined with the reason", ev)
+	}
+}

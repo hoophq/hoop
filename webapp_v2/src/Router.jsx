@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-do
 import NotImplemented from '@/components/NotImplemented'
 import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
+import ByResourceSetup from '@/modes/ByResourceSetup'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { RULE_KIND_ANALYZER } from '@/utils/ruleTraffic'
 
@@ -18,6 +19,8 @@ import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
 import Resources from '@/pages/Resources'
+import ConfigureResource from '@/pages/Resources/Configure'
+import ResourceSetup from '@/pages/Resources/Setup'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -203,13 +206,36 @@ function Router() {
         }
       />
 
-      {/* The CLJS :resources panel stays until ENG-922, so a rollback is
-          reverting this route. */}
+      {/* The CLJS :resources and :configure-resource panels stay until ENG-922,
+          so a rollback is reverting these routes. */}
       <Route
         path="/resources"
         element={
           <Page>
             <Resources />
+          </Page>
+        }
+      />
+      {/* Families not ported yet keep the CLJS :resource-setup-new panel. */}
+      <Route
+        path="/resources/new"
+        element={
+          <ByResourceSetup
+            react={
+              <Page adminOnly>
+                <ResourceSetup />
+              </Page>
+            }
+            cljs={CatchAll}
+          />
+        }
+      />
+
+      <Route
+        path="/resources/configure/:resourceName"
+        element={
+          <Page adminOnly>
+            <ConfigureResource />
           </Page>
         }
       />

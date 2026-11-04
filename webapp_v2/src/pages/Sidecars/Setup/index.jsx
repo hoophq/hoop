@@ -11,7 +11,8 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
-import NameStep from './sections/NameStep'
+import { sidecarImage } from './image'
+import ConnectStep from './sections/ConnectStep'
 import WaitingStep from './sections/WaitingStep'
 
 const LIST_PATH = '/sidecars'
@@ -27,7 +28,7 @@ const COPY = {
   },
   create: {
     title: 'Create and deploy a new Sidecar',
-    subtitle: 'Deploy a new sidecar with Docker or Kubernetes, then point it at Hoop.',
+    subtitle: 'Deploy a new sidecar with Kubernetes, Docker or the CLI, then point it at Hoop.',
     steps: ['Deploy', 'Configure', 'Overview'],
   },
 }
@@ -42,6 +43,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const copy = COPY[mode] ?? COPY.connect
   const navigate = useNavigate()
   const apiUrl = useUserStore((s) => s.apiUrl)
+  const gatewayVersion = useUserStore((s) => s.gatewayVersion)
   const { createSidecar, deleteSidecar } = useSidecarStore()
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
@@ -168,7 +170,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
             ))}
           </Stepper>
         </Stack>
-        <Button onClick={action.onClick} disabled={action.disabled} loading={action.loading} flex="0 0 auto">
+        <Button size="sm" onClick={action.onClick} disabled={action.disabled} loading={action.loading} flex="0 0 auto">
           {action.label}
         </Button>
       </Group>
@@ -188,11 +190,12 @@ export default function SidecarSetup({ mode = 'connect' }) {
       )}
 
       {step <= 1 && (
-        <NameStep
+        <ConnectStep
           mode={mode}
           sidecar={sidecar}
           token={token}
           controlPlaneUrl={apiUrl || window.location.origin}
+          imageRef={sidecarImage(gatewayVersion)}
           creating={creating}
           error={createError}
           onCreate={handleCreate}

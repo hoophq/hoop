@@ -109,7 +109,48 @@ docker compose "${CF[@]}" exec sqlclient sqlcmd \
   -S mssql.hoop.test,1433 -U appuser -P 'App!Passw0rd' -Ns -d appdb \
   -Q "DELETE FROM customers WHERE id = 1"
 # Msg 50000 ... destructive statements are not permitted on mssqldb
+
+# A stored procedure is judged by its name, not by what its body does. The
+# relay cannot see into the catalog, so `EXEC` is `unknown` to the operation
+# rule above; the procedure rule names it.
+docker compose "${CF[@]}" exec sqlclient sqlcmd \
+  -S mssql.hoop.test,1433 -U appuser -P 'App!Passw0rd' -Ns -d appdb \
+  -Q "EXEC dbo.get_secrets"
+# Msg 50000 ... this procedure is not callable through mssqldb
+
+# Any other procedure runs, is recorded as `EXEC dbo.get_customers` with
+# mssql.proc, and its result set is masked like a query's.
+docker compose "${CF[@]}" exec sqlclient sqlcmd \
+  -S mssql.hoop.test,1433 -U appuser -P 'App!Passw0rd' -Ns -d appdb \
+  -Q "EXEC dbo.get_customers"
+# ... [REDACTED:EMAIL_ADDRESS] ... ***-**-6789
+
+# An OUTPUT parameter comes back as a RETURNVALUE token. It used to stop
+# masking for the rest of the connection; now it is measured, and masked
+# under its own name when a rule names it.
+docker compose "${CF[@]}" exec sqlclient sqlcmd \
+  -S mssql.hoop.test,1433 -U appuser -P 'App!Passw0rd' -Ns -d appdb \
+  -Q "DECLARE @n INT; EXEC dbo.count_customers @n OUTPUT; SELECT @n; SELECT email FROM customers"
+# 2, then [REDACTED:EMAIL_ADDRESS] twice
 ```
+
+sqlcmd sends batches. A driver that prepares (JDBC, ODBC through pyodbc,
+.NET) sends `sp_prepexec` then `sp_execute` with an integer handle; the relay
+reads the handle out of the prepare's reply and judges every execute as the
+SQL it runs, so the DELETE rule reaches a prepared DELETE too. The audit row
+carries `mssql.proc: sp_execute` and `mssql.handle`.
+
+The trail, from the sidecar's stdout:
+
+```bash
+docker compose "${CF[@]}" logs hoop-inspect | ./sidecar/read-audit.py
+```
+
+Every row of the session carries `principal: appuser`. Envoy hands the relay
+the TDS 8.0 session in the clear, LOGIN7 included, and the relay names the
+session for the SQL login it read; the `LOGIN` row has the client's host,
+application and driver. The Kerberos session below stays `anonymous`: the
+name is inside the ticket, which the relay forwards and cannot read.
 
 ## Verified
 
@@ -128,6 +169,13 @@ docker compose "${CF[@]}" exec sqlclient sqlcmd \
 - Responses are masked: the entity rule redacts the email, the column rule
   catches the SSN that detection refuses as a fixture, and an `NVARCHAR(MAX)`
   column is masked through its PLP encoding.
+
+By hand, above:
+
+- `EXEC dbo.get_secrets` is refused by the `procedure` rule, as a batch and
+  as an RPC call by name; `EXEC dbo.get_customers` runs masked.
+- An OUTPUT parameter does not end masking for the connection.
+- A SQL-authenticated session is named for its login on every audit row.
 
 ## The gap: SQL Server refuses the AD login
 

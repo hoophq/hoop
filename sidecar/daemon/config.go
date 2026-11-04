@@ -1726,7 +1726,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	if isSpanner(lc) && anySQLDerived(localRules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has operation/table rule(s) on a spanner listener but "+
+			"%s: has operation/table/procedure rule(s) on a spanner listener but "+
 				"grpc.capture_payload is not set, so rules would only ever see "+
 				"the generic RPC statement and never the extracted SQL; add a "+
 				"\"grpc\" block with capture_payload: true and descriptors", name))
@@ -1877,7 +1877,7 @@ func anyPII(rules []policy.Rule) bool {
 func anySQLDerived(rules []policy.Rule) bool {
 	for _, r := range rules {
 		switch r.Type {
-		case policy.MatchOperation, policy.MatchTable:
+		case policy.MatchOperation, policy.MatchTable, policy.MatchProcedure:
 			return true
 		}
 	}

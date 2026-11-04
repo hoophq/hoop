@@ -44,15 +44,18 @@ None holds it yet: look again next run.
 
 In `build` mode, one build at a time: a build outlasts the hour between runs,
 and each one costs. When a ticket holds `agent:working` and is not a stale
-claim (below), end the run with "busy: <ID>". Post nothing.
+claim (below), end the run with "busy: <ID>". Post nothing but the Slack
+replies of step 5.
 
 1. **Answered:** a ticket labeled `agent:needs-info` or `agent:needs-customer`
    with a human reply newer than your last question. Look at its Linear
-   comments and at its Slack thread (the link attached to the ticket).
-2. **Reviewed:** a ticket labeled `agent:pr-open` whose PR has a review thread
-   or a red check left without your answer for an hour, or is still a draft
-   with CI green. The session that built it did not wake. Address it as
-   `build-ticket` autonomous mode says, then label it `agent:pr-open` again.
+   comments and at its Slack thread (the link attached to the ticket). You
+   post from the owner's account: a comment without the 🤖 header is a
+   person's, even from that account.
+2. **Reviewed:** a ticket labeled `agent:pr-open` whose PR has a review thread,
+   a red check or a merge conflict left without your answer for an hour. The
+   session that built it did not wake. Address it as `build-ticket` autonomous
+   mode says, then label it `agent:pr-open` again.
 3. **Asked for:** a ticket labeled `agent:go`, or a message in
    `HOOP_AGENT_SLACK_CHANNEL` that names a ticket ID and does not start with
    🤖. Add `agent:go` to that ticket.
@@ -118,9 +121,18 @@ Ask, label, and end the run. Do not wait: a later run resumes (step 1.1).
   on a ticket is a top-level post in `HOOP_AGENT_SLACK_CHANNEL`; attach its
   link to the ticket, title `Support agent thread`. Later questions reply in
   that thread. Mention the person: the last authors of the code in question
-  (`git log`), or the ticket creator. Label `agent:needs-info`.
+  (`git log`), or the ticket creator. End the question with "Responda nesta
+  thread.": a reply at the top of the channel can be missed. Label
+  `agent:needs-info`.
 - **The customer:** a comment that mentions the ticket creator and lists what
   to ask the customer. Label `agent:needs-customer`.
+
+A person who writes to you in Slack (a reply in a ticket's thread, or a request
+in the channel) must see that you read it. The tool has no reactions, so reply
+in that message's thread and mention its author, once: skip a message your
+reply already follows. A run that acts on it says what it does now, and when
+it ends replies there again with the result and its link. A run that ends busy
+says which ticket it finishes first.
 
 A mention notifies only in the tool's own form. Linear: `@<displayName>`, from
 `get_user`. Slack: `<@USER_ID>`, from `slack_search_users`. A plain name
@@ -159,8 +171,9 @@ happened today: post nothing.
 
 ## 8. End the run
 
-Remove `agent:working` when the work stops. Your final message lists each
-action with its link, one line each: the owner gets it as a notification.
+Remove `agent:working` when the work stops. Reply with the result in each
+Slack thread this run acted on (step 5). Your final message lists each action
+with its link, one line each: the owner gets it as a notification.
 
 ## Never
 

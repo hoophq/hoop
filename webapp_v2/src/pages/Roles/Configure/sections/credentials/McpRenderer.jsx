@@ -12,7 +12,7 @@ import {
   decodeSecretValue,
   encodeSecretValue,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { connectionsService } from '@/services/connections'
 import { showSnackbar } from '@/utils/snackbar'
 
@@ -75,10 +75,10 @@ export default function McpRenderer({
   forceNewState,
   hideRoleInfo,
 }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
 
   // Auth-flow-only inputs — never persisted as connection env vars.
   const [clientId, setClientId] = useState('')

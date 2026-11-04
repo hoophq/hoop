@@ -112,6 +112,7 @@ func TestEveryRuleTypeFormBuildsAValidRule(t *testing.T) {
 		policy.MatchPattern:      {"pattern": `(?i)password`},
 		policy.MatchOperation:    {"operations": "delete"},
 		policy.MatchTable:        {"tables": "customers"},
+		policy.MatchProcedure:    {"procedures": "get_secrets"},
 		policy.MatchPII:          {"entities": "EMAIL_ADDRESS"},
 		policy.MatchHTTPResource: {"resources": "/admin/*", "methods": "DELETE"},
 		policy.MatchHTTPStatus:   {"statuses": "5xx"},

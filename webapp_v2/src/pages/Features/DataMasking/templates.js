@@ -31,6 +31,8 @@ export const MASKING_TEMPLATES = [
   {
     id: 'prod-mask-pii-developer-access',
     title: 'Mask PII for developer access',
+    cardDescription:
+      'Masks names, emails, phone numbers, and addresses in production query results.',
     rule: {
       name: 'prod-mask-pii-developer-access',
       description:
@@ -50,6 +52,8 @@ export const MASKING_TEMPLATES = [
   {
     id: 'support-mask-sensitive-customer-data',
     title: 'Mask sensitive customer data',
+    cardDescription:
+      'Masks PII, government IDs, and financial data in support-team account lookups.',
     rule: {
       name: 'support-mask-sensitive-customer-data',
       description:
@@ -80,6 +84,8 @@ export const MASKING_TEMPLATES = [
   {
     id: 'contractor-mask-all-sensitive-data',
     title: 'Mask all sensitive data',
+    cardDescription:
+      'Maximum masking coverage for external contractors: PII, government IDs, financial and medical data.',
     rule: {
       name: 'contractor-mask-all-sensitive-data',
       description:

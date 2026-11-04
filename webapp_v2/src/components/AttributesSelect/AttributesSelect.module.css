@@ -2,17 +2,17 @@
    (instance props override the global Pill theme). Only the pieces the
    props can't reach live here. */
 .managedPill {
-  color: var(--mantine-color-indigo-9);
+  color: var(--mantine-color-indigo-7);
 }
 
 .managedPill svg {
-  color: var(--mantine-color-indigo-9);
+  color: var(--mantine-color-indigo-7);
 }
 
 .managedPill button {
-  color: var(--mantine-color-indigo-9);
+  color: var(--mantine-color-indigo-7);
 }
 
 .managedOption {
-  color: var(--mantine-color-indigo-9);
+  color: var(--mantine-color-indigo-7);
 }
