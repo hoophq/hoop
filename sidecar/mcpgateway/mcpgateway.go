@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/mcpproxy/audit"
@@ -530,20 +531,34 @@ func toolCallParams(params json.RawMessage) (string, json.RawMessage, error) {
 	if err := json.Unmarshal(params, &fields); err != nil {
 		return "", nil, errors.New("params are not an object")
 	}
-	keys := make([]string, 0, len(fields))
+	seen := make(map[string]string, len(fields))
 	for k := range fields {
-		for _, prev := range keys {
-			if strings.EqualFold(prev, k) {
-				return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
-			}
+		f := foldKey(k)
+		if prev, dup := seen[f]; dup {
+			return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
 		}
-		keys = append(keys, k)
+		seen[f] = k
 	}
 	var name string
 	if err := json.Unmarshal(fields["name"], &name); err != nil || name == "" {
 		return "", nil, errors.New("a tool name is required")
 	}
 	return name, fields["arguments"], nil
+}
+
+// foldKey maps s to one member of its case-fold class: two strings are equal
+// under strings.EqualFold, as Go's JSON decoder matches keys, exactly when
+// their foldKeys are equal.
+func foldKey(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		low := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			low = min(low, f)
+		}
+		b.WriteRune(low)
+	}
+	return b.String()
 }
 
 // hideTools drops from a tools/list result every tool ls hides, keeping the

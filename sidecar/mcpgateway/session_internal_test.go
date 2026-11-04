@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/mcpproxy/audit"
@@ -190,5 +192,40 @@ func TestASlowSessionOpenStallsNothingElse(t *testing.T) {
 	}
 	if n := closed.Load(); n != 2 {
 		t.Errorf("closed %d sidecar sessions, want 2 (fast by the reload, slow after its open)", n)
+	}
+}
+
+// foldKey agrees with strings.EqualFold, the match Go's JSON decoder uses for
+// keys, on every rune of the basic plane and on the keys an attacker would try.
+func TestFoldKeyAgreesWithEqualFold(t *testing.T) {
+	for r := rune(0); r <= 0xFFFF; r++ {
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if foldKey(string(r)) != foldKey(string(f)) {
+				t.Fatalf("%U and %U fold together but foldKey differs", r, f)
+			}
+		}
+	}
+	for _, c := range [][2]string{{"arguments", "argumentſ"}, {"kind", "\u212Aind"}, {"name", "NAME"}, {"name", "names"}, {"ß", "ss"}} {
+		if (foldKey(c[0]) == foldKey(c[1])) != strings.EqualFold(c[0], c[1]) {
+			t.Errorf("%q, %q: foldKey and EqualFold disagree", c[0], c[1])
+		}
+	}
+}
+
+// The duplicate-key check is linear: params with many keys, as a 16 MiB body
+// allows, are read in well under a second.
+func TestToolCallParamsWithManyKeysIsFast(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"name":"echo"`)
+	for i := range 200000 {
+		fmt.Fprintf(&b, `,"k%d":0`, i)
+	}
+	b.WriteString("}")
+	start := time.Now()
+	if _, _, err := toolCallParams(json.RawMessage(b.String())); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("200000 keys took %v", d)
 	}
 }
