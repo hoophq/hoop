@@ -1,0 +1,9 @@
+.actionCard {
+  display: block;
+  width: 100%;
+  border-radius: var(--mantine-radius-md);
+}
+
+.actionCard:hover {
+  background-color: var(--mantine-color-gray-1);
+}

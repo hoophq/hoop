@@ -1,5 +1,8 @@
+import { useId } from 'react'
 import { Group, Stack, Text } from '@mantine/core'
+import { CircleHelp } from 'lucide-react'
 import TextInput from '@/components/TextInput'
+import Tooltip from '@/components/Tooltip'
 import PasswordInput from '@/components/PasswordInput'
 import Textarea from '@/components/Textarea'
 import Select from '@/components/Select'
@@ -34,6 +37,7 @@ export default function SourcedInput({
   rightSectionPointerEvents,
   size = 'md',
   minRows,
+  tooltip,
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput
   const showSourceMenu = Array.isArray(sources) && sources.length > 1
@@ -42,12 +46,13 @@ export default function SourcedInput({
   // pasted service-account JSON). The wrapper's autosize default caps
   // at 6 rows, so the max is raised alongside the min.
   const textareaSizing = minRows ? { minRows, maxRows: minRows } : {}
+  const id = useId()
 
-  const labelNode = label ? <FieldLabel label={label} required={required} /> : null
+  const labelNode = label ? <FieldLabel htmlFor={id} label={label} required={required} tooltip={tooltip} /> : null
 
   if (isTextarea) {
     return (
-      <Stack gap={4}>
+      <Stack gap="var(--input-label-gap, var(--mantine-spacing-xsAlt))">
         {labelNode}
         {showSourceMenu && (
           <Select
@@ -61,6 +66,7 @@ export default function SourcedInput({
           />
         )}
         <Textarea
+          id={id}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange?.(e.currentTarget.value)}
@@ -75,7 +81,7 @@ export default function SourcedInput({
   }
 
   return (
-    <Stack gap={4}>
+    <Stack gap="var(--input-label-gap, var(--mantine-spacing-xsAlt))">
       {labelNode}
       <Group gap={0} wrap="nowrap" align="stretch">
         {showSourceMenu && (
@@ -89,6 +95,7 @@ export default function SourcedInput({
           />
         )}
         <Input
+          id={id}
           flex={1}
           placeholder={placeholder}
           value={value}
@@ -107,16 +114,25 @@ export default function SourcedInput({
   )
 }
 
-function FieldLabel({ label, required }) {
+// Follows the Mantine input label, so a page that resizes those (the resource
+// setup wizard) resizes these too.
+const LABEL_SIZE = 'var(--input-label-size, var(--mantine-font-size-sm))'
+
+function FieldLabel({ htmlFor, label, required, tooltip }) {
   return (
     <Group gap={4}>
-      <Text size="sm" fw={500}>
+      <Text component="label" htmlFor={htmlFor} fz={LABEL_SIZE} fw={700}>
         {label}
       </Text>
       {required && (
-        <Text size="sm" c="red">
+        <Text fz={LABEL_SIZE} c="red">
           *
         </Text>
+      )}
+      {tooltip && (
+        <Tooltip label={tooltip} multiline maw={320}>
+          <CircleHelp size={14} aria-label={tooltip} />
+        </Tooltip>
       )}
     </Group>
   )

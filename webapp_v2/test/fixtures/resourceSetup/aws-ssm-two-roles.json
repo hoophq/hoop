@@ -1,0 +1,59 @@
+{
+  "name": "ssm",
+  "type": "custom",
+  "subtype": "aws-ssm",
+  "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "ssm-ops",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "aws-ssm.sh"
+      ],
+      "type": "custom",
+      "secret": {
+        "envvar:AWS_ACCESS_KEY_ID": "QUtJQTE=",
+        "envvar:AWS_SECRET_ACCESS_KEY": "czE=",
+        "envvar:AWS_REGION": "dXMtZWFzdC0x",
+        "envvar:INSTANCE_ID": "aS0xMjM="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "aws-ssm"
+    },
+    {
+      "name": "ssm-ro",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "aws-ssm.sh"
+      ],
+      "type": "custom",
+      "secret": {
+        "envvar:AWS_ACCESS_KEY_ID": "QUtJQTI=",
+        "envvar:AWS_SECRET_ACCESS_KEY": "czI=",
+        "envvar:AWS_REGION": "dXMtd2VzdC0y",
+        "envvar:INSTANCE_ID": "aS00NTY="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "aws-ssm"
+    }
+  ]
+}

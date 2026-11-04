@@ -16,7 +16,7 @@ import {
   PLACEHOLDER_KEY_RE,
   SOURCES,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 
 // Free-form env-var editor. Values round-trip plaintext from the
@@ -125,14 +125,14 @@ function EnvvarRow({
 }
 
 export default function EnvironmentVariables({ connection, availableSources, hideRoleInfo }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
-  const renames = useConfigureRoleStore((s) => s.renames)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
-  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const fieldSources = useCredentialsStore((s) => s.fieldSources)
+  const renames = useCredentialsStore((s) => s.renames)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const renameSecret = useCredentialsStore((s) => s.renameSecret)
+  const setFieldSource = useCredentialsStore((s) => s.setFieldSource)
 
   // When the parent runs in Secrets Manager mode it passes
   // [provider, manual-input] as availableSources. The provider is the
