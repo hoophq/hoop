@@ -34,7 +34,7 @@ func assertNoEnvField(t *testing.T, typ reflect.Type, path string, seen map[refl
 			continue
 		}
 		name := strings.ToLower(f.Name + " " + tag)
-		if strings.Contains(name, "envvar") || strings.Contains(name, "env_var") {
+		if strings.Contains(name, "env") || strings.Contains(name, "secret") {
 			t.Errorf("%s.%s exposes env vars in the API", path, f.Name)
 		}
 		assertNoEnvField(t, f.Type, path+"."+f.Name, seen)
