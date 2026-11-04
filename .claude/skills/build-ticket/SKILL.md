@@ -75,8 +75,14 @@ schedule and no person reads the session. Then:
   review comments (Qodo, reviewers) wake this session after the run ends. On
   each wake: fix a red check this PR caused and push; verify each review
   finding, then fix and push it or reply why not; reply on each thread you
-  addressed and resolve it. Each reply starts with `Support agent (AI):`.
-  Never merge it. Unsubscribe when it is merged or closed.
+  addressed and resolve it. Never merge it. Unsubscribe when it is merged or
+  closed.
+- Every comment you post on GitHub starts with `Support agent (AI):`. You post
+  from the owner's account, so a comment from that account without the prefix
+  is the owner's: a request to act on, never an echo of your own.
+- A merge conflict: rebase the branch on `origin/main` and push with
+  `--force-with-lease`. Never merge `main` into it: the history stays a line.
+  The branch is the agent's own, so rewriting it breaks nobody's checkout.
 
 ## 1. Context
 
