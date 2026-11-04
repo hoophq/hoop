@@ -40,6 +40,8 @@ function versionParts(version) {
   return match.slice(1).map((part) => Number(part ?? 0))
 }
 
+const prerelease = (version) => /-(.+)$/.exec((version ?? '').trim())?.[1] ?? ''
+
 // Newest version first. Unknown versions ("", "unknown", ...) are equal to
 // each other and go last, so the caller's tie-break orders them by name.
 export function compareVersionsDesc(a, b) {
@@ -51,7 +53,12 @@ export function compareVersionsDesc(a, b) {
   for (let i = 0; i < 3; i++) {
     if (pa[i] !== pb[i]) return pb[i] - pa[i]
   }
-  return collator.compare(b ?? '', a ?? '')
+  // Same x.y.z: the final release goes before its prereleases (1.72.0 before
+  // 1.72.0-rc1), then prereleases newest first.
+  const preA = prerelease(a)
+  const preB = prerelease(b)
+  if (!preA !== !preB) return preA ? 1 : -1
+  return collator.compare(preB, preA)
 }
 
 // Distinct non-empty versions, newest first, for the Version filter.

@@ -67,6 +67,15 @@ describe('compareVersionsDesc', () => {
   it('compares numerically, not as text', () => {
     expect(['1.9.0', '1.278.0', '1.28.3'].sort(compareVersionsDesc)).toEqual(['1.278.0', '1.28.3', '1.9.0'])
   })
+
+  it('puts a final release before its prereleases', () => {
+    expect(['1.72.0-rc1', '1.72.0', '1.72.0-rc2', '1.71.9'].sort(compareVersionsDesc)).toEqual([
+      '1.72.0',
+      '1.72.0-rc2',
+      '1.72.0-rc1',
+      '1.71.9',
+    ])
+  })
 })
 
 describe('filterAgents', () => {
