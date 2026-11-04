@@ -424,6 +424,15 @@ containerSecurityContext: {}
 automountServiceAccountToken: true
 terminationGracePeriodSeconds: 30
 
+# -- Pod RuntimeClass. Empty leaves the node's default runtime. The
+# `<version>-ica-gpu` image needs the NVIDIA container runtime to inject
+# libcuda and the /dev/nvidia* devices; on clusters where that runtime is
+# installed but not the containerd default (GPU Operator without
+# `defaultRuntime`), set `nvidia` here. Managed GPU pools (AKS, GKE, EKS
+# with the device plugin) usually need nothing. See
+# deploy/ica-sidecar/examples/gpu/ for the GPU values.
+runtimeClassName: ''
+
 # Optional informational lane ports, e.g. generated TCP slot ports.
 # Services and the application config must match; declaring a port does not bind it.
 extraContainerPorts: []

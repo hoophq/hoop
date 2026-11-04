@@ -1492,6 +1492,10 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # release-s3 writes CHANGELOG.txt from scripts/release-notes.sh,
+          # which lists the ICA GPU artifacts only when this is set — the
+          # same gate as the ica-gpu steps in docker-publish-hoopsidecar.
+          ICA_GPU_ASSETS_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
         run: |-
           make release-s3
           make release-s3-latest

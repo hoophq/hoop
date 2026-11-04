@@ -18,12 +18,16 @@ func TestICAGPUSamples(t *testing.T) {
 		t.Skip("GPU examples require -tags ORT")
 	}
 	_, here, _, _ := runtime.Caller(0)
-	samples, err := filepath.Glob(filepath.Join(filepath.Dir(here), "../../deploy/ica-sidecar/examples/config.gpu.*.yaml"))
+	examples := filepath.Join(filepath.Dir(here), "../../deploy/ica-sidecar/examples")
+	samples, err := filepath.Glob(filepath.Join(examples, "config.gpu.*.yaml"))
 	if err != nil || len(samples) != 2 {
 		t.Fatalf("GPU samples: %v, %v", samples, err)
 	}
+	// The Helm values example carries the same document under its `config`
+	// key, with admin.listen on 0.0.0.0 for the kubelet's probes.
+	samples = append(samples, filepath.Join(examples, "gpu/values.yaml"))
 	for _, sample := range samples {
-		t.Run(filepath.Base(sample), func(t *testing.T) {
+		t.Run(filepath.Base(filepath.Dir(sample))+"/"+filepath.Base(sample), func(t *testing.T) {
 			data, err := os.ReadFile(sample)
 			if err != nil {
 				t.Fatal(err)
@@ -31,6 +35,21 @@ func TestICAGPUSamples(t *testing.T) {
 			raw, err := configyaml.ToJSON(data)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if strings.HasSuffix(sample, "values.yaml") {
+				var values struct {
+					Config json.RawMessage `json:"config"`
+				}
+				if err := json.Unmarshal(raw, &values); err != nil || len(values.Config) == 0 {
+					t.Fatalf("helm values without a config document: %v", err)
+				}
+				raw = values.Config
+				var admin struct {
+					Admin struct{ Listen string } `json:"admin"`
+				}
+				if err := json.Unmarshal(raw, &admin); err != nil || admin.Admin.Listen != "0.0.0.0:19000" {
+					t.Fatalf("the chart probes admin on 0.0.0.0:19000, got %q (%v)", admin.Admin.Listen, err)
+				}
 			}
 			if err := daemon.CheckConfigBytes(raw); err != nil {
 				t.Fatalf("offline sample validation: %v", err)

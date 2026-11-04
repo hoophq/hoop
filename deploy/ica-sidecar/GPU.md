@@ -165,3 +165,15 @@ with loader paths for the bundle's userspace libraries. `--start` also waits for
 Keep the model and library paths in the sample or adjust them consistently.
 GPU device permissions must allow the `hoop` user/container UID 10001 to access
 the driver devices; native installation joins existing video/render groups.
+
+## Kubernetes
+
+[examples/gpu/values.yaml](examples/gpu/values.yaml) is a complete values file
+for the Helm chart at `deploy/helm-chart/chart/sidecar`: the `-ica-gpu` tag, one
+`nvidia.com/gpu` per pod, the GPU pool's selector and toleration, `/readyz` as
+the readiness and startup probe (CUDA NER and TurboOCR initialise before the
+pod admits sessions; `/healthz` would not wait), a termination grace period
+longer than `ica.drain_timeout_sec`, and the single-VDA config with
+`admin.listen` on `0.0.0.0:19000`. The chart's `runtimeClassName` is for nodes
+where the NVIDIA container runtime is not the default; managed GPU pools leave
+it empty. The native bundle ships this directory beside the other examples.

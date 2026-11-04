@@ -1,0 +1,129 @@
+# Helm values for deploy/helm-chart/chart/sidecar running the ICA GPU image
+# on a Kubernetes GPU node pool. Pair with the sibling README.md.
+#
+#   helm install ica-gpu deploy/helm-chart/chart/sidecar -f values.yaml
+#
+# The `config:` block is examples/config.gpu.single.yaml with one change:
+# admin.listen binds 0.0.0.0 so the kubelet can probe it (the chart refuses
+# 127.0.0.1). Every EDIT marker is a deployment value, as in that file.
+
+image:
+  repository: hoophq/hoopsidecar
+  # Linux amd64 only. Published by the release workflow only once the GPU
+  # runtime asset is configured; see ../../GPU.md.
+  tag: 1.287.0-ica-gpu                   # EDIT: the release you deploy
+
+# One whole GPU per pod: TurboOCR holds TensorRT engines and the framebuffer
+# budget resident, and CUDA NER shares the same device (ocr_turbo_device and
+# ner_gpu_device are both 0 below, which is the device the plugin exposes).
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 8Gi
+  requests:
+    cpu: '2'
+    memory: 8Gi
+
+# Pin to the GPU pool. Label and taint names are the pool's; these are the
+# NVIDIA device plugin conventions.
+nodeSelector:
+  nvidia.com/gpu.present: 'true'        # EDIT: your GPU pool label
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Only where the NVIDIA runtime is installed but is not the node's default
+# containerd runtime (GPU Operator without defaultRuntime). Managed pools on
+# AKS, GKE and EKS leave this empty.
+# runtimeClassName: nvidia
+
+# /readyz is false until the CUDA NER provider and TurboOCR initialised and
+# every lane is bound; /healthz is true as soon as the process is up. With
+# the default /healthz readiness a pod whose CUDA init failed would be sent
+# sessions. Engine load on a cold node takes minutes, hence the startup
+# budget (180 x 5s).
+probe:
+  readinessPath: /readyz
+  startupPath: /readyz
+  startupFailureThreshold: 180
+  startupPeriodSeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+
+# Longer than ica.drain_timeout_sec below, or the kubelet kills sessions the
+# relay is still draining.
+terminationGracePeriodSeconds: 120
+
+# The lane port. The chart publishes only the admin port itself; this is
+# what the Gateway/relay hop connects to. Keep it off any public LB: the
+# lane is plaintext ICA/CGP.
+laneServices:
+  ica:
+    enabled: true
+    type: ClusterIP                      # EDIT: internal LB for a Gateway hop
+    ports:
+      - {name: ica, port: 2598}
+
+config:
+  log_level: info
+  admin:
+    listen: 0.0.0.0:19000
+  # Text inspector is intentionally absent. Audit contains metadata, not OCR text.
+  audit:
+    file: '-'
+    fail_open: false
+  ica:
+    ocr_turbo_library: /opt/libhoop-ica/current/gpu/lib/libhoop-gpuframe.so
+    ocr_turbo_det_model: /opt/libhoop-ica/current/gpu/engines/det.engine
+    ocr_turbo_rec_model: /opt/libhoop-ica/current/gpu/engines/rec.engine
+    ocr_turbo_rec_dict: /opt/libhoop-ica/current/gpu/engines/dict.txt
+    # Set ocr_turbo_cls_model only when that engine is in the GPU asset set.
+    ner_model: /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER
+    ner_ort_library: /opt/libhoop-ica/current/gpu/ort/lib/libonnxruntime.so
+    max_sessions: 32
+    connect_timeout_sec: 10
+    drain_timeout_sec: 60
+    options:
+      ocr_backend: turboocr
+      ocr_turbo_device: 0
+      ocr_turbo_regional_cache: true
+      ocr_turbo_full_screen: false
+      # Match-only: low confidence / empty OCR never independently masks.
+      # Missed text cannot reach policy and may remain visible.
+      pii_matches_only: true
+      ocr_min_confidence: 0.8
+      ocr_browser_optimizations: true
+      ocr_screen_optimizations: true
+      ner_backend: ort
+      ner_accelerator: cuda
+      ner_gpu_device: 0
+      ner_parallel: 4
+      ner_threads: 2
+      ner_entities: [PERSON, LOCATION, NRP]
+      pii_threshold: 0.8
+      pii_entities: [HEALTHCARE_IDENTIFIERS]
+      video_batch: true
+      output_pipeline: true
+      adaptive_coalescing: true
+      presentation_v2: true
+      presentation_screen_copy: true
+      output_latest_frame: true
+  # Fixed upstream: Gateway/relay -> this lane -> one VDA. source_cidrs is the
+  # actual TCP peer the pod sees; with an internal LB that preserves the
+  # source (externalTrafficPolicy: Local) it is the Gateway SNIP, otherwise
+  # the LB's address. Transparent (TPROXY) mode is not shown: it needs
+  # CAP_NET_ADMIN through containerSecurityContext and node routing rules.
+  listeners:
+    - name: ica-gpu
+      protocol: ica
+      listen: 0.0.0.0:2598
+      upstream: 10.77.0.31:2598          # EDIT: reachable VDA
+      ica:
+        tenant_id: azure-ica-lab          # EDIT: your audit tenant
+        source_cidrs: [10.20.1.10/32]     # EDIT: actual connecting Gateway/relay peer
+        display:
+          width: 1264                     # EDIT: published session geometry
+          height: 1040
+          thinwire_channel: 9
+        edt: false
