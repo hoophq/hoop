@@ -3387,7 +3387,7 @@ drop one that returns a protocol error.
 | `tools/list` | the tool is removed | the tool is listed |
 | a denied call | JSON-RPC error `-32010` | tool result, `isError: true` |
 | reload | restart | hot, ends the open sessions |
-| control plane | no form yet | the rules screen |
+| control plane | no form yet (ENG-959) | the rules screen |
 
 Tool allow and deny stay in `mcp_gateway` because a rule cannot filter the
 catalog.
@@ -3451,8 +3451,8 @@ input for a call, beside the `context` every lane sends:
 ```
 
 `opa: {responses: false}` keeps the catalog from OPA. The lane has no
-human review: an `analyzer` block is refused, and so is
-mcpproxy's `approval_tools`. [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+human review: an `analyzer` block is refused (ENG-964), and so is
+mcpproxy's `approval_tools` (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
 runs one session through a lane.
 
 One sidecar session per MCP session: it opens on the first message,
@@ -3484,8 +3484,8 @@ pod that authenticates the caller and sets the header.
 Callers the lane cannot tell apart share the `anonymous` identity, so any of
 them that holds a session id can use that session.
 
-Not supported yet: a token the lane checks, a verified identity per user,
-and OAuth login of MCP clients. Until the lane checks callers, it binds
+Not supported yet: a token the lane checks (ENG-963), a verified identity
+per user (ENG-961), and OAuth login of MCP clients. Until the lane checks callers, it binds
 loopback only.
 
 **Lane to upstream.**
@@ -3503,14 +3503,15 @@ yourself with its credential, or run a proxy on loopback that adds the
 credential, and point `upstream` at that proxy (`http://127.0.0.1:<port>/mcp`
 is accepted on loopback).
 
-Not supported yet: a token from a file or a secret source, OAuth to the
-upstream, the caller's own token, and AWS SigV4.
+Not supported yet: a token from a file or a secret source and the caller's
+own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
+(ENG-957).
 
 What the lane refuses at validate, and why: a `listen` off loopback (no
 caller check yet) or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
-requests, not connections); `downstream_tls`; a `mask` block on
-the lane and an `analyzer` block until those land; a
+requests, not connections); `downstream_tls` (ENG-963); a `mask` block on
+the lane (ENG-965) and an `analyzer` block (ENG-964) until those land; a
 pasted mcpproxy key the block does not map, such as `approval_tools`,
 `command` or `headers`, as `unknown field`. Mask rules inherited from the
 top-level block are accepted, so one file serves every lane, and `-validate`
