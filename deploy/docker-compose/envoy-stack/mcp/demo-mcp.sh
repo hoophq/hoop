@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Walks one MCP session through the mcp lane: initialize, tools/list, an
-# allowed call, a call a guardrail rule denies, a call mcp_gateway denies,
-# then the session's audit rows.
+# Walks one MCP session through the mcp lane: initialize, tools/list without
+# the tools an mcp_tool rule hides, an allowed call, a call to a hidden tool,
+# a call over the mcp_gateway budget, then the session's audit rows.
 #
 # Usage:
 #   ./demo-mcp.sh         build, start, run the sequence
@@ -54,19 +54,22 @@ printf '%s\n' "$resp" | body | show '{protocolVersion: .result.protocolVersion, 
 echo "session: $sid"
 post '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
 
-step "2. tools/list: run_query is gone, mcp_gateway.denied_tools filtered it"
+step "2. tools/list: delete_customer and run_query are gone, the mcp_tool rule hid them"
 post '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | body | show '[.result.tools[].name]'
 
-step "3. tools/call echo: allowed"
+step "3. tools/call echo: allowed (call 1 of 3)"
 post '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hi"}}}' | body | show '.result'
 
-step "4. tools/call delete_customer: denied by the guardrail rule, as a tool result"
+step "4. tools/call delete_customer: hidden, and still refused by the rule, as a tool result (call 2)"
 post '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"delete_customer","arguments":{"id":"7"}}}' | body | show '.result'
 
-step "5. tools/call run_query: denied by mcp_gateway, as a JSON-RPC error"
-post '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"run_query","arguments":{"sql":"select 1"}}}' | body | show '.error // .result'
+step "5. tools/call echo: allowed (call 3)"
+post '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"echo","arguments":{"message":"again"}}}' | body | show '.result'
 
-step "6. end the session"
+step "6. tools/call echo: over mcp_gateway.max_calls_per_session, as a JSON-RPC error (call 4)"
+post '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"echo","arguments":{"message":"once more"}}}' | body | show '.error // .result'
+
+step "7. end the session"
 compose exec -T client curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE \
     -H "mcp-session-id: $sid" -H "mcp-protocol-version: $version" http://127.0.0.1:18901/mcp
 
@@ -76,6 +79,7 @@ compose logs --no-log-prefix hoop-inspect | grep '^{' |
         (map(select(.metadata["mcp.session"] == $sid)) | .[0].session_id) as $s
         | .[] | select(.session_id == $s)
         | {kind, what: (.metadata.activity // .metadata["mcp.method"]), tool: (.metadata["mcp.tool"] // .metadata.tool),
+           hidden: .metadata["mcp.tools_hidden"],
            allowed: (if .kind == "statement" or .kind == "violation" then .allowed else null end), rule}
         | with_entries(select(.value != null))'
 

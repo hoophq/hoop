@@ -2,8 +2,8 @@
 #
 #   curl ──> lane 127.0.0.1:18901 ──> test MCP server 127.0.0.1:18900/mcp
 #
-# Two deny layers: mcp_gateway.denied_tools removes run_query from the
-# catalog; the guardrail rule refuses delete_customer at call time.
+# The mcp_tool rule hides delete_customer and run_query from tools/list and
+# refuses a call to either; mcp_gateway caps the session at three calls.
 
 log_level: info
 
@@ -17,10 +17,10 @@ audit:
 
 guardrails:
   rules:
-    - name: no-delete-tools
-      type: table
-      tables: [delete_customer]
-      message: deleting through MCP is not allowed
+    - name: no-destructive-tools
+      type: mcp_tool
+      tools: [delete_customer, run_query]
+      message: this tool is not allowed through MCP
 
 listeners:
   - name: test-mcp
@@ -29,4 +29,4 @@ listeners:
     upstream: http://127.0.0.1:18900/mcp
     mcp_gateway:
       transport: streamable-http
-      denied_tools: [run_query]
+      max_calls_per_session: 3

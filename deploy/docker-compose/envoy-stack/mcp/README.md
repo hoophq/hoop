@@ -25,15 +25,17 @@ modules, as any sidecar build does. It runs with the envoy stack up or down.
 | Step | Result |
 |---|---|
 | `initialize` | a session id |
-| `tools/list` | no `run_query`: `mcp_gateway.denied_tools` removed it |
+| `tools/list` | no `delete_customer` and no `run_query`: the `no-destructive-tools` rule hid them |
 | `tools/call echo` | allowed |
-| `tools/call delete_customer` | denied by the `no-delete-tools` rule, as a tool result with `isError: true` |
-| `tools/call run_query` | denied by `mcp_gateway`, as JSON-RPC error `-32010` |
+| `tools/call delete_customer` | hidden, and still refused by the rule, as a tool result with `isError: true` |
+| `tools/call echo` | allowed |
+| `tools/call echo` | over `mcp_gateway.max_calls_per_session`, as JSON-RPC error `-32012` |
 | `DELETE /mcp` | `204`, the session ends |
 
-The audit rows follow: `session_start`, the `initialize` activity, one
-statement for the catalog and one per call, the `delete_customer`
-violation, the `run_query` refusal as an activity, `session_end`.
+The audit rows follow: `session_start`, the `initialize` activity, the
+catalog statement with the hidden tools in `mcp.tools_hidden`, one statement
+per call, the `delete_customer` violation, the budget refusal as activities,
+`session_end`.
 
 Edit a rule in `config-mcp.yaml` while the stack runs. The sidecar applies
 it within 10 seconds, or at once on
