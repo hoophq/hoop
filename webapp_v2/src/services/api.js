@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useAuthStore } from '@/stores/useAuthStore'
+import { tokenSubject, useAuthStore } from '@/stores/useAuthStore'
 
 // Mirrors the CLJS get-api-url logic: use VITE_API_URL if set, otherwise build
 // from window.location so the app works at any host/port without configuration.
@@ -31,13 +31,21 @@ export function storeRenewedToken(sent, headers) {
   useAuthStore.getState().renewToken(sent, headers?.get('X-New-Access-Token'))
 }
 
-function renew(response) {
-  if (!response) return
-  const sent = response.config?.headers?.Authorization?.replace(/^Bearer /, '')
-  storeRenewedToken(sent, response.headers)
+function sentToken(config) {
+  return config?.headers?.Authorization?.replace(/^Bearer /, '')
 }
 
-// Response interceptor: store a renewed token; handle 401 by saving redirect URL and logging out
+function renew(response) {
+  if (!response) return
+  storeRenewedToken(sentToken(response.config), response.headers)
+}
+
+// Response interceptor: store a renewed token; handle 401. A 401 for a token
+// that is no longer the stored one is retried once with the current token
+// (the gateway rejects before any handler), when both name the same account:
+// another tab may have signed in as someone else, and their token must not
+// run this request. One with the current token ends the session; one with no
+// stored token follows a logout: nothing to do.
 api.interceptors.response.use(
   (response) => {
     renew(response)
@@ -45,19 +53,28 @@ api.interceptors.response.use(
   },
   (error) => {
     renew(error.response)
-    if (error.response?.status === 401) {
-      const authStore = useAuthStore.getState()
+    if (error.response?.status !== 401) return Promise.reject(error)
 
-      // Save current URL for redirect after auth
-      const currentUrl = window.location.href
-      authStore.saveRedirectUrl(currentUrl)
-
-      // Logout (clears token)
-      authStore.logout()
-
-      // Redirect to login
-      window.location.href = '/login'
+    const authStore = useAuthStore.getState()
+    const sent = sentToken(error.config)
+    const current = authStore.getToken()
+    if (!current) return Promise.reject(error)
+    if (sent && sent !== current) {
+      const subject = tokenSubject(sent)
+      if (subject && subject === tokenSubject(current) && !error.config._retried) {
+        error.config._retried = true
+        error.config.headers.Authorization = `Bearer ${current}`
+        return api.request(error.config)
+      }
+      return Promise.reject(error)
     }
+
+    // Save current URL for redirect after auth
+    authStore.saveRedirectUrl(window.location.href)
+    // Logout (clears token)
+    authStore.logout()
+    // Redirect to login
+    window.location.href = '/login'
     return Promise.reject(error)
   },
 )

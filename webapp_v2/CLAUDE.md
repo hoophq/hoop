@@ -273,7 +273,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - Token stored in localStorage as `jwt-token` (not just `token`)
 - Token can come from cookies (`hoop_access_token`) or query params (`?token=xxx`)
 - **The gateway renews the token** in the `X-New-Access-Token` response header; `api.js` and the SSE clients store it, as CLJS does. Send `useAuthStore.getState().getToken()`, never the store's `token` (the sign-in's, kept to detect an account change)
-- On 401, redirects to login
+- On a 401 with the current token: saves the URL, logs out, redirects to login. A 401 for a token that is no longer the stored one is sent once more with the current token when both name the same account (`tokenSubject`); otherwise, and after a logout, the request only fails
 - Saves current URL before redirect for post-auth navigation
 
 ### Key Files

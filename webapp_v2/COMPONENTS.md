@@ -987,8 +987,9 @@ when adding one, follow the pattern in `services/agents.js`.
 Non-obvious notes only:
 
 - `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
-  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
-  imports it; never call axios directly.
+  from `X-New-Access-Token`; a 401 with the current token → saved URL + logout,
+  one with a stale token of the same account → retried once). Every other
+  service imports it; never call axios directly.
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
