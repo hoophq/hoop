@@ -10,6 +10,7 @@ import (
 
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/spf13/cobra"
 )
 
 func TestDecideFlag(t *testing.T) {
@@ -106,5 +107,31 @@ func TestBuildContextFlags(t *testing.T) {
 	set("https://gw", "", "", "")
 	if _, err := buildContext(s, "../x"); err == nil {
 		t.Fatal("accepted an invalid name")
+	}
+}
+
+func TestCreateRefusesToReplaceActiveContext(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Cleanup(func() { apiURLFlag, apiKeyFlag, overwriteFlag, skipSyncFlag = "", "", false, false })
+	run := func(cmd *cobra.Command, args ...string) error { return cmd.RunE(cmd, args) }
+
+	apiURLFlag, apiKeyFlag = "http://a:1", "hpk_old"
+	if err := run(createCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	apiURLFlag, apiKeyFlag, skipSyncFlag = "", "", true
+	if err := run(useCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	// a new key for the active context would be undone by the next save-back
+	apiURLFlag, apiKeyFlag, overwriteFlag = "http://a:1", "hpk_new", true
+	if err := run(createCmd, "dev"); err == nil {
+		t.Fatal("replaced the active context")
+	}
+	// copying config.toml over it stays allowed: that is its current state
+	apiURLFlag, apiKeyFlag = "", ""
+	if err := run(createCmd, "dev"); err != nil {
+		t.Fatalf("copy over the active context: %v", err)
 	}
 }

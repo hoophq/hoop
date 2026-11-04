@@ -85,6 +85,15 @@ current configuration ($HOME/.hoop/config.toml), login included.`,
 		if s.Exists(ctx.Name) && !overwriteFlag {
 			return fmt.Errorf("context %s already exists; use --overwrite to replace it", ctx.Name)
 		}
+		// config.toml holds the active context's login and is saved back over
+		// its file at the next switch, so replacing that file would be undone.
+		active, err := s.Active()
+		if err != nil {
+			return err
+		}
+		if apiURLFlag != "" && ctx.Name == active {
+			return fmt.Errorf("context %s is active; switch to another context before you replace it, or change it with `hoop login`", ctx.Name)
+		}
 		if err := s.Save(ctx); err != nil {
 			return err
 		}
