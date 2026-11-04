@@ -26,6 +26,9 @@ import (
 // given. A message given to a client after its Close is dropped, as the real
 // client drops it.
 type recordedAnalytics struct {
+	// closeDelay makes each Close take this long, like an upload.
+	closeDelay time.Duration
+
 	mu      sync.Mutex
 	msgs    []segment.Message
 	dropped []segment.Message
@@ -49,6 +52,7 @@ func (c *recordedClient) Enqueue(m segment.Message) error {
 }
 
 func (c *recordedClient) Close() error {
+	time.Sleep(c.log.closeDelay)
 	c.log.mu.Lock()
 	defer c.log.mu.Unlock()
 	c.closed = true
@@ -211,6 +215,17 @@ func TestAnalyticsTrackSignup(t *testing.T) {
 		msgs := rec.waitFor(t, 1)
 		assert.NotNil(t, identifyOf(msgs))
 		assert.Empty(t, tracksOf(msgs, analytics.EventSignup))
+	})
+
+	t.Run("the sign-in does not wait for the analytics upload", func(t *testing.T) {
+		rec := &recordedAnalytics{closeDelay: time.Second}
+		start := time.Now()
+		(&handler{newAnalytics: rec.newClient}).analyticsTrack(true, "test-agent", ctx)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
+
+		msgs := rec.waitFor(t, 2)
+		assert.NotNil(t, identifyOf(msgs))
+		assert.Len(t, tracksOf(msgs, analytics.EventSignup), 1)
 	})
 
 	t.Run("anonymous mode: hashed id only, no email", func(t *testing.T) {

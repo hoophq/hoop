@@ -589,11 +589,12 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		UserEmail:        ctx.UserEmail,
 		UserName:         ctx.UserName,
 	})
-	// Close flushes the Identify now, so a restart during the wait below
-	// does not lose it.
-	identifyClient.Close()
 	delay := signupTrackDelay
 	go func() {
+		// Close flushes the Identify before the wait, so a restart during
+		// the wait does not lose it. It runs here, off the sign-in, because
+		// it waits for the upload.
+		identifyClient.Close()
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(delay)
 		// A client of its own: a closed client drops what it is given.
