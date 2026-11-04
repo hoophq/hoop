@@ -3364,7 +3364,7 @@ listeners:
 | Key | Default | Effect |
 |---|---|---|
 | `listen` | required | `host:port` on loopback: `127.0.0.1`, `::1` or `localhost`. MCP clients connect to `http://<listen>/mcp`. |
-| `upstream` | required | The MCP endpoint, with its path. `https`, or `http` on loopback. |
+| `upstream` | required | The MCP endpoint, with its path. `https`, or `http` on loopback. No user, password, query or fragment. A redirect is followed only within its origin. |
 | `upstream_tls` | the host trust store | The CA, the client certificate and the server name for the hop to the upstream. |
 | `idle_timeout_sec` | `1800` | An MCP session with no message for this long ends, with its sidecar session. |
 | `identity_header` | none | The header whose value names the caller. See Auth. |

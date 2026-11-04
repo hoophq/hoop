@@ -92,6 +92,8 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "analyzer does not apply"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
+		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"https://user:token@h/mcp"}`, "carries no user"},
+		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"https://h/mcp?api_key=x"}`, "carries no user"},
 	}
 	for _, tc := range cases {
 		if p := mcpProblems(t, tc.listener); !strings.Contains(p, tc.want) {

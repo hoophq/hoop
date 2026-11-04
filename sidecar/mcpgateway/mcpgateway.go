@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -50,7 +51,8 @@ const (
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
 func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
-	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}, renamed: map[string]string{}}
+	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}, renamed: map[string]string{},
+		opening: map[string]chan struct{}{}}
 	for real, ov := range lane.Policy.Overrides {
 		if ov.Name != "" {
 			s.renamed[ov.Name] = real
@@ -64,6 +66,10 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		transport = backend.TransportSSE
 	}
 	bcfg := config.Backend{Transport: transport, URL: lane.Upstream}
+	origin, err := url.Parse(lane.Upstream)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: upstream: %w", err)
+	}
 	client := &http.Client{Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		TLSClientConfig:       lane.UpstreamTLS,
@@ -72,6 +78,15 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 		ForceAttemptHTTP2:     true,
+	}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// A redirect stays within the upstream's origin, which validation checked.
+		if req.URL.Scheme != origin.Scheme || req.URL.Host != origin.Host {
+			return fmt.Errorf("redirect to %s://%s refused: outside the upstream origin", req.URL.Scheme, req.URL.Host)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
 	}}
 	factory := func(context.Context) (backend.Backend, error) {
 		switch transport {
@@ -87,10 +102,15 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	}
 
 	pipeline := checks.Assemble(policyFor(lane.Policy), inspect.Hooks{}, s, false)
-	// The hide check runs first: mcpproxy's rug-pull check never fingerprints
-	// a hidden tool, its policy check never refuses a call to one as
-	// unadvertised, and overrides has not renamed the catalog yet.
-	pipeline = slices.Insert(pipeline, 0, inspect.Check(&hideCheck{s: s}))
+	// The hide check runs right after the budget check, so a call to a hidden
+	// tool still counts, and before the others: the rug-pull check never
+	// fingerprints a hidden tool, the policy check never refuses a call to
+	// one as unadvertised, and overrides has not renamed the catalog yet.
+	budget := slices.IndexFunc(pipeline, func(c inspect.Check) bool { return c.Name() == checks.NameBudget })
+	if budget < 0 {
+		return nil, errors.New("mcp: the mcpproxy pipeline has no budget check to place the tool filter after")
+	}
+	pipeline = slices.Insert(pipeline, budget+1, inspect.Check(&hideCheck{s: s}))
 	// The hoop check runs after mcpproxy's own (budgets, overrides) and
 	// before the terminal audit tap.
 	last := len(pipeline) - 1
@@ -147,6 +167,9 @@ type server struct {
 	ln       net.Listener
 	srv      *http.Server
 	sessions map[string]daemon.MCPLaneSession
+	// opening holds the MCP sessions whose sidecar session is being opened,
+	// outside s.mu: a slow audit write must not stall the other sessions.
+	opening map[string]chan struct{}
 	// gone holds the MCP sessions that ended here, so a message still in
 	// flight on one opens no new sidecar session.
 	gone      map[string]time.Time
@@ -237,6 +260,9 @@ func (s *server) EndSessions(reason string) {
 	for id := range sessions {
 		s.markGone(id, now)
 	}
+	for id := range s.opening {
+		s.markGone(id, now)
+	}
 	s.mu.Unlock()
 	ctx := context.Background()
 	for _, ls := range sessions {
@@ -248,28 +274,66 @@ func (s *server) EndSessions(reason string) {
 // laneSession returns the sidecar session for one MCP session, opening it on
 // the first message the pipeline sees.
 func (s *server) laneSession(ctx context.Context, ms inspect.Session) (daemon.MCPLaneSession, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil, errServerClosed
+	sid := ms.ID()
+	for {
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return nil, errServerClosed
+		}
+		if ls, ok := s.sessions[sid]; ok {
+			s.mu.Unlock()
+			return ls, nil
+		}
+		if _, ok := s.gone[sid]; ok {
+			s.mu.Unlock()
+			return nil, errSessionEnded
+		}
+		if s.lane.Open == nil {
+			s.mu.Unlock()
+			return nil, errors.New("this lane records nothing (validate run)")
+		}
+		wait, opening := s.opening[sid]
+		if !opening {
+			break
+		}
+		s.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	if ls, ok := s.sessions[ms.ID()]; ok {
-		return ls, nil
-	}
-	if _, ok := s.gone[ms.ID()]; ok {
-		return nil, errSessionEnded
-	}
-	if s.lane.Open == nil {
-		return nil, errors.New("this lane records nothing (validate run)")
-	}
+	done := make(chan struct{})
+	s.opening[sid] = done
+	s.mu.Unlock()
+
 	id := ms.Identity()
 	peer, _ := id.Claims["peer"].(string)
-	ls, err := s.lane.Open(ctx, daemon.MCPCaller{Subject: id.Subject, PeerAddr: peer, MCPSessionID: ms.ID()})
+	ls, err := s.lane.Open(ctx, daemon.MCPCaller{Subject: id.Subject, PeerAddr: peer, MCPSessionID: sid})
+
+	s.mu.Lock()
+	delete(s.opening, sid)
+	close(done)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
-	s.sessions[ms.ID()] = ls
+	// The session ended, or the lane closed, while it was opening.
+	var refused error
+	if s.closed {
+		refused = errServerClosed
+	} else if _, ok := s.gone[sid]; ok {
+		refused = errSessionEnded
+	}
+	if refused != nil {
+		s.mu.Unlock()
+		ls.Close(ctx)
+		return nil, refused
+	}
+	s.sessions[sid] = ls
 	s.total.Add(1)
+	s.mu.Unlock()
 	return ls, nil
 }
 
@@ -357,15 +421,12 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 			"protocol_version": p.ProtocolVersion, "client": p.ClientInfo.Name, "client_version": p.ClientInfo.Version,
 		})
 	case mcp.MethodToolsCall:
-		var p struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(m.Env.Params, &p); err != nil || p.Name == "" {
+		name, args, err := toolCallParams(m.Env.Params)
+		if err != nil {
 			c.s.denied.Add(1)
-			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: a tool name is required")
+			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
 		}
-		v := ls.ToolCall(ctx, p.Name, p.Arguments)
+		v := ls.ToolCall(ctx, name, args)
 		if !v.Allowed {
 			c.s.denied.Add(1)
 			return deniedToolResult(m.Env, v)
@@ -469,12 +530,14 @@ func toolCallParams(params json.RawMessage) (string, json.RawMessage, error) {
 	if err := json.Unmarshal(params, &fields); err != nil {
 		return "", nil, errors.New("params are not an object")
 	}
-	seen := make(map[string]string, len(fields))
+	keys := make([]string, 0, len(fields))
 	for k := range fields {
-		if prev, dup := seen[strings.ToLower(k)]; dup {
-			return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
+		for _, prev := range keys {
+			if strings.EqualFold(prev, k) {
+				return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
+			}
 		}
-		seen[strings.ToLower(k)] = k
+		keys = append(keys, k)
 	}
 	var name string
 	if err := json.Unmarshal(fields["name"], &name); err != nil || name == "" {

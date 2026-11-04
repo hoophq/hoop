@@ -116,7 +116,13 @@ func startLaneOn(t *testing.T, upstream *sdk.Server, policy daemon.MCPGatewayCon
 	t.Helper()
 	up := httptest.NewServer(testupstream.Handler(upstream))
 	t.Cleanup(up.Close)
-	srv, err := mcpgateway.Build(daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp", Transport: daemon.MCPTransportStreamableHTTP, Policy: policy, Open: open})
+	return startLaneAt(t, up.URL+"/mcp", policy, open)
+}
+
+// startLaneAt is startLane in front of any upstream URL.
+func startLaneAt(t *testing.T, upstream string, policy daemon.MCPGatewayConfig, open func(context.Context, daemon.MCPCaller) (daemon.MCPLaneSession, error)) (daemon.MCPGatewayServer, string) {
+	t.Helper()
+	srv, err := mcpgateway.Build(daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: upstream, Transport: daemon.MCPTransportStreamableHTTP, Policy: policy, Open: open})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,6 +324,7 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 		`{"Name":"echo","name":"delete_customer","arguments":{"message":"x"}}`,
 		`{"name":"echo","arguments":{"message":"x"},"ARGUMENTS":{"message":"y"}}`,
 		`{"Name":"echo","arguments":{"message":"x"}}`,
+		`{"name":"echo","arguments":{"message":"x"},"argumentſ":{"message":"y"}}`,
 	} {
 		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
 		if code != 200 || !strings.Contains(body, "-32602") {
@@ -326,6 +333,46 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	}
 	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
 		t.Fatalf("the lane judged %v, want no call", calls)
+	}
+}
+
+// A refused call to a hidden tool counts toward max_calls_per_session, as any
+// refused call does.
+func TestAHiddenToolCallCountsTowardTheBudget(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
+	_, url := startLane(t, daemon.MCPGatewayConfig{MaxCallsPerSession: 2}, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	c.call(t, 3, "echo", `{"message":"one"}`)
+	if body := c.call(t, 4, "delete_customer", `{"id":"7"}`); !strings.Contains(body, "(rule no-delete)") {
+		t.Fatalf("hidden call: %s", body)
+	}
+	if body := c.call(t, 5, "echo", `{"message":"three"}`); !strings.Contains(body, "-32012") {
+		t.Fatalf("third call: %s, want the budget refusal", body)
+	}
+}
+
+// The upstream client follows a redirect within the upstream's origin and
+// refuses one that leaves it.
+func TestARedirectStaysWithinTheUpstreamOrigin(t *testing.T) {
+	up := testupstream.Handler(testupstream.NewServer(""))
+	other := httptest.NewServer(up)
+	t.Cleanup(other.Close)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", up)
+	mux.Handle("/old", http.RedirectHandler("/mcp", http.StatusTemporaryRedirect))
+	mux.Handle("/away", http.RedirectHandler(other.URL+"/mcp", http.StatusTemporaryRedirect))
+	origin := httptest.NewServer(mux)
+	t.Cleanup(origin.Close)
+
+	_, url := startLaneAt(t, origin.URL+"/old", daemon.MCPGatewayConfig{}, (&testLane{}).open)
+	(&client{url: url}).init(t)
+
+	_, url = startLaneAt(t, origin.URL+"/away", daemon.MCPGatewayConfig{}, (&testLane{}).open)
+	c := &client{url: url}
+	if _, body := c.post(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`); !strings.Contains(body, `"error"`) {
+		t.Fatalf("initialize through a redirect off the origin: %s", body)
 	}
 }
 

@@ -64,6 +64,8 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": an mcp listener needs upstream as an http(s) URL of the MCP server, such as https://mcp.example.com/mcp")
 	} else if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
 		problems = append(problems, name+": an mcp upstream is an https URL; plain http is accepted on loopback only")
+	} else if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		problems = append(problems, name+": an mcp upstream URL carries no user, password, query or fragment; a credential does not belong in the config")
 	}
 	if lc.Network == "unix" {
 		problems = append(problems, name+": an mcp listener listens on tcp; MCP clients do not connect to unix sockets")
