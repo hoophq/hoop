@@ -82,6 +82,10 @@ const (
 	// ner block and loads the NER model. An older build decodes pii, drops
 	// the key, and then refuses a rule naming PERSON.
 	CapabilityPIINER = "pii_ner"
+	// CapabilityMCPCallerToken means this build reads caller_token and
+	// downstream_tls on an mcp listener. 1.289.0 decodes both keys and
+	// refuses them there.
+	CapabilityMCPCallerToken = "mcp_caller_token"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -172,7 +176,7 @@ var behaviourCapabilities = []string{CapabilitySessionEvents}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
-var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER}
+var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken}
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
@@ -279,6 +283,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 		where := fmt.Sprintf("listener %q", l.Name)
 		if l.usesAddressURL() {
 			need(where, "writes listen or upstream as a URL", CapabilityAddressURL)
+		}
+		if isMCPGateway(l) && (l.CallerToken != nil || l.DownstreamTLS != nil) {
+			need(where, "sets caller_token or downstream_tls on an mcp listener", CapabilityMCPCallerToken)
 		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.

@@ -3339,7 +3339,7 @@ serves one to it.
 listeners:
   - name: github-mcp
     protocol: mcp
-    listen: 127.0.0.1:18901      # loopback only until the lane authenticates callers
+    listen: 127.0.0.1:18901      # off loopback only with caller_token; see Auth
     upstream: https://mcp.example.com/mcp   # the MCP endpoint, with its path; see Auth
     upstream_tls: {ca_file: /etc/ssl/cert.pem}
     idle_timeout_sec: 1800       # an idle MCP session ends after this; default 30 minutes
@@ -3363,11 +3363,13 @@ listeners:
 
 | Key | Default | Effect |
 |---|---|---|
-| `listen` | required | `host:port` on loopback: `127.0.0.1`, `::1` or `localhost`. MCP clients connect to `http://<listen>/mcp`. |
+| `listen` | required | `host:port`. Off loopback (`127.0.0.1`, `::1`, `localhost`) only with `caller_token`. MCP clients connect to `http://<listen>/mcp`, or `https://` with `downstream_tls`. |
 | `upstream` | required | The MCP endpoint, with its path. `https`, or `http` on loopback. No user, password, query or fragment. A redirect is followed only within its origin. |
 | `upstream_tls` | the host trust store | The CA, the client certificate and the server name for the hop to the upstream. |
 | `idle_timeout_sec` | `1800` | An MCP session with no message for this long ends, with its sidecar session. |
+| `caller_token` | none | Admits only callers with a token from a file. See Auth. |
 | `identity_header` | none | The header whose value names the caller. See Auth. |
+| `downstream_tls` | none | `cert_file` and `key_file`: the lane serves MCP clients over TLS. |
 | `guardrails`, `opa` | the top-level blocks | The rules and OPA for this lane. `mcp_tool` rules decide which tools it offers. |
 | `mcp_gateway` | none | The upstream transport and the session policy. See "`mcp_gateway` keys". |
 
@@ -3493,25 +3495,43 @@ is restart-required, as for every listener fact.
 
 #### Auth
 
-The lane checks no credential on either side yet.
-
 **Caller to lane.**
 
 | Option | Config | The audit names |
 |---|---|---|
 | none, the default | | `anonymous` |
+| `caller_token` | `caller_token: {file: /etc/hoop-inspect/caller-tokens, name: claude-agents}` | `name` |
 | `identity_header` | `identity_header: x-forwarded-email` | the header's value |
+
+`caller_token` works as on an http lane (see "A public URL: caller tokens"):
+the same file, header, rotation and refusals. On an mcp lane:
+
+- A request without a listed token gets 403 `request refused: <reason>`
+  before mcpproxy reads it, and opens no session. The lane logs the refusal
+  with the peer address.
+- The lane removes the header before mcpproxy reads the request. The token
+  never reaches the audit trail, policy input, the log or the upstream.
+- A session works only for the token that opened it. A request with another
+  token on it gets 404, and the session records `mcp.session_refused` with
+  `caller` and `reason`.
+- The header cannot be `mcp-*` or `last-event-id`: MCP uses them.
+- The token travels as written: use `downstream_tls`, or TLS in front.
+
+The refusal is 403, not 401: on a 401, an MCP client starts OAuth discovery
+against the lane.
+
+Claude Code sends the token with
+`claude mcp add --transport http tools https://<listen>/mcp --header "X-Hoop-Token: <token>"`.
 
 `identity_header` names a caller and verifies nothing: any process that
 reaches the port can set it. Use it only behind a proxy on the same host or
 pod that authenticates the caller and sets the header.
 
-Callers the lane cannot tell apart share the `anonymous` identity, so any of
-them that holds a session id can use that session.
+Without `caller_token` or `identity_header`, every caller is `anonymous`, so
+any caller that holds a session id can use that session.
 
-Not supported yet: a token the lane checks (ENG-963), a verified identity
-per user (ENG-961), and OAuth login of MCP clients. Until the lane checks callers, it binds
-loopback only.
+Not supported yet: a verified identity per user (ENG-961), and OAuth login
+of MCP clients.
 
 **Lane to upstream.**
 
@@ -3532,10 +3552,10 @@ Not supported yet: a token from a file or a secret source and the caller's
 own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
 (ENG-957).
 
-What the lane refuses at validate, and why: a `listen` off loopback (no
-caller check yet) or without a port; `network: unix` (MCP clients
+What the lane refuses at validate, and why: a `listen` off loopback
+without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
-requests, not connections); `downstream_tls` (ENG-963); a `mask` block on
+requests, not connections); a `mask` block on
 the lane (ENG-965) and an `analyzer` block (ENG-964) until those land; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
@@ -4347,7 +4367,8 @@ the `address_url` capability only.
 
 `identity_header` trusts whoever reaches the listener, so it is safe only
 behind an authenticating proxy. A lane on a public URL, such as the one a
-Claude Managed Agents cloud sandbox calls, checks a shared token instead:
+Claude Managed Agents cloud sandbox calls, checks a shared token instead.
+An mcp lane takes the same block; see its Auth section.
 
 ```yaml
 listeners:

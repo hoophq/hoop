@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
@@ -461,5 +464,115 @@ func TestMCPLaneHideSwapsWithTheRules(t *testing.T) {
 	live.swapLane(after, func() {})
 	if !hidesEcho() {
 		t.Fatal("echo not hidden after the reload")
+	}
+}
+
+// caller_token lets an mcp lane bind off loopback; its header cannot be one
+// MCP reads, and downstream_tls is accepted.
+func TestMCPCallerTokenValidation(t *testing.T) {
+	const base = `"name":"m","protocol":"mcp","upstream":"https://h/mcp"`
+	const tok = `"caller_token":{"file":"/etc/tokens","name":"agents"}`
+	cert, key := tlsKeypairFiles(t)
+	for _, listener := range []string{
+		`{` + base + `,"listen":"0.0.0.0:18901",` + tok + `}`,
+		fmt.Sprintf(`{`+base+`,"listen":"0.0.0.0:18901",`+tok+`,"downstream_tls":{"cert_file":%q,"key_file":%q}}`, cert, key),
+		fmt.Sprintf(`{`+base+`,"listen":"127.0.0.1:1","downstream_tls":{"cert_file":%q,"key_file":%q}}`, cert, key),
+	} {
+		if p := mcpProblems(t, listener); p != "" {
+			t.Errorf("%s\n  refused: %s", listener, p)
+		}
+	}
+	for _, tc := range []struct{ listener, want string }{
+		{`{` + base + `,"listen":"0.0.0.0:18901"}`, "only with caller_token"},
+		{`{` + base + `,"listen":"127.0.0.1:1","caller_token":{"header":"Mcp-Session-Id","file":"/etc/tokens","name":"agents"}}`, "a header MCP uses"},
+		{`{` + base + `,"listen":"127.0.0.1:1","caller_token":{"header":"mcp-protocol-version","file":"/etc/tokens","name":"agents"}}`, "a header MCP uses"},
+		{`{` + base + `,"listen":"127.0.0.1:1","caller_token":{"header":"Last-Event-ID","file":"/etc/tokens","name":"agents"}}`, "a header MCP uses"},
+		{`{` + base + `,"listen":"127.0.0.1:1","identity_header":"x-user",` + tok + `}`, "both name the caller"},
+	} {
+		if p := mcpProblems(t, tc.listener); !strings.Contains(p, tc.want) {
+			t.Errorf("%s\n  problems %q lack %q", tc.listener, p, tc.want)
+		}
+	}
+}
+
+// The engine's caller check reads the lane's token file: a listed token names
+// the configured caller under a key per token that holds no token, and a
+// rotation applies without a rebuild.
+func TestAnMCPLaneCallerCheckReadsItsTokenFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tokens")
+	if err := os.WriteFile(path, []byte(goodToken+"\n"+newToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cert, key := tlsKeypairFiles(t)
+	ln := mcpTestLane(t, fmt.Sprintf(`{"listeners":[{"name":"m","protocol":"mcp","listen":"0.0.0.0:18901","upstream":"https://h/mcp",`+
+		`"caller_token":{"file":%q,"name":"claude-agents"},"downstream_tls":{"cert_file":%q,"key_file":%q}}]}`, path, cert, key))
+	build, built := fakeMCPEngine()
+	withMCPGatewayEngine(t, build)
+	discard := slog.New(slog.DiscardHandler)
+	if _, _, err := buildMCPGatewayServer(ln, AuditConfig{}, nil, discard); err == nil || !strings.Contains(err.Error(), "not opened") {
+		t.Fatalf("a caller_token lane built without its token file: %v", err)
+	}
+	lanes := []lane{ln}
+	files, err := openCallerTokens(lanes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := buildMCPGatewayServer(lanes[0], AuditConfig{}, nil, discard); err != nil {
+		t.Fatal(err)
+	}
+	resolved := (*built)[0].lane
+	if resolved.DownstreamTLS == nil || resolved.Caller == nil || resolved.Caller.Header != "x-hoop-token" {
+		t.Fatalf("resolved lane: %+v", resolved)
+	}
+	resolve := func(credential string) (string, string, error) {
+		return resolved.Caller.Resolve(context.Background(), credential)
+	}
+	subject, k1, err := resolve(" " + goodToken + " ")
+	if err != nil || subject != "claude-agents" || k1 == "" || strings.Contains(k1, goodToken) {
+		t.Fatalf("listed token: subject %q key %q err %v", subject, k1, err)
+	}
+	if _, again, _ := resolve(goodToken); again != k1 {
+		t.Fatal("one token resolved to two keys")
+	}
+	if _, k2, _ := resolve(newToken); k2 == k1 {
+		t.Fatal("two tokens share a key, so one could use the other's session")
+	}
+	for credential, want := range map[string]error{"": token.ErrNoToken, "wrong-token": token.ErrInvalidToken, goodToken + ", " + goodToken: token.ErrInvalidToken} {
+		if _, _, err := resolve(credential); !errors.Is(err, want) {
+			t.Errorf("credential %q: %v, want %v", credential, err, want)
+		}
+	}
+	if err := os.WriteFile(path, []byte(newToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files[0].Reload()
+	if _, _, err := resolve(goodToken); !errors.Is(err, token.ErrInvalidToken) {
+		t.Fatalf("a removed token still admitted: %v", err)
+	}
+	if _, _, err := resolve(newToken); err != nil {
+		t.Fatalf("the remaining token refused: %v", err)
+	}
+}
+
+// 1.289.0 decodes caller_token and downstream_tls but refuses them on an mcp
+// lane, so the plane serves them there only to a build that reads them.
+func TestAnMCPCallerTokenLaneNeedsTheCapability(t *testing.T) {
+	old := Handshake{Version: "1.289.0", Capabilities: []string{"protocol:mcp", "caller_token", "address_url", "rule:operation"}}
+	current := Handshake{Capabilities: append(slices.Clone(old.Capabilities), CapabilityMCPCallerToken)}
+	for name, l := range map[string]ListenerConfig{
+		"caller_token":   {CallerToken: &CallerTokenConfig{File: "/etc/tokens", Name: "agents"}},
+		"downstream_tls": {DownstreamTLS: &TLSConfig{CertFile: "/etc/tls.crt", KeyFile: "/etc/tls.key"}},
+	} {
+		l.Name, l.Protocol, l.Listen, l.Upstream = "tools", "mcp", "0.0.0.0:18901", "https://h/mcp"
+		cfg := Config{Listeners: []ListenerConfig{l}}
+		if err := CheckServable(cfg, old); err == nil || !strings.Contains(err.Error(), CapabilityMCPCallerToken) {
+			t.Errorf("%s: an older build was served it on an mcp lane: %v", name, err)
+		}
+		if err := CheckServable(cfg, current); err != nil {
+			t.Errorf("%s: a build that reads it was refused: %v", name, err)
+		}
+	}
+	if !slices.Contains(SidecarCapabilities(), CapabilityMCPCallerToken) {
+		t.Fatalf("the header lacks %s: %v", CapabilityMCPCallerToken, SidecarCapabilities())
 	}
 }

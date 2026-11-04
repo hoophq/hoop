@@ -5,6 +5,7 @@ package mcpgateway
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,7 +126,14 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		SessionIdleTimeout: lane.SessionIdleTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
 			id := inspect.Identity{Claims: map[string]any{"peer": r.RemoteAddr}}
-			if lane.IdentityHeader != "" {
+			switch {
+			case lane.Caller != nil:
+				c, ok := r.Context().Value(callerKey{}).(caller)
+				if !ok {
+					return inspect.Identity{}, errors.New("the request did not pass the caller check")
+				}
+				id.Subject, id.Key = c.subject, c.key
+			case lane.IdentityHeader != "":
 				id.Subject = r.Header.Get(lane.IdentityHeader)
 			}
 			return id, nil
@@ -185,7 +193,14 @@ func (s *server) Serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mcp: %w", err)
 	}
-	srv := &http.Server{Handler: s.gw.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	if s.lane.DownstreamTLS != nil {
+		ln = tls.NewListener(ln, s.lane.DownstreamTLS)
+	}
+	srv := &http.Server{
+		Handler:           s.checkCaller(s.gw.Handler()),
+		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
+	}
 	s.mu.Lock()
 	s.ln, s.srv = ln, srv
 	s.mu.Unlock()
@@ -203,6 +218,31 @@ func (s *server) Serve(ctx context.Context) error {
 		<-served
 		return nil
 	}
+}
+
+type callerKey struct{}
+
+type caller struct{ subject, key string }
+
+// checkCaller removes the caller token header before mcpproxy reads the
+// request, and refuses with 403 as an http lane does: a 401 sends an MCP
+// client into OAuth discovery against the sidecar.
+func (s *server) checkCaller(next http.Handler) http.Handler {
+	check := s.lane.Caller
+	if check == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		credential := strings.Join(r.Header.Values(check.Header), ", ")
+		r.Header.Del(check.Header)
+		subject, key, err := check.Resolve(r.Context(), credential)
+		if err != nil {
+			s.log.Info("mcp request refused", "peer", r.RemoteAddr, "reason", err.Error())
+			http.Error(w, "request refused: "+err.Error(), http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller{subject, key})))
+	})
 }
 
 func (s *server) Close() error {
@@ -381,6 +421,14 @@ func (s *server) Emit(ctx context.Context, ev audit.Event) {
 			return
 		}
 		ls.Record(ctx, string(ev.Type), map[string]string{"tool": ev.Tool, "rule": ev.Rule, "reason": ev.Reason})
+	case audit.EventSessionRefused:
+		s.mu.Lock()
+		ls := s.sessions[ev.Session]
+		s.mu.Unlock()
+		if ls == nil {
+			return
+		}
+		ls.Record(ctx, string(ev.Type), map[string]string{"caller": ev.User, "reason": ev.Reason})
 	}
 }
 

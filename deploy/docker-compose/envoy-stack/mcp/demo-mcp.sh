@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Walks one MCP session through the mcp lane: initialize, tools/list without
-# the tools an mcp_tool rule hides, an allowed call, a call to a hidden tool,
-# a call over the mcp_gateway budget, then the session's audit rows.
+# Walks one MCP session through the mcp lane: a request without the caller
+# token, initialize, tools/list without the tools an mcp_tool rule hides, an
+# allowed call, a call to a hidden tool, a call over the mcp_gateway budget,
+# then the session's audit rows.
 #
 # Usage:
 #   ./demo-mcp.sh         build, start, run the sequence
@@ -18,7 +19,7 @@ step() { printf '\n\033[1;36m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 
 if [[ "${1:-}" == "down" ]]; then
     compose down -v --remove-orphans
-    rm -rf bin
+    rm -rf bin caller-tokens
     exit 0
 fi
 
@@ -29,6 +30,9 @@ mkdir -p bin
 (cd "$root/sidecar/cmd" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$here/bin/hoop-inspect" .)
 (cd "$root/sidecar/mcpgateway" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$here/bin/upstream" ./internal/testupstream/cmd)
 
+[[ -s caller-tokens ]] || LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 >caller-tokens
+token=$(cat caller-tokens)
+
 step "start the lane"
 compose up -d --wait
 
@@ -38,7 +42,7 @@ sid=""
 # post sends one JSON-RPC message and prints the response body. The lane may
 # answer as JSON or as one SSE event; both come out as JSON.
 post() {
-    local hdrs=(-H 'content-type: application/json' -H 'accept: application/json, text/event-stream')
+    local hdrs=(-H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "x-hoop-token: $token")
     if [[ -n "$sid" ]]; then
         hdrs+=(-H "mcp-session-id: $sid" -H "mcp-protocol-version: $version")
     fi
@@ -47,7 +51,11 @@ post() {
 body() { sed '1,/^$/d' | sed -n 's/^data: //p; /^{/p'; }
 show() { compose exec -T client jq -c "$1"; }
 
-step "1. initialize"
+step "0. initialize without the caller token: refused before mcpproxy reads it"
+compose exec -T client curl -sS -w ' (%{http_code})\n' -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}' http://127.0.0.1:18901/mcp
+
+step "1. initialize with the caller token"
 resp=$(post '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"'"$version"'","capabilities":{},"clientInfo":{"name":"demo-mcp.sh","version":"1"}}}')
 sid=$(printf '%s\n' "$resp" | sed -n 's/^[Mm]cp-[Ss]ession-[Ii]d: //p')
 printf '%s\n' "$resp" | body | show '{protocolVersion: .result.protocolVersion, server: .result.serverInfo.name}'
@@ -70,7 +78,7 @@ step "6. tools/call echo: over mcp_gateway.max_calls_per_session, as a JSON-RPC 
 post '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"echo","arguments":{"message":"once more"}}}' | body | show '.error // .result'
 
 step "7. end the session"
-compose exec -T client curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE \
+compose exec -T client curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE -H "x-hoop-token: $token" \
     -H "mcp-session-id: $sid" -H "mcp-protocol-version: $version" http://127.0.0.1:18901/mcp
 
 step "audit rows of this session"
@@ -78,7 +86,7 @@ compose logs --no-log-prefix hoop-inspect | grep '^{' |
     compose exec -T client jq -c -s --arg sid "$sid" '
         (map(select(.metadata["mcp.session"] == $sid)) | .[0].session_id) as $s
         | .[] | select(.session_id == $s)
-        | {kind, what: (.metadata.activity // .metadata["mcp.method"]), tool: (.metadata["mcp.tool"] // .metadata.tool),
+        | {kind, principal, what: (.metadata.activity // .metadata["mcp.method"]), tool: (.metadata["mcp.tool"] // .metadata.tool),
            hidden: .metadata["mcp.tools_hidden"],
            allowed: (if .kind == "statement" or .kind == "violation" then .allowed else null end), rule}
         | with_entries(select(.value != null))'

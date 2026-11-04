@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -170,6 +171,7 @@ type sidecar struct {
 	mcpAddr string
 	mu      sync.Mutex
 	events  []auditEvent
+	lines   []string
 }
 
 // auditEvent is the subset of the relay's JSONL audit output these tests
@@ -186,14 +188,16 @@ type auditEvent struct {
 	Masked    []string          `json:"masked_entities"`
 	Count     int               `json:"masked_count"`
 	Metadata  map[string]string `json:"metadata"`
+	Principal string            `json:"principal"`
 }
 
 // sidecarOption changes how startSidecar launches the relay.
 type sidecarOption func(*sidecarLaunch)
 
 type sidecarLaunch struct {
-	body string
-	env  []string
+	body   string
+	env    []string
+	stderr io.Writer
 }
 
 // startSidecar launches the relay in front of upstream with the given config
@@ -238,6 +242,9 @@ func startSidecar(t *testing.T, upstream, config string, opts ...sidecarOption) 
 		t.Fatalf("stdout pipe: %v", err)
 	}
 	cmd.Stderr = os.Stderr
+	if launch.stderr != nil {
+		cmd.Stderr = io.MultiWriter(os.Stderr, launch.stderr)
+	}
 	if err := cmd.Start(); err != nil {
 		cancel()
 		t.Fatalf("start sidecar: %v", err)
@@ -254,6 +261,9 @@ func startSidecar(t *testing.T, upstream, config string, opts ...sidecarOption) 
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 		for sc.Scan() {
+			s.mu.Lock()
+			s.lines = append(s.lines, sc.Text())
+			s.mu.Unlock()
 			var ev auditEvent
 			if err := json.Unmarshal(sc.Bytes(), &ev); err != nil || ev.Kind == "" {
 				continue // a slog line, not an audit event
@@ -327,6 +337,13 @@ func (s *sidecar) auditEvents() []auditEvent {
 // The audit sink is asynchronous — it buffers and flushes on its own clock —
 // so a test that read the trail immediately after a query would race the
 // flush and fail intermittently, which is worse than no assertion.
+// auditLines is every line the relay wrote to stdout, as written.
+func (s *sidecar) auditLines() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.lines...)
+}
+
 func (s *sidecar) waitForAudit(t *testing.T, what string, match func(auditEvent) bool) auditEvent {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
