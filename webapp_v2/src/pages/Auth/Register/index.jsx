@@ -85,13 +85,17 @@ function Register() {
   }
 
   return (
-    <Center style={{ minHeight: '100vh', backgroundColor: 'var(--hoop-surface-strong)' }}>
-      <Box style={{ width: '90%', maxWidth: 400 }}>
+    <Center mih="100vh" bg="var(--hoop-surface-strong)">
+      <Box w="90%" maw={400}>
         <Paper shadow="sm" p={40} radius="lg">
-          <img
+          <Box
+            component="img"
             src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
             alt="hoop"
-            style={{ width: 48, display: 'block', margin: '0 auto 24px' }}
+            w={48}
+            display="block"
+            mx="auto"
+            mb={24}
           />
 
           <Title order={2} ta="center" mb="lg">

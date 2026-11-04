@@ -8,11 +8,13 @@ import { describe, expect, it } from 'vitest'
 // live in src/components/* and src/theme.js only. A one-off effect may name a
 // color when a comment says `theme-exception:`: the comment before its CSS
 // rule, or a JS comment on or up to two lines above the line. The comment must
-// say why: a bare marker does not count.
+// say why: a bare marker, or the words in a string, do not count.
 
 const SRC = join(import.meta.dirname, '..', 'src')
 const OWNERS = [/^components\//, /^theme\.js$/]
 const MARK = /theme-exception:[ \t]*[^\s*]/
+// The same mark, in a JS comment: //, /* or a block comment's * line.
+const JS_MARK = new RegExp(`(?:\\/\\/|\\/\\*|^\\s*\\*)[^\\n]*?${MARK.source}`, 'm')
 
 const PALETTES = 'gray|dark|red|pink|grape|violet|indigo|blue|cyan|teal|green|lime|yellow|orange|amber|sky|slate'
 // A palette shade as a CSS variable, the palette written out or built in a
@@ -25,9 +27,11 @@ const BUILT_SHADE = /\$\{[^}]*\}\.\d\b|\+\s*["'`][.-]\d\b/
 // theme.colors.gray[6], colors[name][6] (destructured too)
 const THEME_INDEX = /\bcolors(?:\.[a-z]+|\[[^\]]+\])\??\.?\[\d\]/
 // A literal color in CSS: hex, or a color function.
-const LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/
+const HEX = '#[0-9a-fA-F]{3,8}\\b'
+const COLOR_FN = '\\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\('
+const LITERAL = new RegExp(`${HEX}|${COLOR_FN}`)
 // The same inside a JS string.
-const JS_LITERAL = /["'`][^"'`]*(?:#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\()/
+const JS_LITERAL = new RegExp(`["'\`][^"'\`]*(?:${HEX}|${COLOR_FN})`)
 // CSS color keywords a value may name (no theme token behind them).
 const NAMED = new RegExp(
   `(?<![-\\w])(?:${[
@@ -41,6 +45,14 @@ const COLOR_PROPS = /color|background|border|outline|shadow|fill|stroke|caret|ac
 // An inline style that names a CSS color keyword: style={{ color: 'red' }}. A
 // config object's `color: 'red'` is a Mantine palette name, which is allowed.
 const JS_NAMED = new RegExp(`style=\\{\\{[^}]*\\b(?:color|background\\w*|border\\w*|fill|stroke)\\s*:\\s*["'\`]${NAMED.source}`)
+// An inline style object or a template that spans lines, where the line scan
+// cannot see the key and its color together: style={{\n color: 'red' }} or a
+// CSS template with `background: #f00`.
+const BLOCKS = /style=\{\{[\s\S]*?\}\}|`[^`]*`/g
+const BLOCK_COLOR = new RegExp(
+  `\\b(?:color|background[\\w-]*|border[\\w-]*|outline[\\w-]*|fill|stroke)\\s*:\\s*["'\`]?[^;{}"'\`\\n]*?(?:${NAMED.source}|${HEX}|${COLOR_FN})`,
+  'g',
+)
 
 function files(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -69,16 +81,26 @@ function cssViolations(path) {
 }
 
 function jsViolations(path) {
-  const lines = readFileSync(path, 'utf8').split('\n')
-  return lines.flatMap((line, i) => {
+  const text = readFileSync(path, 'utf8')
+  const lines = text.split('\n')
+  const report = (i) => {
+    const near = lines.slice(Math.max(0, i - 2), i + 1).join('\n')
+    return JS_MARK.test(near) ? [] : [`${relative(SRC, path)}:${i + 1}: ${lines[i].trim()}`]
+  }
+  const hits = new Set()
+  lines.forEach((line, i) => {
     // A line comment, not the // of a URL inside a string.
     const code = line.replace(/(^|[^:"'`])\/\/.*$/, '$1')
-    const color =
-      SHADE_VAR.test(code) || SHADE_STRING.test(code) || BUILT_SHADE.test(code) || THEME_INDEX.test(code) || JS_LITERAL.test(code) || JS_NAMED.test(code)
-    if (!color) return []
-    const near = lines.slice(Math.max(0, i - 2), i + 1).join('\n')
-    return MARK.test(near) ? [] : [`${relative(SRC, path)}:${i + 1}: ${line.trim()}`]
+    if (SHADE_VAR.test(code) || SHADE_STRING.test(code) || BUILT_SHADE.test(code) || THEME_INDEX.test(code) || JS_LITERAL.test(code) || JS_NAMED.test(code)) hits.add(i)
   })
+  for (const block of text.matchAll(BLOCKS)) {
+    if (!block[0].includes('\n')) continue
+    for (const color of block[0].matchAll(BLOCK_COLOR)) {
+      const at = block.index + color.index + color[0].length - 1
+      hits.add(text.slice(0, at).split('\n').length - 1)
+    }
+  }
+  return [...hits].sort((a, b) => a - b).flatMap(report)
 }
 
 describe('pages take their colors from the theme', () => {
