@@ -122,7 +122,7 @@ export default function RuleListItem({
         borderBottomLeftRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
         borderBottomRightRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
       }}
-      bg={showConnections ? 'var(--mantine-color-gray-0)' : undefined}
+      bg={showConnections ? 'var(--hoop-surface-muted)' : undefined}
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>

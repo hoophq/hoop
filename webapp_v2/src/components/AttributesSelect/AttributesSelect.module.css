@@ -1,18 +1,13 @@
-/* Background/text colors come from the `bg`/`c` props on the managed Pill
-   (instance props override the global Pill theme). Only the pieces the
-   props can't reach live here. */
-.managedPill {
-  color: var(--mantine-color-indigo-7);
-}
-
+/* A managed attribute. The pill's colors come from the Pill theme
+   (`variant="managed"`); its icon and remove button take the pill's text color. */
 .managedPill svg {
-  color: var(--mantine-color-indigo-7);
+  color: inherit;
 }
 
 .managedPill button {
-  color: var(--mantine-color-indigo-7);
+  color: inherit;
 }
 
 .managedOption {
-  color: var(--mantine-color-indigo-7);
+  color: var(--hoop-text-accent);
 }

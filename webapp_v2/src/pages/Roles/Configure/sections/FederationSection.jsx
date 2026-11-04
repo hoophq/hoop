@@ -229,11 +229,11 @@ function OAuthConsent() {
 function OutputPreview() {
   return (
     <Stack gap="xs">
-      <Paper withBorder p="md" bg="gray.0">
+      <Paper withBorder variant="muted" p="md">
         <Stack gap={4}>
           {FEDERATED_ENV_VARS.map((name) => (
             <Text key={name} size="sm" ff="monospace">
-              <Text span inherit c="indigo.7">{name}</Text>
+              <Text span inherit c="indigo">{name}</Text>
               <Text span inherit c="dimmed">{'=<issued at session start>'}</Text>
             </Text>
           ))}

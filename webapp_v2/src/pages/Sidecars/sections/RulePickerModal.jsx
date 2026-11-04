@@ -146,7 +146,7 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
       {status === 'ready' && rules.length > 0 && (
         <Stack gap="md">
           {!single && (
-            <Group px="lgAlt" py="xs" bg="gray.0">
+            <Group px="lgAlt" py="xs" bg="var(--hoop-surface-muted)">
               <Checkbox
                 label={
                   <Text size="sm" fw={500} c="dimmed">

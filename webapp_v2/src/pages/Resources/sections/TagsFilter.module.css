@@ -10,5 +10,5 @@
 
 .option:hover,
 .option:focus-visible {
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-strong);
 }

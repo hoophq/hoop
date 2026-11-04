@@ -5,12 +5,11 @@ import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
-import classes from './NativeConnections.module.css'
 
 /** Agent offline, or the connection lookup / credential request failed. */
 export function UnavailablePanel({ message }) {
   return (
-    <Alert color="amber" icon={<TriangleAlert size={16} />} title="Connection method not available" classNames={{ title: classes.amberText, icon: classes.amberText }}>
+    <Alert color="amber" icon={<TriangleAlert size={16} />} title="Connection method not available">
       {message}
     </Alert>
   )
@@ -65,7 +64,7 @@ export function PendingReviewPanel({
 
   return (
     <Stack gap="sm">
-      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for approval" classNames={{ title: classes.amberText, icon: classes.amberText }}>
+      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for approval">
         The credentials are issued once this request is approved. This row picks them up on its
         own.
       </Alert>

@@ -1,0 +1,6 @@
+/* Mantine sets --divider-color to gray-3 on the root (#aaaab2 in this theme,
+   too dark for a separator). This rule sits outside @layer mantine, so it wins;
+   a `color` prop still overrides it inline. */
+.root {
+  --divider-color: var(--hoop-border-subtle);
+}

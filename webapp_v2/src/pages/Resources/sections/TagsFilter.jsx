@@ -99,7 +99,7 @@ export default function TagsFilter({ tags, selected, onChange, size }) {
           size={size}
           data-filled={count > 0 || undefined}
           leftSection={<Tag size={16} aria-hidden="true" />}
-          rightSection={count ? <Badge size="sm" circle color="gray.8" variant="filled">{count}</Badge> : null}
+          rightSection={count ? <Badge size="sm" circle color="var(--mantine-color-dimmed)" variant="filled">{count}</Badge> : null}
           aria-label={count ? 'Filter by tags, ' + count + ' selected' : 'Filter by tags'}
           onClick={() => (opened ? close() : setOpened(true))}
         >
@@ -145,7 +145,7 @@ export default function TagsFilter({ tags, selected, onChange, size }) {
                       <Option key={key} onClick={() => openKey(key)}>
                         <Text size="sm" truncate>{displayKey(key)}</Text>
                         <Group gap="xs" wrap="nowrap">
-                          {selectedCount > 0 && <Badge size="sm" circle color="gray.8" variant="filled">{selectedCount}</Badge>}
+                          {selectedCount > 0 && <Badge size="sm" circle color="var(--mantine-color-dimmed)" variant="filled">{selectedCount}</Badge>}
                           <ChevronRight size={16} />
                         </Group>
                       </Option>

@@ -79,15 +79,15 @@ function ScoreCard({ overall }) {
             size={220}
             thickness={14}
             roundCaps
-            rootColor="gray.1"
+            rootColor="var(--hoop-surface-strong)"
             sections={[{ value: overall.score / 10, color: level.color }]}
             label={
               <Stack gap={6} align="center">
                 <Title order={1} fz={46} lh={1}>
                   {overall.score}
                 </Title>
-                <Divider w={72} color="gray.3" />
-                <Text fz="23" c="dark.4" lh={1}>
+                <Divider w={72} />
+                <Text fz="23" c="dimmed" lh={1}>
                   1000
                 </Text>
               </Stack>

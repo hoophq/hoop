@@ -36,7 +36,7 @@ export default function ReplayDispatchModal({ subId }) {
           <Card padding="sm" withBorder>
             <Stack gap={4}>
               <Group gap="sm" align="center">
-                <Code bg="indigo.1" c="indigo.9">{replayTarget.eventType}</Code>
+                <Code variant="accent">{replayTarget.eventType}</Code>
                 <DispatchBadge status={replayTarget.status} />
               </Group>
               <Text size="xs" c="dimmed" ff="monospace">

@@ -112,15 +112,15 @@ export default function AiAgentsIdentities() {
                     {isRevoked ? (
                       <Tooltip label="Deactivated key" position="top">
                         <Group gap="xs" wrap="nowrap">
-                          <Unplug size={14} color="var(--mantine-color-gray-7)" />
-                          <Text size="sm" c="gray.7" ff="monospace">
+                          <Unplug size={14} color="var(--mantine-color-dimmed)" />
+                          <Text size="sm" c="dimmed" ff="monospace">
                             {truncateKey(agent.masked_key)}
                           </Text>
                         </Group>
                       </Tooltip>
                     ) : (
                       <Group gap="xs" wrap="nowrap">
-                        <KeyRound size={14} color="var(--mantine-color-gray-8)" />
+                        <KeyRound size={14} color="var(--mantine-color-dimmed)" />
                         <Text size="sm" ff="monospace">
                           {truncateKey(agent.masked_key)}
                         </Text>

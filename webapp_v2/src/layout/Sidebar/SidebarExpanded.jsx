@@ -51,7 +51,7 @@ export function SidebarExpanded({ nav, navKey, top, counts }) {
             const rule = index > 0 && block !== sections[index - 1].block
             return (
               <Box key={id}>
-                {rule && <Divider color="gray.1" my="sm" />}
+                {rule && <Divider my="sm" />}
                 <Box
                   component="ul"
                   role="list"

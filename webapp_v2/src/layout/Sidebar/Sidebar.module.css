@@ -26,7 +26,7 @@
  * src/components/Pill/theme.js.
  */
 .navLink:hover {
-  background-color: rgba(0, 0, 51, 0.06);
+  background-color: var(--hoop-nav-hover);
   color: var(--mantine-color-text);
 }
 
@@ -37,9 +37,9 @@
 /* Active state — override Mantine's --nl-bg / --nl-color */
 .navLink[data-active],
 .navLink[aria-current='page'] {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--hoop-nav-active);
   color: var(--mantine-color-text);
-  --nl-bg: rgba(0, 0, 0, 0.05);
+  --nl-bg: var(--hoop-nav-active);
   --nl-color: var(--mantine-color-text);
 }
 
@@ -55,7 +55,7 @@
 
 .navLink[data-active]:hover,
 .navLink[aria-current='page']:hover {
-  background-color: rgba(0, 0, 0, 0.08) !important;
+  background-color: var(--hoop-nav-pressed) !important;
 }
 
 /* Filled badges (NEW/BETA) keep their own label color — the `color: inherit`
@@ -68,7 +68,7 @@
 }
 
 .navLink:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-5);
+  outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 1px;
 }
 
@@ -90,17 +90,17 @@
 }
 
 .iconBtn:hover {
-  background-color: rgba(0, 0, 51, 0.06);
+  background-color: var(--hoop-nav-hover);
   color: var(--mantine-color-text);
 }
 
 .iconBtn:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-5);
+  outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 1px;
 }
 
 .iconBtnActive {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--hoop-nav-active);
   color: var(--mantine-color-text);
 }
 
@@ -115,7 +115,7 @@
   height: 40px;
   padding: 0 var(--mantine-spacing-lg);
   border: none;
-  border-top: 1px solid var(--mantine-color-gray-2);
+  border-top: 1px solid var(--hoop-border-subtle);
   background: transparent;
   color: var(--mantine-color-dimmed);
   cursor: pointer;
@@ -127,12 +127,12 @@
 }
 
 .collapseBtn:hover {
-  background-color: rgba(0, 0, 51, 0.06);
+  background-color: var(--hoop-nav-hover);
   color: var(--mantine-color-text);
 }
 
 .collapseBtn:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-5);
+  outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: -2px;
 }
 
@@ -232,7 +232,7 @@
 
 .collapsedFooter {
   flex-shrink: 0;
-  border-top: 1px solid var(--mantine-color-gray-2);
+  border-top: 1px solid var(--hoop-border-subtle);
   width: 100%;
   height: 40px;
   display: flex;
@@ -346,7 +346,7 @@
 .navLinkChildrenGuide {
   margin-inline-start: calc(var(--mantine-spacing-sm) + var(--sidebar-icon-size) / 2);
   padding-inline-start: calc(var(--sidebar-icon-size) / 2 - 1px);
-  border-inline-start: 1px solid var(--mantine-color-gray-3);
+  border-inline-start: 1px solid var(--hoop-border-strong);
 }
 
 .navLinkChildrenLabel {

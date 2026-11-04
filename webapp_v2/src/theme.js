@@ -14,6 +14,9 @@ import {
   ComboboxTheme,
 } from '@/components/Input/theme';
 import { PaperTheme } from '@/components/Paper/theme'
+import { ModalTheme } from '@/components/Modal/theme'
+import { DividerTheme } from '@/components/Divider/theme'
+import { CodeTheme } from '@/components/Code/theme'
 import { StepperTheme } from '@/components/Stepper/theme';
 import { ButtonTheme } from '@/components/Button/theme';
 import { ActionIconTheme } from '@/components/ActionIcon/theme';
@@ -43,6 +46,61 @@ export function cssVariablesResolver(theme) {
       // so it cannot separate a surface from the page.
       '--hoop-surface-raised': '#ffffff',
 
+      // Surfaces and borders by role: a page names what a gray is for, and its
+      // weight is set here once. The gray scale starts at Radix step 3, so a
+      // CLJS `--gray-N` is not the theme's `gray-N` (CLJS_PATTERNS.md).
+      // A card on the page or in a modal: halfway to gray-0, with a soft border.
+      '--hoop-surface-subtle': 'color-mix(in srgb, var(--mantine-color-gray-0) 50%, var(--mantine-color-body))',
+      // A row hover, an input row, a control strip, a "preview not available" card.
+      '--hoop-surface-muted': 'var(--mantine-color-gray-0)',
+      // A chip or a notice that sits on a subtle surface.
+      '--hoop-surface-strong': 'var(--mantine-color-gray-1)',
+      // The outline of a card, a viewer or a bar.
+      '--hoop-border-subtle': 'var(--mantine-color-gray-1)',
+      // A line between rows of a list.
+      '--hoop-border-divider': 'var(--mantine-color-gray-0)',
+      // Tertiary text, a step lighter than dimmed: table headers, an inactive tab,
+      // a done step.
+      '--hoop-text-faint': 'var(--mantine-color-gray-5)',
+      // An accent identifier in a list (a managed attribute).
+      '--hoop-text-accent': 'var(--mantine-color-indigo-7)',
+      // Feature tints (the sidecar feature accordions).
+      '--hoop-tint-pink': 'var(--mantine-color-pink-0)',
+      '--hoop-tint-violet': 'var(--mantine-color-violet-0)',
+      '--hoop-tint-indigo': 'var(--mantine-color-indigo-0)',
+      // A border that must stand out: a hovered card, a waiting frame, a form panel.
+      '--hoop-border-strong': 'var(--mantine-color-gray-2)',
+      // The hover of a strong surface (the header's gray pill).
+      '--hoop-surface-strong-hover': 'var(--mantine-color-gray-2)',
+      // A faint alpha overlay that keeps its contrast on any fill: Figma Neutral
+      // Alpha 2 (the connection icon tile of the Native connections rows).
+      '--hoop-overlay-faint': 'rgba(0, 0, 85, 0.02)',
+      // The sidebar's Figma overlays: Neutral Alpha (hover), Black Alpha (active, pressed).
+      '--hoop-nav-hover': 'rgba(0, 0, 51, 0.06)',
+      '--hoop-nav-active': 'rgba(0, 0, 0, 0.05)',
+      '--hoop-nav-pressed': 'rgba(0, 0, 0, 0.08)',
+      // On the brand navy (--brand-navy): a faint surface and its text.
+      '--hoop-on-navy-surface': 'rgba(255, 255, 255, 0.1)',
+      '--hoop-on-navy-text': 'rgba(255, 255, 255, 0.9)',
+      '--hoop-on-navy-dimmed': 'rgba(255, 255, 255, 0.7)',
+      // The dark terminal surface: CodeSnippet "black" and the session output viewers.
+      '--hoop-terminal-bg': 'var(--mantine-color-dark-8)',
+      '--hoop-terminal-text': 'var(--mantine-color-gray-2)',
+      // The rest of the terminal palette (server logs): frame, rules, dim and
+      // bright text, row tints and the level hues.
+      '--hoop-terminal-border': 'var(--mantine-color-dark-5)',
+      '--hoop-terminal-rule': 'var(--mantine-color-dark-4)',
+      '--hoop-terminal-muted': 'var(--mantine-color-dark-2)',
+      '--hoop-terminal-soft': 'var(--mantine-color-gray-3)',
+      '--hoop-terminal-strong': 'var(--mantine-color-gray-1)',
+      '--hoop-terminal-hover': 'rgba(255, 255, 255, 0.05)',
+      '--hoop-terminal-quote': 'rgba(255, 255, 255, 0.03)',
+      '--hoop-terminal-green': 'var(--mantine-color-green-5)',
+      '--hoop-terminal-yellow': 'var(--mantine-color-yellow-6)',
+      '--hoop-terminal-red': 'var(--mantine-color-red-5)',
+      '--hoop-terminal-violet': 'var(--mantine-color-violet-4)',
+      '--hoop-terminal-cyan': 'var(--mantine-color-cyan-4)',
+
       // Control height scale — the single source of truth for Button,
       // ActionIcon, and every Input-based component. md is the app-wide
       // default (no size prop at call sites); xs/sm/lg are the variants.
@@ -71,6 +129,24 @@ export function cssVariablesResolver(theme) {
       '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
       '--mantine-color-default-border': theme.colors.gray[2],
       '--mantine-color-placeholder': '#807f8f', // gray[5] — placeholder text
+      // Readable text for the status colors. Mantine paints `c="green"` and the
+      // light variant's text (Badge, Alert, Button light) with the filled shade,
+      // which fails WCAG AA on white. These match the weight of the CLJS app's
+      // Radix soft text (step 11). Yellow has no readable step, so its text is
+      // amber's (lead, 2026-11-03, ENG-994).
+      '--mantine-color-green-text': 'var(--mantine-color-green-7)',
+      '--mantine-color-green-light-color': 'var(--mantine-color-green-7)',
+      '--mantine-color-red-text': 'var(--mantine-color-red-7)',
+      '--mantine-color-red-light-color': 'var(--mantine-color-red-7)',
+      '--mantine-color-blue-text': 'var(--mantine-color-blue-8)',
+      '--mantine-color-blue-light-color': 'var(--mantine-color-blue-8)',
+      '--mantine-color-amber-text': 'var(--mantine-color-amber-8)',
+      '--mantine-color-amber-light-color': 'var(--mantine-color-amber-8)',
+      '--mantine-color-yellow-text': 'var(--mantine-color-amber-8)',
+      '--mantine-color-yellow-light-color': 'var(--mantine-color-amber-8)',
+      '--mantine-color-orange-text': 'var(--mantine-color-orange-9)',
+      '--mantine-color-orange-light-color': 'var(--mantine-color-orange-9)',
+      '--mantine-color-indigo-text': 'var(--mantine-color-indigo-7)',
     },
     dark: {}
   };
@@ -280,6 +356,9 @@ export const theme = createTheme({
     // so a plain theme entry stands in for Component.extend().
     PickerInputBase: { defaultProps: { size: 'md' } },
     Paper: PaperTheme,
+    Modal: ModalTheme,
+    Divider: DividerTheme,
+    Code: CodeTheme,
     Stepper: StepperTheme,
     Button: ButtonTheme,
     ActionIcon: ActionIconTheme,

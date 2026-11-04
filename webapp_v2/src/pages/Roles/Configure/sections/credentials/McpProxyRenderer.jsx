@@ -497,7 +497,7 @@ export default function McpProxyRenderer({
           </Text>
         )}
         {entry?.notes && (
-          <Text size="sm" c="yellow.8">
+          <Text size="sm" c="amber">
             {entry.notes}
           </Text>
         )}
@@ -642,8 +642,8 @@ export default function McpProxyRenderer({
                 {authorized ? (
                   <Group justify="space-between" align="center" gap="sm">
                     <Group gap={6} align="center">
-                      <Check size={16} color="var(--mantine-color-green-8)" />
-                      <Text size="sm" fw={500} c="green.8">
+                      <Check size={16} color="var(--mantine-color-green-filled)" />
+                      <Text size="sm" fw={500} c="green">
                         {granted && !pendingFlowId
                           ? 'Authorized — token renewed automatically'
                           : pendingFlowId
@@ -741,7 +741,7 @@ export default function McpProxyRenderer({
             value={approvalTools}
             onChange={(e) => setSetting(ENV.approvalTools, e.currentTarget.value)}
           />
-          <Text size="sm" c="yellow.8">
+          <Text size="sm" c="amber">
             Approval routing is not available yet — matched tools are denied
             until it ships.
           </Text>

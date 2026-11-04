@@ -11,7 +11,7 @@
   gap: var(--mantine-spacing-xlAlt);
   padding: var(--mantine-spacing-mdAlt);
   background-color: var(--mantine-color-white);
-  border: 1px solid var(--mantine-color-gray-2);
+  border: 1px solid var(--hoop-border-subtle);
 }
 
 .row + .row {
