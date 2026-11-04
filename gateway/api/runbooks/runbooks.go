@@ -2,7 +2,6 @@ package apirunbooks
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -188,7 +187,7 @@ func RunExec(c *gin.Context) {
 		runbook.EnvVars[key] = val
 	}
 
-	runbookParamsJson, _ := json.Marshal(req.Parameters)
+	runbookParamsJson := encodeRequestParams(req.Parameters, runbook)
 	sessionLabels := openapi.SessionLabelsType{
 		"runbookFile":       req.FileName,
 		"runbookParameters": string(runbookParamsJson),

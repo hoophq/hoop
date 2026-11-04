@@ -738,6 +738,8 @@ func validateGitURL(urlStr string) error {
 	return nil
 }
 
+// encodeRequestParams returns the runbook parameters for the session label.
+// It redacts the values of the file and password inputs.
 func encodeRequestParams(params map[string]string, runbook *runbooks.File) []byte {
 	newParams := map[string]string{}
 	for key, val := range params {
@@ -751,8 +753,12 @@ func encodeRequestParams(params map[string]string, runbook *runbooks.File) []byt
 			if !ok {
 				continue
 			}
-			if attrType, _ := attr["type"].(string); attrType == "file" {
+			switch attrType, _ := attr["type"].(string); attrType {
+			case "file":
 				newParams[key] = fmt.Sprintf("[param redacted. type = file, size = %v byte(s)]", len(val))
+			case "password":
+				// no length: it would leak how long the secret is
+				newParams[key] = "[param redacted. type = password]"
 			}
 		}
 	}
