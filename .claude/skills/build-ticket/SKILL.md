@@ -67,9 +67,9 @@ schedule and no person reads the session. Then:
   route of a cloud session; a capture left in the sandbox is lost with it.
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
-  Step 5 opens it ready for review, not as a draft, and adds the label
-  `from-agent-support` next to the release label (`issue_write`): it counts
-  the agent's PRs. After 3 QA `FAIL` rounds, turn it back into a draft
+  It opens ready for review, not as a draft (step 5), with the label
+  `from-agent-support` next to the release label (step 7, `issue_write`): the
+  label counts the agent's PRs. After 3 QA `FAIL` rounds it goes back to draft
   (`update_pull_request`, `draft: true`). A person merges it.
 - Once the PR exists, `subscribe_pr_activity` on it. Its CI results and
   review comments (Qodo, reviewers) wake this session after the run ends. On
@@ -147,7 +147,8 @@ name, stop and report what is missing.
 - Migration: test `down 1`
 
 Then push the branch and open the PR as a draft, title `<ID>: <summary>`
-(`gh pr create --draft`), so CI runs while QA works. Step 7 fills it.
+(`gh pr create --draft`), so CI runs while QA works. Step 7 fills it. In
+autonomous mode, open it ready for review instead.
 
 ## 6. Independent QA
 
@@ -158,8 +159,9 @@ it judges against the ticket, not against you.
 On `FAIL`: fix each finding, commit, then resume the SAME qa agent and ask it to
 re-check, so it remembers what it already raised.
 
-After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
-and what you think the real blocker is.
+After 3 `FAIL` rounds: stop. Leave the PR as a draft (in autonomous mode, turn
+it back into one). Report the open findings and what you think the real
+blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
 compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI or terminal flow, record it on the final
@@ -190,6 +192,7 @@ removed or renamed analytics event with its dashboard and successor, a new env
 var with the helm chart change.
 
 Add exactly one release label: `major`, `minor`, `patch` or `skip-release`.
+In autonomous mode, add `from-agent-support` too.
 
 CI must be green before step 8: a red check goes back to step 4.
 
