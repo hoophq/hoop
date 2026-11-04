@@ -29,6 +29,9 @@ func (r Rule) validateMCPTool() error {
 		if strings.TrimSpace(g) == "" {
 			return fmt.Errorf("%s: an mcp_tool rule with an empty glob", r.Name)
 		}
+		if strings.TrimSpace(g) != g {
+			return fmt.Errorf("%s: the mcp_tool glob %q has spaces around it", r.Name, g)
+		}
 	}
 	return nil
 }

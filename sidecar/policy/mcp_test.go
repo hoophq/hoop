@@ -96,6 +96,7 @@ func TestMCPToolRuleValidation(t *testing.T) {
 		{"neither", `[{"name":"r","type":"mcp_tool"}]`, "tools or allow"},
 		{"both", `[{"name":"r","type":"mcp_tool","tools":["a"],"allow":["b"]}]`, "tools or allow"},
 		{"empty glob", `[{"name":"r","type":"mcp_tool","tools":[" "]}]`, "empty glob"},
+		{"spaces", `[{"name":"r","type":"mcp_tool","tools":[" delete_*"]}]`, "spaces around it"},
 	} {
 		if _, err := mcpRules(t, c.rule); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)

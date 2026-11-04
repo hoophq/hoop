@@ -3399,7 +3399,13 @@ judge it.
 
 Only an enforcing `mcp_tool` rule hides a tool. On an observing lane, or
 with `action: defer`, the rule hides nothing, and the verdict on a call is
-recorded as for any rule.
+recorded as for any rule: without OPA, a deferring rule denies the call.
+
+Two `allow` rules let through only the tools both list.
+
+A `tools/call` is judged by its exact `name` key. Params that name no tool,
+or carry keys that differ only in case, are refused as invalid params
+(`-32602`) and recorded as `mcp_invalid_params`.
 
 Other rule types and OPA judge calls too, and hide nothing.
 
