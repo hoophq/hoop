@@ -123,6 +123,7 @@ var ruleTypeLabel = map[string]string{
 	string(policy.MatchHTTPHeader):   "HTTP headers",
 	string(policy.MatchGRPCStatus):   "gRPC status",
 	string(policy.MatchMetadata):     "Statement metadata",
+	string(policy.MatchMCPTool):      "MCP tools",
 }
 
 // ruleTypesFor lists the rule types a lane of protocol can evaluate, in
@@ -151,6 +152,10 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			}
 		case policy.MatchGRPCStatus:
 			if protocol != "grpc" && protocol != "spanner" {
+				continue
+			}
+		case policy.MatchMCPTool:
+			if protocol != "mcp" {
 				continue
 			}
 		}
@@ -538,6 +543,11 @@ func ruleDetail(r policy.Rule) string {
 		return headerText(r.Headers)
 	case policy.MatchMetadata:
 		return headerText(r.Metadata)
+	case policy.MatchMCPTool:
+		if len(r.Allow) > 0 {
+			return "only " + strings.Join(r.Allow, ", ")
+		}
+		return strings.Join(r.Tools, ", ")
 	}
 	return ""
 }
@@ -613,6 +623,10 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 		{id: "metadata", label: "Metadata", kind: fText, text: headerText(r.Metadata), placeholder: "grpc.method=DeleteUser|DropTable",
 			help:   "Match when every key has one of its values; keys come from the codec (grpc.*, mongodb.command, <plug-in>.verb). key=v1|v2, comma-separated.",
 			hidden: is(policy.MatchMetadata)},
+		{id: "tools", label: "Deny tools", kind: fText, text: strings.Join(r.Tools, ", "), placeholder: "*delete*, run_query",
+			help: "Tools the rule denies and hides from tools/list. * matches anything; comma-separated.", hidden: is(policy.MatchMCPTool)},
+		{id: "allow", label: "Allow only", kind: fText, text: strings.Join(r.Allow, ", "), placeholder: "get_*, list_*",
+			help: "The only tools the rule lets through. Set this or Deny tools, not both.", hidden: is(policy.MatchMCPTool)},
 		{id: "message", label: "Message", kind: fText, text: r.Message, placeholder: "not allowed through the sidecar",
 			help: "What the client is told when the rule refuses a statement."},
 		{id: "action", label: "On match", kind: fEnum, options: []string{"", "defer"}, text: r.Action,
@@ -718,6 +732,14 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		}
 		if len(r.Metadata) == 0 {
 			empty = "Metadata"
+		}
+	case policy.MatchMCPTool:
+		r.Tools, r.Allow = g("tools").list(), g("allow").list()
+		if len(r.Tools) > 0 && len(r.Allow) > 0 {
+			return r, errors.New("set Deny tools or Allow only, not both")
+		}
+		if len(r.Tools) == 0 && len(r.Allow) == 0 {
+			empty = "Deny tools"
 		}
 	}
 	if empty != "" {
