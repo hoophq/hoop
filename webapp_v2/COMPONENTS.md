@@ -169,7 +169,7 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
-The icon sits in a circle; `squareIcon` makes it a rounded square, as the role connection method cards show it. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
+The icon sits in a rounded square on every page. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
 ```jsx
 <SelectionCard
   image="/images/anthropic-logo.svg"
