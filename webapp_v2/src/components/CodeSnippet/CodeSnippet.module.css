@@ -40,3 +40,8 @@
 .copyBtn[data-visible] {
   opacity: 1;
 }
+
+/* The gray icon disappears on the dark ground: paint it like the code text. */
+.root[data-variant='black'] .copyIcon:not([data-copied]) {
+  color: var(--mantine-color-gray-2);
+}
