@@ -20,6 +20,10 @@ import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credential
 
 function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace }) {
   const [draftName, setDraftName] = useState(displayName)
+  const commit = () => {
+    const trimmed = draftName.trim()
+    if (trimmed) onCommitName(trimmed)
+  }
 
   useEffect(() => {
     setDraftName(displayName)
@@ -40,11 +44,9 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
               const next = e.currentTarget.value.toUpperCase()
               if (isValidPosixKey(next)) setDraftName(next)
             }}
-            onBlur={() => {
-              const trimmed = draftName.trim()
-              if (!trimmed) return
-              onCommitName(trimmed)
-            }}
+            onBlur={commit}
+            // Enter submits the wizard's form before the field blurs.
+            onKeyDown={(e) => e.key === 'Enter' && commit()}
           />
           {writeOnly ? (
             <SecretField

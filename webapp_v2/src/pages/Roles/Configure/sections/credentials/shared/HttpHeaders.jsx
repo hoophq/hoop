@@ -40,6 +40,10 @@ function HeaderRow({
   onCancelReplace,
 }) {
   const [draftName, setDraftName] = useState(displayName)
+  const commit = () => {
+    const trimmed = draftName.trim()
+    if (trimmed) onCommitKey(trimmed)
+  }
 
   useEffect(() => {
     setDraftName(displayName)
@@ -59,11 +63,9 @@ function HeaderRow({
             // — mirrors CLJS configuration_inputs.cljs:16-17,81-97.
             if (isValidHeaderKey(next)) setDraftName(next)
           }}
-          onBlur={() => {
-            const trimmed = draftName.trim()
-            if (!trimmed) return
-            onCommitKey(trimmed)
-          }}
+          onBlur={commit}
+          // Enter submits the wizard's form before the field blurs.
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
           placeholder={keyPlaceholder}
         />
       </Grid.Col>

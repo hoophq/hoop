@@ -43,6 +43,10 @@ function EnvvarRow({
   onCancelReplace,
 }) {
   const [draftName, setDraftName] = useState(displayName)
+  const commit = () => {
+    const trimmed = draftName.trim()
+    if (trimmed) onCommitKey(trimmed)
+  }
 
   // Keep the local draft in sync when the displayed name changes from
   // outside (e.g. another component triggered a rename for this key).
@@ -65,11 +69,9 @@ function EnvvarRow({
             // the agent rejects at connect time anyway).
             if (isValidPosixKey(next)) setDraftName(next)
           }}
-          onBlur={() => {
-            const trimmed = draftName.trim()
-            if (!trimmed) return
-            onCommitKey(trimmed)
-          }}
+          onBlur={commit}
+          // Enter submits the wizard's form before the field blurs.
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
           placeholder="e.g. API_KEY"
         />
       </Grid.Col>
