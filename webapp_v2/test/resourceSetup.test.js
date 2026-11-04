@@ -255,6 +255,22 @@ describe('POST /resources matches the CLJS wizard: SSH, TCP, Linux VM, HTTP prox
     expect(payload()).toEqual(fixture('ssh-key-vault'))
   })
 
+  it('ssh: an auth switch drops the credential the form hides', () => {
+    begin('ssh', { name: 'ssh-switch', agentId, profile: null })
+    typeKey(0, 'envvar:HOST', 'ssh.internal')
+    typeKey(0, 'envvar:USER', 'ubuntu')
+    typeKey(0, 'envvar:PASS', 'pw')
+    role(0).credentials.getState().chooseSshAuth('key')
+    typeKey(0, 'envvar:AUTHORIZED_SERVER_KEYS', 'KEY')
+    expect(Object.keys(secretOf(role(0).credentials))).toEqual([
+      'envvar:HOST',
+      'envvar:USER',
+      'envvar:AUTHORIZED_SERVER_KEYS',
+    ])
+    role(0).credentials.getState().chooseSshAuth('password')
+    expect(Object.keys(secretOf(role(0).credentials))).toEqual(['envvar:HOST', 'envvar:USER'])
+  })
+
   it('ssh, local: sent as ssh-local with no secret', () => {
     begin('ssh', { name: 'ssh-local', agentId, profile: null })
     store().setRoleName(role(0).id, 'ssh-local-sh')

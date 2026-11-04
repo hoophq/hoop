@@ -60,6 +60,7 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
   )
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const chooseSshAuth = useCredentialsStore((s) => s.chooseSshAuth)
   const setDraft = useCredentialsStore((s) => s.setDraft)
   const draftSubtype = useCredentialsStore((s) => s.drafts.subtype)
 
@@ -85,9 +86,8 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
     const secrets = connection?.secret || {}
     const passKey = 'envvar:PASS'
     const keyKey = 'envvar:AUTHORIZED_SERVER_KEYS'
-    // A new role sends only the credential its method shows.
     if (createMode) {
-      cancelSecretChange(next === 'password' ? keyKey : passKey)
+      chooseSshAuth(next)
       return
     }
     if (next === 'password') {

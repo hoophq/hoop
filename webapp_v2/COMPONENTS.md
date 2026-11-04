@@ -624,7 +624,7 @@ import NumberInput from '@/components/NumberInput'
 ```
 
 ### `TagsInput`
-Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit. Mantine splits on `,` and drops repeated tags by default; command arguments turn both off.
 ```jsx
 import TagsInput from '@/components/TagsInput'
 
@@ -632,7 +632,8 @@ import TagsInput from '@/components/TagsInput'
   label="Command Arguments"
   value={args}
   onChange={setArgs}
-  splitChars={[',']}
+  splitChars={[]}
+  allowDuplicates
 />
 ```
 

@@ -13,6 +13,7 @@ import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { roleFormFor } from './catalog'
 
 const PASS_KEY = 'envvar:PASS'
+const SSH_KEY_KEY = 'envvar:AUTHORIZED_SERVER_KEYS'
 const AWS_IAM_KEYS = new Set(['envvar:USER', PASS_KEY])
 const INSECURE_KEY = 'envvar:INSECURE'
 const SSH_PRIVATE_KEY = 'filesystem:SSH_PRIVATE_KEY'
@@ -69,7 +70,7 @@ function initialSecrets(subtype) {
 // through CredentialsStoreProvider. The secret map is empty, so every field is new.
 // drafts.subtype turns ssh into ssh-local; drafts.command holds the typed arguments.
 export function createRoleCredentialsStore({ type, subtype }) {
-  return createStore((set) => ({
+  return createStore((set, get) => ({
     createMode: true,
     connection: { type, subtype, secret: {} },
     drafts: { subtype, command: [] },
@@ -80,6 +81,9 @@ export function createRoleCredentialsStore({ type, subtype }) {
     parkedPass: null,
     ...credentialsSlice(set),
     setDraft: (patch) => set((state) => ({ drafts: { ...state.drafts, ...patch } })),
+    // The SSH form hides the credential of the other auth method, so it is not
+    // sent. CLJS sent a password typed before a switch to key.
+    chooseSshAuth: (method) => get().cancelSecretChange(method === 'password' ? SSH_KEY_KEY : PASS_KEY),
     applyMethod: (method, provider) =>
       set((state) => {
         const { stagedSecrets, parkedPass } = swapPass(state, method)
