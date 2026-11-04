@@ -18,7 +18,8 @@ func (nopSession) ID() string { return "sidecar" }
 func (nopSession) ToolCall(context.Context, string, []byte) daemon.MCPVerdict {
 	return daemon.MCPVerdict{Allowed: true}
 }
-func (nopSession) ToolList(context.Context, []daemon.MCPToolInfo) daemon.MCPVerdict {
+func (nopSession) Hidden(string) bool { return false }
+func (nopSession) ToolList(context.Context, []daemon.MCPToolInfo, []string) daemon.MCPVerdict {
 	return daemon.MCPVerdict{Allowed: true}
 }
 func (nopSession) Record(context.Context, string, map[string]string) {}

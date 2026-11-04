@@ -108,8 +108,6 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 
 func policyFor(p daemon.MCPGatewayConfig) config.Policy {
 	out := config.Policy{
-		AllowedTools:     p.AllowedTools,
-		DeniedTools:      p.DeniedTools,
 		BlockSampling:    p.BlockSampling,
 		BlockElicitation: p.BlockElicitation,
 		OnRugPull:        p.OnRugPull,
@@ -325,7 +323,7 @@ func (c *hoopCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.
 	if m.Dir == inspect.C2S {
 		return c.request(ctx, ls, m)
 	}
-	return c.response(ctx, ls, m)
+	return c.response(ctx, ls, ms, m)
 }
 
 func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *inspect.Msg) inspect.Decision {
@@ -362,6 +360,48 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 	return inspect.AllowAll
 }
 
+// hideTools drops from a tools/list result every tool an mcp_tool rule
+// denies, keeping the other fields of the result as they came. The rule reads
+// the real tool name: overrides renamed the catalog earlier in the pipeline.
+func hideTools(ls daemon.MCPLaneSession, ms inspect.Session, m *inspect.Msg) (tools []daemon.MCPToolInfo, hidden []string, err error) {
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(m.Env.Result, &result); err != nil {
+		return nil, nil, err
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(result["tools"], &raw); err != nil {
+		return nil, nil, err
+	}
+	kept := make([]json.RawMessage, 0, len(raw))
+	for _, entry := range raw {
+		var t struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := json.Unmarshal(entry, &t); err != nil {
+			return nil, nil, err
+		}
+		if real := checks.RealToolName(ms, t.Name); ls.Hidden(real) {
+			hidden = append(hidden, real)
+			continue
+		}
+		kept = append(kept, entry)
+		tools = append(tools, daemon.MCPToolInfo{Name: t.Name, Description: t.Description})
+	}
+	if len(hidden) == 0 {
+		return tools, nil, nil
+	}
+	if result["tools"], err = json.Marshal(kept); err != nil {
+		return nil, nil, err
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, nil, err
+	}
+	m.Env.Result = out
+	return tools, hidden, nil
+}
+
 // deniedToolResult answers a refused tools/call with a tool result that has
 // isError set, so the agent reads a tool error and keeps the server.
 func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decision {
@@ -382,26 +422,17 @@ func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decisio
 	return inspect.Decision{Verdict: inspect.Deny, Reply: reply, Reason: msg, Rule: checkName}
 }
 
-func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, m *inspect.Msg) inspect.Decision {
+func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms inspect.Session, m *inspect.Msg) inspect.Decision {
 	if !m.Env.IsResponse() || m.Env.Error != nil || len(m.Env.Result) == 0 {
 		return inspect.AllowAll
 	}
 	switch m.CorrelatedMethod {
 	case mcp.MethodToolsList:
-		var r struct {
-			Tools []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tools"`
-		}
-		if err := json.Unmarshal(m.Env.Result, &r); err != nil {
+		tools, hidden, err := hideTools(ls, ms, m)
+		if err != nil {
 			return inspect.AllowAll
 		}
-		tools := make([]daemon.MCPToolInfo, 0, len(r.Tools))
-		for _, t := range r.Tools {
-			tools = append(tools, daemon.MCPToolInfo{Name: t.Name, Description: t.Description})
-		}
-		if v := ls.ToolList(ctx, tools); !v.Allowed {
+		if v := ls.ToolList(ctx, tools, hidden); !v.Allowed {
 			c.s.denied.Add(1)
 			return inspect.Decision{Verdict: inspect.Kill, Reason: "tool catalog denied: " + v.Message, Rule: checkName}
 		}

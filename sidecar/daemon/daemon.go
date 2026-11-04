@@ -1423,6 +1423,10 @@ type lane struct {
 	// reach the client.
 	observing bool
 
+	// mcpHide holds an mcp lane's enforcing mcp_tool rules: a tool one of
+	// them denies is left out of tools/list. Nil when none applies.
+	mcpHide *policy.Rules
+
 	// notes are per-lane facts an operator has to know at startup and that
 	// no config file shows, because they are consequences of the resolved
 	// stack rather than of anything written down. A rule that defers on a
@@ -1550,6 +1554,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if opa.enabled() {
 			ln.opaURL = opa.URL
+		}
+		if isMCPGateway(lc) && gc.enforcing() {
+			if ln.mcpHide, err = mcpHideRules(gc.Rules); err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
 		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)

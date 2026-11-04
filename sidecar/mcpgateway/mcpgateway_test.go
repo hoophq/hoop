@@ -18,11 +18,12 @@ import (
 )
 
 // recSession is the sidecar session a test lane opens: it records what the
-// engine hands it and denies the tools in deny.
+// engine hands it, denies the tools in deny and hides the tools in hide.
 type recSession struct {
 	mu     sync.Mutex
 	id     string
 	deny   map[string]string
+	hide   map[string]bool
 	calls  []string
 	acts   []string
 	closed bool
@@ -40,14 +41,16 @@ func (s *recSession) ToolCall(_ context.Context, tool string, _ []byte) daemon.M
 	return daemon.MCPVerdict{Allowed: true}
 }
 
-func (s *recSession) ToolList(_ context.Context, tools []daemon.MCPToolInfo) daemon.MCPVerdict {
+func (s *recSession) Hidden(tool string) bool { return s.hide[tool] }
+
+func (s *recSession) ToolList(_ context.Context, tools []daemon.MCPToolInfo, hidden []string) daemon.MCPVerdict {
 	names := make([]string, 0, len(tools))
 	for _, tl := range tools {
 		names = append(names, tl.Name)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.acts = append(s.acts, "tools/list:"+strings.Join(names, ","))
+	s.acts = append(s.acts, "tools/list:"+strings.Join(names, ",")+" hidden:"+strings.Join(hidden, ","))
 	return daemon.MCPVerdict{Allowed: true}
 }
 
@@ -73,13 +76,14 @@ func (s *recSession) snapshot() (calls, acts []string, closed bool) {
 type testLane struct {
 	mu       sync.Mutex
 	deny     map[string]string
+	hide     map[string]bool
 	sessions []*recSession
 }
 
 func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSession, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -226,24 +230,43 @@ func TestNegotiatedOlderRevisionIsAccepted(t *testing.T) {
 	}
 }
 
-func TestDeniedToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
-	ln := &testLane{}
-	_, url := startLane(t, daemon.MCPGatewayConfig{DeniedTools: []string{"delete_*"}}, ln.open)
+// A tool an mcp_tool rule denies is absent from tools/list, and a call to it
+// anyway reaches the rule, which answers a tool error under its own name.
+func TestAHiddenToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
+	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
 	c := &client{url: url}
 	c.init(t)
 	catalog := c.list(t)
 	if strings.Contains(catalog, "delete_customer") || !strings.Contains(catalog, `"echo"`) {
 		t.Fatalf("catalog: %s", catalog)
 	}
-	if body := c.call(t, 3, "delete_customer", `{"id":"7"}`); !strings.Contains(body, `"error"`) {
-		t.Fatalf("a denied tool answered: %s", body)
+	body := c.call(t, 3, "delete_customer", `{"id":"7"}`)
+	if !strings.Contains(body, `"isError":true`) || !strings.Contains(body, "(rule no-delete)") {
+		t.Fatalf("a hidden tool answered: %s", body)
 	}
 	calls, acts, _ := ln.session(0).snapshot()
-	if len(calls) != 0 {
-		t.Fatalf("the gate saw %v, want nothing: mcpproxy refuses first", calls)
+	if strings.Join(calls, ",") != "delete_customer" {
+		t.Fatalf("statements %v, want the refused call", calls)
 	}
-	if !strings.Contains(strings.Join(acts, "\n"), "tool_denied") {
-		t.Fatalf("the refusal did not reach the session: %v", acts)
+	if !strings.Contains(strings.Join(acts, "\n"), "hidden:delete_customer") {
+		t.Fatalf("the catalog statement does not name the hidden tool: %v", acts)
+	}
+}
+
+// The catalog filter reads the real tool name, so a tool overrides renamed is
+// hidden by a rule that names it.
+func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
+	ln := &testLane{hide: map[string]bool{"customer_lookup": true}}
+	policy := daemon.MCPGatewayConfig{Overrides: map[string]daemon.MCPToolOverride{"customer_lookup": {Name: "find_customer"}}}
+	_, url := startLane(t, policy, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	if catalog := c.list(t); strings.Contains(catalog, "find_customer") || strings.Contains(catalog, "customer_lookup") {
+		t.Fatalf("catalog: %s", catalog)
+	}
+	if _, acts, _ := ln.session(0).snapshot(); !strings.Contains(strings.Join(acts, "\n"), "hidden:customer_lookup") {
+		t.Fatalf("acts: %v", acts)
 	}
 }
 

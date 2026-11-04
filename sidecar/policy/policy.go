@@ -492,7 +492,7 @@ func RuleTypes() []MatchType {
 	return []MatchType{
 		MatchDenyWords, MatchPattern, MatchOperation, MatchTable, MatchPII,
 		MatchAIAnalysis, MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader,
-		MatchGRPCStatus, MatchMetadata,
+		MatchGRPCStatus, MatchMetadata, MatchMCPTool,
 	}
 }
 
@@ -666,6 +666,8 @@ type Rule struct {
 	// evaluators with two orderings.
 	httpRuleFields
 
+	mcpRuleFields
+
 	// compiled caches the Pattern regex.
 	compiled *regexp.Regexp
 }
@@ -808,6 +810,10 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			}
 		case MatchMetadata:
 			if err := r.validateMetadata(); err != nil {
+				problems = append(problems, err.Error())
+			}
+		case MatchMCPTool:
+			if err := r.validateMCPTool(); err != nil {
 				problems = append(problems, err.Error())
 			}
 		default:
@@ -1016,6 +1022,9 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return matched, nil
 	}
 	if matched, ok := r.matchesMetadata(stmt); ok {
+		return matched, nil
+	}
+	if matched, ok := r.matchesMCPTool(stmt); ok {
 		return matched, nil
 	}
 	switch r.Type {

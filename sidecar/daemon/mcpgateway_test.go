@@ -59,7 +59,7 @@ func fakeMCPEngine() (MCPGatewayBuilder, *[]*fakeMCPServer) {
 }
 
 // mcpLane is the README example lane, as JSON.
-const mcpLane = `{"name":"github","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","idle_timeout_sec":120,"mcp_gateway":{"transport":"streamable-http","allowed_tools":["get_*","list_*","search_*"],"denied_tools":["*delete*"],"block_sampling":true,"block_elicitation":true,"on_rug_pull":"kill","max_calls_per_session":200,"max_result_kb":256,"tool_rate_limits":{"search_*":30},"overrides":{"get_file_contents":{"description":"Read one file from a repository."}}}}`
+const mcpLane = `{"name":"github","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","idle_timeout_sec":120,"mcp_gateway":{"transport":"streamable-http","block_sampling":true,"block_elicitation":true,"on_rug_pull":"kill","max_calls_per_session":200,"max_result_kb":256,"tool_rate_limits":{"search_*":30},"overrides":{"get_file_contents":{"description":"Read one file from a repository."}}}}`
 
 // mcpProblems loads one listener and returns what validation refused, or "".
 func mcpProblems(t *testing.T, listener string) string {
@@ -74,7 +74,7 @@ func mcpProblems(t *testing.T, listener string) string {
 // reason the operator can act on; identity_header is accepted.
 func TestMCPGatewayListenerValidation(t *testing.T) {
 	if p := mcpProblems(t, mcpLane); p != "" {
-		t.Fatalf("the ADR example lane does not validate: %s", p)
+		t.Fatalf("the README example lane does not validate: %s", p)
 	}
 	const ok = `"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"https://h/mcp"`
 	cases := []struct{ listener, want string }{
@@ -86,6 +86,7 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"mcp_gateway":{"on_rug_pull":"ignore"}}`, "kill or alert"},
 		{`{` + ok + `,"mcp_gateway":{"tool_rate_limits":{"x":0}}}`, "must be positive"},
 		{`{` + ok + `,"mcp_gateway":{"approval_tools":["x"]}}`, "unknown field"},
+		{`{` + ok + `,"mcp_gateway":{"denied_tools":["x"]}}`, "unknown field"},
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
 		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "mask block"},
 		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "analyzer does not apply"},
@@ -155,6 +156,7 @@ func mcpTestLane(t *testing.T, doc string) lane {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.lic = licensed(t)
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +257,7 @@ func TestMCPLaneRuleTypes(t *testing.T) {
 			if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"db":"prod-db","id":"7"}`)); v.Allowed != c.callAllowed {
 				t.Errorf("tools/call allowed=%v, want %v: %+v", v.Allowed, c.callAllowed, v)
 			}
-			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "delete_customer", Description: "Wipes one customer"}}); v.Allowed != c.listAllowed {
+			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "delete_customer", Description: "Wipes one customer"}}, nil); v.Allowed != c.listAllowed {
 				t.Errorf("tools/list allowed=%v, want %v: %+v", v.Allowed, c.listAllowed, v)
 			}
 		})
@@ -305,7 +307,7 @@ func TestMCPLaneConsultsOPA(t *testing.T) {
 			if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Message != "denied by opa" {
 				t.Fatalf("delete_customer verdict: %+v", v)
 			}
-			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "get_file_contents", Description: "Read a file"}}); !v.Allowed {
+			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "get_file_contents", Description: "Read a file"}}, nil); !v.Allowed {
 				t.Fatalf("tools/list denied: %+v", v)
 			}
 
@@ -371,5 +373,91 @@ func TestMCPLaneLogsAuditWriteFailures(t *testing.T) {
 				t.Fatalf("log lacks %q:\n%s", c.want, buf.String())
 			}
 		})
+	}
+}
+
+// An enforcing mcp_tool rule hides the tools it denies, and a call to one is
+// still denied under the rule's name. An observing lane hides nothing, and
+// neither does a rule that defers.
+func TestMCPLaneHidesToolsAnMCPToolRuleDenies(t *testing.T) {
+	ctx := context.Background()
+	rules := `[{"name":"no-delete","type":"mcp_tool","tools":["*delete*"]},{"name":"read-only","type":"mcp_tool","allow":["get_*","*delete*"]}]`
+	for _, c := range []struct {
+		name, guardrails string
+		hidden           []string
+		denied           map[string]string
+	}{
+		{"enforce", `{"rules":` + rules + `}`, []string{"delete_customer", "run_query"}, map[string]string{"delete_customer": "no-delete", "run_query": "read-only"}},
+		{"observe", `{"mode":"observe","rules":` + rules + `}`, nil, nil},
+		{"defer", `{"rules":[{"name":"ask-opa","type":"mcp_tool","tools":["*delete*"],"action":"defer"}]}`, nil, map[string]string{"delete_customer": "ask-opa"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ln := mcpTestLane(t, `{"guardrails":`+c.guardrails+`,"listeners":[`+mcpLane+`]}`)
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"}, slog.Default())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ls.Close(ctx)
+			var hidden []string
+			for _, tool := range []string{"get_file", "delete_customer", "run_query"} {
+				if ls.Hidden(tool) {
+					hidden = append(hidden, tool)
+				}
+				v := ls.ToolCall(ctx, tool, []byte(`{}`))
+				want, deny := c.denied[tool]
+				if v.Allowed == deny || v.Rule != want {
+					t.Errorf("%s: %+v, want denied=%v by %q", tool, v, deny, want)
+				}
+			}
+			if !slices.Equal(hidden, c.hidden) {
+				t.Errorf("hidden %v, want %v", hidden, c.hidden)
+			}
+		})
+	}
+}
+
+// The catalog statement names the tools the lane left out of tools/list.
+func TestMCPLaneRecordsHiddenTools(t *testing.T) {
+	ctx := context.Background()
+	ln := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
+	sink := audit.NewMemorySink(16)
+	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), sink, true, MCPCaller{Subject: "alice"}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls.ToolList(ctx, []MCPToolInfo{{Name: "get_file", Description: "Read a file"}}, []string{"delete_customer", "run_query"})
+	ls.Close(ctx)
+	for _, r := range sink.Events() {
+		if r.Metadata[inspect.MetadataMCPMethod] == "tools/list" {
+			if got := r.Metadata[inspect.MetadataMCPToolsHidden]; got != "delete_customer,run_query" || strings.Contains(r.Statement, "delete_customer") {
+				t.Fatalf("catalog row: hidden %q, statement %q", got, r.Statement)
+			}
+			return
+		}
+	}
+	t.Fatal("no catalog row")
+}
+
+// A rule reload swaps the catalog filter with the rules: a session opened
+// after it hides by the new rules.
+func TestMCPLaneHideSwapsWithTheRules(t *testing.T) {
+	ctx := context.Background()
+	before := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
+	after := mcpTestLane(t, `{"guardrails":{"rules":[{"name":"no-echo","type":"mcp_tool","tools":["echo"]}]},"listeners":[`+mcpLane+`]}`)
+	live := newLiveRules(before)
+	hidesEcho := func() bool {
+		ls, err := openMCPLaneSession(ctx, before, live, audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"}, slog.Default())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ls.Close(ctx)
+		return ls.Hidden("echo")
+	}
+	if hidesEcho() {
+		t.Fatal("echo hidden before the reload")
+	}
+	live.swapLane(after, func() {})
+	if !hidesEcho() {
+		t.Fatal("echo not hidden after the reload")
 	}
 }

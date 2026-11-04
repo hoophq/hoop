@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -26,11 +27,10 @@ func isMCPGateway(lc ListenerConfig) bool {
 }
 
 // MCPGatewayConfig is a listener's mcp_gateway block: the upstream transport
-// and mcpproxy's tool policy, field for field.
+// and mcpproxy's session policy. Tool allow and deny are guardrail rules of
+// type mcp_tool.
 type MCPGatewayConfig struct {
 	Transport          string                     `json:"transport,omitempty"`
-	AllowedTools       []string                   `json:"allowed_tools,omitempty"`
-	DeniedTools        []string                   `json:"denied_tools,omitempty"`
 	BlockSampling      *bool                      `json:"block_sampling,omitempty"`
 	BlockElicitation   *bool                      `json:"block_elicitation,omitempty"`
 	OnRugPull          string                     `json:"on_rug_pull,omitempty"`
@@ -136,7 +136,12 @@ type MCPToolInfo struct {
 type MCPLaneSession interface {
 	ID() string
 	ToolCall(ctx context.Context, tool string, args []byte) MCPVerdict
-	ToolList(ctx context.Context, tools []MCPToolInfo) MCPVerdict
+	// Hidden reports whether an mcp_tool rule denies tool, so tools/list
+	// leaves it out. It records nothing.
+	Hidden(tool string) bool
+	// ToolList judges the catalog the client sees; hidden names the tools
+	// left out of it.
+	ToolList(ctx context.Context, tools []MCPToolInfo, hidden []string) MCPVerdict
 	Record(ctx context.Context, activity string, attrs map[string]string)
 	Close(ctx context.Context)
 }
@@ -268,6 +273,7 @@ type mcpLaneSession struct {
 	g       *gate.Gate
 	release func()
 	mcpSID  string
+	hide    *policy.Rules
 	log     *slog.Logger
 	closed  bool
 }
@@ -298,7 +304,7 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, log: log}, nil
+	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}, nil
 }
 
 func (s *mcpLaneSession) ID() string { return string(s.g.Session().ID) }
@@ -310,12 +316,26 @@ func (s *mcpLaneSession) ToolCall(ctx context.Context, tool string, args []byte)
 		Text:      tool + "\n" + string(args),
 		Operation: inspect.OpCall,
 		Tables:    []string{strings.ToLower(tool)},
-		Metadata:  map[string]string{"mcp.method": "tools/call", "mcp.tool": tool, "mcp.session": s.mcpSID},
+		Metadata: map[string]string{
+			inspect.MetadataMCPMethod: "tools/call", inspect.MetadataMCPTool: tool, inspect.MetadataMCPSession: s.mcpSID,
+		},
 	}
 	return s.evaluate(ctx, stmt)
 }
 
-func (s *mcpLaneSession) ToolList(ctx context.Context, tools []MCPToolInfo) MCPVerdict {
+func (s *mcpLaneSession) Hidden(tool string) bool {
+	if s.hide == nil {
+		return false
+	}
+	return s.hide.Evaluate(inspect.Statement{
+		Protocol:  inspect.MCP,
+		Direction: inspect.FromClient,
+		Operation: inspect.OpCall,
+		Metadata:  map[string]string{inspect.MetadataMCPTool: tool},
+	}).Denied
+}
+
+func (s *mcpLaneSession) ToolList(ctx context.Context, tools []MCPToolInfo, hidden []string) MCPVerdict {
 	var b strings.Builder
 	for _, t := range tools {
 		fmt.Fprintf(&b, "%s: %s\n", t.Name, t.Description)
@@ -325,9 +345,28 @@ func (s *mcpLaneSession) ToolList(ctx context.Context, tools []MCPToolInfo) MCPV
 		Direction: inspect.FromServer,
 		Text:      b.String(),
 		Operation: inspect.OpShow,
-		Metadata:  map[string]string{"mcp.method": "tools/list", "mcp.session": s.mcpSID},
+		Metadata:  map[string]string{inspect.MetadataMCPMethod: "tools/list", inspect.MetadataMCPSession: s.mcpSID},
+	}
+	if len(hidden) > 0 {
+		stmt.Metadata[inspect.MetadataMCPToolsHidden] = strings.Join(hidden, ",")
 	}
 	return s.evaluate(ctx, stmt)
+}
+
+// mcpHideRules returns the rules that hide tools from an mcp lane's
+// tools/list: its mcp_tool rules that deny outright. A deferring rule leaves
+// the decision to OPA, so it hides nothing.
+func mcpHideRules(rules []policy.Rule) (*policy.Rules, error) {
+	var hide []policy.Rule
+	for _, r := range rules {
+		if r.Type == policy.MatchMCPTool && r.Action != policy.ActionDefer {
+			hide = append(hide, r)
+		}
+	}
+	if len(hide) == 0 {
+		return nil, nil
+	}
+	return policy.NewRules(hide)
 }
 
 func (s *mcpLaneSession) evaluate(ctx context.Context, stmt inspect.Statement) MCPVerdict {
