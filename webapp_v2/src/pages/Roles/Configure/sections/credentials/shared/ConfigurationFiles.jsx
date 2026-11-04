@@ -12,7 +12,7 @@ import {
   isValidPosixKey,
   PLACEHOLDER_KEY_RE,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 // Configuration files for a custom connection. Same pattern as the
 // environment variables section: rename commits on blur via the store's
@@ -87,12 +87,12 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
 }
 
 export default function ConfigurationFiles({ connection, hideRoleInfo }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const renames = useConfigureRoleStore((s) => s.renames)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const renames = useCredentialsStore((s) => s.renames)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const renameSecret = useCredentialsStore((s) => s.renameSecret)
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import { useAgentStore } from '@/stores/useAgentStore'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { sortAgents } from '@/pages/Agents/filters'
 
 // Lets the admin re-assign which agent runs this connection. The agent
@@ -13,8 +13,8 @@ import { sortAgents } from '@/pages/Agents/filters'
 export default function AgentSelector() {
   const agents = useAgentStore((s) => s.agents)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
-  const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)
-  const setDraft = useConfigureRoleStore((s) => s.setDraft)
+  const agentId = useCredentialsStore((s) => s.drafts.agent_id)
+  const setDraft = useCredentialsStore((s) => s.setDraft)
 
   useEffect(() => {
     if (!agents || agents.length === 0) fetchAgents()

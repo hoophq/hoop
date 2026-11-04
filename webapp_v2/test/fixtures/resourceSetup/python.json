@@ -1,0 +1,30 @@
+{
+  "name": "py",
+  "type": "custom",
+  "subtype": "python",
+  "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "py-run",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "python3",
+        "-"
+      ],
+      "type": "custom",
+      "secret": {},
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "python"
+    }
+  ]
+}

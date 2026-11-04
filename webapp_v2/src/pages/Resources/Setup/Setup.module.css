@@ -1,0 +1,33 @@
+/* One viewport tall with its own scroll, as the CLJS wizard: the footer ends
+   the content, so it sits at the bottom of a short step and only shows after
+   every field of a long one (EVL-103). */
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1 0 auto;
+  padding: var(--mantine-spacing-xlAlt);
+  /* Field labels as the CLJS wizard: smaller, a little further from the
+     field. SourcedInput reads the --input-label-* variables. */
+  --setup-label-size: var(--mantine-font-size-xs);
+  --input-label-size: var(--setup-label-size);
+  --input-label-gap: var(--mantine-spacing-smAlt);
+}
+
+/* The input theme sets --input-label-size on each Mantine label itself, so
+   these take the size from the wizard's own variable. */
+.content :global(.mantine-InputWrapper-label) {
+  font-size: var(--setup-label-size);
+  margin-bottom: var(--input-label-gap);
+}
+
+.footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--mantine-color-gray-2);
+  background-color: var(--hoop-surface-raised);
+  padding: var(--mantine-spacing-lgAlt);
+}

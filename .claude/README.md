@@ -86,7 +86,8 @@ ticket labeled `Support`, and asks in Slack or Linear when blocked. A later run
 resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 `agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:drafted`,
 `agent:pr-open`, `agent:released`, `agent:stuck`, `agent:skip`. When the
-version that ships its PR is out, the agent comments it on the ticket.
+version that ships its PR is out, the agent comments it on the ticket. Its PRs
+open ready for review, with the GitHub label `from-agent-support`.
 
 - Give the task its own cloud environment and use it for nothing else:
   `HOOP_AGENT` turns on the `ai-disclosure` hook in every session there. It sets
