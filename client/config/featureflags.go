@@ -1,6 +1,7 @@
 package clientconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +17,13 @@ type serverInfoFlags struct {
 
 // FetchFeatureFlags retrieves the feature flags from the gateway's /serverinfo endpoint.
 func FetchFeatureFlags(conf *Config) (map[string]bool, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/serverinfo", conf.ApiURL), nil)
+	return FetchFeatureFlagsContext(context.Background(), conf)
+}
+
+// FetchFeatureFlagsContext is FetchFeatureFlags bound to ctx, so a caller can
+// set a deadline.
+func FetchFeatureFlagsContext(ctx context.Context, conf *Config) (map[string]bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/serverinfo", conf.ApiURL), nil)
 	if err != nil {
 		return nil, err
 	}

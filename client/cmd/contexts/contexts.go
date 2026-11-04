@@ -3,6 +3,7 @@
 package contexts
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/hoophq/hoop/client/cmd/versions"
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -114,8 +116,9 @@ func buildContext(s *clientconfig.ContextStore, name string) (*clientconfig.Cont
 		return current, nil
 	}
 	apiURL := strings.TrimSuffix(apiURLFlag, "/")
-	if _, err := grpc.ParseServerAddress(apiURL); err != nil {
-		return nil, fmt.Errorf("--api-url value is not an http address")
+	if _, err := grpc.ParseServerAddress(apiURL); err != nil ||
+		!(strings.HasPrefix(apiURL, "http://") || strings.HasPrefix(apiURL, "https://")) {
+		return nil, fmt.Errorf("--api-url value is not an http(s) address")
 	}
 	if grpcURLFlag != "" {
 		if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
@@ -155,13 +158,19 @@ var listCmd = &cobra.Command{
 			fmt.Println("No contexts yet. Try `hoop context create NAME --api-url URL`.")
 			return nil
 		}
-		active, _ := s.Active()
+		active, err := s.Active()
+		if err != nil {
+			return err
+		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, " \tNAME\tAPI URL\tLOGGED IN")
 		for _, ctx := range items {
 			mark := ""
 			if ctx.Name == active {
 				mark = "*"
+				if ctx, err = s.Resolve(ctx.Name); err != nil {
+					return err
+				}
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", mark, ctx.Name, ctx.ApiURL, yesNo(ctx.Token != ""))
 		}
@@ -190,16 +199,10 @@ var showCmd = &cobra.Command{
 		if name == "" {
 			return fmt.Errorf("no active context; pass a NAME or run `hoop context use NAME`")
 		}
-		ctx, err := s.Get(name)
+		// the active context's login lives in config.toml until the next switch
+		ctx, err := s.Resolve(name)
 		if err != nil {
 			return err
-		}
-		// the active context's login lives in config.toml until the next switch
-		if name == active {
-			if current, err := s.ReadConfigFile(); err == nil {
-				current.Name = name
-				ctx = current
-			}
 		}
 		fmt.Printf("name=%s\n", ctx.Name)
 		fmt.Printf("active=%s\n", yesNo(name == active))
@@ -229,7 +232,8 @@ its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
 		if err != nil {
 			return err
 		}
-		target, err := s.Get(args[0])
+		// use the active context's latest login, not the one saved at the last switch
+		target, err := s.Resolve(args[0])
 		if err != nil {
 			return err
 		}
@@ -237,7 +241,7 @@ its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
 		if gate.err != nil {
 			return gate.err
 		}
-		if _, err := s.Use(target.Name, forceFlag); err != nil {
+		if target, err = s.Use(target.Name, forceFlag); err != nil {
 			if errors.Is(err, clientconfig.ErrUnsavedConfig) {
 				return fmt.Errorf("%v; save it first with `hoop context create NAME`, or pass --force to overwrite it", err)
 			}
@@ -251,7 +255,8 @@ its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
 			fmt.Println(gate.syncHint)
 			return nil
 		}
-		err = versions.SyncIf(hasContextCommand)
+		// sync against the selected context, not HOOP_* env vars that Load prefers
+		err = versions.SyncIf(target.Config(), hasContextCommand)
 		var notActivated *versions.NotActivatedError
 		if errors.As(err, &notActivated) {
 			fmt.Printf("The gateway runs %s, but hoop %s has no `hoop context`, so this CLI stays active to let you switch again.\n"+
@@ -295,9 +300,15 @@ func checkFlag(target *clientconfig.Context) flagGate {
 	if target.Token == "" {
 		return decideFlag(target.Name, nil, errNoLogin)
 	}
-	flags, err := clientconfig.FetchFeatureFlags(target.Config())
+	ctx, cancel := context.WithTimeout(context.Background(), flagTimeout)
+	defer cancel()
+	flags, err := clientconfig.FetchFeatureFlagsContext(ctx, target.Config())
 	return decideFlag(target.Name, flags, err)
 }
+
+// flagTimeout bounds the flag read, so a gateway that never answers falls
+// into the "cannot answer" path instead of blocking the switch.
+const flagTimeout = 15 * time.Second
 
 var errNoLogin = errors.New("no login")
 

@@ -148,6 +148,52 @@ func TestContextUseAcceptsConfigSavedInAContext(t *testing.T) {
 	}
 }
 
+func TestContextResolveUsesConfigForActive(t *testing.T) {
+	home := t.TempDir()
+	s := NewContextStore(home)
+	cfg := filepath.Join(home, "config.toml")
+	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com", Token: "old"}))
+	must(t, s.Save(&Context{Name: "prd", ApiURL: "https://prd.example.com", Token: "prd"}))
+	if _, err := s.Use("dev", false); err != nil {
+		t.Fatal(err)
+	}
+	// `hoop login` refreshes the token in config.toml only
+	login := &Config{filepath: cfg, ApiURL: "https://dev.example.com", Token: "new"}
+	if _, err := login.Save(); err != nil {
+		t.Fatal(err)
+	}
+	dev, err := s.Resolve("dev")
+	must(t, err)
+	if dev.Token != "new" || dev.Name != "dev" {
+		t.Fatalf("resolve active = %+v, want the login in config.toml", dev)
+	}
+	prd, err := s.Resolve("prd")
+	must(t, err)
+	if prd.Token != "prd" {
+		t.Fatalf("resolve inactive = %+v, want the context file", prd)
+	}
+}
+
+func TestContextActiveReportsUnreadableConfig(t *testing.T) {
+	home := t.TempDir()
+	s := NewContextStore(home)
+	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com"}))
+	if _, err := s.Use("dev", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("not = [toml"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Active(); err == nil {
+		t.Fatal("a broken config.toml read as no active context")
+	}
+	// a marker naming a removed context is not an error
+	must(t, os.Remove(filepath.Join(home, "contexts", "dev.toml")))
+	if active, err := s.Active(); err != nil || active != "" {
+		t.Fatalf("active = %q, %v", active, err)
+	}
+}
+
 func TestContextFilesArePrivate(t *testing.T) {
 	home := t.TempDir()
 	s := NewContextStore(home)
