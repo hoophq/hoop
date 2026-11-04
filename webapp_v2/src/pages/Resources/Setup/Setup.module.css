@@ -15,7 +15,7 @@
      field. SourcedInput reads the --input-label-* variables. */
   --setup-label-size: var(--mantine-font-size-xs);
   --input-label-size: var(--setup-label-size);
-  --input-label-gap: var(--mantine-spacing-smAlt);
+  --input-label-gap: var(--mantine-spacing-sm);
 }
 
 /* The input theme sets --input-label-size on each Mantine label itself, so

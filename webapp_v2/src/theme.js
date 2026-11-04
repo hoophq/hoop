@@ -7,6 +7,7 @@ import {
   InputTheme,
   InputBaseTheme,
   InputWrapperTheme,
+  PasswordInputTheme,
   TextareaTheme,
   MultiSelectTheme,
   TagsInputTheme,
@@ -269,6 +270,7 @@ export const theme = createTheme({
     // otherwise beat the Input theme default — see components/Input/theme.js.
     InputBase: InputBaseTheme,
     InputWrapper: InputWrapperTheme,
+    PasswordInput: PasswordInputTheme,
     Textarea: TextareaTheme,
     MultiSelect: MultiSelectTheme,
     TagsInput: TagsInputTheme,

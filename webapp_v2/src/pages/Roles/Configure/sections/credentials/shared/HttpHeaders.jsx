@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Stack, Title, Text, Grid } from '@mantine/core'
-import { Plus, Trash2 } from 'lucide-react'
+import { Group, Stack, Title, Text, Grid } from '@mantine/core'
+import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
-import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
@@ -39,7 +38,6 @@ function HeaderRow({
   onValueChange,
   onSourceChange,
   onCancelReplace,
-  onRemove,
 }) {
   const [draftName, setDraftName] = useState(displayName)
 
@@ -51,7 +49,7 @@ function HeaderRow({
 
   return (
     <Grid gutter="md" align="flex-end" key={rowKey}>
-      <Grid.Col span={5}>
+      <Grid.Col span={6}>
         <TextInput
           label="Key"
           value={draftName}
@@ -103,16 +101,6 @@ function HeaderRow({
             placeholder="Enter value"
           />
         )}
-      </Grid.Col>
-      <Grid.Col span={1}>
-        <ActionIcon
-          variant="subtle"
-          color="red"
-          onClick={onRemove}
-          aria-label={'Remove ' + displayName}
-        >
-          <Trash2 size={16} />
-        </ActionIcon>
       </Grid.Col>
     </Grid>
   )
@@ -187,6 +175,12 @@ export default function HttpHeaders({
     replaceSecret(`${prefix}NEW_HEADER_${i}`, '')
   }
 
+  const removeLastRow = () => {
+    const last = allKeys.at(-1)
+    if (last in currentSecrets) deleteSecret(last)
+    else cancelSecretChange(last)
+  }
+
   return (
     <Stack gap="md">
       <Stack gap="xs">
@@ -248,21 +242,19 @@ export default function HttpHeaders({
                 setFieldSource(envKey, nextSource)
               }}
               onCancelReplace={() => cancelSecretChange(envKey)}
-              onRemove={() => {
-                if (isExisting) deleteSecret(envKey)
-                else cancelSecretChange(envKey)
-              }}
             />
           )
         })}
-        <Button
-          variant="light"
-          leftSection={<Plus size={14} />}
-          w="fit-content"
-          onClick={addEmptyRow}
-        >
-          {addLabel}
-        </Button>
+        <Group gap="sm">
+          <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
+            {addLabel}
+          </Button>
+          {allKeys.length > 1 && (
+            <Button variant="light" color="gray" onClick={removeLastRow}>
+              Remove
+            </Button>
+          )}
+        </Group>
       </Stack>
     </Stack>
   )

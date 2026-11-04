@@ -36,20 +36,19 @@ function Footer({ step }) {
   let next
   if (step === 'name') {
     next = (
-      <Button size="sm" type="submit" form={FORM_ID} disabled={!name} loading={checkingName}>
+      <Button type="submit" form={FORM_ID} disabled={!name} loading={checkingName}>
         Next: Agents
       </Button>
     )
   } else if (step === 'agent') {
     next = (
-      <Button size="sm" onClick={goToRoles} disabled={!agentId}>
+      <Button onClick={goToRoles} disabled={!agentId}>
         Next: Resource Roles
       </Button>
     )
   } else {
     next = (
       <Button
-        size="sm"
         type="submit"
         form={FORM_ID}
         disabled={roles.length === 0 || submitting || roleOptions !== 'ready'}
@@ -63,7 +62,7 @@ function Footer({ step }) {
   // the next step's submit button while the click runs, and submit the form.
   return (
     <Group justify="flex-end" gap="lg" className={classes.footer}>
-      <Button size="sm" variant="subtle" color="gray" onClick={back}>
+      <Button variant="subtle" color="gray" onClick={back}>
         Back
       </Button>
       <Fragment key={step}>{next}</Fragment>

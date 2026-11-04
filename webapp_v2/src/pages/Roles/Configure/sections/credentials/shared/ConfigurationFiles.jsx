@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Stack, Title, Text, Grid } from '@mantine/core'
-import { Plus, Trash2 } from 'lucide-react'
+import { Group, Stack, Title, Text, Grid } from '@mantine/core'
+import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
-import ActionIcon from '@/components/ActionIcon'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import SecretField from '@/pages/Roles/Configure/components/SecretField'
@@ -19,7 +18,7 @@ import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credential
 // renames map so position stays put; an empty placeholder row is kept
 // around so the section never collapses.
 
-function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace, onRemove }) {
+function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace }) {
   const [draftName, setDraftName] = useState(displayName)
 
   useEffect(() => {
@@ -28,7 +27,7 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
 
   return (
     <Grid gutter="md" align="center" key={rowKey}>
-      <Grid.Col span={11}>
+      <Grid.Col span={12}>
         <Stack gap="md">
           <TextInput
             label="Name"
@@ -59,28 +58,16 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
               onCancel={onCancelReplace}
             />
           ) : (
-            <Stack gap={4}>
-              <Text size="sm" fw={500}>Content</Text>
-              <Textarea
-                autosize
-                minRows={4}
-                placeholder="Paste your file content here"
-                value={content}
-                onChange={(e) => onContentChange(e.currentTarget.value)}
-              />
-            </Stack>
+            <Textarea
+              label="Content"
+              autosize
+              minRows={4}
+              placeholder="Paste your file content here"
+              value={content}
+              onChange={(e) => onContentChange(e.currentTarget.value)}
+            />
           )}
         </Stack>
-      </Grid.Col>
-      <Grid.Col span={1}>
-        <ActionIcon
-          variant="subtle"
-          color="red"
-          onClick={onRemove}
-          aria-label={'Remove configuration file ' + displayName}
-        >
-          <Trash2 size={16} />
-        </ActionIcon>
       </Grid.Col>
     </Grid>
   )
@@ -123,6 +110,12 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
     let i = 1
     while (allKeys.includes(`filesystem:NEW_FILE_${i}`)) i += 1
     replaceSecret(`filesystem:NEW_FILE_${i}`, '')
+  }
+
+  const removeLastRow = () => {
+    const last = allKeys.at(-1)
+    if (last in currentSecrets) deleteSecret(last)
+    else cancelSecretChange(last)
   }
 
   return (
@@ -175,21 +168,19 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
                 replaceSecret(fsKey, encodeSecretValue(plain))
               }
               onCancelReplace={() => cancelSecretChange(fsKey)}
-              onRemove={() => {
-                if (isExisting) deleteSecret(fsKey)
-                else cancelSecretChange(fsKey)
-              }}
             />
           )
         })}
-        <Button
-          variant="light"
-          leftSection={<Plus size={14} />}
-          w="fit-content"
-          onClick={addEmptyRow}
-        >
-          Add
-        </Button>
+        <Group gap="sm">
+          <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
+            Add
+          </Button>
+          {allKeys.length > 1 && (
+            <Button variant="light" color="gray" onClick={removeLastRow}>
+              Remove
+            </Button>
+          )}
+        </Group>
       </Stack>
     </Stack>
   )
