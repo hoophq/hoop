@@ -5,5 +5,5 @@
 }
 
 .actionCard:hover {
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-strong);
 }
