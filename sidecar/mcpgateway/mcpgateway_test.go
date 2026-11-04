@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/mcpgateway"
 	"github.com/hoophq/hoop/sidecar/mcpgateway/internal/testupstream"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // recSession is the sidecar session a test lane opens: it records what the
@@ -107,7 +108,13 @@ func (l *testLane) count() int {
 // server and returns the MCP endpoint.
 func startLane(t *testing.T, policy daemon.MCPGatewayConfig, open func(context.Context, daemon.MCPCaller) (daemon.MCPLaneSession, error)) (daemon.MCPGatewayServer, string) {
 	t.Helper()
-	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
+	return startLaneOn(t, testupstream.NewServer(""), policy, open)
+}
+
+// startLaneOn is startLane in front of the given upstream server.
+func startLaneOn(t *testing.T, upstream *sdk.Server, policy daemon.MCPGatewayConfig, open func(context.Context, daemon.MCPCaller) (daemon.MCPLaneSession, error)) (daemon.MCPGatewayServer, string) {
+	t.Helper()
+	up := httptest.NewServer(testupstream.Handler(upstream))
 	t.Cleanup(up.Close)
 	srv, err := mcpgateway.Build(daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp", Transport: daemon.MCPTransportStreamableHTTP, Policy: policy, Open: open})
 	if err != nil {
@@ -251,6 +258,32 @@ func TestAHiddenToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(acts, "\n"), "hidden:delete_customer") {
 		t.Fatalf("the catalog statement does not name the hidden tool: %v", acts)
+	}
+}
+
+// A change to a hidden tool between two tools/list calls is no rug pull: the
+// client never saw the tool, so the session goes on. A change to a listed
+// tool still ends it.
+func TestAChangeToAHiddenToolIsNoRugPull(t *testing.T) {
+	up := testupstream.NewServer("")
+	ln := &testLane{hide: map[string]bool{"delete_customer": true}}
+	_, url := startLaneOn(t, up, daemon.MCPGatewayConfig{}, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	redefine := func(name string) {
+		sdk.AddTool(up, &sdk.Tool{Name: name, Description: "Changed after the first tools/list."},
+			func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
+				return nil, nil, nil
+			})
+	}
+	redefine("delete_customer")
+	if body := c.list(t); !strings.Contains(body, `"echo"`) || strings.Contains(body, "delete_customer") {
+		t.Fatalf("tools/list after a hidden tool changed: %s", body)
+	}
+	redefine("echo")
+	if body := c.list(t); strings.Contains(body, `"tools"`) || !strings.Contains(body, `"error"`) {
+		t.Fatalf("tools/list after a listed tool changed: %s", body)
 	}
 }
 

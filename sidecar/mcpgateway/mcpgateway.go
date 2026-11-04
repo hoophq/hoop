@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,8 +81,12 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	}
 
 	pipeline := checks.Assemble(policyFor(lane.Policy), inspect.Hooks{}, s, false)
-	// The hoop check runs after mcpproxy's own (tool filtering, overrides,
-	// budgets) and before the terminal audit tap.
+	// The hide check runs first: mcpproxy's rug-pull check never fingerprints
+	// a hidden tool, its policy check never refuses a call to one as
+	// unadvertised, and overrides has not renamed the catalog yet.
+	pipeline = slices.Insert(pipeline, 0, inspect.Check(&hideCheck{s: s}))
+	// The hoop check runs after mcpproxy's own (budgets, overrides) and
+	// before the terminal audit tap.
 	last := len(pipeline) - 1
 	pipeline = append(pipeline[:last:last], &hoopCheck{s: s}, pipeline[last])
 
@@ -360,50 +365,175 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 	return inspect.AllowAll
 }
 
-// hideTools drops from a tools/list result every tool an mcp_tool rule
-// denies, keeping the other fields of the result as they came. The rule reads
-// the real tool name: overrides renamed the catalog earlier in the pipeline.
-func hideTools(ls daemon.MCPLaneSession, ms inspect.Session, m *inspect.Msg) (tools []daemon.MCPToolInfo, hidden []string, err error) {
+const metaHidden = "hoop.hidden_tools"
+
+// hiddenTools hands what hideCheck left out of a tools/list response to
+// hoopCheck, which judges the catalog after overrides. Keyed by response id:
+// requests of one session run concurrently.
+type hiddenTools struct {
+	mu sync.Mutex
+	m  map[string][]string
+}
+
+func sessionHidden(ms inspect.Session) *hiddenTools {
+	return ms.Meta(metaHidden, func() any { return &hiddenTools{m: map[string][]string{}} }).(*hiddenTools)
+}
+
+func (h *hiddenTools) put(id string, names []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.m[id] = names
+}
+
+func (h *hiddenTools) take(id string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	names := h.m[id]
+	delete(h.m, id)
+	return names
+}
+
+// hideCheck leaves out of a tools/list response every tool an mcp_tool rule
+// denies, and judges a call to a hidden tool before mcpproxy refuses it as
+// unadvertised, so the denial names the rule.
+type hideCheck struct{ s *server }
+
+func (c *hideCheck) Name() string { return "hoop_hide" }
+
+func (c *hideCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
+	if m == nil || m.Env == nil {
+		return inspect.AllowAll
+	}
+	if m.Dir == inspect.C2S && m.Env.Method == mcp.MethodToolsCall {
+		return c.call(ctx, ms, m)
+	}
+	if m.Dir != inspect.S2C || m.CorrelatedMethod != mcp.MethodToolsList ||
+		!m.Env.IsResponse() || m.Env.Error != nil || len(m.Env.Result) == 0 {
+		return inspect.AllowAll
+	}
+	ls, err := c.s.laneSession(ctx, ms)
+	if err != nil {
+		return inspect.AllowAll // hoopCheck refuses the message
+	}
+	hidden, err := hideTools(ls, m)
+	if err != nil {
+		return unreadableCatalog(ctx, ls, err)
+	}
+	if len(hidden) > 0 {
+		sessionHidden(ms).put(m.Env.ID.Key(), hidden)
+	}
+	return inspect.AllowAll
+}
+
+func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
+	var p struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if json.Unmarshal(m.Env.Params, &p) != nil || p.Name == "" {
+		return inspect.AllowAll // hoopCheck refuses it as invalid params
+	}
+	ls, err := c.s.laneSession(ctx, ms)
+	if err != nil {
+		return inspect.AllowAll
+	}
+	tool := checks.RealToolName(ms, p.Name)
+	if !ls.Hidden(tool) {
+		return inspect.AllowAll
+	}
+	v := ls.ToolCall(ctx, tool, p.Arguments)
+	if v.Allowed {
+		return inspect.AllowAll
+	}
+	c.s.denied.Add(1)
+	return deniedToolResult(m.Env, v)
+}
+
+// hideTools drops from a tools/list result every tool ls hides, keeping the
+// other fields of the result as they came, and returns the names it dropped.
+func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) ([]string, error) {
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(m.Env.Result, &result); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var raw []json.RawMessage
 	if err := json.Unmarshal(result["tools"], &raw); err != nil {
-		return nil, nil, err
+		return nil, fmt.Errorf("tools: %w", err)
 	}
 	kept := make([]json.RawMessage, 0, len(raw))
+	var hidden []string
 	for _, entry := range raw {
-		var t struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
+		t, err := catalogTool(entry)
+		if err != nil {
+			return nil, err
 		}
-		if err := json.Unmarshal(entry, &t); err != nil {
-			return nil, nil, err
-		}
-		if real := checks.RealToolName(ms, t.Name); ls.Hidden(real) {
-			hidden = append(hidden, real)
+		if ls.Hidden(t.Name) {
+			hidden = append(hidden, t.Name)
 			continue
 		}
 		kept = append(kept, entry)
-		tools = append(tools, daemon.MCPToolInfo{Name: t.Name, Description: t.Description})
 	}
 	if len(hidden) == 0 {
-		return tools, nil, nil
+		return nil, nil
 	}
+	var err error
 	if result["tools"], err = json.Marshal(kept); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	out, err := json.Marshal(result)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	m.Env.Result = out
-	return tools, hidden, nil
+	return hidden, nil
+}
+
+// catalogTools reads the tools of a tools/list result for the catalog
+// statement.
+func catalogTools(result json.RawMessage) ([]daemon.MCPToolInfo, error) {
+	var r struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(result, &r); err != nil {
+		return nil, err
+	}
+	tools := make([]daemon.MCPToolInfo, 0, len(r.Tools))
+	for _, entry := range r.Tools {
+		t, err := catalogTool(entry)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, t)
+	}
+	return tools, nil
+}
+
+// catalogTool reads one tools/list entry. A tool needs a string name; a
+// description that is not a string is kept as its JSON text.
+func catalogTool(entry json.RawMessage) (daemon.MCPToolInfo, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &fields); err != nil {
+		return daemon.MCPToolInfo{}, fmt.Errorf("a tool entry: %w", err)
+	}
+	var t daemon.MCPToolInfo
+	if err := json.Unmarshal(fields["name"], &t.Name); err != nil || t.Name == "" {
+		return t, errors.New("a tool entry without a string name")
+	}
+	if d, ok := fields["description"]; ok && json.Unmarshal(d, &t.Description) != nil {
+		t.Description = string(d)
+	}
+	return t, nil
+}
+
+// unreadableCatalog ends a session whose tools/list result the lane cannot
+// read: it could neither hide tools from it nor judge it.
+func unreadableCatalog(ctx context.Context, ls daemon.MCPLaneSession, err error) inspect.Decision {
+	ls.Record(ctx, "mcp_catalog_unreadable", map[string]string{"reason": err.Error()})
+	return inspect.Decision{Verdict: inspect.Kill, Reason: "tool catalog unreadable: " + err.Error(), Rule: checkName}
 }
 
 // deniedToolResult answers a refused tools/call with a tool result that has
-// isError set, so the agent reads a tool error and keeps the server.
+// isError set: MCP reports a failed call as a result, so the model sees it.
 func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decision {
 	msg := "denied by the hoop sidecar"
 	if v.Rule != "" {
@@ -428,11 +558,11 @@ func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms i
 	}
 	switch m.CorrelatedMethod {
 	case mcp.MethodToolsList:
-		tools, hidden, err := hideTools(ls, ms, m)
+		tools, err := catalogTools(m.Env.Result)
 		if err != nil {
-			return inspect.AllowAll
+			return unreadableCatalog(ctx, ls, err)
 		}
-		if v := ls.ToolList(ctx, tools, hidden); !v.Allowed {
+		if v := ls.ToolList(ctx, tools, sessionHidden(ms).take(m.Env.ID.Key())); !v.Allowed {
 			c.s.denied.Add(1)
 			return inspect.Decision{Verdict: inspect.Kill, Reason: "tool catalog denied: " + v.Message, Rule: checkName}
 		}

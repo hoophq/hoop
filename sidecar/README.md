@@ -3390,8 +3390,12 @@ the model never sees it. The catalog statement names the hidden tools in
 
 A call to a hidden tool is denied like any rule denial: a tool result with
 `isError: true` and the text `denied by the hoop sidecar (rule <name>):
-<message>`. Agents keep a server that returns a tool error and drop one that
-returns a protocol error.
+<message>`. MCP reports a failed tool call this way, as a result rather than a
+JSON-RPC error, so the model sees the denial and its message.
+
+A `tools/list` result the lane cannot read ends the session and records
+`mcp_catalog_unreadable`: the lane could neither hide tools from it nor
+judge it.
 
 Only an enforcing `mcp_tool` rule hides a tool. On an observing lane, or
 with `action: defer`, the rule hides nothing, and the verdict on a call is

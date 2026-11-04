@@ -2,13 +2,17 @@ package mcpgateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/inspect"
+	"github.com/hoophq/mcpproxy/jsonrpc"
+	mcpwire "github.com/hoophq/mcpproxy/mcp"
 	"github.com/hoophq/mcpproxy/session"
 )
 
@@ -69,5 +73,44 @@ func TestLateMessagesOpenNoSidecarSession(t *testing.T) {
 	}
 	if n := opened.Load(); n != 2 {
 		t.Fatalf("opened %d sidecar sessions, want 2", n)
+	}
+}
+
+type recordingSession struct {
+	nopSession
+	acts []string
+}
+
+func (r *recordingSession) Hidden(tool string) bool { return tool == "delete_customer" }
+func (r *recordingSession) Record(_ context.Context, activity string, attrs map[string]string) {
+	r.acts = append(r.acts, activity+": "+attrs["reason"])
+}
+
+// A tools/list result the lane cannot read ends the session: it could neither
+// hide a tool from it nor judge it, so it never reaches the client as sent.
+func TestAnUnreadableCatalogEndsTheSession(t *testing.T) {
+	rec := &recordingSession{}
+	built, err := Build(daemon.MCPGatewayLane{
+		Name: "u", Listen: "127.0.0.1:0", Upstream: "http://127.0.0.1:1/mcp",
+		Open: func(context.Context, daemon.MCPCaller) (daemon.MCPLaneSession, error) { return rec, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := built.(*server)
+	for _, result := range []string{
+		`{"tools":[{"name":"delete_customer"},{"name":7}]}`,
+		`{"tools":"none"}`,
+	} {
+		rec.acts = nil
+		m := &inspect.Msg{Dir: inspect.S2C, CorrelatedMethod: mcpwire.MethodToolsList,
+			Env: &jsonrpc.Message{ID: jsonrpc.ID{Raw: json.RawMessage("2")}, Result: json.RawMessage(result)}}
+		d := (&hideCheck{s: s}).Inspect(context.Background(), session.New("m1", inspect.Identity{}), m)
+		if d.Verdict != inspect.Kill || string(m.Env.Result) != result {
+			t.Errorf("%s: verdict %v, result %s", result, d.Verdict, m.Env.Result)
+		}
+		if len(rec.acts) != 1 || !strings.HasPrefix(rec.acts[0], "mcp_catalog_unreadable") {
+			t.Errorf("%s: activities %v", result, rec.acts)
+		}
 	}
 }
