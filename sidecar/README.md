@@ -2427,8 +2427,8 @@ the block is the configuration, so `-validate` and the plane can check it.
 Every signal carries the resource `service.name=hoop-sidecar` (override it
 under `resource`), `service.version`, `service.instance.id` (the same
 install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
-and `hoop.schema.version=1.0`, with the schema URL
-`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+and `hoop.schema.version=1.1`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.1`. An attribute or series
 added bumps the minor; one renamed or removed bumps the major, because a
 dashboard written against the old name goes dark.
 
@@ -2442,6 +2442,7 @@ dashboard written against the old name goes dark.
 | `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
 | `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.mcp.messages` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.mcp.method`, `hoop.mcp.tool`, `hoop.mcp.decision` (`allow`, `deny`, `kill`). An mcp lane only; see "mcp lane metrics" |
 | `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.outcome` |
 | `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model` |
 | `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
@@ -2497,7 +2498,9 @@ for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
 `hoop.statement` per judged statement and, under it, one span per stage
 (`policy`, `analyzer`, `review`). The upstream measurement is an event on
 the enclosing span. The sampling decision is taken once, at the exchange, so
-every statement of a sampled connection is in and a 1% ratio costs 1%. A
+every statement of a sampled connection is in and a 1% ratio costs 1%. An
+mcp lane opens no exchange span: each judged tool call is a trace of its own,
+`hoop.statement` with its stages, sampled on its own. A
 denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
 `hoop.rule` and an error status naming the rule. The OPA decision and the
 analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
@@ -3492,6 +3495,31 @@ sessions: a session read its rules when it opened, so the next message on
 it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
+
+#### mcp lane metrics
+
+`GET /stats` lists the lane. `active` and `total` count MCP sessions.
+`denied` counts the messages the lane refused: by a rule or OPA, and by
+`mcp_gateway` (a budget, a rate limit, a tool the server did not list, a rug
+pull).
+
+```json
+{"name": "github-mcp", "addr": "127.0.0.1:18901", "active": 1, "total": 3, "denied": 2}
+```
+
+With a `telemetry` block, `hoop.sidecar.mcp.messages` counts every message
+by direction, method, tool and decision. A response has no method; it names
+the tool of the call it answers. `hoop.mcp.tool` is the real tool name, for
+the first 1024 tools the server listed; any other tool is `(other)`, and so
+is a method MCP does not define, so a client cannot add series. Each call is
+also a `hoop.statement` in `hoop.sidecar.statements` and, with traces on, a
+trace of its own (see "OpenTelemetry").
+
+```
+sum by (hoop_mcp_tool, hoop_mcp_decision) (rate(hoop_sidecar_mcp_messages_total{hoop_mcp_method="tools/call"}[5m]))
+```
+
+Usage analytics count the lane under `mcp`.
 
 #### Auth
 

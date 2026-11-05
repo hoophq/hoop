@@ -21,6 +21,8 @@ import (
 	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
+	sidecarinspect "github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/backend"
 	"github.com/hoophq/mcpproxy/checks"
@@ -52,12 +54,31 @@ const (
 	// connIdleTimeout closes a keep-alive connection idle between requests;
 	// a streaming response is not idle.
 	connIdleTimeout = 2 * time.Minute
+	// maxAdvertised caps the tool names a lane's telemetry carries.
+	maxAdvertised = 1024
 )
+
+// mcpMethods are the methods MCP defines. Telemetry names any other method
+// telemetry.MCPOther.
+var mcpMethods = map[string]bool{
+	mcp.MethodInitialize: true, mcp.MethodPing: true,
+	mcp.MethodToolsList: true, mcp.MethodToolsCall: true,
+	mcp.MethodResourcesList: true, "resources/templates/list": true, mcp.MethodResourcesRead: true,
+	"resources/subscribe": true, "resources/unsubscribe": true,
+	mcp.MethodPromptsList: true, mcp.MethodPromptsGet: true,
+	"completion/complete": true, "logging/setLevel": true, "roots/list": true,
+	mcp.MethodSamplingCreateMessage: true, mcp.MethodElicitationCreate: true,
+	mcp.MethodServerDiscover: true, mcp.MethodSubscriptionsListen: true,
+	mcp.MethodInitialized: true, "notifications/cancelled": true, mcp.MethodProgress: true,
+	mcp.MethodLoggingMessage: true, mcp.MethodToolsListChanged: true,
+	"notifications/resources/updated": true, "notifications/resources/list_changed": true,
+	"notifications/prompts/list_changed": true, "notifications/roots/list_changed": true,
+}
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
 func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}, renamed: map[string]string{},
-		opening: map[string]chan struct{}{}}
+		opening: map[string]chan struct{}{}, advertised: map[string]bool{}}
 	for real, ov := range lane.Policy.Overrides {
 		if ov.Name != "" {
 			s.renamed[ov.Name] = real
@@ -125,6 +146,7 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		Backends:           map[string]backend.Factory{lane.Name: factory},
 		Pipeline:           pipeline,
 		Sink:               s,
+		Observer:           s,
 		Logger:             s.log,
 		SessionIdleTimeout: lane.SessionIdleTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
@@ -189,6 +211,11 @@ type server struct {
 	closed    bool
 
 	total, denied atomic.Int64
+
+	// advertised holds the real names of the tools the upstream listed, up
+	// to maxAdvertised: the tools telemetry names.
+	advertisedMu sync.Mutex
+	advertised   map[string]bool
 }
 
 func (s *server) Serve(ctx context.Context) error {
@@ -289,6 +316,53 @@ func (s *server) Stats() (active, total, denied int64) {
 	active = int64(len(s.sessions))
 	s.mu.Unlock()
 	return active, s.total.Load(), s.denied.Load()
+}
+
+// ObserveMessage implements mcpproxy's gateway.Observer. A message the
+// pipeline refused counts as denied, whichever check refused it.
+func (s *server) ObserveMessage(dir inspect.Direction, _, method, tool, decision string, _ time.Duration) {
+	if decision != "allow" {
+		s.denied.Add(1)
+	}
+	if s.lane.Telemetry == nil {
+		return
+	}
+	m := telemetry.MCPMessage{Direction: sidecarinspect.FromClient, Method: method, Tool: s.toolLabel(tool), Decision: decision}
+	if dir == inspect.S2C {
+		m.Direction = sidecarinspect.FromServer
+	}
+	if method != "" && !mcpMethods[method] {
+		m.Method = telemetry.MCPOther
+	}
+	s.lane.Telemetry.MCPMessage(m)
+}
+
+func (s *server) advertise(names []string) {
+	s.advertisedMu.Lock()
+	defer s.advertisedMu.Unlock()
+	for _, n := range names {
+		if len(s.advertised) >= maxAdvertised {
+			return
+		}
+		s.advertised[n] = true
+	}
+}
+
+// toolLabel is tool's real name when the upstream listed it, else
+// telemetry.MCPOther.
+func (s *server) toolLabel(tool string) string {
+	if tool == "" {
+		return ""
+	}
+	if real, ok := s.renamed[tool]; ok {
+		tool = real
+	}
+	s.advertisedMu.Lock()
+	defer s.advertisedMu.Unlock()
+	if s.advertised[tool] {
+		return tool
+	}
+	return telemetry.MCPOther
 }
 
 func (s *server) Notes() []string {
@@ -477,12 +551,10 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 	case mcp.MethodToolsCall:
 		name, args, err := toolCallParams(m.Env.Params)
 		if err != nil {
-			c.s.denied.Add(1)
 			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
 		}
 		v := ls.ToolCall(ctx, name, args)
 		if !v.Allowed {
-			c.s.denied.Add(1)
 			return deniedToolResult(m.Env, v)
 		}
 	}
@@ -539,10 +611,11 @@ func (c *hideCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.
 	if err != nil {
 		return inspect.AllowAll // hoopCheck refuses the message
 	}
-	hidden, err := hideTools(ls, m)
+	names, hidden, err := hideTools(ls, m)
 	if err != nil {
 		return unreadableCatalog(ctx, ls, err)
 	}
+	c.s.advertise(names)
 	if len(hidden) > 0 {
 		sessionHidden(ms).put(m.Env.ID.Key(), hidden)
 	}
@@ -556,7 +629,6 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 	}
 	name, args, err := toolCallParams(m.Env.Params)
 	if err != nil {
-		c.s.denied.Add(1)
 		ls.Record(ctx, "mcp_invalid_params", map[string]string{"reason": err.Error()})
 		return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
 	}
@@ -571,7 +643,6 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 	if v.Allowed {
 		return inspect.AllowAll
 	}
-	c.s.denied.Add(1)
 	return deniedToolResult(m.Env, v)
 }
 
@@ -615,23 +686,24 @@ func foldKey(s string) string {
 }
 
 // hideTools drops from a tools/list result every tool ls hides, keeping the
-// other fields of the result as they came, and returns the names it dropped.
-func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) ([]string, error) {
+// other fields of the result as they came. It returns every name the result
+// listed and the names it dropped.
+func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) (names, hidden []string, err error) {
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(m.Env.Result, &result); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var raw []json.RawMessage
 	if err := json.Unmarshal(result["tools"], &raw); err != nil {
-		return nil, fmt.Errorf("tools: %w", err)
+		return nil, nil, fmt.Errorf("tools: %w", err)
 	}
 	kept := make([]json.RawMessage, 0, len(raw))
-	var hidden []string
 	for _, entry := range raw {
 		t, err := catalogTool(entry)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		names = append(names, t.Name)
 		if ls.Hidden(t.Name) {
 			hidden = append(hidden, t.Name)
 			continue
@@ -639,18 +711,17 @@ func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) ([]string, error) {
 		kept = append(kept, entry)
 	}
 	if len(hidden) == 0 {
-		return nil, nil
+		return names, nil, nil
 	}
-	var err error
 	if result["tools"], err = json.Marshal(kept); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out, err := json.Marshal(result)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m.Env.Result = out
-	return hidden, nil
+	return names, hidden, nil
 }
 
 // catalogTools reads the tools of a tools/list result for the catalog
@@ -728,7 +799,6 @@ func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms i
 			return unreadableCatalog(ctx, ls, err)
 		}
 		if v := ls.ToolList(ctx, tools, sessionHidden(ms).take(m.Env.ID.Key())); !v.Allowed {
-			c.s.denied.Add(1)
 			return inspect.Decision{Verdict: inspect.Kill, Reason: "tool catalog denied: " + v.Message, Rule: checkName}
 		}
 	}

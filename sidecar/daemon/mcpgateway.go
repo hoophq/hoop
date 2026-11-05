@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // The engine (mcpproxy) lives in the nested sidecar/mcpgateway module; this
@@ -171,6 +172,8 @@ type MCPGatewayLane struct {
 	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
+	// Telemetry is the lane's recorder; nil without a telemetry block.
+	Telemetry telem.LaneRecorder
 	// Open starts the sidecar session for one MCP session. Nil on a
 	// -validate run.
 	Open func(ctx context.Context, caller MCPCaller) (MCPLaneSession, error)
@@ -183,6 +186,7 @@ type MCPGatewayServer interface {
 	Serve(ctx context.Context) error
 	Close() error
 	Addr() net.Addr
+	// Stats counts MCP sessions, and the messages the lane refused.
 	Stats() (active, total, denied int64)
 	Notes() []string
 	// EndSessions closes every open MCP session: the next message on one is
@@ -261,6 +265,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		DownstreamTLS:      downstream,
 		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		Telemetry:          ln.telemetry,
 		Log:                laneLog,
 	}
 	if lc.MCPGateway != nil {
