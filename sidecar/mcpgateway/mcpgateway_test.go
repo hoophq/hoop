@@ -359,9 +359,8 @@ func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
 }
 
 // A tools/call is judged by its exact "name" key, as an MCP server reads it.
-// Params whose keys differ only in case are refused: Go reads them without
-// case, so the lane would judge one tool and a server in another language
-// would run the other.
+// Params that repeat a key, exactly, escaped or in another case, are
+// refused: the lane would judge one value and the server could run another.
 func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
@@ -374,6 +373,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 		`{"name":"echo","arguments":{"message":"x"},"ARGUMENTS":{"message":"y"}}`,
 		`{"Name":"echo","arguments":{"message":"x"}}`,
 		`{"name":"echo","arguments":{"message":"x"},"argumentſ":{"message":"y"}}`,
+		`{"name":"delete_customer","name":"echo","arguments":{"message":"x"}}`,
+		`{"name":"echo","arguments":{"message":"x"},"arguments":{"message":"y"}}`,
+		`{"name":"delete_customer","\u006eame":"echo","arguments":{"message":"x"}}`,
 	} {
 		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
 		if code != 200 || !strings.Contains(body, "-32602") {
@@ -382,6 +384,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	}
 	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
 		t.Fatalf("the lane judged %v, want no call", calls)
+	}
+	if body := c.call(t, 30, "echo", `{"message":"still works"}`); !strings.Contains(body, "still works") {
+		t.Fatalf("a normal call after the refusals: %s", body)
 	}
 }
 

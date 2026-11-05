@@ -231,6 +231,24 @@ func TestToolCallParamsWithManyKeysIsFast(t *testing.T) {
 	}
 }
 
+// A top-level key that repeats, exactly or escaped, is refused and named;
+// a repeat inside arguments is not this check's to judge.
+func TestToolCallParamsRefusesARepeatedKey(t *testing.T) {
+	for params, want := range map[string]string{
+		`{"name":"a","name":"b"}`:                    `key "name" appears twice`,
+		`{"name":"a","arguments":{},"arguments":{}}`: `key "arguments" appears twice`,
+		`{"name":"a","\u006eame":"b"}`:               `key "name" appears twice`,
+		`{"name":"a","Name":"b"}`:                    `differ only in case`,
+		`{"name":"a"} {"name":"b"}`:                  `not an object`,
+		`{"name":"a","arguments":{"x":1,"x":2}}`:     ``,
+	} {
+		_, _, err := toolCallParams(json.RawMessage(params))
+		if want == "" && err != nil || want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+			t.Errorf("%s: %v, want %q", params, err, want)
+		}
+	}
+}
+
 // Telemetry names a tool by its real name, and at most maxAdvertised tools.
 func TestToolLabelsAreBounded(t *testing.T) {
 	s := &server{advertised: map[string]bool{}, renamed: map[string]string{"find_customer": "customer_lookup"}}

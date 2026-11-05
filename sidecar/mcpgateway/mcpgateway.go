@@ -4,11 +4,13 @@
 package mcpgateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -647,21 +649,42 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 }
 
 // toolCallParams reads a tools/call's tool name and arguments by their exact
-// keys, as an MCP server does. Params with keys that differ only in case are
-// refused: every later check reads them without case, as Go does, and would
-// judge a different tool than the server runs.
+// keys, as an MCP server does. Params that repeat a key, exactly or in another
+// case, are refused: a later check and the server could each read a
+// different value, and judge one tool while the server runs another.
 func toolCallParams(params json.RawMessage) (string, json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(params, &fields); err != nil {
-		return "", nil, errors.New("params are not an object")
+	notObject := errors.New("params are not an object")
+	dec := json.NewDecoder(bytes.NewReader(params))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return "", nil, notObject
 	}
-	seen := make(map[string]string, len(fields))
-	for k := range fields {
+	fields := map[string]json.RawMessage{}
+	seen := map[string]string{}
+	for dec.More() {
+		tok, err := dec.Token()
+		k, isKey := tok.(string)
+		if err != nil || !isKey {
+			return "", nil, notObject
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return "", nil, notObject
+		}
 		f := foldKey(k)
 		if prev, dup := seen[f]; dup {
+			if prev == k {
+				return "", nil, fmt.Errorf("key %q appears twice", k)
+			}
 			return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
 		}
 		seen[f] = k
+		fields[k] = v
+	}
+	if _, err := dec.Token(); err != nil {
+		return "", nil, notObject
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return "", nil, notObject
 	}
 	var name string
 	if err := json.Unmarshal(fields["name"], &name); err != nil || name == "" {
