@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { protocolInfo } from '@/pages/Sidecars/config'
-import { formToListener, listenerToForm } from '@/pages/Sidecars/listeners'
+import { featureList } from '@/pages/Sidecars/features'
+import { formToListener, listenerToForm, protocolOptions } from '@/pages/Sidecars/listeners'
 import { listenerAccepts } from '@/pages/Sidecars/schema'
-import { operationsFor, ruleTypesFor } from '@/pages/sidecarRuleVocabulary'
+import { GUARDRAIL_RULE_TYPES, operationsFor, ruleTypesFor } from '@/pages/sidecarRuleVocabulary'
 
 const types = (protocols) => ruleTypesFor(protocols).map((t) => t.value)
+const offers = (current, capabilities) => protocolOptions(current, capabilities).some((o) => o.value === 'mcp')
 
 describe('an mcp lane', () => {
   it('has an icon', () => {
@@ -37,5 +39,28 @@ describe('an mcp lane', () => {
       mcp_gateway: { transport: 'streamable-http', max_calls_per_session: 5, tool_rate_limits: { 'search_*': 30 } },
     })
     expect(formToListener(form).mcp_gateway).toEqual({ max_calls_per_session: 5, tool_rate_limits: { 'search_*': 30 } })
+  })
+
+  it('is offered only to a sidecar that reports protocol:mcp, or that never handshaked', () => {
+    expect(offers('', ['protocol:mcp', 'protocol:postgres'])).toBe(true)
+    expect(offers('', ['protocol:postgres'])).toBe(false)
+    expect(offers('', [])).toBe(false)
+    expect(offers('', null)).toBe(true)
+    // A lane already on mcp keeps its protocol in the picker.
+    expect(offers('mcp', [])).toBe(true)
+  })
+
+  it('scopes an mcp_tool rule to call, the one operation it matches', () => {
+    expect(GUARDRAIL_RULE_TYPES.find((t) => t.value === 'mcp_tool').scope).toEqual(['call'])
+  })
+
+  it('names the tools of a listener mcp_tool rule', () => {
+    const detail = (rule) => {
+      const listener = { name: 'tools', protocol: 'mcp', guardrails: { rules: [{ name: 'r', type: 'mcp_tool', ...rule }] } }
+      const guardrails = featureList(listener, { listeners: [listener] }, []).find((f) => f.key === 'guardrails')
+      return guardrails.rules[0].detail
+    }
+    expect(detail({ tools: ['*delete*'] })).toBe('MCP tool · deny *delete*')
+    expect(detail({ allow: ['get_*', 'list_*'] })).toBe('MCP tool · allow only get_*, list_*')
   })
 })

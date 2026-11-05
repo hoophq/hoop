@@ -43,6 +43,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
   const set = (patch) => onChange({ ...rule, ...patch })
   const has = (field) => type?.fields.includes(field)
   const output = rule.direction === 'output'
+  const scope = type?.scope ?? operations
 
   return (
     <Paper p="md" radius="md" withBorder>
@@ -79,6 +80,8 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
               // `operations` is the match on an operation rule and a scope on
               // every other, so it does not survive the switch between them.
               if ((rule.type === 'operation') !== (next === 'operation')) patch.operations = []
+              const nextScope = types.find((t) => t.value === next)?.scope
+              if (nextScope) patch.operations = (patch.operations ?? rule.operations).filter((op) => nextScope.includes(op))
               set(patch)
             }}
             renderOption={TypeOption}
@@ -221,7 +224,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
           <MultiSelect
             label={<TaggedLabel text="Only for these operations (optional)" side="sidecar" />}
             placeholder="Every operation"
-            data={operations}
+            data={scope}
             value={rule.operations}
             onChange={(v) => set({ operations: v })}
             searchable

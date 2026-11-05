@@ -78,10 +78,12 @@ export const GUARDRAIL_RULE_TYPES = [
   },
   {
     // Sets one of the two: `tools` denies, `allow` lets only those through.
+    // It matches a tools/call only, so `call` is its one operations scope.
     value: 'mcp_tool',
     label: 'MCP tool',
     fields: ['tools', 'allow'],
     protocols: ['mcp'],
+    scope: ['call'],
   },
 ]
 
