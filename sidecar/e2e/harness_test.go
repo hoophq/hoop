@@ -344,7 +344,6 @@ func (s *sidecar) auditLines() []string {
 // The audit sink is asynchronous — it buffers and flushes on its own clock —
 // so a test that read the trail immediately after a query would race the
 // flush and fail intermittently, which is worse than no assertion.
-
 func (s *sidecar) waitForAudit(t *testing.T, what string, match func(auditEvent) bool) auditEvent {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
