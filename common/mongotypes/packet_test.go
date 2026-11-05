@@ -194,3 +194,19 @@ func TestCopyBufferRejectsShortWrite(t *testing.T) {
 		t.Fatalf("want io.ErrShortWrite for a truncated forward, got %v", err)
 	}
 }
+
+func TestDecodeOpMsgToJSONChecksumTrailer(t *testing.T) {
+	body, err := bson.Marshal(bson.D{{Key: "saslContinue", Value: int32(1)}, {Key: "$db", Value: "admin"}})
+	assert.NoError(t, err)
+	frame := binary.LittleEndian.AppendUint32(nil, opMsgChecksumPresent)
+	frame = append(frame, 0) // section kind body
+	frame = append(frame, body...)
+	frame = binary.LittleEndian.AppendUint32(frame, 0xdeadbeef) // CRC-32C trailer
+
+	got, err := DecodeOpMsgToJSON(&Packet{OpCode: OpMsgType, Frame: frame})
+	assert.NoError(t, err)
+	assert.Contains(t, string(got), `"saslContinue":1`)
+
+	_, err = DecodeOpMsgToJSON(&Packet{OpCode: OpMsgType, Frame: binary.LittleEndian.AppendUint32(nil, opMsgChecksumPresent)})
+	assert.Error(t, err, "flag set without a trailer")
+}

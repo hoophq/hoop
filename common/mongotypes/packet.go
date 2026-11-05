@@ -126,6 +126,13 @@ func DecodeOpMsgToJSON(pkt *Packet) ([]byte, error) {
 
 	wm := make([]byte, len(pkt.Frame[4:]))
 	_ = copy(wm, pkt.Frame[4:])
+	// checksumPresent: a CRC-32C trailer follows the sections, it is not a section
+	if binary.LittleEndian.Uint32(pkt.Frame[:4])&opMsgChecksumPresent != 0 {
+		if len(wm) < 4 {
+			return nil, fmt.Errorf("failed decoding OP_MSG: checksum flag set without a checksum")
+		}
+		wm = wm[:len(wm)-4]
+	}
 	var resultDocs []bsoncore.Document
 	for i := 0; ; i++ {
 		var stype wiremessage.SectionType
