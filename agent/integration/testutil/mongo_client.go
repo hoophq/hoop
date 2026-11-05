@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // Client-facing credentials. libhoop's MongoDB proxy is a man-in-the-middle
@@ -34,7 +34,7 @@ const (
 // underlying transport is bridged to a MockTransport. From the test's
 // perspective it's a regular *mongo.Client.
 //
-// Why a real driver instead of hand-rolled wire bytes
+// # Why a real driver instead of hand-rolled wire bytes
 //
 // libhoop's MongoDB proxy performs a SCRAM man-in-the-middle: it decodes
 // the client's speculative-auth hello (legacy OP_QUERY), runs a full SCRAM
@@ -46,7 +46,7 @@ const (
 // client gives us a correct, spec-compliant client for free; the bridge
 // only shuttles framed wire messages.
 //
-// Multiple connections
+// # Multiple connections
 //
 // Unlike the single-connection SQL bridges, the mongo driver opens several
 // connections (a topology monitor plus the operation pool). Each
@@ -55,7 +55,7 @@ const (
 // (client/proxy/mongodb.go), which assigns a fresh connectionID per
 // accepted TCP connection.
 //
-// Wire framing
+// # Wire framing
 //
 // MongoDB messages are length-prefixed (a 16-byte header whose first 4
 // bytes are the total message length). The agent-side proxy decodes
@@ -77,8 +77,24 @@ type PipedMongoClient struct {
 	cancel context.CancelFunc
 	ctx    context.Context
 
+	// opCodes counts the opcodes of the messages the driver sent;
+	// firstOpCodes holds the opcode of the first message of each connection.
+	opCodes      map[uint32]int
+	firstOpCodes []uint32
+
 	done      chan struct{}
 	closeOnce sync.Once
+}
+
+// MongoDialOptions changes how DialPipedMongoWith connects the driver.
+type MongoDialOptions struct {
+	// User and Password are the client credentials. Empty means noop/noop,
+	// the credentials of the proxy fake SCRAM server.
+	User, Password string
+	// NoAuth connects without credentials, as a health probe does.
+	NoAuth bool
+	// Configure, when set, edits the driver options (Stable API, compressors).
+	Configure func(*options.ClientOptions)
 }
 
 // mongoBridgeConn is a single bridged connection: one net.Pipe whose driver
@@ -101,6 +117,12 @@ type mongoBridgeConn struct {
 // Cleanup is automatic via t.Cleanup; tests don't need to defer Close.
 func DialPipedMongo(t *testing.T, tr *MockTransport, demux *RecvDemux, mc *MongoContainer, sessionID, connIDPrefix string) *PipedMongoClient {
 	t.Helper()
+	return DialPipedMongoWith(t, tr, demux, sessionID, connIDPrefix, MongoDialOptions{})
+}
+
+// DialPipedMongoWith is DialPipedMongo with other client credentials or driver options.
+func DialPipedMongoWith(t *testing.T, tr *MockTransport, demux *RecvDemux, sessionID, connIDPrefix string, o MongoDialOptions) *PipedMongoClient {
+	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &PipedMongoClient{
@@ -109,6 +131,7 @@ func DialPipedMongo(t *testing.T, tr *MockTransport, demux *RecvDemux, mc *Mongo
 		demux:     demux,
 		cancel:    cancel,
 		ctx:       ctx,
+		opCodes:   map[uint32]int{},
 		done:      make(chan struct{}),
 	}
 
@@ -116,11 +139,17 @@ func DialPipedMongo(t *testing.T, tr *MockTransport, demux *RecvDemux, mc *Mongo
 
 	// The driver authenticates against the proxy's fake SCRAM server with
 	// noop/noop. directConnection=true keeps topology discovery minimal
-	// (single host, no SRV/replica-set probing). No ServerAPIOptions and
-	// no loadBalanced so the driver issues the legacy OP_QUERY hello that
-	// libhoop's proxy requires to trigger its auth-bypass path.
-	uri := fmt.Sprintf("mongodb://%s:%s@bridge:27017/?authSource=admin&directConnection=true",
-		mongoProxyUser, mongoProxyPass)
+	// (single host, no SRV/replica-set probing). Without ServerAPIOptions
+	// and loadBalanced the Go driver sends a legacy OP_QUERY hello; with
+	// Stable API it sends an OP_MSG hello.
+	user, pass := mongoProxyUser, mongoProxyPass
+	if o.User != "" || o.Password != "" {
+		user, pass = o.User, o.Password
+	}
+	uri := fmt.Sprintf("mongodb://%s:%s@bridge:27017/?authSource=admin&directConnection=true", user, pass)
+	if o.NoAuth {
+		uri = "mongodb://bridge:27017/?directConnection=true"
+	}
 
 	opts := options.Client().
 		ApplyURI(uri).
@@ -128,6 +157,9 @@ func DialPipedMongo(t *testing.T, tr *MockTransport, demux *RecvDemux, mc *Mongo
 		SetServerSelectionTimeout(20 * time.Second).
 		SetConnectTimeout(20 * time.Second).
 		SetTimeout(30 * time.Second)
+	if o.Configure != nil {
+		o.Configure(opts)
+	}
 
 	client, err := mongo.Connect(ctx, opts)
 	if err != nil {
@@ -186,7 +218,7 @@ func (p *PipedMongoClient) newConn(prefix string) net.Conn {
 // and forwards each as its own MongoDBConnectionWrite packet for this
 // connection.
 func (p *PipedMongoClient) outboundPump(c *mongoBridgeConn) {
-	for {
+	for first := true; ; first = false {
 		select {
 		case <-p.ctx.Done():
 			return
@@ -194,6 +226,7 @@ func (p *PipedMongoClient) outboundPump(c *mongoBridgeConn) {
 		}
 		msg, err := readMongoMessage(c.bridgeConn)
 		if len(msg) > 0 {
+			p.recordOpCode(binary.LittleEndian.Uint32(msg[12:16]), first)
 			p.sendWrite(c.connID, msg)
 		}
 		if err != nil {
@@ -284,6 +317,33 @@ func (p *PipedMongoClient) sendWrite(connID string, payload []byte) {
 		Payload: payload,
 	}
 	p.tr.Inject(pkt)
+}
+
+func (p *PipedMongoClient) recordOpCode(opCode uint32, first bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.opCodes[opCode]++
+	if first {
+		p.firstOpCodes = append(p.firstOpCodes, opCode)
+	}
+}
+
+// SentOpCodes returns how many messages of each opcode the driver sent.
+func (p *PipedMongoClient) SentOpCodes() map[uint32]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[uint32]int, len(p.opCodes))
+	for k, v := range p.opCodes {
+		out[k] = v
+	}
+	return out
+}
+
+// FirstOpCodes returns the opcode of the first message (the hello) of each connection.
+func (p *PipedMongoClient) FirstOpCodes() []uint32 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]uint32(nil), p.firstOpCodes...)
 }
 
 // SessionID returns the agent-side session ID.

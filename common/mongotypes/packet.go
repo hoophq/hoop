@@ -124,6 +124,9 @@ func DecodeOpMsgToJSON(pkt *Packet) ([]byte, error) {
 	log.Debugf("decoding op msg to json, reqid=%v, respto=%v, msglength=%v, frame=%v",
 		pkt.RequestID, pkt.ResponseTo, pkt.MessageLength, len(pkt.Frame))
 
+	if len(pkt.Frame) < 4 {
+		return nil, fmt.Errorf("failed decoding OP_MSG: no flag bits")
+	}
 	wm := make([]byte, len(pkt.Frame[4:]))
 	_ = copy(wm, pkt.Frame[4:])
 	// checksumPresent: a CRC-32C trailer follows the sections, it is not a section

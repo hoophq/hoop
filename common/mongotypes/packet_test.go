@@ -210,3 +210,11 @@ func TestDecodeOpMsgToJSONChecksumTrailer(t *testing.T) {
 	_, err = DecodeOpMsgToJSON(&Packet{OpCode: OpMsgType, Frame: binary.LittleEndian.AppendUint32(nil, opMsgChecksumPresent)})
 	assert.Error(t, err, "flag set without a trailer")
 }
+
+// A frame shorter than the flag bits must fail, not panic.
+func TestDecodeOpMsgToJSONShortFrame(t *testing.T) {
+	for _, frame := range [][]byte{{}, {1, 0}, {1, 0, 0}} {
+		_, err := DecodeOpMsgToJSON(&Packet{OpCode: OpMsgType, Frame: frame})
+		assert.Error(t, err, "frame %x", frame)
+	}
+}
