@@ -299,7 +299,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 9. Outside that range falls back to 3 |
 | `config.TLS_CERT` / `config.TLS_KEY` | `''` | Both set = HTTPS, both empty = plaintext |
 | `config.HOOP_LICENSE` | `''` | The signed license JSON or the path of a file that holds it, stored on the default organization at every boot after the signature, window and `API_URL` host are verified |
-| `config.ANALYTICS_TRACKING` | `enabled` | `disabled` sets the default organization's analytics mode to `disabled` at every boot. `enabled` leaves the stored mode alone |
+| `config.ANALYTICS_TRACKING` | `''` | Unset: a valid enterprise license sets the default organization's analytics mode to `disabled`, a free one gets `identified`, at every boot. `enabled` forces `identified`, `disabled` forces `disabled` |
 | `config.ORG_ID` | `''` | UUID the default organization is created with on a fresh database, so `API_KEY` can be written before the first boot. An existing organization with another id stops startup |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |

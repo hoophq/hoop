@@ -44,5 +44,5 @@ rotated value replaces the stored one. None takes effect with
 | Value | Default | Description |
 |---|---|---|
 | `config.HOOP_LICENSE` | empty | The signed license JSON itself (starts with `{`) or the path of a file that holds it. The gateway verifies the signature, the validity window and `API_URL`'s host, then stores it; a bad document stops startup. |
-| `config.ANALYTICS_TRACKING` | `enabled` | `disabled` sets the organization's analytics mode to `disabled`. `enabled` leaves the stored mode alone, so `PUT /api/orgs/analytics-mode` decides it. |
+| `config.ANALYTICS_TRACKING` | empty | Unset: a valid enterprise license sets the organization's analytics mode to `disabled`, a free organization gets `identified`. `enabled` forces `identified`, `disabled` forces `disabled`. `PUT /api/orgs/analytics-mode` changes it until the next restart. |
 | `config.ORG_ID` | empty | UUID the default organization is created with on a fresh database, so `config.API_KEY` can be written before the first boot. An existing organization with another id stops startup: it never renames one. |

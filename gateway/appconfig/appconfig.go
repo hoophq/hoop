@@ -533,10 +533,10 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 // stores it on the default organization at every boot.
 func (c Config) LicenseData() []byte { return c.licenseData }
 
-// AnalyticsTrackingDisabled reports ANALYTICS_TRACKING=disabled. The gateway
-// then sets the default organization's analytics mode to disabled at every
-// boot; enabled or unset leaves the stored mode alone.
-func (c Config) AnalyticsTrackingDisabled() bool { return c.analyticsTracking == "disabled" }
+// AnalyticsTracking is the ANALYTICS_TRACKING value: enabled, disabled or
+// empty. See analytics.ModeAtBoot for what each does to the default
+// organization.
+func (c Config) AnalyticsTracking() string { return c.analyticsTracking }
 
 // OrgID is the ORG_ID the default organization is created with on a fresh
 // database, empty when unset. It never renames an existing organization.

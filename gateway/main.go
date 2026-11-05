@@ -150,18 +150,22 @@ func Run() {
 		defaultOrgID = org.ID
 
 		// Both run at every boot, so a rotated env value replaces the stored one.
+		licenseData := org.LicenseData
 		if data := appconfig.Get().LicenseData(); data != nil {
 			if err := apiorgs.ApplyOrgLicense(org.ID, data); err != nil {
 				orgStep.Fail(err)
 				log.Fatalf("failed applying HOOP_LICENSE, reason=%v", err)
 			}
+			licenseData = data
 		}
-		if appconfig.Get().AnalyticsTrackingDisabled() {
-			if err := models.UpdateOrgAnalyticsMode(org.ID, models.AnalyticsModeDisabled); err != nil {
+
+		mode := analytics.ModeAtBoot(appconfig.Get().AnalyticsTracking(), licenseData, appconfig.Get().ApiHostname())
+		if mode != org.AnalyticsMode {
+			if err := models.UpdateOrgAnalyticsMode(org.ID, mode); err != nil {
 				orgStep.Fail(err)
-				log.Fatalf("failed applying ANALYTICS_TRACKING, reason=%v", err)
+				log.Fatalf("failed applying the analytics mode, reason=%v", err)
 			}
-			org.AnalyticsMode = models.AnalyticsModeDisabled
+			org.AnalyticsMode = mode
 		}
 		analytics.SetMode(org.ID, org.AnalyticsMode)
 

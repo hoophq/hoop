@@ -55,23 +55,22 @@ func TestLoadLicense(t *testing.T) {
 	}
 }
 
-// ANALYTICS_TRACKING semantics: disabled turns the stored mode off at boot,
-// enabled or unset leaves it alone. disabled is refused with ORG_MULTI_TENANT.
+// ANALYTICS_TRACKING is enabled, disabled or unset; disabled is refused with
+// ORG_MULTI_TENANT.
 func TestLoadAnalyticsTracking(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		env          string
-		multiTenant  string
-		wantErr      bool
-		wantDisabled bool
+		name        string
+		env         string
+		multiTenant string
+		wantErr     bool
 	}{
-		{"unset", "", "", false, false},
-		{"enabled", "enabled", "", false, false},
-		{"disabled", "disabled", "", false, true},
-		{"enabled with multi tenant", "enabled", "true", false, false},
-		{"unknown value", "anonymous", "", true, false},
-		{"wrong case", "Disabled", "", true, false},
-		{"disabled refused with multi tenant", "disabled", "true", true, false},
+		{"unset", "", "", false},
+		{"enabled", "enabled", "", false},
+		{"disabled", "disabled", "", false},
+		{"enabled with multi tenant", "enabled", "true", false},
+		{"unknown value", "anonymous", "", true},
+		{"wrong case", "Disabled", "", true},
+		{"disabled refused with multi tenant", "disabled", "true", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("POSTGRES_DB_URI", "postgres://u:p@localhost:5432/db")
@@ -89,8 +88,8 @@ func TestLoadAnalyticsTracking(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load failed: %v", err)
 			}
-			if got := Get().AnalyticsTrackingDisabled(); got != tc.wantDisabled {
-				t.Fatalf("AnalyticsTrackingDisabled() = %v, want %v", got, tc.wantDisabled)
+			if got := Get().AnalyticsTracking(); got != tc.env {
+				t.Fatalf("AnalyticsTracking() = %q, want %q", got, tc.env)
 			}
 		})
 	}

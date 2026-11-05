@@ -59,3 +59,27 @@ func TestGetMode(t *testing.T) {
 		}
 	})
 }
+
+// The enterprise branch needs a document signed with the trusted key, which
+// common/license's own tests cover; an unsigned enterprise document is free.
+func TestModeAtBoot(t *testing.T) {
+	unsigned := []byte(`{"payload":{"type":"enterprise"},"signature":"x"}`)
+
+	for _, tc := range []struct {
+		name     string
+		tracking string
+		license  []byte
+		want     string
+	}{
+		{"enabled wins", "enabled", unsigned, models.AnalyticsModeIdentified},
+		{"disabled wins", "disabled", nil, models.AnalyticsModeDisabled},
+		{"no license is free", "", nil, models.AnalyticsModeIdentified},
+		{"unverified license is free", "", unsigned, models.AnalyticsModeIdentified},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ModeAtBoot(tc.tracking, tc.license, "localhost"); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
