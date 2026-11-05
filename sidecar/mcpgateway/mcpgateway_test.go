@@ -1,6 +1,7 @@
 package mcpgateway_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -738,5 +740,31 @@ func TestAnMCPLaneServesTLS(t *testing.T) {
 	plain := &client{url: "http://" + strings.TrimPrefix(url, "https://"), header: withToken("good-token")}
 	if code, _ := plain.post(t, initializeBody); code != http.StatusBadRequest {
 		t.Fatalf("plain HTTP to a TLS lane: %d, want 400", code)
+	}
+}
+
+// A refused request closes its connection, so a caller without a token
+// cannot hold one open.
+func TestARefusedRequestClosesItsConnection(t *testing.T) {
+	url, _ := startTokenLane(t, &testLane{}, nil, nil)
+	conn, err := net.Dial("tcp", strings.TrimSuffix(strings.TrimPrefix(url, "http://"), "/mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	fmt.Fprintf(conn, "POST /mcp HTTP/1.1\r\nHost: lane\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(initializeBody), initializeBody)
+	r := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(r, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || !resp.Close {
+		t.Fatalf("refusal: %d, close=%v", resp.StatusCode, resp.Close)
+	}
+	if _, err := r.ReadByte(); err != io.EOF {
+		t.Fatalf("the connection stayed open after a refusal: %v", err)
 	}
 }

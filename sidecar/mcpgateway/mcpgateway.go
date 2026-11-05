@@ -49,6 +49,9 @@ const (
 	// goneTTL is how long an ended MCP session stays refused: longer than any
 	// message still in flight on it.
 	goneTTL = time.Hour
+	// connIdleTimeout closes a keep-alive connection idle between requests;
+	// a streaming response is not idle.
+	connIdleTimeout = 2 * time.Minute
 )
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
@@ -199,6 +202,7 @@ func (s *server) Serve(ctx context.Context) error {
 	srv := &http.Server{
 		Handler:           s.checkCaller(s.gw.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       connIdleTimeout,
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
 	s.mu.Lock()
@@ -238,6 +242,7 @@ func (s *server) checkCaller(next http.Handler) http.Handler {
 		subject, key, err := check.Resolve(r.Context(), credential)
 		if err != nil {
 			s.log.Info("mcp request refused", "peer", r.RemoteAddr, "reason", err.Error())
+			w.Header().Set("Connection", "close")
 			http.Error(w, "request refused: "+err.Error(), http.StatusForbidden)
 			return
 		}

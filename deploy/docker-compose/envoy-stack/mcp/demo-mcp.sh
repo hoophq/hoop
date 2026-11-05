@@ -30,7 +30,10 @@ mkdir -p bin
 (cd "$root/sidecar/cmd" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$here/bin/hoop-inspect" .)
 (cd "$root/sidecar/mcpgateway" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$here/bin/upstream" ./internal/testupstream/cmd)
 
-[[ -s caller-tokens ]] || LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 >caller-tokens
+if [[ ! -s caller-tokens ]]; then
+    (umask 077 && od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >caller-tokens)
+fi
+chmod 600 caller-tokens
 token=$(cat caller-tokens)
 
 step "start the lane"
