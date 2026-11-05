@@ -25,6 +25,7 @@ import {
 } from '../helpers'
 import { findAiAnalyzerTemplate } from '../templates'
 import SectionRow from '../components/SectionRow'
+import AccessRequestOverlap from './sections/AccessRequestOverlap'
 import RiskEvaluation from './sections/RiskEvaluation'
 import SystemPromptPreview from './sections/SystemPromptPreview'
 import classes from './Create.module.css'
@@ -46,6 +47,8 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   const accessRequestRulesStatus = useAiSessionAnalyzerStore(
     (s) => s.accessRequestRulesStatus,
   )
+  const attributes = useAiSessionAnalyzerStore((s) => s.attributes)
+  const attributesStatus = useAiSessionAnalyzerStore((s) => s.attributesStatus)
   const createRule = useAiSessionAnalyzerStore((s) => s.createRule)
   const updateRule = useAiSessionAnalyzerStore((s) => s.updateRule)
   const deleteRule = useAiSessionAnalyzerStore((s) => s.deleteRule)
@@ -211,10 +214,18 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
           title="Roles configuration"
           description="Select which Resources to apply this configuration."
         >
-          <ConnectionNamesMultiSelect
-            value={form.connectionNames}
-            onChange={(values) => setField({ connectionNames: values })}
-          />
+          <Stack gap="sm">
+            <ConnectionNamesMultiSelect
+              value={form.connectionNames}
+              onChange={(values) => setField({ connectionNames: values })}
+            />
+            <AccessRequestOverlap
+              connectionNames={form.connectionNames}
+              accessRequestRules={accessRequestRules}
+              attributes={attributes}
+              failed={accessRequestRulesStatus === 'error' || attributesStatus === 'error'}
+            />
+          </Stack>
         </SectionRow>
 
         <SectionRow
@@ -304,6 +315,7 @@ export default function GatewayAiAnalyzerForm() {
   const fetchAccessRequestRules = useAiSessionAnalyzerStore(
     (s) => s.fetchAccessRequestRules,
   )
+  const fetchAttributes = useAiSessionAnalyzerStore((s) => s.fetchAttributes)
   const fetchList = useAiSessionAnalyzerStore((s) => s.fetchList)
 
   // Without this the post-save redirect lands on the promotion splash instead
@@ -318,10 +330,19 @@ export default function GatewayAiAnalyzerForm() {
   // connections fetch here. The rule list backs the free-plan limit check.
   useEffect(() => {
     fetchAccessRequestRules()
+    fetchAttributes()
     fetchList()
     if (isEdit) fetchActive(ruleName)
     return () => clearActive()
-  }, [isEdit, ruleName, fetchAccessRequestRules, fetchList, fetchActive, clearActive])
+  }, [
+    isEdit,
+    ruleName,
+    fetchAccessRequestRules,
+    fetchAttributes,
+    fetchList,
+    fetchActive,
+    clearActive,
+  ])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

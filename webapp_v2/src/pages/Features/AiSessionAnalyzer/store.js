@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { attributesService } from '@/services/attributes'
 
 export const useAiSessionAnalyzerStore = create((set, get) => ({
   list: [],
@@ -18,6 +19,9 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   accessRequestRules: [],
   accessRequestRulesStatus: 'idle',
+
+  attributes: [],
+  attributesStatus: 'idle',
 
   submitting: false,
 
@@ -102,6 +106,18 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
       })
     } catch {
       set({ accessRequestRulesStatus: 'error' })
+    }
+  },
+
+  // With the access request rules, tells the form which selected roles an
+  // access request rule also covers through a shared attribute.
+  fetchAttributes: async () => {
+    set({ attributesStatus: 'loading' })
+    try {
+      const attributes = await attributesService.listAll()
+      set({ attributes, attributesStatus: 'success' })
+    } catch {
+      set({ attributesStatus: 'error' })
     }
   },
 
