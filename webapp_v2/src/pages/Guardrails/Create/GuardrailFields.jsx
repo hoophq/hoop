@@ -17,7 +17,7 @@ import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { AGENT_GUARDRAIL_TYPES, AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
-import { ENTITY_TYPES, GUARDRAIL_ACTIONS } from '@/pages/sidecarRuleVocabulary'
+import { ENTITY_TYPES, GUARDRAIL_ACTIONS, MCP_TOOL_LISTS } from '@/pages/sidecarRuleVocabulary'
 import { useGuardrailsStore } from '../store'
 import { AGENT_DLP_REQUIRED } from '../helpers'
 import { emptyRule } from './useGuardrailEditor'
@@ -191,6 +191,30 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             onChange={(v) => set({ methods: v })}
             clearable
           />
+        )}
+        {has('tools') && (
+          <Group align="flex-end" gap="sm" wrap="nowrap">
+            <Select
+              label="Tools"
+              data={MCP_TOOL_LISTS}
+              value={rule.mcpList}
+              // A rule sets one list, so the globs move to the one picked.
+              onChange={(v) => {
+                const next = v ?? 'tools'
+                if (next !== rule.mcpList) set({ mcpList: next, [next]: rule[rule.mcpList], [rule.mcpList]: [] })
+              }}
+              allowDeselect={false}
+              w={220}
+            />
+            <TagsInput
+              label="Tool names"
+              placeholder={rule.mcpList === 'allow' ? 'get_*' : '*delete*'}
+              description="* matches any run of characters; case counts. A denied tool is also left out of tools/list."
+              value={rule[rule.mcpList]}
+              onChange={(v) => set({ [rule.mcpList]: v })}
+              flex={1}
+            />
+          </Group>
         )}
 
         {rule.type !== 'operation' && !output && (

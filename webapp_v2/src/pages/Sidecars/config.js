@@ -29,6 +29,7 @@ const ICON_SUBTYPES = {
   oracle: 'oracledb',
   http: 'httpproxy',
   ssh: 'ssh',
+  mcp: 'mcp',
 }
 
 export function protocolInfo(protocol) {
