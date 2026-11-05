@@ -35,6 +35,7 @@ const libraryEntries = (rows) =>
     .filter((r) => holdsSidecarRules(r.sidecar_spec))
     .map((r) => ({ name: r.name, description: r.description ?? '' }))
     .sort((a, b) => a.name.localeCompare(b.name))
+import { attributesService } from '@/services/attributes'
 
 export const useAiSessionAnalyzerStore = create((set, get) => ({
   list: [],
@@ -65,6 +66,8 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   routingIntegrations: EMPTY_INTEGRATIONS,
   routingIntegrationsStatus: 'idle',
   routingIntegrationsRequestId: 0,
+  attributes: [],
+  attributesStatus: 'idle',
 
   submitting: false,
 
@@ -210,6 +213,18 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
       routingIntegrationsStatus: 'idle',
       routingIntegrationsRequestId: state.routingIntegrationsRequestId + 1,
     })),
+
+  // With the access request rules, tells the form which selected roles an
+  // access request rule also covers through a shared attribute.
+  fetchAttributes: async () => {
+    set({ attributesStatus: 'loading' })
+    try {
+      const attributes = await attributesService.listAll()
+      set({ attributes, attributesStatus: 'success' })
+    } catch {
+      set({ attributesStatus: 'error' })
+    }
+  },
 
   createRule: async (payload) => {
     set({ submitting: true })

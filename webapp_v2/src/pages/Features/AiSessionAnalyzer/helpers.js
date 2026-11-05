@@ -91,3 +91,42 @@ export function formToPayload({
     agentic,
   }
 }
+
+// Access request types the gateway checks on a command, before the analyzer
+// runs (accessrequest.OnReceive, models.expandAccessTypes). A "jit" rule gates
+// opening a connection, not a command, so it does not take a command first.
+const COMMAND_ACCESS_TYPES = new Set(['command', 'jit_command'])
+
+// For each selected resource role, the access request rules that take its
+// commands before the analyzer does. A rule covers a role when it names the
+// role or shares an attribute with it, as services.GetRuleForConnection reads
+// it. Returns [{ connectionName, rules: [rule, ...] }] in selection order,
+// only for covered roles; rules sorted by name.
+export function accessRequestOverlap(connectionNames, accessRequestRules, attributes) {
+  const commandRules = (accessRequestRules ?? []).filter((rule) =>
+    COMMAND_ACCESS_TYPES.has(rule.access_type),
+  )
+  if (commandRules.length === 0) return []
+
+  const attributesByConnection = new Map()
+  for (const attribute of attributes ?? []) {
+    for (const name of attribute.connection_names ?? []) {
+      if (!attributesByConnection.has(name)) attributesByConnection.set(name, new Set())
+      attributesByConnection.get(name).add(attribute.name)
+    }
+  }
+
+  return [...new Set(connectionNames ?? [])]
+    .map((connectionName) => {
+      const roleAttributes = attributesByConnection.get(connectionName) ?? new Set()
+      const rules = commandRules
+        .filter(
+          (rule) =>
+            (rule.connection_names ?? []).includes(connectionName) ||
+            (rule.attributes ?? []).some((name) => roleAttributes.has(name)),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name))
+      return { connectionName, rules }
+    })
+    .filter((entry) => entry.rules.length > 0)
+}
