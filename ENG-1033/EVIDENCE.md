@@ -1,6 +1,6 @@
 # ENG-1033 · Runbook password inputs are redacted in session labels
 
-PR #2113 · tested on `4ce8ab9` (product code same as `7115511`) against `origin/main` `7a5bfa6` · 2026-11-04
+PR #2113 · tested on `4ce8ab9` (API) and `f95eb92` (Re-run in the UI) against `origin/main` `7a5bfa6` · 2026-11-04
 
 **Result: a runbook `password` input no longer appears in plain text in the session label, on both exec routes; the run still gets the real value.**
 
@@ -19,6 +19,13 @@ On main, the second untyped reference reset the type to `text`: the form showed 
 ![3-rerun-with-redacted-value](https://raw.githubusercontent.com/hoophq/hoop/3bede3a9015a8b200a9a0297b0b54ab9ba178112/ENG-1033/3-rerun-with-redacted-value.png)
 On main the run used the marker text as the secret. The branch refuses it with 422 and asks the user to use the form.
 
+## 4. Re-run from the session page
+![4-rerun-from-session-page](https://raw.githubusercontent.com/hoophq/hoop/d0342851aa2d814fac0e0bfe13ec7e709c36889b/ENG-1033/4-rerun-from-session-page.gif)
+What to look at:
+- **Parameters row:** main shows `secret: S3cr3t-Pa55`; the branch shows the marker.
+- **After Re-run, left:** main runs again at once and passes the redaction text as the file (`CERT=[param redacted…]`).
+- **After Re-run, right:** the branch opens the runbook form with `put-secret.runbook.sh` selected and a notice to enter the hidden inputs again.
+
 ## Review env vars
 With a review PENDING, the secret appears 0 times (raw or base64) in `GET /sessions/:id`, `GET /reviews` and `GET /reviews/:id` on the branch; once on main, through the label. No API type carries `input_env_vars`; `TestReviewAndSessionTypesDoNotExposeEnvVars` guards it.
 
@@ -33,5 +40,6 @@ Teams that pass secrets through runbooks (for example, into a secret store) no l
 ## Open items
 - Sessions created before this change keep their labels.
 - `private.reviews.input_env_vars` is not cleared (decision: no migration, soft block only).
-- Legacy webapp Re-run on such a session now shows the 422 message instead of running.
+- Re-run opens the form with the runbook selected; the resource (connection) is not preselected.
+- Recorded with `experimental.agents` on (Runbooks menu), as in every org that had an agent.
 - CI: all test checks green on 4ce8ab9 (`Sidecar E2E Test` failed on 7115511 for runner disk space, passed on 4ce8ab9). Image publish jobs were still running at write time.
