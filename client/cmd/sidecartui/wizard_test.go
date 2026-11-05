@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 )
 
 // validateFile is the validator the CLI injects, minus the license and the
@@ -100,6 +101,14 @@ func TestAnalyzerDefaultsFollowTheKeyFile(t *testing.T) {
 	cfg, _, _ := d.config()
 	if cfg.Analyzer == nil || cfg.Listeners[0].Analyzer == nil {
 		t.Errorf("analyzer missing from the config: %+v", cfg)
+	}
+	// An mcp lane refuses an analyzer, so its defaults leave it off.
+	d, _ = newDraft("mcp", machine{keyDir: dir})
+	if d.an.on {
+		t.Error("analyzer on for an mcp lane")
+	}
+	if err := validateDraft(t, d); err != nil {
+		t.Errorf("mcp defaults with a key file do not validate: %v", err)
 	}
 }
 

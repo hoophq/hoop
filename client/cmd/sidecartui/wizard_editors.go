@@ -79,6 +79,7 @@ var defaultUpstream = map[string]string{
 	"postgres": "127.0.0.1:5432", "mysql": "127.0.0.1:3306", "mssql": "127.0.0.1:1433",
 	"oracle": "127.0.0.1:1521", "mongodb": "127.0.0.1:27017", "clickhouse": "127.0.0.1:8123",
 	"http": "127.0.0.1:8080", "grpc": "127.0.0.1:50051", "spanner": "spanner.googleapis.com:443",
+	"mcp": "http://127.0.0.1:8000/mcp",
 }
 
 // ---- operations and rule types per protocol ----------------------------------
@@ -224,6 +225,9 @@ func newDraft(id string, m machine) (*draft, error) {
 			prefill["listen"] = l
 		} else if protocol == "ssh" {
 			prefill["listen"] = "127.0.0.1:12222"
+		} else if protocol == "mcp" {
+			// An mcp upstream is a URL, which StarterListen does not read.
+			prefill["listen"] = "127.0.0.1:18000"
 		}
 		// The suggested port moves when another program holds it, so the
 		// default boots on this machine as it is.
@@ -258,14 +262,19 @@ func newDraft(id string, m machine) (*draft, error) {
 		// A gRPC lane reads operations, tables and data only from decoded
 		// payloads, which need descriptors no default can name; the person
 		// adds a rule once the listener captures them.
+	case "mcp":
+		r := policy.Rule{Name: "no-delete-tools", Type: policy.MatchMCPTool,
+			Message: "delete tools are not allowed through the sidecar"}
+		r.Tools = []string{"*delete*"}
+		d.rules = []policy.Rule{r}
 	default:
 		d.rules = []policy.Rule{{Name: "no-destructive-statements", Type: policy.MatchOperation, Operations: ops("drop", "truncate"),
 			Message: "DROP and TRUNCATE are not allowed through the sidecar"}}
 	}
 	// grpc and spanner mask only through grpc.descriptors, which no
-	// default can supply.
+	// default can supply. An mcp lane does not mask yet.
 	switch d.protocol {
-	case "grpc", "spanner":
+	case "grpc", "spanner", "mcp":
 	case "ssh":
 		// An ssh lane rewrites bytes in place, so the replacement must be
 		// as long as the value: mask is the one strategy it carries.
@@ -295,7 +304,8 @@ func newDraft(id string, m machine) (*draft, error) {
 	default:
 		d.an.trigger = []string{"delete", "update"}
 	}
-	d.an.on = provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	// An mcp lane refuses an analyzer.
+	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
 	return d, nil
 }
 
