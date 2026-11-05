@@ -119,8 +119,9 @@ jobs:
           PREVIOUS: ${{ steps.version.outputs.previous }}
           SHA: ${{ github.sha }}
           # Lists the ICA GPU image and bundle only when release.yml will
-          # build them; it gates those steps on the same variable.
+          # build them; it gates those steps on this pair of variables.
           ICA_GPU_ASSETS_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
+          ICA_GPU_ASSETS_SHA256: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
         run: |
           set -euo pipefail
           if gh release view "$NEXT" >/dev/null 2>&1; then

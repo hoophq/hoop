@@ -38,6 +38,11 @@ for group in video render; do
 done
 rel=/opt/libhoop-ica/releases/${version}-gpu
 [[ ! -e $rel ]] || die "$rel already exists; use a new release version (existing assets are never overwritten)"
+# Until `current` switches, a failed preflight leaves nothing behind: the
+# guard above would otherwise block a retry of the same bundle after the
+# operator fixes the config or a device permission.
+committed=0
+trap '[[ $committed -eq 1 ]] || rm -rf "$rel"' EXIT
 install -d -m 0755 "$rel/bin" "$rel/models"
 cp -a "$here/gpu" "$rel/gpu"
 cp -a "$here/models/KnightsAnalytics_distilbert-NER" "$rel/models/"
@@ -113,8 +118,10 @@ fi
 if [[ -e /opt/libhoop-ica/current && ! -L /opt/libhoop-ica/current ]]; then
   die '/opt/libhoop-ica/current must be a symlink, not a directory'
 fi
-ln -sfn "releases/${version}-gpu" /opt/libhoop-ica/current
-# Unlink before installing to allow replacement of a running ELF binary.
+# The binary, config and unit land first; `current` switches last, so a
+# failure here leaves the previous release live and whole. A running
+# hoop-ica keeps its mapped text: install unlinks the old file before
+# writing the new one, so this never hits ETXTBSY.
 install -m 0755 "$rel/bin/hoop-ica" /usr/local/bin/hoop-ica
 install -o root -g hoop -m 0640 "$rel/config.yaml" /etc/hoop-inspect/config.yaml
 capability=
@@ -138,6 +145,8 @@ ${capability}
 [Install]
 WantedBy=multi-user.target
 EOF
+committed=1
+ln -sfn "releases/${version}-gpu" /opt/libhoop-ica/current
 systemctl daemon-reload
 if [[ $START -eq 0 ]]; then
   echo 'Installed. Start with: systemctl enable hoop-ica && systemctl restart hoop-ica'

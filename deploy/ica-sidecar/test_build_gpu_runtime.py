@@ -53,6 +53,22 @@ class BuilderTests(unittest.TestCase):
         self.assertFalse((root / "lib/libcuda.so.1").exists())
         self.assertIn("ort/lib/libonnxruntime.so.1", inventory)
 
+    def test_sweep_copies_each_library_once_under_its_soname(self):
+        real = self.file("sdk/libcudnn.so.9.8.0", b"cudnn")
+        for alias in ("libcudnn.so.9", "libcudnn.so"):
+            real.with_name(alias).symlink_to(real.name)
+        root = self.base / "runtime"
+        def run(argv, **kwargs):
+            argv = [str(a) for a in argv]
+            if argv[:2] == ["patchelf", "--print-soname"]:
+                return "libcudnn.so.9\n"
+            if argv[0] == "ldd":
+                return f"libcudnn.so.9 => {real.with_name('libcudnn.so.9')} (0xff)"
+            return ""
+        builder.collect(root, [], [real.parent], {}, run=run)
+        self.assertEqual(sorted(p.name for p in (root / "lib").iterdir()), ["libcudnn.so.9"])
+        self.assertEqual((root / "lib/libcudnn.so.9").read_bytes(), b"cudnn")
+
     def test_collision_preserves_first_library(self):
         a = self.file("a/libduplicate.so", b"first")
         b = self.file("b/libduplicate.so", b"second")

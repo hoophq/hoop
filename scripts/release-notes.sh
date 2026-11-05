@@ -13,12 +13,13 @@
 # repository does not exist on Docker Hub yet), and the per-commit
 # :<sha>-<arch> tags, which are build intermediates.
 #
-# The ICA GPU image and bundle are published only when the repository variable
-# ICA_GPU_ASSETS_URL is set (release.yml gates those steps on it), so they are
-# listed only when the same variable reaches this script's environment. Both
-# workflow call sites pass it; the manual path inherits the shell's.
+# The ICA GPU image and bundle are published only when the repository
+# variables ICA_GPU_ASSETS_URL and ICA_GPU_ASSETS_SHA256 are both set
+# (release.yml gates those steps on the pair and fails on a half-set one), so
+# they are listed only when both reach this script's environment. Both
+# workflow call sites pass them; the manual path inherits the shell's.
 #
-# Usage: ICA_GPU_ASSETS_URL=... release-notes.sh <version>
+# Usage: ICA_GPU_ASSETS_URL=... ICA_GPU_ASSETS_SHA256=... release-notes.sh <version>
 
 set -euo pipefail
 
@@ -29,10 +30,10 @@ VERSION=$1
 # the tag it names instead of the repository's front page.
 hub() { echo "https://hub.docker.com/r/hoophq/${1}/tags?name=${2}"; }
 
-# The gated GPU artifacts, each with its own leading newline so that an unset
-# variable adds nothing — not even a blank line — to the body.
+# The gated GPU artifacts, each with its own leading newline so that unset
+# variables add nothing — not even a blank line — to the body.
 GPU_IMAGE= GPU_BUNDLE=
-if [[ -n ${ICA_GPU_ASSETS_URL:-} ]]; then
+if [[ -n ${ICA_GPU_ASSETS_URL:-} && -n ${ICA_GPU_ASSETS_SHA256:-} ]]; then
   GPU_IMAGE="
 - [hoophq/hoopsidecar:${VERSION}-ica-gpu]($(hub hoopsidecar "${VERSION}-ica-gpu")) — the ICA engine on TurboOCR and CUDA NER, linux/amd64 only; needs an NVIDIA GPU"
   GPU_BUNDLE="

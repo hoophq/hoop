@@ -127,15 +127,32 @@ def copy_file(source, destination):
     destination.chmod(0o755 if os.access(source, os.X_OK) else 0o644)
 
 
+def soname(path, run=command):
+    """The name the loader resolves a library by; the file name when it has none."""
+    try:
+        name = run(["patchelf", "--print-soname", path]).strip()
+    except subprocess.CalledProcessError:
+        name = ""
+    return name or path.name
+
+
 def collect(root, seeds, search_dirs, env, run=command):
     queue = list(seeds)
     # cuDNN/NVRTC/TRT can load split libraries by name rather than DT_NEEDED.
     # Collect their runtime families explicitly as well as the ELF dependency
     # closure. Never sweep unrelated system libraries from /usr/lib.
+    #
+    # An SDK ships each library as a real file plus its SONAME and unversioned
+    # development symlinks. copy_file dereferences, so queueing every name
+    # would store cuDNN, cuBLAS and TensorRT (hundreds of MB to over a GB
+    # each) three times over. Real files only, under the SONAME the loader
+    # and dlopen use; the ldd closure below lands on the same file and name.
     for directory in search_dirs:
         for path in sorted(directory.glob("*.so*")):
+            if path.is_symlink() or not path.is_file():
+                continue
             if GPU_LIBRARY.match(path.name) and not HOST_LIBRARY.match(path.name):
-                queue.append((path.name, path))
+                queue.append((soname(path, run), path))
     visited = set()
     inventory = {}
     while queue:

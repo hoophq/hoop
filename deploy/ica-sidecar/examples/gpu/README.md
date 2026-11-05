@@ -17,14 +17,15 @@ helm install ica-gpu deploy/helm-chart/chart/sidecar -f deploy/ica-sidecar/examp
 | --- | --- |
 | `resources.limits.nvidia.com/gpu: 1` | The device plugin injects `libcuda` and `/dev/nvidia*` into the pod; the image bundles no driver. One pod per GPU: TurboOCR and CUDA NER both use device 0. |
 | `nodeSelector`, `tolerations` | Pin to the GPU pool. Names are the pool's own. |
-| `runtimeClassName: nvidia` (commented) | Only where the NVIDIA runtime is installed but is not the containerd default. Managed pools on AKS, GKE and EKS need nothing. |
+| `runtimeClassName: nvidia` (commented) | Needed where the NVIDIA runtime is installed but is not the node's default container runtime. Managed GPU pools usually set it as the default and need nothing here; that depends on the platform and how its device plugin was installed, so confirm with the smoke run below rather than assume. |
 | `probe.readinessPath` / `startupPath: /readyz` | `/healthz` is true as soon as the process is up; `/readyz` waits for the CUDA NER provider, TurboOCR and every bound lane. With the default readiness a pod whose CUDA init failed would receive sessions. The 180 × 5s startup budget covers engine load on a cold node. |
 | `terminationGracePeriodSeconds: 120` | Longer than `ica.drain_timeout_sec: 60`, so the kubelet does not kill sessions mid-drain. |
 | `laneServices.ica` | Publishes the lane port; the chart's own Service is the admin port only. Keep it internal: the lane is plaintext ICA/CGP, and the admin port is unauthenticated. |
 
 The relay runs as uid 10001 and needs read/write on the injected `/dev/nvidia*`
-nodes; the NVIDIA container runtime grants that by default, so fixed-upstream
-mode needs no `securityContext`. A permission error on those nodes in the pod
+nodes. The NVIDIA container runtime typically exposes them with a mode that
+allows this, so fixed-upstream mode usually needs no `securityContext`; the
+smoke run below is the check. A permission error on those nodes in the pod
 log is a node runtime setting, not a chart one. Transparent (TPROXY) mode
 additionally needs `CAP_NET_ADMIN` through
 `containerSecurityContext.capabilities.add` and node routing rules outside the

@@ -34,8 +34,8 @@ tolerations:
     effect: NoSchedule
 
 # Only where the NVIDIA runtime is installed but is not the node's default
-# containerd runtime (GPU Operator without defaultRuntime). Managed pools on
-# AKS, GKE and EKS leave this empty.
+# containerd runtime (GPU Operator without defaultRuntime). Managed pools
+# usually make it the default; verify on yours rather than assume.
 # runtimeClassName: nvidia
 
 # /readyz is false until the CUDA NER provider and TurboOCR initialised and
