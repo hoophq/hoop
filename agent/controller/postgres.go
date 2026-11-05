@@ -87,9 +87,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		// on more intensive environments this is a problem, we can enable it later based on specific rules
 		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
-	if a.flags.IsEnabled(postgresFastMaskingFlag) {
-		opts["postgres_fast_masking"] = "true"
-	}
+	a.setPostgresFastMasking(opts)
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with postgres server, err=%v", err)
@@ -103,4 +101,12 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	// write the first packet when establishing the connection
 	_, _ = serverWriter.Write(pkt.Payload)
 	a.connStore.Set(clientConnectionIDKey, serverWriter)
+}
+
+// setPostgresFastMasking sets the libhoop option when the flag is on. An
+// absent option keeps the old masking path.
+func (a *Agent) setPostgresFastMasking(opts map[string]string) {
+	if a.flags.IsEnabled(postgresFastMaskingFlag) {
+		opts["postgres_fast_masking"] = "true"
+	}
 }
