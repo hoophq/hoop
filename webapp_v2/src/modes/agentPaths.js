@@ -10,8 +10,20 @@ const flaggedPaths = (items, inherited = false) =>
     return [...own, ...flaggedPaths(item.children ?? [], flagged)]
   })
 
+// Agent pages without a nav or palette entry. Route patterns, as in the route tables.
+export const UNLISTED_AGENT_PATHS = [
+  '/roles/:connectionName/configure',
+  '/resource-catalog',
+  '/features/runbooks/rules/new',
+  '/features/runbooks/rules/edit/:ruleId',
+  '/features/runbooks/edit/:connectionId',
+]
+
 export const AGENT_PATHS = [
-  ...new Set(flaggedPaths([...NAV.flatMap((section) => section.items), ...SUGGESTION_ITEMS, ...QUICK_ACCESS_ITEMS])),
+  ...new Set([
+    ...flaggedPaths([...NAV.flatMap((section) => section.items), ...SUGGESTION_ITEMS, ...QUICK_ACCESS_ITEMS]),
+    ...UNLISTED_AGENT_PATHS,
+  ]),
 ]
 
 // The pathname as React Router reads it before it matches a route (decodePath).
