@@ -21746,6 +21746,18 @@ const docTemplate = `{
                     "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
                     "type": "boolean"
                 },
+                "capabilities": {
+                    "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "protocol:mcp",
+                        "rule:mcp_tool"
+                    ]
+                },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
                     "type": "string",
@@ -22074,6 +22086,18 @@ const docTemplate = `{
                 "bound_rules_unavailable": {
                     "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
                     "type": "boolean"
+                },
+                "capabilities": {
+                    "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "protocol:mcp",
+                        "rule:mcp_tool"
+                    ]
                 },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
