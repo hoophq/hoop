@@ -12,6 +12,10 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
+// postgresFastMaskingFlag lets libhoop skip masking for catalog query
+// responses and mask batches at the same time.
+const postgresFastMaskingFlag = "experimental.postgres_fast_masking"
+
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
@@ -82,6 +86,9 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
 		// on more intensive environments this is a problem, we can enable it later based on specific rules
 		// "analyzer_metrics_rules":    analyzerMetricsRules,
+	}
+	if a.flags.IsEnabled(postgresFastMaskingFlag) {
+		opts["postgres_fast_masking"] = "true"
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
