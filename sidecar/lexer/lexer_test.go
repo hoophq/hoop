@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/lexer"
 )
@@ -2435,5 +2436,26 @@ func TestDialectNamedReadsEveryDialectByItsName(t *testing.T) {
 	}
 	if _, ok := lexer.DialectNamed("bigquery"); ok {
 		t.Error("DialectNamed accepted bigquery")
+	}
+}
+
+// An mcp lane reads up to 16 MiB of SQL, so crafted script text must cost
+// linear time. Eight times the input costs about 8x when linear and 64x when
+// quadratic; the bound of 24 leaves room for a noisy runner.
+func TestGoogleSQLScriptsAnalyzeInLinearTime(t *testing.T) {
+	cost := func(sql string) time.Duration {
+		best := time.Duration(1 << 62)
+		for range 3 {
+			start := time.Now()
+			lexer.Analyze(sql, lexer.GoogleSQL)
+			best = min(best, time.Since(start))
+		}
+		return best
+	}
+	for _, unit := range []string{"LOOP ", "WHILE x DO ", "lbl: LOOP ", "`lbl`: BEGIN ", "SELECT CASE WHEN a THEN loop ELSE begin END "} {
+		small, large := cost(strings.Repeat(unit, 2000)), cost(strings.Repeat(unit, 16000))
+		if r := float64(large) / float64(max(small, time.Microsecond)); r > 24 {
+			t.Errorf("%q: 8x the input took %.0fx the time (%v, %v)", unit, r, small, large)
+		}
 	}
 }

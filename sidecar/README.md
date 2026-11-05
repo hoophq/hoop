@@ -4237,9 +4237,10 @@ script per call.
 
 `lexer.GoogleSQL` reads a BigQuery script as a Spark script. `Split` cuts
 it at each `;`, so a part that starts with `LOOP`, `WHILE`, `REPEAT`, `FOR`
-or a `BEGIN` block, labelled or not, is `unknown` with its writes as
-effects. So is one of these after THEN or ELSE of an `IF`, a `CASE`
-statement or an exception handler. Before, `FOR r IN (SELECT 1) DO DELETE
+or a `BEGIN` block is `unknown` with its writes as effects. So is one of
+these after THEN or ELSE of an `IF`, a `CASE` statement or an exception
+handler, and one after a top-level colon, which covers a label in any
+spelling (`lbl:`, `` `lbl`: ``). Before, `FOR r IN (SELECT 1) DO DELETE
 FROM t` read as a select and `BEGIN DELETE FROM t` as a begin. A bare
 `BEGIN`, `BEGIN TRANSACTION` and a column called `begin` in a CASE
 expression stay what they were. Not checked on BigQuery.
