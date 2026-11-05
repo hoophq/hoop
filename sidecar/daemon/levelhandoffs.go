@@ -134,8 +134,8 @@ func validateLevelHandoffs(la *LaneAnalyzerConfig, where string) []string {
 			continue
 		}
 		if h == nil {
-			problems = append(problems, fmt.Sprintf("%s: %s risk is %s and %s is missing; it lists the "+
-				"allowed_actions the hand-off agent may select", where, l.name, analyzer.ActionHandoff, at))
+			problems = append(problems, fmt.Sprintf("%s: %s risk is %s and handoffs.%s is missing; it lists the "+
+				"allowed_actions the hand-off agent may select", where, l.name, analyzer.ActionHandoff, l.name))
 			continue
 		}
 		if len(h.AllowedActions) == 0 {
