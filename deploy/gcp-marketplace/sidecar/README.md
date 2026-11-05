@@ -84,7 +84,7 @@ on its own, with no login code, from 1.279.2.
 | `upstream` | `simple`: the resource, `host:port` |
 | `service_port` | `simple`: the port clients connect to. Default: the protocol's usual port (5432 for postgres) |
 | `guardrail_preset` | `simple`: `none` (default, audit only) or `read-only`, one rule that denies the write operations. `postgres` only |
-| `config_document` | `document`: the whole config, JSON or YAML. `admin.listen` must be `0.0.0.0:19000` |
+| `config_document` | `document`: the whole config, JSON or YAML. `admin.listen`, when set, must be `0.0.0.0:19000`; leave `admin` out to turn the admin server off |
 | `existing_config_map` | `configmap`: a ConfigMap in `namespace` whose `config.yaml` is the config |
 | `control_plane_url`, `control_plane_token` | `control_plane`: take the config from a hoop control plane. The plane must already hold this sidecar's configuration: this mode ships no local document to seed it |
 | `lane_ports` | `configmap`, `control_plane`: listener ports to publish on the lane Service, comma separated, e.g. `15432,18080` |

@@ -17,8 +17,8 @@ output "values_yaml" {
     error_message = "config_document is empty or names no listeners: the sidecar does not start without one."
   }
   precondition {
-    condition     = var.config_source != "document" || try(endswith(local.document.admin.listen, ":19000"), false)
-    error_message = "config_document must set admin.listen to '0.0.0.0:19000': the pod is probed on /healthz there."
+    condition     = var.config_source != "document" || try(coalesce(local.document.admin.listen, ""), "") == "" || try(endswith(local.document.admin.listen, ":19000"), false)
+    error_message = "config_document sets admin.listen to a port other than 19000: the admin Service targets 19000. Use '0.0.0.0:19000', or leave admin out to turn it off."
   }
   precondition {
     condition     = alltrue([for p in local.document_port : p != null])

@@ -95,16 +95,29 @@ the volume and HOOP_SIDECAR_CONFIG all have to agree.
 {{- end -}}
 
 {{/*
-The admin port. Fixed at 19000, the number every config under
-deploy/docker-compose/<stack>/sidecar/ binds and the one firstrun.go names as the
-convention. It is written literally into the Deployment, the Service and both
-probes; this constant exists so the four cannot fall out of step, not to make
-the number configurable.
-
-A config that puts admin somewhere else is refused below rather than rendered
-around, because the probes would then poll a closed port and fail every pod.
+The health port, `health.port`, default 19001. The chart sets
+HOOP_SIDECAR_HEALTH_LISTEN to it and declares it on the pod. The listener
+there serves /healthz and /readyz and nothing else, so the probes do not
+depend on the admin listener, which the config may leave off. Printed
+through int64: a values file parses every number as float64.
 */}}
-{{- define "hoopsidecar.adminPort" -}}19000{{- end -}}
+{{- define "hoopsidecar.healthPort" -}}
+{{- $h := .Values.health | default dict -}}
+{{- if hasKey $h "port" -}}{{ int64 $h.port }}{{- else -}}19001{{- end -}}
+{{- end -}}
+
+{{/*
+Where the probes go: the health port by name, unless `probe.port` names
+another. An image that predates HOOP_SIDECAR_HEALTH_LISTEN binds nothing on
+the health port; it is probed on its admin port (19000) instead.
+*/}}
+{{- define "hoopsidecar.probePort" -}}
+{{- $p := .Values.probe.port -}}
+{{- if not $p -}}health
+{{- else if kindIs "string" $p -}}{{ $p }}
+{{- else -}}{{ int64 $p }}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Whether a config file is mounted at all. False in control-plane mode, where
@@ -204,24 +217,11 @@ changed a selector label would detach the pods from their Deployment.
 {{- fail (printf "controlPlane.tokenExpirationSeconds is %s: Kubernetes refuses a projected token that expires in less than 600 seconds; set 600 or more" $exp) -}}
 {{- end -}}
 {{- end -}}
-{{/*
-The probes are hardcoded to the admin port, so a config that moves or omits
-admin is a pod that never goes ready. Caught here, at render, instead of as a
-CrashLoopBackOff at 3am. Only checkable when the chart can see the config:
-under controlPlane.url or existingConfigMap this is the operator's to get
-right, and the README says so.
-*/}}
-{{- $admin := include "hoopsidecar.adminPort" . -}}
-{{- if .Values.config -}}
-{{- $listen := "" -}}
-{{- if .Values.config.admin -}}
-{{- $listen = .Values.config.admin.listen | default "" -}}
+{{- $health := atoi (include "hoopsidecar.healthPort" .) -}}
+{{- if or (lt $health 1) (gt $health 65535) -}}
+{{- fail (printf "health.port is %v: it must be a port number from 1 to 65535" (.Values.health | default dict).port) -}}
 {{- end -}}
-{{- if not $listen -}}
-{{- fail (printf "config.admin.listen is not set: the chart probes /healthz on %s, and the admin server is disabled when its listen address is empty. Set it to '0.0.0.0:%s'" $admin $admin) -}}
-{{- end -}}
-{{- if not (hasSuffix (printf ":%s" $admin) $listen) -}}
-{{- fail (printf "config.admin.listen is %q but this chart probes /healthz on %s. Use '0.0.0.0:%s'" $listen $admin $admin) -}}
-{{- end -}}
+{{- if eq $health 19000 -}}
+{{- fail "health.port is 19000, the admin port: a config that sets admin.listen there would fail to bind one of the two. Pick another port" -}}
 {{- end -}}
 {{- end -}}

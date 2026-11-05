@@ -1,0 +1,27 @@
+# The chart probes its own health port, so a config document may leave admin
+# off. When it sets admin, the port must be 19000: the admin Service targets it.
+
+variables {
+  upstream         = "appdb.default.svc.cluster.local:5432"
+  image_repository = "docker.io/hoophq/hoopsidecar"
+  image_tag        = "1.0.0-distroless"
+  config_source    = "document"
+}
+
+run "document_without_admin_is_accepted" {
+  variables {
+    config_document = "{\"listeners\": [{\"name\": \"pg\", \"protocol\": \"postgres\", \"listen\": \"0.0.0.0:15432\", \"upstream\": \"appdb:5432\"}]}"
+  }
+  assert {
+    condition     = alltrue([for d in output.values_yaml : try(yamldecode(d).config.admin, null) == null])
+    error_message = "a config document without admin rendered values that turn admin on"
+  }
+}
+
+run "document_with_admin_on_another_port_is_refused" {
+  command = plan
+  variables {
+    config_document = "{\"admin\": {\"listen\": \"0.0.0.0:9901\"}, \"listeners\": [{\"name\": \"pg\", \"protocol\": \"postgres\", \"listen\": \"0.0.0.0:15432\", \"upstream\": \"appdb:5432\"}]}"
+  }
+  expect_failures = [output.values_yaml]
+}
