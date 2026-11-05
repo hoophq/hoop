@@ -94,7 +94,7 @@ func TestHandoffRefusals(t *testing.T) {
 			la := handoffBlock("warn")
 			la.Handoffs = nil
 			return la
-		}, "high risk is ai-handoff and appdb: analyzer block: handoffs.high is missing"},
+		}, "appdb: analyzer block: high risk is ai-handoff and handoffs.high is missing"},
 		"empty allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock() },
 			"handoffs.high: allowed_actions is empty"},
 		"unknown action": {func() *LaneAnalyzerConfig { return handoffBlock("warn", "delete") },
