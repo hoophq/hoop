@@ -288,7 +288,12 @@ useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useAiSessionAnalyzerStore.getState().resetRuleLibrary()
     useAiSessionAnalyzerStore.getState().resetRoutingIntegrations()
+    // Advancing the ids drops a fetch still in flight from the old account.
+    const { accessRequestRulesRequestId, attributesRequestId } =
+      useAiSessionAnalyzerStore.getState()
     useAiSessionAnalyzerStore.setState({
+      accessRequestRulesRequestId: accessRequestRulesRequestId + 1,
+      attributesRequestId: attributesRequestId + 1,
       accessRequestRules: [],
       accessRequestRulesStatus: 'idle',
       attributes: [],
