@@ -168,7 +168,8 @@
         "clickhouse",
         "http",
         "grpc",
-        "spanner"
+        "spanner",
+        "mcp"
       ],
       "fields": [
         {
@@ -207,7 +208,8 @@
       "help": "Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere.",
       "presence": true,
       "protocols": [
-        "http"
+        "http",
+        "mcp"
       ],
       "fields": [
         {

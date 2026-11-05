@@ -5,10 +5,9 @@ curl ──> hoop-inspect 127.0.0.1:18901 ──> test MCP server 127.0.0.1:1890
 ```
 
 A `protocol: mcp` lane in front of the test MCP server from
-`sidecar/mcpgateway/internal/testupstream`. No Envoy: the lane binds
-loopback only until it authenticates callers, so the three
-containers share one network namespace and nothing is published on the
-host.
+`sidecar/mcpgateway/internal/testupstream`. No Envoy: the lane takes a
+plain http upstream on loopback only, so the three containers share one
+network namespace and nothing is published on the host.
 
 ## Run it
 
@@ -22,8 +21,12 @@ modules, as any sidecar build does. It runs with the envoy stack up or down.
 
 ## What it shows
 
+`demo-mcp.sh` writes a random token to `caller-tokens`; the lane's
+`caller_token` reads it, and every request after step 0 carries it.
+
 | Step | Result |
 |---|---|
+| `initialize` without the token | `403 request refused: the request carried no credential` |
 | `initialize` | a session id |
 | `tools/list` | no `delete_customer` and no `run_query`: the `no-destructive-tools` rule hid them |
 | `tools/call echo` | allowed |
@@ -32,7 +35,7 @@ modules, as any sidecar build does. It runs with the envoy stack up or down.
 | `tools/call echo` | over `mcp_gateway.max_calls_per_session`, as JSON-RPC error `-32012` |
 | `DELETE /mcp` | `204`, the session ends |
 
-The audit rows follow: `session_start`, the `initialize` activity, the
+The audit rows follow, each under the principal `demo-agent`: `session_start`, the `initialize` activity, the
 catalog statement with the hidden tools in `mcp.tools_hidden`, one statement
 per call, the `delete_customer` violation, the budget refusal as activities,
 `session_end`.

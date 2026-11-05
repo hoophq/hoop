@@ -1,9 +1,8 @@
 # The mcp lane demo. Start it with ./demo-mcp.sh, which builds the binaries
 # on the host first: libhoop and libhoop-ica are private modules.
 #
-# The three services share one network namespace. The lane binds loopback
-# only until it authenticates callers, and takes a plain http
-# upstream on loopback only, so Envoy cannot sit in front of it yet.
+# The three services share one network namespace: the lane takes a plain
+# http upstream on loopback only, so Envoy cannot sit in front of it yet.
 
 name: hoop-mcp-demo
 

@@ -362,6 +362,8 @@ type ListenerConfig struct {
 	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
+	// An mcp lane serves MCP over TLS with it.
+	//
 	// MySQL negotiates in-band too and is still refused, because the relay
 	// does not speak that exchange: the server greets first there, and the
 	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
@@ -371,7 +373,7 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner,mcp" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
@@ -401,12 +403,12 @@ type ListenerConfig struct {
 
 	// CallerToken refuses every request whose header does not hold a token
 	// listed in a file on the sidecar host, and names the caller with a
-	// configured name. http lanes only, and exclusive with identity_header
+	// configured name. http and mcp lanes only, and exclusive with identity_header
 	// and google_identity: one lane, one authority for who the caller is.
 	//
 	// It is for a lane reachable from anywhere, where identity_header would
 	// let any caller claim any name. See CallerTokenConfig.
-	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
+	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http,mcp" ui:"presence"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -1465,13 +1467,13 @@ func (c *Config) validate(onHost bool) error {
 
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
-		// negotiates in-band; grpc/spanner, ClickHouse and http use
+		// negotiates in-band; grpc/spanner, ClickHouse, http and mcp use
 		// TLS-on-connect, http with ALPN.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) && !isMCPGateway(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc, spanner and mcp, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -1511,9 +1513,9 @@ func (c *Config) validate(onHost bool) error {
 			}
 		}
 		if l.CallerToken != nil {
-			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+			if (inspect.Protocol(l.Protocol) != inspect.HTTP && !isMCPGateway(l)) || isGRPCTransport(l) || isSSH(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: caller_token is only supported on http, not %q", name, l.Protocol))
+					"%s: caller_token is only supported on http and mcp, not %q", name, l.Protocol))
 			}
 			if l.IdentityHeader != "" {
 				problems = append(problems, fmt.Sprintf(
@@ -1523,7 +1525,7 @@ func (c *Config) validate(onHost bool) error {
 				problems = append(problems, fmt.Sprintf(
 					"%s: caller_token and google_identity both name the caller; keep one", name))
 			}
-			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
+			problems = append(problems, l.CallerToken.validate(name, l)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
