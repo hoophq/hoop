@@ -51,12 +51,16 @@ func (c *recordedClient) Enqueue(m segment.Message) error {
 	return nil
 }
 
+// Close stops taking messages at once, then takes closeDelay to "upload",
+// like the real client. closes counts the uploads that finished.
 func (c *recordedClient) Close() error {
+	c.log.mu.Lock()
+	c.closed = true
+	c.log.mu.Unlock()
 	time.Sleep(c.log.closeDelay)
 	c.log.mu.Lock()
-	defer c.log.mu.Unlock()
-	c.closed = true
 	c.log.closes++
+	c.log.mu.Unlock()
 	return nil
 }
 
@@ -264,6 +268,27 @@ func TestAnalyticsTrackSignup(t *testing.T) {
 		msgs := track(t, false, loginCtx, 1)
 		assert.Nil(t, identifyOf(msgs))
 		assert.Len(t, tracksOf(msgs, analytics.EventLogin), 1)
+	})
+
+	t.Run("an opt-out during the signup wait stops hoop-signup", func(t *testing.T) {
+		require.NoError(t, models.UpdateOrgAnalyticsMode(ctx.OrgID, models.AnalyticsModeIdentified))
+		signupCtx := reloadSignupContext(ctx, "idp|fay")
+		// This gateway's cache still allows events: the opt-out below happens
+		// on another gateway, which only changes the stored mode.
+		analytics.SetMode(signupCtx.OrgID, models.AnalyticsModeIdentified)
+		delay := 300 * time.Millisecond
+		signupTrackDelay = delay
+		t.Cleanup(func() { signupTrackDelay = 0 })
+
+		rec := &recordedAnalytics{}
+		(&handler{newAnalytics: rec.newClient}).analyticsTrack(true, "test-agent", signupCtx)
+		require.NoError(t, models.UpdateOrgAnalyticsMode(ctx.OrgID, models.AnalyticsModeDisabled))
+
+		rec.waitFor(t, 1)
+		time.Sleep(delay + 500*time.Millisecond)
+		msgs := rec.waitFor(t, 1)
+		assert.NotNil(t, identifyOf(msgs), "the Identify went out before the opt-out")
+		assert.Empty(t, tracksOf(msgs, analytics.EventSignup), "hoop-signup must respect the opt-out")
 	})
 }
 

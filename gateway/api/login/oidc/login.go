@@ -597,6 +597,18 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		identifyClient.Close()
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(delay)
+		// An admin may have opted the org out during the wait, maybe on
+		// another gateway, whose change this gateway's mode cache never
+		// sees. Read the stored mode again, and send nothing if it cannot
+		// be read.
+		org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
+		if err != nil {
+			log.Warnf("skipping signup analytics, failed reading the analytics mode of org=%s: %v", ctx.OrgID, err)
+			return
+		}
+		if org.AnalyticsMode == models.AnalyticsModeDisabled {
+			return
+		}
 		// A client of its own: a closed client drops what it is given.
 		signupClient := newAnalytics()
 		signupClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
