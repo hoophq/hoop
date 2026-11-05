@@ -306,6 +306,12 @@ var sparkScriptHeadAfter = map[string]bool{
 	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
 }
 
+// googleSQLScriptStatement are the first words of a BigQuery script statement
+// that can nest a loop or a block after its THEN or ELSE.
+var googleSQLScriptStatement = map[string]bool{
+	"if": true, "elseif": true, "else": true, "when": true, "case": true, "exception": true,
+}
+
 // sparkScriptDML are the verbs recognised ANYWHERE inside a Spark SQL
 // script, as plsqlDML is inside PL/SQL: a handler puts its statement after a
 // condition list no keyword closes, `DECLARE EXIT HANDLER FOR SQLEXCEPTION

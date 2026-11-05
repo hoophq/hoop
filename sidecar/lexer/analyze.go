@@ -528,6 +528,21 @@ func (a *analyzer) walk() {
 			continue
 		}
 
+		// BigQuery scripting, read as a Spark script. Split cuts a script at
+		// its semicolons, so each loop or block fragment opens one.
+		if a.d == GoogleSQL && atHead && len(a.stack) == 1 {
+			if t.isName() && a.puncts(i+1, ":") && a.googleSQLScriptAt(i+2) {
+				i++
+				continue
+			}
+			if a.googleSQLScriptAt(i) {
+				a.script = true
+				a.sawStatement = true
+				a.fail("SQL script; control flow decides which of its statements run")
+				continue
+			}
+		}
+
 		// Spark's FROM-first form names its source before any verb; its
 		// INSERTs follow that relation. See anywhereDML.
 		if a.d == Spark && atHead && t.Text == "from" && len(a.stack) == 1 {
@@ -657,6 +672,34 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 func (a *analyzer) sparkTransactionAt(i int) bool {
 	return i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text] &&
 		(i+2 == len(a.toks) || a.puncts(i+2, ";"))
+}
+
+// googleSQLScriptAt reports whether the word at i opens a BigQuery loop or
+// block. A bare BEGIN, or BEGIN TRANSACTION, starts a transaction. After
+// THEN or ELSE only a script statement nests one: in a CASE expression,
+// `THEN begin` names a column.
+func (a *analyzer) googleSQLScriptAt(i int) bool {
+	if i >= len(a.toks) || a.toks[i].Kind != Word {
+		return false
+	}
+	end := func(k int) bool { return k == len(a.toks) || a.puncts(k, ";") }
+	switch a.toks[i].Text {
+	case "loop", "repeat", "while", "for":
+	case "begin":
+		if end(i+1) || a.toks[i+1].isWord("transaction") && end(i+2) {
+			return false
+		}
+	default:
+		return false
+	}
+	start := i
+	for start > 0 && !a.puncts(start-1, ";") {
+		start--
+	}
+	if start == i || start+2 == i && a.puncts(start+1, ":") {
+		return true
+	}
+	return a.toks[start].Kind == Word && googleSQLScriptStatement[a.toks[start].Text]
 }
 
 // sparkNotDML reports whether a DML word at i inside a Spark script is not a

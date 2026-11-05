@@ -1,7 +1,9 @@
 package inspect_test
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
@@ -738,5 +740,62 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		if r.Access == inspect.AccessWrite {
 			t.Errorf("a parameter spelled into wrote %q", r.Name)
 		}
+	}
+}
+
+// BigQuery SQL as an mcp lane reads a SQL tool argument: split, then each
+// statement under GoogleSQL. Before the script rows, a FOR loop read as a
+// select and a BEGIN block as a begin, so their DELETE passed both rules.
+// The comment cases are what a JSON escape decodes to. Not checked on BigQuery.
+func TestBigQueryIsAnalyzedWithTheGoogleSQLDialect(t *testing.T) {
+	noWrites := rulesFor(t, "no-writes", inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpDrop)
+	unreadable := rulesFor(t, "unreadable", inspect.OpUnknown)
+	for _, tc := range []struct {
+		name, sql  string
+		rules      *policy.Rules
+		wantDenied bool
+	}{
+		{"an UPDATE is refused", "UPDATE ds.t SET a = 1 WHERE true", noWrites, true},
+		{"a SELECT passes", "SELECT a FROM ds.t", noWrites, false},
+		{"a DELETE after a SELECT is refused", "SELECT 1; DELETE FROM ds.t WHERE true", noWrites, true},
+		{"a DELETE in a LOOP is refused", "LOOP DELETE FROM t WHERE true; END LOOP", noWrites, true},
+		{"a DELETE in a FOR loop is refused", "FOR r IN (SELECT 1) DO DELETE FROM t WHERE true; END FOR", noWrites, true},
+		{"a DELETE in a WHILE loop is refused", "WHILE true DO DELETE FROM t WHERE true; END WHILE", noWrites, true},
+		{"a DELETE in a REPEAT loop is refused", "REPEAT DELETE FROM t WHERE true; UNTIL true END REPEAT", noWrites, true},
+		{"a DELETE in a BEGIN block is refused", "BEGIN DELETE FROM t WHERE true; END", noWrites, true},
+		{"a DELETE in a LOOP inside an IF is refused", "IF true THEN LOOP DELETE FROM t WHERE true; END LOOP; END IF", noWrites, true},
+		{"a column called begin after THEN passes", "SELECT CASE WHEN a THEN begin ELSE 0 END FROM t", unreadable, false},
+		{"a column called loop after ELSE passes", "SELECT CASE WHEN a THEN 1 ELSE loop END FROM t", unreadable, false},
+		{"a DELETE in a labelled LOOP is refused", "outer: LOOP DELETE FROM t WHERE true; END LOOP outer", noWrites, true},
+		{"a DELETE in an exception handler is refused", "BEGIN SELECT 1/0; EXCEPTION WHEN ERROR THEN DELETE FROM t WHERE true; END", noWrites, true},
+		{"a DELETE in a transaction is refused", "BEGIN TRANSACTION; DELETE FROM t WHERE true; COMMIT TRANSACTION", noWrites, true},
+		{"a read-only FOR loop is refused as unreadable", "FOR r IN (SELECT 1) DO SELECT r; END FOR", unreadable, true},
+		{"a read-only FOR loop passes a rule refusing writes", "FOR r IN (SELECT 1) DO SELECT r; END FOR", noWrites, false},
+		{"a bare BEGIN passes as a transaction", "BEGIN", unreadable, false},
+		{"BEGIN TRANSACTION passes", "BEGIN TRANSACTION", unreadable, false},
+		{"EXPORT DATA is refused as unreadable", "EXPORT DATA OPTIONS(uri='gs://b/*.csv', format='CSV') AS SELECT * FROM t", unreadable, true},
+		{"EXECUTE IMMEDIATE is refused as unreadable", "EXECUTE IMMEDIATE 'DELETE FROM t WHERE true'", unreadable, true},
+		{"a DELETE after a dash comment and a carriage return is refused as unreadable", "--x\rDELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a dash comment and U+2028 is refused as unreadable", "--x\u2028DELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a dash comment and U+0085 is refused as unreadable", "--x\u0085DELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a raw string is refused", `SELECT r'\'; DELETE FROM t WHERE true; --'`, noWrites, true},
+		{"a DELETE in a double-quoted string passes", `SELECT "a\"; DELETE FROM t; --"`, noWrites, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			denied := false
+			var read []string
+			for _, part := range lexer.Split(tc.sql, lexer.GoogleSQL) {
+				a := inspect.AnalyzeSQLIn(part, lexer.GoogleSQL)
+				stmt := inspect.Statement{
+					Protocol: inspect.MCP, Direction: inspect.FromClient, Text: part,
+					Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+				}
+				denied = denied || tc.rules.Evaluate(stmt).Denied
+				read = append(read, fmt.Sprintf("%q: %s %v", part, a.Operation, a.Effects))
+			}
+			if denied != tc.wantDenied {
+				t.Errorf("denied = %v, want %v: %s", denied, tc.wantDenied, strings.Join(read, "; "))
+			}
+		})
 	}
 }
