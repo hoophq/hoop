@@ -334,3 +334,40 @@ func assertPropExists(t *testing.T, props map[string]any, key string) {
 		t.Errorf("expected property %q to exist", key)
 	}
 }
+
+// A new org is created after the mode cache was warmed. Identify must honour the
+// mode carried on the context, or the org is read as anonymous and the email
+// trait is dropped.
+func TestResolveModeForOrgMissingFromCache(t *testing.T) {
+	orgID := uuid.NewString()
+
+	t.Run("the mode on the context wins over a cache miss", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:            orgID,
+			OrgAnalyticsMode: models.AnalyticsModeIdentified,
+			UserID:           "user-1",
+			UserEmail:        "alice@example.com",
+			UserName:         "Alice",
+		}
+
+		mode := resolveMode(ctx)
+		if mode != models.AnalyticsModeIdentified {
+			t.Fatalf("expected mode %q, got %q", models.AnalyticsModeIdentified, mode)
+		}
+		assertTrait(t, identifyTraits(ctx, mode, "hashed-id", "env-1"), "email", "alice@example.com")
+	})
+
+	t.Run("without a mode on the context the uncached org stays anonymous", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:     orgID,
+			UserID:    "user-1",
+			UserEmail: "alice@example.com",
+		}
+
+		mode := resolveMode(ctx)
+		if mode != models.AnalyticsModeAnonymous {
+			t.Fatalf("expected mode %q, got %q", models.AnalyticsModeAnonymous, mode)
+		}
+		assertTraitAbsent(t, identifyTraits(ctx, mode, "hashed-id", "env-1"), "email")
+	})
+}
