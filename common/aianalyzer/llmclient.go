@@ -39,10 +39,49 @@ type ToolResult struct {
 }
 
 // ToolProperty describes a single property within a tool's input JSON Schema.
+// Items describes the elements of an array; Properties and Required the
+// fields of an object. MinItems bounds an array from below when set.
 type ToolProperty struct {
 	Type        string
 	Description string
 	Enum        []string
+	Items       *ToolProperty
+	Properties  map[string]ToolProperty
+	Required    []string
+	MinItems    *int
+}
+
+// schema renders the property as JSON Schema, the form both providers take.
+func (p ToolProperty) schema() map[string]any {
+	out := map[string]any{"type": p.Type}
+	if p.Description != "" {
+		out["description"] = p.Description
+	}
+	if len(p.Enum) > 0 {
+		out["enum"] = p.Enum
+	}
+	if p.Items != nil {
+		out["items"] = p.Items.schema()
+	}
+	if p.Properties != nil {
+		out["properties"] = propertiesSchema(p.Properties)
+	}
+	if len(p.Required) > 0 {
+		out["required"] = p.Required
+	}
+	if p.MinItems != nil {
+		out["minItems"] = *p.MinItems
+	}
+	return out
+}
+
+// propertiesSchema renders the properties of an object.
+func propertiesSchema(props map[string]ToolProperty) map[string]any {
+	out := make(map[string]any, len(props))
+	for name, prop := range props {
+		out[name] = prop.schema()
+	}
+	return out
 }
 
 // ToolInputSchema is the JSON Schema for a tool's parameters.
@@ -123,6 +162,9 @@ type ChatResponse struct {
 	InputTokens  int
 	OutputTokens int
 	ToolCalls    []ToolCall
+	// Refusal is the provider's explicit refusal: the refusal text (OpenAI)
+	// or a fixed text for stop_reason refusal (Anthropic). Empty otherwise.
+	Refusal string
 }
 
 // LLMClient is the provider-agnostic AI chat interface.

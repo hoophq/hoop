@@ -3,17 +3,23 @@ import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text } from '@mantine/core'
 import {
   BadgeCheck,
+  BellRing,
   CalendarArrowUp,
+  CalendarClock,
   CircleCheckBig,
   CircleUser,
   Container,
   Gauge,
   Hash,
   Hourglass,
+  MessageSquareText,
   OctagonX,
+  Route,
   ScrollText,
+  Send,
   Timer,
   Package,
+  UserX,
   Users,
   Workflow,
 } from 'lucide-react'
@@ -27,15 +33,20 @@ import { formatFullDate, formatRelativeTime } from '@/utils/datetime'
 import { useReviewStore } from '../store'
 import {
   HANDOFF_ROUTE,
+  ROUTING_AI,
   STATUS,
   canApprove,
   canReject,
   canRevoke,
   decidedGroups,
   expiryLabel,
+  fallbackCauseLabel,
+  integrationLabel,
   isHandoffReview,
+  notifyIntegrationLabel,
   isSettled,
   isSidecarReview,
+  reviewRouting,
   reviewSource,
   riskLevel,
   statusLabel,
@@ -49,10 +60,11 @@ const GROUP_VERDICT = {
   [STATUS.REVOKED]: { Icon: OctagonX, color: 'red', label: 'Revoked', verb: 'revoked' },
 }
 
-function DetailRow({ icon, label, children }) {
+// `align` "flex-start" keeps the label on the first line of a long value.
+function DetailRow({ icon, label, align = 'center', children }) {
   const Icon = icon
   return (
-    <Group gap="md" align="center" wrap="nowrap">
+    <Group gap="md" align={align} wrap="nowrap">
       <Group gap="sm" w={LABEL_WIDTH} wrap="nowrap" c="dimmed">
         <Icon size={20} />
         <Text size="sm">{label}</Text>
@@ -155,6 +167,148 @@ function SidecarSession({ sessionId, onOpen }) {
   )
 }
 
+const list = (v) => (Array.isArray(v) ? v : [])
+
+function GrayBadges({ items }) {
+  return (
+    <Group gap="xs">
+      {items.map((item) => (
+        <Badge key={item} variant="light" color="gray" fullLabel>
+          {item}
+        </Badge>
+      ))}
+    </Group>
+  )
+}
+
+// RoutingSection shows how an AI-routed review found its approvers
+// (ENG-663): the AI's decision, or the static routing it fell back to.
+function RoutingSection({ routing }) {
+  const ai = routing.mode === ROUTING_AI
+  const groups = list(routing.groups)
+  const candidates = list(routing.candidates)
+  const notified = list(routing.notified_users)
+  const channels = list(routing.channels)
+  const unreachable = list(routing.unreachable)
+  const notify = list(routing.integrations)
+
+  return (
+    <Stack gap="sm">
+      <Text size="sm" fw={600}>
+        Routing
+      </Text>
+      <Stack gap="md">
+        <DetailRow icon={Route} label="Mode">
+          <Badge variant="light" color={ai ? 'indigo' : 'gray'} fullLabel>
+            {ai ? 'AI routing' : 'Static routing used'}
+          </Badge>
+        </DetailRow>
+
+        {ai && routing.reason && (
+          <DetailRow icon={MessageSquareText} label="Reason" align="flex-start">
+            <Text size="sm">{routing.reason}</Text>
+          </DetailRow>
+        )}
+
+        {!ai && (
+          <DetailRow icon={MessageSquareText} label="Cause">
+            <Text size="sm">{fallbackCauseLabel(routing.fallback_cause)}</Text>
+          </DetailRow>
+        )}
+
+        {!ai && routing.fallback_detail && (
+          <DetailRow icon={ScrollText} label="Detail" align="flex-start">
+            <Text size="sm" c="dimmed">
+              {routing.fallback_detail}
+            </Text>
+          </DetailRow>
+        )}
+
+        {candidates.length > 0 && (
+          <DetailRow icon={Users} label="Candidate groups" align="flex-start">
+            <GrayBadges items={candidates} />
+          </DetailRow>
+        )}
+
+        {groups.length > 0 && (
+          <DetailRow icon={Users} label={ai ? 'Selected groups' : 'Groups'} align="flex-start">
+            <GrayBadges items={groups} />
+          </DetailRow>
+        )}
+
+        {notify.length > 0 && (
+          <DetailRow icon={Send} label="Notify" align="flex-start">
+            <Group gap="xs">
+              {notify.map((entry) => (
+                <Badge key={entry.name} variant="light" color={entry.integrated ? 'gray' : 'yellow'} fullLabel>
+                  {notifyIntegrationLabel(entry)}
+                </Badge>
+              ))}
+            </Group>
+          </DetailRow>
+        )}
+
+        {notified.length > 0 && (
+          <DetailRow icon={BellRing} label="Notified people" align="flex-start">
+            <Stack gap={6}>
+              {notified.map((user) => (
+                <Group key={user.id} gap="xs" wrap="nowrap">
+                  <Text size="sm" fw={500}>
+                    {user.name || user.email || user.id}
+                  </Text>
+                  {list(user.integrations).map((key) => (
+                    <Badge key={key} variant="light" color="gray" fullLabel>
+                      {integrationLabel(key)}
+                    </Badge>
+                  ))}
+                </Group>
+              ))}
+            </Stack>
+          </DetailRow>
+        )}
+
+        {channels.length > 0 && (
+          <DetailRow icon={Hash} label="Channels" align="flex-start">
+            <Stack gap={6}>
+              {channels.map((channel) => (
+                <Text key={`${channel.integration}:${channel.id}`} size="sm">
+                  <Text span size="sm" c="dimmed">
+                    {`${integrationLabel(channel.integration)} · `}
+                  </Text>
+                  {channel.name || channel.id}
+                </Text>
+              ))}
+            </Stack>
+          </DetailRow>
+        )}
+
+        {unreachable.length > 0 && (
+          <DetailRow icon={UserX} label="Not reached" align="flex-start">
+            <Stack gap={6}>
+              {unreachable.map((entry) => (
+                <Text key={`${entry.user_id}:${entry.integration}`} size="sm">
+                  {`${entry.name || entry.user_id} (${integrationLabel(entry.integration)})`}
+                  <Text span size="sm" c="dimmed">
+                    {entry.cause ? `: ${entry.cause}` : ''}
+                  </Text>
+                </Text>
+              ))}
+            </Stack>
+          </DetailRow>
+        )}
+
+        {routing.decided_at && (
+          <DetailRow icon={CalendarClock} label="Decided at">
+            <Text size="sm" fw={500}>
+              {formatFullDate(routing.decided_at)}
+            </Text>
+          </DetailRow>
+        )}
+      </Stack>
+    </Stack>
+  )
+}
+
 export default function ReviewModal({
   review,
   sidecarsById,
@@ -178,6 +332,7 @@ export default function ReviewModal({
   const revocable = canRevoke(review)
   const expiry = expiryLabel(review)
   const risk = riskLevel(review)
+  const routing = reviewRouting(review)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Approval Details" size="xl">
@@ -293,6 +448,8 @@ export default function ReviewModal({
             Nothing was released. Running the statement again files a new approval request.
           </Alert>
         )}
+
+        {routing && <RoutingSection routing={routing} />}
 
         <Stack gap="sm">
           <Text size="sm" fw={600}>

@@ -121,6 +121,12 @@ type Review struct {
 	// ViaHandoff marks a review filed for a hold the hand-off agent of an
 	// ai-handoff level selected.
 	ViaHandoff bool `gorm:"column:via_handoff"`
+
+	// Routing is the AI routing decision (ENG-663); nil with static routing.
+	// Read only for struct writes: createReviewTx writes it with the row and
+	// UpdateReviewRouting after the notify step, so a decision that updates
+	// the review never overwrites what the notify step recorded.
+	Routing *ReviewRouting `gorm:"column:routing;->"`
 }
 
 // SidecarReviewKey is what a sidecar filing is matched on beside the
@@ -371,7 +377,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level, via_handoff
+	risk_level, via_handoff, routing
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -414,7 +420,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level, via_handoff
+	risk_level, via_handoff, routing
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -532,6 +538,12 @@ func createReviewTx(tx *gorm.DB, rev *Review, input string) error {
 		Error
 	if err != nil {
 		return err
+	}
+	if rev.Routing != nil {
+		if err := tx.Table("private.reviews").Where("id = ?", rev.ID).
+			UpdateColumn("routing", rev.Routing).Error; err != nil {
+			return fmt.Errorf("failed recording the review routing: %w", err)
+		}
 	}
 
 	if input != "" {
@@ -755,7 +767,7 @@ const sidecarReviewSelect = `
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level, via_handoff
+	risk_level, via_handoff, routing
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact

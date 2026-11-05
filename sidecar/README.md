@@ -1461,6 +1461,7 @@ An `approvers.<level>` entry has these keys:
 |---|---|
 | `type` | `human` or `ai_agent`. Required |
 | `groups` | who may approve a `human` level. Empty: the administrators |
+| `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
 
 A `human` level files its approval request with the risk level and no
@@ -1481,7 +1482,79 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `groups` on an `ai_agent` level | nobody would ask those people |
 | `prompt` on a `human` level | no agent reads it |
 | a blank entry in `groups` | it matches no group |
+| `groups` and `routing` on one entry | they are alternatives |
+| a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
+
+**AI routing of approval requests (`routing`).** A `human` level can let an
+AI agent on the control plane select who gets each approval request, in
+place of fixed `groups`:
+
+```yaml
+    analyzer:
+      high: require_approval
+      approvers:
+        high:
+          type: human
+          routing:
+            candidates: [payments-approvers, sre]   # empty or absent: every group
+            notify:
+              slack: {delivery: both, channels_candidates: [C0123ABC]}
+              teams: {delivery: channel, channels_candidates: ["19:abc@thread.tacv2"]}
+        medium: {type: human, groups: [sre]}        # static, as before
+```
+
+| Key | Meaning |
+|---|---|
+| `candidates` | the groups the agent selects from. Empty or absent: every group |
+| `notify.<integration>` | `slack` or `teams`. A key that is present notifies through that integration when the organization set it up. Absent `notify`: the notifications of today |
+| `notify.<integration>.delivery` | `dm`, `channel` or `both`. Empty: `dm` |
+| `notify.<integration>.channels_candidates` | the channels the agent selects from for `channel` and `both`: Slack channel ids, or Teams channel ids (`19:...@thread.tacv2`). Empty: every channel the integration reaches |
+
+`routing: {}` is valid: AI routing over every group, with the notifications
+of today.
+
+The control plane runs the routing when it opens the review, with the
+organization's AI provider. The agent reads the approval history of this
+sidecar and listener (the last 100 decided reviews of the last 90 days) and
+selects one or more groups, the members of those groups to notify, and the
+channels. It reads opaque ids only, never a name or an email, and the
+statement as a shape with its values removed: no string, number, bind,
+comment or quoted name reaches it, and bare table and column names stay. The
+shape follows the lexer's dialect rules, so a statement it cannot read in
+full, and a protocol with no shape (http, grpc, ssh), sends none. It never
+notifies the requester, nor a user outside the selected groups. Only Slack
+and Microsoft Teams notify; no email is sent. The review records the groups,
+the notified users, the channels and the reason, and its details show them.
+
+The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
+refusal, no tool call or more than one, an invalid decision or no valid group,
+the plane falls back to static routing: every candidate group gets the
+review. The review records the fallback and its cause. The routing time is
+part of the hold's wait. A filing waits at least 30 seconds for the plane, or
+the analyzer `timeout_sec` when that is longer; a claim keeps `timeout_sec`.
+
+The sidecar files the level as before and never the routing: the plane reads
+`routing` from the document it served to this sidecar, as it reads `groups`.
+A routed level's filing also carries `principal`, the statement's user as the
+sidecar sees it (identity header, database user; at most 256 bytes), so the
+plane can keep the requester out. A static level or an `approval_rule`
+filing never sends it. It applies to a hand-off hold too: `approvers.<level>`
+on an `ai-handoff` level that can select `require_approval`.
+
+These are noted by `-validate` and on startup, and are not refused:
+
+| Setting | What happens |
+|---|---|
+| `routing` on an `ai_agent` level | ignored: the approval agent notifies nobody |
+| a `notify` key other than `slack` or `teams` | ignored |
+| `delivery` other than `dm`, `channel` or `both` | `dm` is used |
+| `channels_candidates` with `delivery: dm` (or no delivery) | ignored: a DM posts to no channel |
+
+A sidecar that does not report the `analyzer_approval_routing` capability
+cannot read `routing`, and the control plane refuses to serve it a block that
+sets one, naming the capability. There is no downgrade: static `groups` or an
+`approval_rule` would page other people.
 
 **The approval agent (`type: ai_agent`).** The lane's own provider and model
 decide in the sidecar, at once, with no wait and no poll. Nothing is filed
@@ -1556,7 +1629,8 @@ plane serves it the block without `approvers` when the block names an
 `approval_rule`: every held level then holds for a person under that rule,
 an `ai_agent` level included, which is more oversight, not less. A block
 with `approvers` and no `approval_rule` is refused to such a sidecar, naming
-the capability and the release that adds it.
+the capability and the release that adds it. So is a block whose `approvers`
+set `routing`, with or without an `approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects

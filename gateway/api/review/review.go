@@ -69,7 +69,9 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
 		return
 	case nil:
-		c.JSON(http.StatusOK, toOpenApiReview(review))
+		out := toOpenApiReview(review)
+		resolveRoutingUsers(models.DB, ctx.GetOrgID(), []*openapi.Review{out})
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching approval request: %v", err)
 		return
@@ -99,6 +101,11 @@ func (h *handler) List(c *gin.Context) {
 	for _, r := range *reviews {
 		openapiReviews = append(openapiReviews, *toOpenApiReview(&r))
 	}
+	refs := make([]*openapi.Review, len(openapiReviews))
+	for i := range openapiReviews {
+		refs[i] = &openapiReviews[i]
+	}
+	resolveRoutingUsers(models.DB, ctx.GetOrgID(), refs)
 
 	c.JSON(http.StatusOK, openapiReviews)
 }
@@ -223,7 +230,9 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				rev.RejectedByEmail(),
 			)
 		}
-		c.JSON(http.StatusOK, toOpenApiReview(rev))
+		out := toOpenApiReview(rev)
+		resolveRoutingUsers(models.DB, ctx.GetOrgID(), []*openapi.Review{out})
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating approval status: %v", err)
 	}
@@ -703,6 +712,7 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		Requester:             reviewRequester(r),
 		ExpiresAt:             r.SidecarExpiresAt(),
 		ApprovalTTLSec:        r.SidecarApprovalTTLSec(),
+		Routing:               toOpenApiRouting(r.Routing),
 	}
 }
 

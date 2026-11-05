@@ -1602,6 +1602,8 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			// What the AI rule options do not do, said where -validate
 			// and the startup log read them; none of them refuses the lane.
 			ln.notes = append(ln.notes, aiNotes...)
+			// What the approvers routing settings do not do; none refuses.
+			ln.notes = append(ln.notes, LaneApproverWarnings(lc.Analyzer)...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {

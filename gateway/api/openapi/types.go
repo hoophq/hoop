@@ -579,6 +579,10 @@ type SidecarReviewRequest struct {
 	// the upstream answered. A plane that predates this field ignores it and
 	// spends the approval at release.
 	Reserve bool `json:"reserve,omitempty" example:"false"`
+	// Who sent the statement, as the sidecar saw it: a hoop user id, an auth
+	// subject or an email. Sent only for a level with AI routing; every user
+	// it names is never routed to nor notified. At most 256 characters
+	Principal string `json:"principal,omitempty" binding:"max=256" example:"ana@example.com"`
 }
 
 // SidecarReviewClaimRequest is the optional body of a claim. An empty body
@@ -1750,6 +1754,100 @@ type Review struct {
 	RiskLevel *string `json:"risk_level,omitempty" readonly:"true" enums:"high,medium,low" example:"high"`
 	// The hand-off agent of an ai-handoff level selected the hold that filed this approval request
 	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
+	// The AI routing decision. Absent on an approval request with static routing
+	Routing *ReviewRouting `json:"routing,omitempty" readonly:"true"`
+}
+
+// ReviewRouting is the AI routing decision of an approval request (ENG-663).
+type ReviewRouting struct {
+	// ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request
+	Mode string `json:"mode" enums:"ai,static" readonly:"true" example:"ai"`
+	// Why the AI routing fell back. Set with mode static
+	FallbackCause string `json:"fallback_cause,omitempty" enums:"no_provider,timeout,provider_error,no_tool_call,refusal,invalid_decision,no_valid_group" readonly:"true" example:"timeout"`
+	// Detail of the fallback, bounded
+	FallbackDetail string `json:"fallback_detail,omitempty" readonly:"true" example:"no answer in 20s"`
+	// The reason the AI gave, at most 500 characters
+	Reason string `json:"reason,omitempty" readonly:"true" example:"The sre group approved similar statements fast."`
+	// The groups the AI selected from
+	Candidates []string `json:"candidates" readonly:"true" example:"payments-approvers,sre"`
+	// The groups that got the approval request
+	Groups []string `json:"groups" readonly:"true" example:"sre"`
+	// The notify integrations of the configuration, and their state at the decision
+	Integrations []ReviewRoutingIntegration `json:"integrations,omitempty" readonly:"true"`
+	// The users that got a direct message
+	NotifiedUsers []ReviewRoutingUser `json:"notified_users,omitempty" readonly:"true"`
+	// The channels that got the approval request
+	Channels []ReviewRoutingChannel `json:"channels,omitempty" readonly:"true"`
+	// The selected users an integration could not reach
+	Unreachable []ReviewRoutingUnreachable `json:"unreachable,omitempty" readonly:"true"`
+	// When the decision was made
+	DecidedAt time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+// ReviewRoutingIntegration is one notify integration of a routing decision.
+type ReviewRoutingIntegration struct {
+	// The integration
+	Name string `json:"name" enums:"slack,teams" readonly:"true" example:"slack"`
+	// How it notifies
+	Delivery string `json:"delivery" enums:"dm,channel,both" readonly:"true" example:"both"`
+	// The organization set the integration up when the decision was made
+	Integrated bool `json:"integrated" readonly:"true" example:"true"`
+}
+
+// ReviewRoutingUser is a user that got a direct message.
+type ReviewRoutingUser struct {
+	// The user id
+	ID string `json:"id" readonly:"true" example:"D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90"`
+	// The display name of the user
+	Name string `json:"name,omitempty" readonly:"true" example:"Ana"`
+	// The email of the user
+	Email string `json:"email,omitempty" readonly:"true" example:"ana@example.com"`
+	// The integrations that sent the direct message
+	Integrations []string `json:"integrations" readonly:"true" example:"slack"`
+}
+
+// ReviewRoutingChannel is a channel that got the approval request.
+type ReviewRoutingChannel struct {
+	// The integration
+	Integration string `json:"integration" enums:"slack,teams" readonly:"true" example:"slack"`
+	// The channel id
+	ID string `json:"id" readonly:"true" example:"C0123ABC"`
+	// The channel name; the id when unknown
+	Name string `json:"name,omitempty" readonly:"true" example:"#payments-approvals"`
+}
+
+// ReviewRoutingUnreachable is a selected user an integration could not reach.
+type ReviewRoutingUnreachable struct {
+	// The user id
+	UserID string `json:"user_id" readonly:"true" example:"D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90"`
+	// The display name of the user
+	Name string `json:"name,omitempty" readonly:"true" example:"Bob"`
+	// The integration
+	Integration string `json:"integration" enums:"slack,teams" readonly:"true" example:"slack"`
+	// Why it could not reach the user
+	Cause string `json:"cause" readonly:"true" example:"no slack id"`
+}
+
+// ApprovalRoutingIntegrations is what AI routing can notify through.
+type ApprovalRoutingIntegrations struct {
+	Slack ApprovalRoutingIntegration `json:"slack"`
+	Teams ApprovalRoutingIntegration `json:"teams"`
+}
+
+// ApprovalRoutingIntegration is one integration AI routing can notify through.
+type ApprovalRoutingIntegration struct {
+	// The organization set the integration up
+	Integrated bool `json:"integrated" example:"true"`
+	// The channels it reaches
+	Channels []ApprovalRoutingChannel `json:"channels"`
+}
+
+// ApprovalRoutingChannel is one channel an integration reaches.
+type ApprovalRoutingChannel struct {
+	// The channel id
+	ID string `json:"id" example:"C0123ABC"`
+	// The channel name; the id when unknown
+	Name string `json:"name" example:"C0123ABC"`
 }
 
 type ReviewOwner struct {
