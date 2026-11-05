@@ -9,6 +9,9 @@ receivers:
 exporters:
   debug:
     verbosity: detailed
+    # Plain lines on stdout, without the logger's timestamp: demo-mcp.sh
+    # matches them from the start of the line.
+    use_internal_logger: false
 
 service:
   pipelines:

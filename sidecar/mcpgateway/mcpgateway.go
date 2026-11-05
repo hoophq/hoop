@@ -336,6 +336,9 @@ func (s *server) ObserveMessage(dir inspect.Direction, _, method, tool, decision
 	if method != "" && !mcpMethods[method] {
 		m.Method = telemetry.MCPOther
 	}
+	if method == mcp.MethodToolsCall && m.Tool == "" {
+		m.Tool = telemetry.MCPOther
+	}
 	s.lane.Telemetry.MCPMessage(m)
 }
 
@@ -553,7 +556,7 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 	case mcp.MethodToolsCall:
 		name, args, err := toolCallParams(m.Env.Params)
 		if err != nil {
-			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+			return invalidParams(m, err)
 		}
 		v := ls.ToolCall(ctx, name, args)
 		if !v.Allowed {
@@ -632,7 +635,7 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 	name, args, err := toolCallParams(m.Env.Params)
 	if err != nil {
 		ls.Record(ctx, "mcp_invalid_params", map[string]string{"reason": err.Error()})
-		return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+		return invalidParams(m, err)
 	}
 	tool := checks.RealToolName(ms, name)
 	if real, ok := c.s.renamed[name]; ok && tool == name {
@@ -646,6 +649,16 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 		return inspect.AllowAll
 	}
 	return deniedToolResult(m.Env, v)
+}
+
+// invalidParams refuses a tools/call whose params the lane cannot read. It
+// drops the params: mcpproxy's observer reads the tool from them after the
+// pipeline, case-insensitively, and would count the call under a tool the
+// lane never judged.
+func invalidParams(m *inspect.Msg, err error) inspect.Decision {
+	d := inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+	m.Env.Params = nil
+	return d
 }
 
 // toolCallParams reads a tools/call's tool name and arguments by their exact

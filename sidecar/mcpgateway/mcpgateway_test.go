@@ -521,15 +521,15 @@ func (r *recRecorder) count(msg string) int {
 
 // mcpproxy's observer feeds the lane's telemetry by method, tool and
 // decision, and every refusal reaches the lane's denied count, mcpproxy's
-// own included. A tool the upstream did not list and a method MCP does not
-// define are counted as (other).
+// own included. A tool the upstream did not list, a call refused as invalid
+// params and a method MCP does not define are counted as (other).
 func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	rec := &recRecorder{}
 	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
 	t.Cleanup(up.Close)
 	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
-		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 3}, Open: ln.open, Telemetry: rec})
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 4}, Open: ln.open, Telemetry: rec})
 	c := &client{url: url}
 	c.init(t)
 	c.list(t)
@@ -537,6 +537,9 @@ func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 	c.call(t, 4, "delete_customer", `{"id":"7"}`)
 	if body := c.call(t, 5, "made_up", `{}`); !strings.Contains(body, "was not advertised") {
 		t.Fatalf("unlisted tool: %s", body)
+	}
+	if _, body := c.post(t, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"delete_customer","name":"echo","arguments":{}}}`); !strings.Contains(body, "-32602") {
+		t.Fatalf("repeated name: %s", body)
 	}
 	if body := c.call(t, 6, "echo", `{"message":"over"}`); !strings.Contains(body, "-32012") {
 		t.Fatalf("call over the budget: %s", body)
@@ -551,7 +554,7 @@ func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 		"client|tools/call|echo|allow":                      1,
 		"server||echo|allow":                                1,
 		"client|tools/call|delete_customer|deny":            1,
-		"client|tools/call|" + telemetry.MCPOther + "|deny": 1,
+		"client|tools/call|" + telemetry.MCPOther + "|deny": 2,
 		"client|tools/call|echo|deny":                       1,
 		"client|" + telemetry.MCPOther + "||allow":          1,
 	} {
@@ -559,8 +562,8 @@ func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 			t.Errorf("%s counted %d times, want %d; all: %v", msg, got, want, rec.msgs)
 		}
 	}
-	if _, _, denied := srv.Stats(); denied != 3 {
-		t.Fatalf("denied %d, want the rule, the unlisted tool and the budget", denied)
+	if _, _, denied := srv.Stats(); denied != 4 {
+		t.Fatalf("denied %d, want the rule, the unlisted tool, the invalid params and the budget", denied)
 	}
 }
 
