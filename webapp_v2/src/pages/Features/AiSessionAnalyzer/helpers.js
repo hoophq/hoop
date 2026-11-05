@@ -100,8 +100,9 @@ const COMMAND_ACCESS_TYPES = new Set(['command', 'jit_command'])
 // For each selected resource role, the access request rules that take its
 // commands before the analyzer does. A rule covers a role when it names the
 // role or shares an attribute with it, as services.GetRuleForConnection reads
-// it. Returns [{ connectionName, rules: [rule, ...] }] in selection order,
-// only for covered roles; rules sorted by name.
+// it. Returns [{ connectionName, rules: [{ rule, byName, attributes }] }] in
+// selection order, only for covered roles, rules sorted by name. `byName` and
+// `attributes` (the shared ones) tell the admin what to remove from the rule.
 export function accessRequestOverlap(connectionNames, accessRequestRules, attributes) {
   const commandRules = (accessRequestRules ?? []).filter((rule) =>
     COMMAND_ACCESS_TYPES.has(rule.access_type),
@@ -120,12 +121,13 @@ export function accessRequestOverlap(connectionNames, accessRequestRules, attrib
     .map((connectionName) => {
       const roleAttributes = attributesByConnection.get(connectionName) ?? new Set()
       const rules = commandRules
-        .filter(
-          (rule) =>
-            (rule.connection_names ?? []).includes(connectionName) ||
-            (rule.attributes ?? []).some((name) => roleAttributes.has(name)),
-        )
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((rule) => ({
+          rule,
+          byName: (rule.connection_names ?? []).includes(connectionName),
+          attributes: (rule.attributes ?? []).filter((name) => roleAttributes.has(name)),
+        }))
+        .filter((match) => match.byName || match.attributes.length > 0)
+        .sort((a, b) => a.rule.name.localeCompare(b.rule.name))
       return { connectionName, rules }
     })
     .filter((entry) => entry.rules.length > 0)
