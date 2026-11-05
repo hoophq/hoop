@@ -457,7 +457,8 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		}
 		o.Extensions = []configyaml.Extension{{Key: key, Value: d.demoPorts.API}}
 	}
-	if !d.an.on {
+	// An mcp lane refuses an analyzer, so the hint would lead to an invalid config.
+	if !d.an.on && d.protocol != "mcp" {
 		o.Footer = analyzerHint(d.an, l.Name)
 	}
 	return o
@@ -514,6 +515,9 @@ func (d *draft) masksSummary() string {
 
 func (d *draft) analyzerSummary() string {
 	if !d.an.on {
+		if d.protocol == "mcp" {
+			return "off · an mcp listener does not take one yet"
+		}
 		if d.an.provider != "vertex" && keyFileStatus(d.an.keyFile) != nil {
 			return "off · needs a key file for " + d.an.provider
 		}
