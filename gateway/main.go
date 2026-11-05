@@ -159,7 +159,8 @@ func Run() {
 			licenseData = data
 		}
 
-		mode := analytics.ModeAtBoot(appconfig.Get().AnalyticsTracking(), licenseData, appconfig.Get().ApiHostname())
+		enterprise := analytics.IsEnterpriseLicense(licenseData, appconfig.Get().ApiHostname())
+		mode := analytics.ModeAtBoot(appconfig.Get().AnalyticsTracking(), enterprise, org.AnalyticsMode, isNewOrg)
 		if mode != org.AnalyticsMode {
 			if err := models.UpdateOrgAnalyticsMode(org.ID, mode); err != nil {
 				orgStep.Fail(err)

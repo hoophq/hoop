@@ -45,9 +45,18 @@ func SetMode(orgID, mode string) {
 }
 
 // ModeAtBoot is the mode the default organization gets at every boot.
-// ANALYTICS_TRACKING decides when set; otherwise the license does: an
-// enterprise organization is opted out, a free one reports identified.
-func ModeAtBoot(tracking string, licenseData []byte, hostname string) string {
+//
+// A free organization is always identified. An enterprise one follows
+// ANALYTICS_TRACKING when set; otherwise it keeps the stored mode, starting
+// disabled when the organization was created on this boot.
+func ModeAtBoot(tracking string, enterprise bool, stored string, newOrg bool) string {
+	if !enterprise {
+		if tracking == "disabled" {
+			log.Warnf("analytics: ANALYTICS_TRACKING=disabled ignored, the organization holds no enterprise license")
+		}
+		return models.AnalyticsModeIdentified
+	}
+
 	switch tracking {
 	case "enabled":
 		return models.AnalyticsModeIdentified
@@ -55,12 +64,18 @@ func ModeAtBoot(tracking string, licenseData []byte, hostname string) string {
 		return models.AnalyticsModeDisabled
 	}
 
-	l, err := license.Parse(licenseData, hostname)
-	if err == nil && l.Payload.Type == license.EnterpriseType {
+	if newOrg {
 		return models.AnalyticsModeDisabled
 	}
 
-	return models.AnalyticsModeIdentified
+	return stored
+}
+
+// IsEnterpriseLicense reports a license that verifies for this host and is
+// of the enterprise type, the same test EnterpriseLicenseOnly applies.
+func IsEnterpriseLicense(licenseData []byte, hostname string) bool {
+	l, err := license.Parse(licenseData, hostname)
+	return err == nil && l.Payload.Type == license.EnterpriseType
 }
 
 // WarmModeCache hydrates the cache from the orgs table. Called once at
