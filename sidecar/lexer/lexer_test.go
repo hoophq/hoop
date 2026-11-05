@@ -305,6 +305,59 @@ func TestExplainPlansButAnalyzeExecutes(t *testing.T) {
 	if !paren.Writes() {
 		t.Errorf("EXPLAIN (ANALYZE) reported no write: %v", paren.Effects)
 	}
+
+	// ANALYSE is the same option, and PostgreSQL compares a quoted option
+	// name verbatim. A quoted name the option table does not know is
+	// rejected by PostgreSQL or is an escape the scanner does not decode,
+	// so it counts as ANALYZE.
+	for _, sql := range []string{
+		`EXPLAIN ANALYSE DELETE FROM customers`,
+		`EXPLAIN ANALYSE VERBOSE DELETE FROM customers`,
+		`EXPLAIN (ANALYSE) DELETE FROM customers`,
+		`EXPLAIN ("analyze") DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers`,
+		`EXPLAIN (U&"\0061nalyze") DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)
+		}
+	}
+	// A quoted FORMAT value and a quoted CTE column are not the ANALYZE
+	// option, and false, off or 0 turn ANALYZE off, so these stay plans.
+	for _, sql := range []string{
+		`EXPLAIN (FORMAT "json") DELETE FROM customers`,
+		`EXPLAIN ("verbose") DELETE FROM customers`,
+		`EXPLAIN WITH x("analyze") AS (SELECT 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false) DELETE FROM customers`,
+		`EXPLAIN (ANALYSE OFF, BUFFERS) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYZE 0) DELETE FROM customers`,
+		`EXPLAIN ("analyze" false) DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); a.Writes() {
+			t.Errorf("a plan reported a write: %v: %s", a.Effects, sql)
+		}
+	}
+	// Any other value runs the statement. A string literal's text is not
+	// kept, so 'off' reads as on, and one ANALYZE that is on is enough.
+	for _, sql := range []string{
+		`EXPLAIN (ANALYZE true) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE on) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 'off') DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false, ANALYZE) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE, "analyze" off) DELETE FROM customers`,
+		// PostgreSQL 16 integer literals that start with 0 and are 1.
+		`EXPLAIN (ANALYZE 0x1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0X1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0_1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0b1) DELETE FROM customers`,
+		`EXPLAIN ("analyze" 0o1) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYSE 0X1) DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)
+		}
+	}
 }
 
 // A conditional clause is still a statement head.
@@ -836,6 +889,48 @@ func TestObjectCreatingForms(t *testing.T) {
 		}
 		if got := reads(a); !slices.Equal(got, []string{tc.read}) {
 			t.Errorf("reads = %v, want [%s]: %s", got, tc.read, tc.sql)
+		}
+	}
+
+	// SELECT INTO creates its table, so it is a create to a rule that reads
+	// the effects, whatever the persistence keyword before the name.
+	for _, sql := range []string{
+		`SELECT * INTO snap FROM customers`,
+		`SELECT * INTO TEMP snap FROM customers`,
+		`SELECT * INTO TEMPORARY TABLE snap FROM customers`,
+		`SELECT * INTO UNLOGGED snap FROM customers`,
+		`WITH c AS (SELECT 1) SELECT * INTO snap FROM c`,
+		`(SELECT * INTO snap FROM customers)`,
+		`((SELECT * INTO snap FROM customers))`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); a.Severity() != lexer.Create {
+			t.Errorf("Severity = %v, want create: effects %v: %s", a.Severity(), a.Effects, sql)
+		}
+	}
+}
+
+// A parenthesis opens a query only when a query keyword follows it. In a
+// CASE branch, a type's attribute list or a join group it is an expression,
+// and a column named after a statement is a column.
+func TestParenthesizedExpressionIsNotAStatement(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{`SELECT CASE WHEN a THEN (drop) ELSE (truncate) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN (alter) ELSE (merge) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN ((update)) END FROM privs`, lexer.Select},
+		{`SELECT * FROM ((comment c JOIN orders o ON o.c = c.id))`, lexer.Select},
+		{`CREATE TYPE ty AS (update boolean)`, lexer.Create},
+	} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.ClickHouse, lexer.GoogleSQL, lexer.Spark} {
+			a := lexer.Analyze(tc.sql, d)
+			if a.Severity() != tc.want {
+				t.Errorf("%v: Severity = %v, want %v: effects %v: %s", d, a.Severity(), tc.want, a.Effects, tc.sql)
+			}
+			if got := writes(a); tc.want == lexer.Select && len(got) > 0 {
+				t.Errorf("%v: a read reported writes %v: %s", d, got, tc.sql)
+			}
 		}
 	}
 }
