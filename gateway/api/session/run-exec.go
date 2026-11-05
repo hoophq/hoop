@@ -179,24 +179,11 @@ func canExecReviewedSession(ctx *storagev2.Context, session *models.Session, rev
 				return fmt.Errorf("invalid execution window configuration")
 			}
 
-			startTime, err := time.Parse("15:04", startStr)
+			within, err := withinTimeWindow(startStr, endStr, time.Now().UTC())
 			if err != nil {
-				return fmt.Errorf("invalid execution window start time")
+				return err
 			}
-			endTime, err := time.Parse("15:04", endStr)
-			if err != nil {
-				return fmt.Errorf("invalid execution window end time")
-			}
-
-			// Overnight window
-			if endTime.Before(startTime) {
-				endTime = endTime.Add(24 * time.Hour)
-			}
-
-			now := time.Now().UTC()
-			nowOnlyTime := time.Date(0, 1, 1, now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
-
-			if nowOnlyTime.Before(startTime) || nowOnlyTime.After(endTime) {
+			if !within {
 				return fmt.Errorf("execution not allowed outside the time window %s to %s UTC", startStr, endStr)
 			}
 		default:
@@ -205,6 +192,28 @@ func canExecReviewedSession(ctx *storagev2.Context, session *models.Session, rev
 	}
 
 	return nil
+}
+
+// withinTimeWindow reports whether now (UTC) is inside the "15:04" window. A
+// window that ends before it starts crosses midnight (22:00 to 02:00).
+func withinTimeWindow(startStr, endStr string, now time.Time) (bool, error) {
+	startTime, err := time.Parse("15:04", startStr)
+	if err != nil {
+		return false, fmt.Errorf("invalid execution window start time")
+	}
+	endTime, err := time.Parse("15:04", endStr)
+	if err != nil {
+		return false, fmt.Errorf("invalid execution window end time")
+	}
+	now = now.UTC()
+	nowOnlyTime := time.Date(0, 1, 1, now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
+	if endTime.Before(startTime) {
+		endTime = endTime.Add(24 * time.Hour)
+		if nowOnlyTime.Before(startTime) {
+			nowOnlyTime = nowOnlyTime.Add(24 * time.Hour)
+		}
+	}
+	return !nowOnlyTime.Before(startTime) && !nowOnlyTime.After(endTime), nil
 }
 
 var syncMutexExecMap = sync.RWMutex{}
