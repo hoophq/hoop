@@ -5,11 +5,13 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -211,4 +213,93 @@ func TestMCPCallerTokenNeverLeavesTheLane(t *testing.T) {
 			t.Errorf("audit event %s under principal %q, want claude-agents", ev.Kind, ev.Principal)
 		}
 	}
+}
+
+// mcpSQLConfig is the docs BigQuery lane: execute_sql takes GoogleSQL in query.
+const mcpSQLConfig = `{
+  "audit": {"file": "-"},
+  "guardrails": {"rules": [{"name": "read-only", "type": "operation", "operations": ["insert", "update", "delete", "drop", "unknown"], "message": "this lane is read-only"}]},
+  "listeners": [{
+    "name": "bigquery",
+    "protocol": "mcp",
+    "listen": "{{listen}}",
+    "upstream": "{{upstream}}",
+    "caller_token": {"file": "{{tokens}}", "name": "claude-agents"},
+    "mcp_gateway": {"sql": {"execute_sql*": {"argument": "query", "dialect": "googlesql"}}}
+  }]
+}`
+
+type sqlIn struct {
+	Query string `json:"query"`
+}
+
+// The shipped binary judges the SQL argument of a SQL tool: a SELECT runs, an
+// UPDATE and an unreadable argument come back as tool errors and never reach
+// the upstream, and the MCP session survives both.
+func TestMCPSQLArgumentIsJudged(t *testing.T) {
+	var mu sync.Mutex
+	var ran []string
+	upstream := sdk.NewServer(&sdk.Implementation{Name: "e2e-bigquery", Version: "1"}, nil)
+	sdk.AddTool(upstream, &sdk.Tool{Name: "execute_sql", Description: "Run GoogleSQL."},
+		func(_ context.Context, _ *sdk.CallToolRequest, in sqlIn) (*sdk.CallToolResult, any, error) {
+			mu.Lock()
+			ran = append(ran, in.Query)
+			mu.Unlock()
+			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "ran " + in.Query}}}, nil, nil
+		})
+	var up recorder
+	upURL := serveRecorded(t, &up, sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return upstream }, nil))
+	tokens := filepath.Join(t.TempDir(), "tokens")
+	if err := os.WriteFile(tokens, []byte(mcpToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := startSidecar(t, upURL+"/mcp", strings.NewReplacer("{{tokens}}", tokens).Replace(mcpSQLConfig))
+	url := "http://" + s.addr + "/mcp"
+
+	_, sid, body := mcpPost(t, url, mcpToken, "", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}`)
+	if sid == "" {
+		t.Fatalf("initialize: %s", body)
+	}
+	mcpPost(t, url, mcpToken, sid, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	mcpPost(t, url, mcpToken, sid, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	call := func(id int, args string) string {
+		t.Helper()
+		code, _, body := mcpPost(t, url, mcpToken, sid, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"execute_sql","arguments":%s}}`, id, args))
+		if code != http.StatusOK {
+			t.Fatalf("call %d: %d %s", id, code, body)
+		}
+		t.Logf("call %d %s\n  -> %s", id, args, strings.TrimSpace(body))
+		return body
+	}
+
+	if body := call(3, `{"query":"SELECT name FROM ds.customers"}`); !strings.Contains(body, "ran SELECT name FROM ds.customers") {
+		t.Fatalf("the SELECT did not run: %s", body)
+	}
+	if body := call(4, `{"query":"\u0055PDATE ds.customers SET name = 'x' WHERE true"}`); !strings.Contains(body, `"isError":true`) ||
+		!strings.Contains(body, "denied by the hoop sidecar (rule read-only): this lane is read-only") {
+		t.Fatalf("the UPDATE was not refused as a tool error: %s", body)
+	}
+	if body := call(5, `{"query":"SELECT 1","\u0071uery":"DELETE FROM ds.customers WHERE true"}`); !strings.Contains(body, `"isError":true`) ||
+		!strings.Contains(body, "rule mcp_gateway.sql") {
+		t.Fatalf("a repeated query key was not refused: %s", body)
+	}
+	if body := call(6, `{"query":"SELECT 2"}`); !strings.Contains(body, "ran SELECT 2") {
+		t.Fatalf("the session did not survive the refusals: %s", body)
+	}
+
+	mu.Lock()
+	got := append([]string(nil), ran...)
+	mu.Unlock()
+	if want := []string{"SELECT name FROM ds.customers", "SELECT 2"}; !slices.Equal(got, want) {
+		t.Fatalf("the upstream ran %q, want %q", got, want)
+	}
+	s.waitForAudit(t, "the SELECT statement", func(ev auditEvent) bool {
+		return ev.Kind == "statement" && ev.Operation == "select" && ev.Metadata["mcp.sql_index"] == "1" && ev.Metadata["mcp.sql_dialect"] == "googlesql"
+	})
+	s.waitForAudit(t, "the UPDATE violation", func(ev auditEvent) bool {
+		return ev.Kind == "violation" && ev.Operation == "update" && ev.Rule == "read-only" && ev.Statement == "UPDATE ds.customers SET name = 'x' WHERE true"
+	})
+	s.waitForAudit(t, "the unreadable argument", func(ev auditEvent) bool {
+		return ev.Kind == "activity" && ev.Metadata["activity"] == "mcp_sql_unreadable" && strings.Contains(ev.Metadata["reason"], "appears twice")
+	})
 }

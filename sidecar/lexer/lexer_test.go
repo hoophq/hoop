@@ -2426,3 +2426,14 @@ func TestSparkRulesDoNotLeakIntoOtherDialects(t *testing.T) {
 		}
 	}
 }
+
+func TestDialectNamedReadsEveryDialectByItsName(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		if got, ok := lexer.DialectNamed(d.String()); !ok || got != d {
+			t.Errorf("DialectNamed(%q) = %v, %v", d.String(), got, ok)
+		}
+	}
+	if _, ok := lexer.DialectNamed("bigquery"); ok {
+		t.Error("DialectNamed accepted bigquery")
+	}
+}

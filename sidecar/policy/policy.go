@@ -1115,7 +1115,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
 			// An MCP statement without a tool is the catalog: there is no
 			// relation to determine.
-			if stmt.Protocol == inspect.MCP {
+			if stmt.Protocol == inspect.MCP && stmt.Metadata[inspect.MetadataMCPTool] == "" {
 				return false, nil
 			}
 			// Could not determine the relations. Deny only when the rule

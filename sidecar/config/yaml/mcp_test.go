@@ -66,3 +66,27 @@ listeners:
 		}
 	}
 }
+
+// The README BigQuery lane loads from YAML: a quoted tool glob keys the sql block.
+func TestTheMCPSQLExampleLoads(t *testing.T) {
+	cfg, err := yaml.LoadYAMLBytes([]byte(`
+listeners:
+  - name: bigquery
+    protocol: mcp
+    listen: 127.0.0.1:18902
+    upstream: https://bigquery.googleapis.com/mcp
+    guardrails:
+      rules:
+        - {name: read-only, type: operation, operations: [insert, update, delete, drop, unknown]}
+    mcp_gateway:
+      sql:
+        "execute_sql*": {argument: query, dialect: googlesql}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Listeners[0].MCPGateway.SQL
+	if len(got) != 1 || got["execute_sql*"].Argument != "query" || got["execute_sql*"].Dialect != "googlesql" {
+		t.Fatalf("sql block: %+v", got)
+	}
+}

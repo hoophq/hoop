@@ -39,6 +39,7 @@ type MCPGatewayConfig struct {
 	MaxResultKB        int                        `json:"max_result_kb,omitempty"`
 	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty"`
 	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty"`
+	SQL                map[string]MCPSQLTool      `json:"sql,omitempty" cap:"mcp_sql" ui:"-"`
 }
 
 type MCPToolOverride struct {
@@ -100,7 +101,7 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 			problems = append(problems, fmt.Sprintf("%s: mcp_gateway.tool_rate_limits[%q] must be positive", name, glob))
 		}
 	}
-	return problems
+	return append(problems, validateMCPSQL(name, m.SQL)...)
 }
 
 func loopbackHost(host string) bool {
@@ -303,6 +304,7 @@ type mcpLaneSession struct {
 	release func()
 	mcpSID  string
 	hide    *policy.Rules
+	sql     map[string]MCPSQLTool
 	log     *slog.Logger
 	closed  bool
 }
@@ -333,7 +335,11 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}, nil
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}
+	if ln.cfg.MCPGateway != nil {
+		ls.sql = ln.cfg.MCPGateway.SQL
+	}
+	return ls, nil
 }
 
 func (s *mcpLaneSession) ID() string { return string(s.g.Session().ID) }
@@ -348,6 +354,13 @@ func (s *mcpLaneSession) ToolCall(ctx context.Context, tool string, args []byte)
 		Metadata: map[string]string{
 			inspect.MetadataMCPMethod: "tools/call", inspect.MetadataMCPTool: tool, inspect.MetadataMCPSession: s.mcpSID,
 		},
+	}
+	t, isSQL, err := mcpSQLFor(s.sql, tool)
+	switch {
+	case err != nil:
+		return s.refuseSQL(ctx, tool, "", err)
+	case isSQL:
+		return s.sqlCall(ctx, stmt, t, args)
 	}
 	return s.evaluate(ctx, stmt)
 }
@@ -398,14 +411,21 @@ func mcpHideRules(rules []policy.Rule) (*policy.Rules, error) {
 	return policy.NewRules(hide)
 }
 
-func (s *mcpLaneSession) evaluate(ctx context.Context, stmt inspect.Statement) MCPVerdict {
+// evaluate judges stmts in order under one lock and stops at the first deny.
+func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statement) MCPVerdict {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return MCPVerdict{Message: "session closed"}
 	}
-	d := s.g.EvaluateStatement(ctx, stmt)
-	return MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}
+	var v MCPVerdict
+	for _, stmt := range stmts {
+		d := s.g.EvaluateStatement(ctx, stmt)
+		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
+			break
+		}
+	}
+	return v
 }
 
 func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[string]string) {
