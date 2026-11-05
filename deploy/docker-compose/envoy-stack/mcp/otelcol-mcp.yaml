@@ -1,0 +1,20 @@
+# The collector the mcp lane pushes metrics and traces to. The debug exporter
+# prints what arrived, with every attribute; demo-mcp.sh reads its log.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [debug]
+    traces:
+      receivers: [otlp]
+      exporters: [debug]

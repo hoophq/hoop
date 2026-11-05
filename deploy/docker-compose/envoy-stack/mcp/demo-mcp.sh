@@ -3,7 +3,7 @@
 # Walks one MCP session through the mcp lane: a request without the caller
 # token, initialize, tools/list without the tools an mcp_tool rule hides, an
 # allowed call, a call to a hidden tool, a call over the mcp_gateway budget,
-# then the session's audit rows.
+# then the session's audit rows, /stats, the metrics and the traces.
 #
 # Usage:
 #   ./demo-mcp.sh         build, start, run the sequence
@@ -93,6 +93,24 @@ compose logs --no-log-prefix hoop-inspect | grep '^{' |
            hidden: .metadata["mcp.tools_hidden"],
            allowed: (if .kind == "statement" or .kind == "violation" then .allowed else null end), rule}
         | with_entries(select(.value != null))'
+
+step "/stats: the lane's sessions, and the messages it refused (the rule and the budget)"
+compose exec -T client curl -sS http://127.0.0.1:19000/stats | show '.listeners[]'
+
+step "hoop.sidecar.mcp.messages, from the collector's last export"
+sleep 6 # one metrics interval
+compose logs --no-log-prefix otel-collector | awk '
+    /^ResourceMetrics #0/ { if (cur != "") out = cur; cur = "" }
+    /^Metric #/ { inm = 0 }
+    /-> Name: hoop.sidecar.mcp.messages$/ { inm = 1 }
+    inm && /^Data point attributes:/ { line = "" }
+    inm && /-> hoop\.(direction|mcp\.[a-z]+): / { sub(/^ *-> /, ""); line = line "  " $0 }
+    inm && /^Value: / { cur = cur line "  => " $2 "\n" }
+    END { if (cur != "") out = cur; printf "%s", out }'
+
+step "the trace of each tool call: hoop.statement and its policy stage"
+compose logs --no-log-prefix otel-collector |
+    grep -E '^ +(Trace ID|Parent ID|Name) +: |-> hoop\.(tables|operation|verdict|rule|deny\.source|engine|outcome): ' | head -60
 
 echo
 echo "stop with: ./demo-mcp.sh down"
