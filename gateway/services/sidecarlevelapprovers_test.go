@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -87,5 +88,19 @@ func TestSplitAnalyzerMovesTheLevelApprovers(t *testing.T) {
 		if l.Analyzer != nil && l.Analyzer.Approvers != nil {
 			t.Errorf("the lane kept the approvers: %+v", l.Analyzer.Approvers)
 		}
+	}
+}
+
+// A routed level names no groups, so the rule's own approval rule gets the
+// admin group, whatever the other levels name: the people the AI selects
+// are never widened onto the levels that file under the rule.
+func TestARoutedLevelGivesTheManagedRuleNoGroups(t *testing.T) {
+	spec := json.RawMessage(`{"high": "require_approval", "medium": "require_approval", "approval_rule": "own",
+		"approvers": {"high": {"type": "human", "routing": {"candidates": ["sre"]}},
+		              "medium": {"type": "human", "groups": ["sre"]}}}`)
+	requested := []string{"sre", "dba"}
+	got := ManagedRuleReviewers(spec, "own", &requested)
+	if got == nil || len(*got) != 0 {
+		t.Fatalf("a routed level must leave the managed rule to the administrators, got %v", got)
 	}
 }

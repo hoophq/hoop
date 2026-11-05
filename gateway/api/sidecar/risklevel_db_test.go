@@ -247,6 +247,8 @@ func TestAnOldBuildIsServedTheHeldLevelsUnderTheApprovalRule(t *testing.T) {
 	org := uuid.MustParse(statusTestOrgID)
 	spec := levelSpec("old-rule")
 	sc := seedLevelSidecar(t, "old-build", "old-rule", spec)
+	// The requested groups are ignored: high names dba and medium the
+	// administrators, so the old build files under the administrators.
 	require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, "old-rule", json.RawMessage(spec), &[]string{"dba"}))
 
 	w := handshake(t, sc, "")
@@ -263,14 +265,17 @@ func TestAnOldBuildIsServedTheHeldLevelsUnderTheApprovalRule(t *testing.T) {
 			"an ai_agent level becomes a human hold: more oversight, never less")
 	}
 
-	// The old build files under the rule, and its groups release it.
+	// The old build files under the rule. dba cannot approve there what it
+	// cannot approve on a new build (medium); the administrators can.
 	rec := postLevelBody(sc, "DELETE FROM payouts WHERE id = 1", map[string]any{"approval_rule": "old-rule"})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	filed := decodeReviewResponse(t, rec)
 	require.NotNil(t, filed.Review.AccessRequestRuleName)
 	assert.Equal(t, "old-rule", *filed.Review.AccessRequestRuleName)
-	assert.Equal(t, []string{"dba"}, reviewGroupNames(filed.Review))
+	assert.Equal(t, []string{types.GroupAdmin}, reviewGroupNames(filed.Review))
 	rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{"dba"})
+	assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{types.GroupAdmin})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.True(t, decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID)).Forward)
 
