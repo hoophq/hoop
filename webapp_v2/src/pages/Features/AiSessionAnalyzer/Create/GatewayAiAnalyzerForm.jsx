@@ -223,6 +223,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               connectionNames={form.connectionNames}
               accessRequestRules={accessRequestRules}
               attributes={attributes}
+              ready={accessRequestRulesStatus === 'success' && attributesStatus === 'success'}
               failed={accessRequestRulesStatus === 'error' || attributesStatus === 'error'}
             />
           </Stack>

@@ -12,7 +12,7 @@ describe('accessRequestOverlap', () => {
   it('flags a role a command rule names', () => {
     const rules = [rule('ar-cmd', 'command', ['pg-prod'])]
     expect(accessRequestOverlap(['pg-prod', 'pg-dev'], rules, [])).toEqual([
-      { connectionName: 'pg-prod', rules: [rules[0]] },
+      { connectionName: 'pg-prod', rules: [{ rule: rules[0], byName: true, attributes: [] }] },
     ])
   })
 
@@ -35,7 +35,10 @@ describe('accessRequestOverlap', () => {
     const rules = [rule('ar-attr', 'command', [], ['production'])]
     const attributes = [{ name: 'production', connection_names: ['pg-prod'] }]
     expect(accessRequestOverlap(['pg-prod', 'pg-dev'], rules, attributes)).toEqual([
-      { connectionName: 'pg-prod', rules: [rules[0]] },
+      {
+        connectionName: 'pg-prod',
+        rules: [{ rule: rules[0], byName: false, attributes: ['production'] }],
+      },
     ])
   })
 
@@ -52,7 +55,8 @@ describe('accessRequestOverlap', () => {
     ]
     const attributes = [{ name: 'production', connection_names: ['pg-prod'] }]
     const [entry] = accessRequestOverlap(['pg-prod'], rules, attributes)
-    expect(entry.rules.map((r) => r.name)).toEqual(['alpha', 'zeta'])
+    expect(entry.rules.map((m) => m.rule.name)).toEqual(['alpha', 'zeta'])
+    expect(entry.rules[1]).toMatchObject({ byName: true, attributes: ['production'] })
   })
 
   it('returns nothing without a selection or without rules', () => {

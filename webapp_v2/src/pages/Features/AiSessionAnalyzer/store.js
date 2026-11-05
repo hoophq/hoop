@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { attributesService } from '@/services/attributes'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
 import { reviewsService } from '@/services/reviews'
@@ -35,7 +36,6 @@ const libraryEntries = (rows) =>
     .filter((r) => holdsSidecarRules(r.sidecar_spec))
     .map((r) => ({ name: r.name, description: r.description ?? '' }))
     .sort((a, b) => a.name.localeCompare(b.name))
-import { attributesService } from '@/services/attributes'
 
 export const useAiSessionAnalyzerStore = create((set, get) => ({
   list: [],
@@ -53,6 +53,7 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   accessRequestRules: [],
   accessRequestRulesStatus: 'idle',
+  accessRequestRulesRequestId: 0,
 
   // The guardrail and data masking rules a risk level may let the AI apply.
   // Session-scoped: cleared on logout. `ruleLibraryRequestId` is the
@@ -66,8 +67,10 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   routingIntegrations: EMPTY_INTEGRATIONS,
   routingIntegrationsStatus: 'idle',
   routingIntegrationsRequestId: 0,
+
   attributes: [],
   attributesStatus: 'idle',
+  attributesRequestId: 0,
 
   submitting: false,
 
@@ -143,14 +146,23 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   // Feeds the require_access_request picker in the rule form. The status is kept
   // so the form can tell "this org has no rules" from "the list failed to load".
   fetchAccessRequestRules: async () => {
-    set({ accessRequestRulesStatus: 'loading' })
+    // Cleared at the start so the form never reads a list from an earlier visit
+    // or account; the id drops a response that a newer fetch replaced.
+    const requestId = get().accessRequestRulesRequestId + 1
+    set({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'loading',
+      accessRequestRulesRequestId: requestId,
+    })
     try {
       const { data } = await accessRequestsService.list()
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({
         accessRequestRules: data?.data ?? [],
         accessRequestRulesStatus: 'success',
       })
     } catch {
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({ accessRequestRulesStatus: 'error' })
     }
   },
@@ -217,11 +229,14 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   // With the access request rules, tells the form which selected roles an
   // access request rule also covers through a shared attribute.
   fetchAttributes: async () => {
-    set({ attributesStatus: 'loading' })
+    const requestId = get().attributesRequestId + 1
+    set({ attributes: [], attributesStatus: 'loading', attributesRequestId: requestId })
     try {
       const attributes = await attributesService.listAll()
+      if (get().attributesRequestId !== requestId) return
       set({ attributes, attributesStatus: 'success' })
     } catch {
+      if (get().attributesRequestId !== requestId) return
       set({ attributesStatus: 'error' })
     }
   },
@@ -266,12 +281,18 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   },
 }))
 
-// The rule library and the integration channels name another org's data:
-// drop them when the session ends, as useSidecarStore does. Module state
-// outlives a logout.
+// Logout keeps the tab, and module state outlives it. The rule library, the
+// integration channels, the access request rules and the attributes belong to
+// the account: drop them before the next account opens the form.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useAiSessionAnalyzerStore.getState().resetRuleLibrary()
     useAiSessionAnalyzerStore.getState().resetRoutingIntegrations()
+    useAiSessionAnalyzerStore.setState({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'idle',
+      attributes: [],
+      attributesStatus: 'idle',
+    })
   }
 })
