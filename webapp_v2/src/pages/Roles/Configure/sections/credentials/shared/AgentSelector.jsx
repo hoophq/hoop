@@ -3,6 +3,7 @@ import { Stack, Title, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import { useAgentStore } from '@/stores/useAgentStore'
 import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
+import { sortAgents } from '@/pages/Agents/filters'
 
 // Lets the admin re-assign which agent runs this connection. The agent
 // list is shared with /agents and lives in useAgentStore so we just
@@ -19,7 +20,7 @@ export default function AgentSelector() {
     if (!agents || agents.length === 0) fetchAgents()
   }, [agents, fetchAgents])
 
-  const data = (agents || []).map((a) => ({ value: a.id, label: a.name }))
+  const data = sortAgents(agents).map((a) => ({ value: a.id, label: a.name }))
 
   return (
     <Stack gap="xs">
