@@ -601,6 +601,16 @@ func corpus() []stmtCase {
 		`COPY (DELETE FROM customers RETURNING *) TO STDOUT`,
 		`EXPLAIN ANALYZE DELETE FROM customers`,
 		`EXPLAIN DELETE FROM customers`,
+		// ANALYSE is ANALYZE, and a quoted option name is compared
+		// verbatim, so each of these runs its DELETE. The scanner read them
+		// as plans, and a read-only lane let the delete through (ENG-803).
+		`EXPLAIN ANALYSE DELETE FROM customers`,
+		`EXPLAIN (ANALYSE) DELETE FROM customers`,
+		`EXPLAIN ("analyze") DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers`,
+		// U& escapes spell the same option; the scanner does not decode
+		// them, so a quoted name it does not know counts as ANALYZE.
+		`EXPLAIN (U&"\0061nalyze") DELETE FROM customers`,
 		`INSERT INTO staging SELECT * FROM customers`,
 		`DO $$ BEGIN DELETE FROM customers; END $$`,
 		`CALL purge()`,
@@ -663,6 +673,12 @@ func corpus() []stmtCase {
 		`INSERT INTO t SELECT * FROM (SELECT * FROM u) z`,
 		`CREATE TABLE snap AS SELECT * FROM customers`,
 		`SELECT * INTO snap2 FROM customers`,
+		`SELECT * INTO TEMP snap3 FROM customers`,
+		`(SELECT * INTO snap4 FROM customers)`,
+		`((SELECT * INTO snap5 FROM customers))`,
+		`(WITH c AS (SELECT * FROM customers) SELECT * INTO snap6 FROM c)`,
+		`(VALUES (1), (2))`,
+		`(TABLE customers)`,
 		`MERGE INTO customers c USING staging s ON c.id = s.id
 		   WHEN MATCHED AND s.dead THEN DELETE
 		   WHEN MATCHED THEN UPDATE SET n = s.n

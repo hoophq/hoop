@@ -1,0 +1,23 @@
+{
+  "turboocr_revision": "a43c676441bc0a9b67ac8d8224bc2f9962710d37",
+  "device": 0,
+  "cuda_root": "/usr/local/cuda",
+  "tensorrt_root": "/opt/ica-gpu-builder/tensorrt",
+  "cudnn_root": "/opt/ica-gpu-builder/cudnn",
+  "ort_root": "/opt/ica-gpu-builder/onnxruntime-gpu",
+  "pdfium_root": "/opt/ica-gpu-builder/pdfium",
+  "engines_dir": "/opt/ica-gpu-builder/engines",
+  "smoke_fixture": "/opt/ica-gpu-builder/smoke/fixture.ppm",
+  "smoke_expected": "/opt/ica-gpu-builder/smoke/expected.txt",
+  "licenses_dir": "/opt/ica-gpu-builder/licenses",
+  "runtime_library_dirs": [],
+  "metadata": {
+    "cuda": "REPLACE_WITH_CUDA_MAJOR_MINOR",
+    "cudnn": "REPLACE_WITH_CUDNN_MAJOR_MINOR_PATCH",
+    "tensorrt": "REPLACE_WITH_TENSORRT_MAJOR_MINOR_PATCH_BUILD",
+    "ort": "REPLACE_WITH_CUDA_ORT_VERSION",
+    "min_driver": "REPLACE_WITH_MINIMUM_DRIVER_VERSION",
+    "compute_capability": "12.0",
+    "gpu_model": "RTX 5090"
+  }
+}

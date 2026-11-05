@@ -1663,6 +1663,9 @@ type SessionReview struct {
 	// The sidecar listener this approval request is bound to. Absent on an approval request that came from a connection.
 	// Only GET /sessions/{session_id} returns it
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
+	// The email of the user who ran the approved request. Absent before it runs, and on older requests.
+	// Only GET /sessions/{session_id} returns it
+	ExecutedBy *string `json:"executed_by,omitempty" readonly:"true" example:"alice@example.com"`
 }
 
 type ReviewCount struct {

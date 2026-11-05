@@ -6,6 +6,7 @@ import MethodCard from '@/components/MethodCard'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
+import { sortAgents } from '@/pages/Agents/filters'
 import {
   DockerDeployment,
   KubernetesDeployment,
@@ -142,10 +143,13 @@ export default function AgentStep() {
           <Select
             label="Agent Name"
             placeholder={agentsLoading ? 'Loading agents...' : 'Select an Agent'}
-            data={agents.map((agent) => ({ value: agent.id, label: agent.name }))}
+            data={sortAgents(agents).map((agent) => ({ value: agent.id, label: agent.name }))}
             value={agentId}
             onChange={(value) => value && selectAgent(value)}
             allowDeselect={false}
+            searchable
+            nothingFoundMessage="No agents match the search"
+            maxDropdownHeight={300}
             required
             disabled={creating}
             w="100%"
