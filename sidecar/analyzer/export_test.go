@@ -18,3 +18,6 @@ func SetRetryPacing(e *Evaluator, base, limit time.Duration) {
 func ShareCache(dst, src *Evaluator) {
 	dst.cache = src.cache
 }
+
+// DecodeStrict is decodeStrict, which reads the arguments of a rule call.
+var DecodeStrict = decodeStrict

@@ -319,12 +319,27 @@ type Schema struct {
 }
 
 // Property is one schema field. Format "enum" marks a string with Enum
-// values, as the Gemini schema requires.
+// values, as the Gemini schema requires. Items describes an array's
+// elements.
 type Property struct {
-	Type        string   `json:"type"`
-	Format      string   `json:"format,omitempty"`
-	Description string   `json:"description"`
-	Enum        []string `json:"enum,omitempty"`
+	Type        string    `json:"type"`
+	Format      string    `json:"format,omitempty"`
+	Description string    `json:"description"`
+	Enum        []string  `json:"enum,omitempty"`
+	Items       *Property `json:"items,omitempty"`
+}
+
+// property renders one tool argument, its array elements included.
+func property(p analyzer.ToolProperty) Property {
+	out := Property{Type: strings.ToUpper(p.Type), Description: p.Description, Enum: p.Enum}
+	if len(p.Enum) > 0 {
+		out.Format = "enum"
+	}
+	if p.Items != nil {
+		items := property(*p.Items)
+		out.Items = &items
+	}
+	return out
 }
 
 // ToolConfig forces a function call.
@@ -373,11 +388,7 @@ func BuildToolRequest(gen GenerationConfig, systemPrompt, content string, specs 
 	for _, s := range specs {
 		props := make(map[string]Property, len(s.Input.Properties))
 		for name, p := range s.Input.Properties {
-			prop := Property{Type: strings.ToUpper(p.Type), Description: p.Description, Enum: p.Enum}
-			if len(p.Enum) > 0 {
-				prop.Format = "enum"
-			}
-			props[name] = prop
+			props[name] = property(p)
 		}
 		decls = append(decls, FunctionDeclaration{
 			Name:        s.Name,

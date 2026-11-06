@@ -69,7 +69,7 @@ export function cssVariablesResolver(theme) {
       '--hoop-tint-pink': 'var(--mantine-color-pink-0)',
       '--hoop-tint-violet': 'var(--mantine-color-violet-0)',
       '--hoop-tint-indigo': 'var(--mantine-color-indigo-0)',
-      // The header of an open settings card (the analyzer's Approver, Hand-off).
+      // The header of an open settings card (the analyzer's risk level cards).
       '--hoop-tint-green': 'var(--mantine-color-green-0)',
       // A border that must stand out: a hovered card, a waiting frame, a form panel.
       '--hoop-border-strong': 'var(--mantine-color-gray-2)',

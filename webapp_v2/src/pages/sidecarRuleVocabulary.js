@@ -265,6 +265,39 @@ export function readLevelApprover(spec, level) {
   return null
 }
 
+// The AI rule options of a risk level (ENG-662), in `ai_rules.<level>` of an
+// analyzer spec: the guardrail and data masking rules the AI may apply to a
+// statement, and whether it may create a one-time rule. `key` is the field of
+// `ai_rules.<level>`; `license` the license feature the plane checks at the save.
+export const AI_RULE_EXISTING = 'existing_only'
+export const AI_RULE_EXISTING_AND_NEW = 'existing_and_new'
+export const AI_RULE_FEATURES = [
+  { key: 'guardrails', label: 'Guardrails', description: 'Block or limit risky statements', license: 'guardrails' },
+  { key: 'mask', label: 'Data Masking', description: 'Hide sensitive data in results', license: 'data-masking' },
+]
+
+// The actions that apply AI rules. Block refuses the statement first, and the
+// sidecar refuses `ai_rules` on block and defer. An unset level allows.
+const AI_RULE_ACTIONS = new Set(['', 'allow', 'warn', HANDOFF_ACTION])
+export const appliesAIRules = (action) => AI_RULE_ACTIONS.has(action ?? '') || isHoldAction(action)
+
+// One feature's options: null when the level does not set it. `rules` null
+// allows every library rule of that kind.
+function readAIRuleOptions(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  return {
+    mode: value.mode === AI_RULE_EXISTING_AND_NEW ? AI_RULE_EXISTING_AND_NEW : AI_RULE_EXISTING,
+    rules: Array.isArray(value.rules) ? value.rules : null,
+  }
+}
+
+// readLevelAIRules reads `ai_rules.<level>` of a stored analyzer spec:
+// {guardrails, mask}, each null when unset.
+export function readLevelAIRules(spec, level) {
+  const entry = spec?.ai_rules?.[level]
+  return { guardrails: readAIRuleOptions(entry?.guardrails), mask: readAIRuleOptions(entry?.mask) }
+}
+
 // How a held statement answers its client. Hold is the sidecar's default, so
 // the form stores nothing for it.
 export const REVIEW_MODE_HOLD = 'hold'

@@ -27,7 +27,8 @@ import (
 // (sidecar_spec, migration 000121), so there is no translation step to get
 // wrong and no rule that saves cleanly and arrives meaning something else.
 //
-// It only ever touches a listener's guardrails, mask and analyzer blocks.
+// It only ever touches a listener's guardrails, mask and analyzer blocks, and
+// the top-level rule_library the analyzer levels select from (ENG-662).
 // Those are exactly the sections sidecar/daemon/reload.go strips into its
 // per-lane rule document, so a rule edit hot-swaps into a running sidecar
 // instead of asking it to restart (ADR-0014).
@@ -101,7 +102,13 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 	default:
 		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	return foldSidecarRules(cfg, guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
+	if err != nil {
+		return composed, err
+	}
+	// After the fold: a level's AI rules come from the bound analyzer rule
+	// as well as from the stored listener block.
+	return composeRuleLibrary(db, orgID, composed)
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are
@@ -272,7 +279,7 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	// would make a rule unable to widen what it narrowed.
 	out.Trigger = rule.Trigger
 	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
-	out.Approvers, out.Handoffs = rule.Approvers, rule.Handoffs
+	out.Approvers, out.Handoffs, out.AIRules = rule.Approvers, rule.Handoffs, rule.AIRules
 	out.Prompt, out.Message = rule.Prompt, rule.Message
 
 	// The overrides, kept from the listener unless the rule names one. The

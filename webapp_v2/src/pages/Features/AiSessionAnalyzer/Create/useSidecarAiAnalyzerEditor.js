@@ -3,15 +3,20 @@ import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import {
+  AI_RULE_EXISTING,
+  AI_RULE_EXISTING_AND_NEW,
+  AI_RULE_FEATURES,
   APPROVER_AI,
   APPROVER_HUMAN,
   HANDOFF_CHOICES,
   HANDOFF_HOLD,
   REVIEW_ACTION,
   analyzerActionsFor,
+  appliesAIRules,
   isHandoffAction,
   isHoldAction,
   operationsFor,
+  readLevelAIRules,
   readLevelApprover,
   readLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
@@ -32,6 +37,40 @@ const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level
 // A hand-off level's prompt and allowed actions (ENG-661). A new one allows all.
 const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value) })
 const emptyHandoffs = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyHandoff()]))
+
+// One level's AI rule options (ENG-662), per feature: off by default. `rules`
+// null allows every library rule; `create` lets the AI create one-time rules.
+const emptyAIFeature = () => ({ on: false, rules: null, create: false })
+const emptyAIRules = () => Object.fromEntries(AI_RULE_FEATURES.map(({ key }) => [key, emptyAIFeature()]))
+const emptyAIRuleLevels = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyAIRules()]))
+
+// ai_rules.<level> of a stored spec (ENG-662), as the form's per-feature options.
+function readAIRules(spec, level) {
+  const read = readLevelAIRules(spec, level)
+  return Object.fromEntries(
+    AI_RULE_FEATURES.map(({ key }) => {
+      const opt = read[key]
+      if (!opt) return [key, emptyAIFeature()]
+      return [key, { on: true, rules: opt.rules, create: opt.mode === AI_RULE_EXISTING_AND_NEW }]
+    }),
+  )
+}
+
+// A level uses AI rules when its action applies them and one feature is on.
+const usesAIRules = (action, ai) => appliesAIRules(action) && AI_RULE_FEATURES.some(({ key }) => ai[key].on)
+
+// ai_rules.<level>: the features that are on. `rules` is written only for a
+// selection that is not every rule: absent allows all.
+function aiRulesToSpec(ai) {
+  const out = {}
+  for (const { key } of AI_RULE_FEATURES) {
+    const f = ai[key]
+    if (!f.on) continue
+    out[key] = { mode: f.create ? AI_RULE_EXISTING_AND_NEW : AI_RULE_EXISTING }
+    if (f.rules !== null) out[key].rules = [...f.rules]
+  }
+  return out
+}
 
 const EMPTY = {
   trigger_operations: [],
@@ -56,7 +95,7 @@ const EMPTY = {
 // can hold with no approvers entry gets them, so it keeps its meaning as a
 // human hold.
 function specToForm(spec, ruleName, reviewers) {
-  if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs() }
+  if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs(), ai: emptyAIRuleLevels() }
   const imported = Boolean(spec.approval_rule) && spec.approval_rule !== ruleName
   const form = {
     trigger_operations: spec.trigger?.operations ?? [],
@@ -72,10 +111,14 @@ function specToForm(spec, ruleName, reviewers) {
     match_ignore: spec.match_ignore ?? [],
     approval: emptyApprovals(),
     handoff: emptyHandoffs(),
+    ai: emptyAIRuleLevels(),
   }
   for (const level of LEVEL_KEYS) {
+    form.ai[level] = readAIRules(spec, level)
     const action = spec[level] ?? ''
-    form[level] = isHoldAction(action) ? REVIEW_ACTION : action
+    // An unset level allows; one that sets AI rules shows as Allow, so its
+    // options stay in view and are saved.
+    form[level] = isHoldAction(action) ? REVIEW_ACTION : action || (usesAIRules('', form.ai[level]) ? 'allow' : '')
     if (isHandoffAction(action)) form.handoff[level] = readLevelHandoff(spec, level) ?? emptyHandoff()
     if (!canHold(form, level)) continue
     const read = readLevelApprover(spec, level)
@@ -142,15 +185,19 @@ function formToSpec(f, ruleName) {
   if (Object.keys(trigger).length > 0) spec.trigger = trigger
   const handoffs = {}
   const approvers = {}
+  const aiRules = {}
   for (const level of LEVEL_KEYS) {
     if (f[level] === '') continue
     spec[level] = f[level]
     if (isHandoffAction(f[level])) handoffs[level] = handoffToSpec(f.handoff[level])
     const approver = canHold(f, level) ? approverToSpec(f.approval[level]) : null
     if (approver) approvers[level] = approver
+    const rules = appliesAIRules(f[level]) ? aiRulesToSpec(f.ai[level]) : {}
+    if (Object.keys(rules).length > 0) aiRules[level] = rules
   }
   if (Object.keys(handoffs).length > 0) spec.handoffs = handoffs
   if (Object.keys(approvers).length > 0) spec.approvers = approvers
+  if (Object.keys(aiRules).length > 0) spec.ai_rules = aiRules
   if (f.prompt.trim() !== '') spec.prompt = f.prompt.trim()
   if (f.message.trim() !== '') spec.message = f.message.trim()
   if (f.max_calls !== '' && f.max_calls !== null) spec.max_calls = Number(f.max_calls)
@@ -171,6 +218,32 @@ function formToSpec(f, ruleName) {
 const secToMinutes = (s) => (s ? s / 60 : '')
 const minutesToSec = (m) => (m === '' || m == null ? 0 : Math.round(Number(m) * 60))
 
+// The names of one feature's rule_library entries in a sidecar's stored
+// document. A mask list that is not a list holds no name, as the gateway reads it.
+function sidecarLibraryNames(sidecar, key) {
+  const entries = sidecar.configuration?.rule_library?.[key]
+  if (!Array.isArray(entries)) return []
+  return entries.map((r) => r?.name).filter((n) => typeof n === 'string' && n !== '')
+}
+
+// The rule_library entries of one feature that every sidecar of targets holds.
+// The gateway accepts these names as it accepts a library rule's
+// (ValidateAnalyzerAIRules): an entry only some targets hold is refused. A
+// rule bound nowhere, or to a sidecar not in the list, has none.
+function targetLibraryEntries(targets, sidecars, key) {
+  const ids = [...new Set(targets.map((t) => t.sidecar_id))]
+  if (ids.length === 0) return []
+  const docs = ids.map((id) => sidecars.find((sc) => sc.id === id || sc.name === id))
+  if (docs.some((sc) => !sc)) return []
+  const [first, ...rest] = docs.map((sc) => new Set(sidecarLibraryNames(sc, key)))
+  const description =
+    docs.length === 1 ? `From the file of sidecar ${docs[0].name}` : 'From the file of every target sidecar'
+  return [...first]
+    .filter((name) => rest.every((names) => names.has(name)))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, description }))
+}
+
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
@@ -178,6 +251,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const updateRule = useAiSessionAnalyzerStore((s) => s.updateRule)
   const deleteRule = useAiSessionAnalyzerStore((s) => s.deleteRule)
   const sidecars = useSidecarStore((s) => s.sidecars)
+  const ruleLibrary = useAiSessionAnalyzerStore((s) => s.ruleLibrary)
+  const ruleLibraryStatus = useAiSessionAnalyzerStore((s) => s.ruleLibraryStatus)
+  const fetchRuleLibrary = useAiSessionAnalyzerStore((s) => s.fetchRuleLibrary)
 
   const [name, setName] = useState(stored?.name ?? '')
   const [description, setDescription] = useState(stored?.description ?? '')
@@ -233,6 +309,54 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
     })
   }
+  // The rules a level's feature may name: the library's and the target
+  // sidecars' own (targetLibraryEntries).
+  const sidecarLibrary = useMemo(
+    () => Object.fromEntries(AI_RULE_FEATURES.map(({ key }) => [key, targetLibraryEntries(targets, sidecars, key)])),
+    [targets, sidecars],
+  )
+  const knownRulesFor = (key) => {
+    const library = ruleLibrary[key]
+    const names = new Set(library.map((r) => r.name))
+    return [...library, ...sidecarLibrary[key].filter((r) => !names.has(r.name))]
+  }
+  // Plus the level's stored names neither holds, so they can be unselected.
+  const aiRuleOptionsFor = (level, key) => {
+    const known = knownRulesFor(key)
+    const names = new Set(known.map((r) => r.name))
+    const stale = (form.ai[level][key].rules ?? [])
+      .filter((n) => !names.has(n))
+      .map((name) => ({
+        name,
+        description:
+          'No rule of your list with sidecar rules has this name, nor does the file of every target sidecar. Unselect it to save: the gateway refuses this name.',
+      }))
+    return [...known, ...stale]
+  }
+  const setAIFeature = (level, key, patch) =>
+    setForm((f) => ({
+      ...f,
+      ai: { ...f.ai, [level]: { ...f.ai[level], [key]: { ...f.ai[level][key], ...patch } } },
+    }))
+  // A selection that is exactly the known rules, loaded and non-empty, is
+  // "all" (null), which also covers the rules added later: the sidecar
+  // applies every rule it serves. Anything else, an empty selection or one
+  // with stale names included, stays a list. "Select all" is the explicit way
+  // to choose all.
+  const toggleAIRule = (level, key, name) => {
+    const options = aiRuleOptionsFor(level, key).map((r) => r.name)
+    const current = form.ai[level][key].rules
+    const next = new Set(current ?? options)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    const known = knownRulesFor(key)
+    const all =
+      ruleLibraryStatus === 'success' &&
+      known.length > 0 &&
+      next.size === known.length &&
+      known.every((r) => next.has(r.name))
+    setAIFeature(level, key, { rules: all ? null : options.filter((n) => next.has(n)) })
+  }
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
   const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
@@ -283,6 +407,10 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    fetchRuleLibrary()
+  }, [fetchRuleLibrary])
 
   const protocol = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
@@ -373,6 +501,10 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setAllowed,
     setApprover,
     groupOptionsFor,
+    ruleLibraryStatus,
+    aiRuleOptionsFor,
+    setAIFeature,
+    toggleAIRule,
     pendingMinutes,
     editPendingMinutes,
     approvalMinutes,
