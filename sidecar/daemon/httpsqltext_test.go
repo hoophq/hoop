@@ -11,7 +11,7 @@ import (
 
 // clickhouseSQLBlock is the http.sql block the README shows for ClickHouse's
 // HTTP interface, as JSON, so the test also pins the key names.
-const clickhouseSQLBlock = `{"dialect": "clickhouse", "params": {"/": "query"}}`
+const clickhouseSQLBlock = `{"dialect": "clickhouse", "params": {"/**": "query"}}`
 
 func clickhouseSQLConfig(t *testing.T) *HTTPSQLConfig {
 	t.Helper()
@@ -45,8 +45,8 @@ func TestHTTPSQLParamsAndTextValidation(t *testing.T) {
 		{"parameter with a separator", func(s *HTTPSQLConfig) { s.Params = map[string]string{"/": "query&x"} }, nil, "is not a URL parameter name"},
 		{"redacted by default", func(s *HTTPSQLConfig) { s.Params = map[string]string{"/": "Token"} }, nil, "redacts"},
 		{"redacted by the lane", func(s *HTTPSQLConfig) {}, []string{"QUERY"}, "redacts"},
-		{"params and text", func(s *HTTPSQLConfig) { s.Text = []string{"/"} }, nil, `"/" is in both http.sql.params and http.sql.text`},
-		{"fields and params", func(s *HTTPSQLConfig) { s.Fields = map[string]string{"/": "statement"} }, nil, `"/" is in both http.sql.fields and http.sql.params`},
+		{"params and text", func(s *HTTPSQLConfig) { s.Text = []string{"/**"} }, nil, `"/**" is in both http.sql.params and http.sql.text`},
+		{"fields and params", func(s *HTTPSQLConfig) { s.Fields = map[string]string{"/**": "statement"} }, nil, `"/**" is in both http.sql.fields and http.sql.params`},
 		{"tools without fields", func(s *HTTPSQLConfig) { s.Tools = []string{"execute_sql"} }, nil, "need http.sql.fields"},
 		{"refuse without fields", func(s *HTTPSQLConfig) {
 			s.Refuse, s.RefuseMessage = []string{"disposition=EXTERNAL_LINKS"}, "ask for INLINE"

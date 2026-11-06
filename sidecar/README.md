@@ -4679,7 +4679,8 @@ in both, joined by a line feed. Without these keys the lane's statement is
   captures `Content-Encoding` to read the body and records it only when
   `headers` lists it.
 
-A lane in front of ClickHouse's HTTP interface that allows reads only:
+A lane in front of ClickHouse's HTTP interface that allows reads only. The
+pattern is `/**`, not `/`: ClickHouse also runs `/query?query=`.
 
 ```yaml
 listeners:
@@ -4691,7 +4692,7 @@ listeners:
       sql:
         dialect: clickhouse
         params:
-          /: query
+          /**: query
     guardrails:
       rules:
         - name: read-only

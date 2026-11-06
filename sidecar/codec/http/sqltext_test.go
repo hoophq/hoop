@@ -19,7 +19,7 @@ func clickhouseSQL() *codechttp.SQLOptions {
 	return &codechttp.SQLOptions{
 		Dialect:       lexer.ClickHouse,
 		DialectName:   "clickhouse",
-		Params:        map[string]string{"/": "query"},
+		Params:        map[string]string{"/**": "query"},
 		MatchResource: policy.MatchResource,
 	}
 }
@@ -84,6 +84,12 @@ func TestSQLParamReadsEveryClickHouseShape(t *testing.T) {
 				t.Errorf("read as incomplete: %s", r)
 			}
 		})
+	}
+
+	// ClickHouse 25.3 runs /query?query= as it runs /?query=.
+	sql := sqlOf(t, codechttp.Options{SQL: clickhouseSQL()}, request("POST", "/query?query=DROP%20TABLE%20t", "", ""))
+	if sql.Operation != inspect.OpDrop || sql.Metadata[codechttp.MetadataSQLResource] != "/query" {
+		t.Errorf("/query: %q %s %v", sql.Text, sql.Operation, sql.Metadata)
 	}
 }
 
@@ -236,7 +242,7 @@ func TestSQLSourcesResolveByTheLongestPattern(t *testing.T) {
 	}
 
 	o = clickhouseSQL()
-	o.Text = []string{"/"}
+	o.Text = []string{"/**"}
 	_, err = decodeClient(t, codechttp.New(codechttp.Options{SQL: o}), request("POST", "/", "", "SELECT 1"))
 	if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), "more than one") {
 		t.Errorf("a pattern in params and text: err = %v", err)
