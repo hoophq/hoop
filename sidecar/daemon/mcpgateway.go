@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -144,6 +145,12 @@ type MCPLaneSession interface {
 	// left out of it.
 	ToolList(ctx context.Context, tools []MCPToolInfo, hidden []string) MCPVerdict
 	Record(ctx context.Context, activity string, attrs map[string]string)
+	// Mask rewrites one result string with the session's mask rules and
+	// returns the entities it masked. An error withholds the result.
+	Mask(text string) (out string, entities []string, count int, err error)
+	// RecordMasked audits what Mask rewrote in one result. An error
+	// withholds the result.
+	RecordMasked(ctx context.Context, entities []string, count int) error
 	Close(ctx context.Context)
 }
 
@@ -173,6 +180,9 @@ type MCPGatewayLane struct {
 	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
+	// MaskResults is set when the lane has mask rules: tool and resource
+	// results then pass MCPLaneSession.Mask. Fixed when the lane is built.
+	MaskResults bool
 	// Telemetry is the lane's recorder; nil without a telemetry block.
 	Telemetry telem.LaneRecorder
 	// Open starts the sidecar session for one MCP session. Nil on a
@@ -266,6 +276,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		DownstreamTLS:      downstream,
 		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaskResults:        ln.masker != nil,
 		Telemetry:          ln.telemetry,
 		Log:                laneLog,
 	}
@@ -437,6 +448,31 @@ func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[
 	if err := s.g.RecordActivity(ctx, activity, attrs); err != nil {
 		s.log.Warn("mcp activity not recorded", "activity", activity, "error", err)
 	}
+}
+
+var errMCPSessionClosed = errors.New("the sidecar session is closed")
+
+func (s *mcpLaneSession) Mask(text string) (string, []string, int, error) {
+	s.mu.Lock()
+	closed, m := s.closed, s.g.Masker()
+	s.mu.Unlock()
+	switch {
+	case closed:
+		return "", nil, 0, errMCPSessionClosed
+	case m == nil:
+		return "", nil, 0, errors.New("the sidecar session has no masker")
+	}
+	out, entities, n := m.Mask([]byte(text))
+	return string(out), entities, n, nil
+}
+
+func (s *mcpLaneSession) RecordMasked(ctx context.Context, entities []string, count int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return errMCPSessionClosed
+	}
+	return s.g.RecordMasked(ctx, entities, count)
 }
 
 func (s *mcpLaneSession) Close(ctx context.Context) {
