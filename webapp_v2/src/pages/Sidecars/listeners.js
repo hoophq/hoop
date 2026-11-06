@@ -16,7 +16,7 @@ const str = (v) => (typeof v === 'string' ? v : '')
 // Protocols only some builds link. The plane refuses one to a sidecar whose
 // handshake did not report it, and accepts any for a sidecar that never
 // handshaked (CheckSidecarCapabilities); `capabilities` is null then.
-const LINKED_PROTOCOLS = ['mcp']
+const LINKED_PROTOCOLS = ['ica', 'mcp']
 
 export function protocolOptions(current, capabilities = null) {
   const offered = (p) =>

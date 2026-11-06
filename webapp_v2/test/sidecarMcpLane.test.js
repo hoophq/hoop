@@ -12,7 +12,9 @@ vi.mock('@/services/dataMasking', () => ({ dataMaskingService: {} }))
 vi.mock('@/services/guardrails', () => ({ guardrailsService: {} }))
 
 const types = (protocols) => ruleTypesFor(protocols).map((t) => t.value)
-const offers = (current, capabilities) => protocolOptions(current, capabilities).some((o) => o.value === 'mcp')
+const offersProtocol = (protocol, current, capabilities) =>
+  protocolOptions(current, capabilities).some((o) => o.value === protocol)
+const offers = (current, capabilities) => offersProtocol('mcp', current, capabilities)
 
 describe('an mcp lane', () => {
   it('has an icon', () => {
@@ -54,6 +56,14 @@ describe('an mcp lane', () => {
     expect(offers('', null)).toBe(true)
     // A lane already on mcp keeps its protocol in the picker.
     expect(offers('mcp', [])).toBe(true)
+  })
+
+  it('gates ica the same way', () => {
+    expect(offersProtocol('ica', '', ['protocol:ica'])).toBe(true)
+    expect(offersProtocol('ica', '', ['protocol:mcp', 'protocol:postgres'])).toBe(false)
+    expect(offersProtocol('ica', '', null)).toBe(true)
+    expect(offersProtocol('ica', 'ica', [])).toBe(true)
+    expect(offersProtocol('postgres', '', [])).toBe(true)
   })
 
   it('scopes an mcp_tool rule to call, the one operation it matches', () => {
