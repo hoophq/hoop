@@ -464,9 +464,11 @@ type Decision struct {
 // each takes one caller at a time. Use one Gate per connection.
 //
 // On a gate from NewStatementGate, EvaluateStatement, RecordActivity,
-// RecordMasked, Start, Adopt, Session, Stats and Close are safe for concurrent
-// use: mu guards the state they share. A statement judged after Close is
-// recorded after session_end, so a caller ends its calls first.
+// RecordMasked, Start, Session, Stats and Close are safe for concurrent use:
+// mu guards the state they share. Adopt is not: audit reads the session it
+// writes without the lock, so it runs before the first statement. A statement
+// judged after Close is recorded after session_end, so a caller ends its
+// calls first.
 //
 // The Policy, Audit, Masker, Metrics, Telemetry and Settle it holds are
 // shared and must themselves be concurrency-safe.
