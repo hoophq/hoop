@@ -224,6 +224,33 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 	}
 }
 
+// A mask rule that names columns never fires on an mcp lane, so validate
+// refuses it whether the lane holds it or inherits it. The lane's own rules
+// or mask: {rules: []} replace inherited ones.
+func TestAnMCPLaneRefusesColumnMaskRules(t *testing.T) {
+	const columns = `{"rules":[{"name":"by-column","columns":["email"]}]}`
+	const labeled = `{"rules":[{"name":"labeled","entities":["US_SSN"],"columns":["ssn"]}]}`
+	const entities = `{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"]}]}`
+	open := strings.TrimSuffix(mcpLane, "}")
+	for name, doc := range map[string]string{
+		"own":         `{"listeners":[` + open + `,"mask":` + columns + `}]}`,
+		"own labeled": `{"listeners":[` + open + `,"mask":` + labeled + `}]}`,
+		"inherited":   `{"mask":` + columns + `,"listeners":[` + mcpLane + `]}`,
+	} {
+		if _, err := LoadConfigBytes([]byte(doc)); err == nil || !strings.Contains(err.Error(), "names columns") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, doc := range map[string]string{
+		"opted out":    `{"mask":` + columns + `,"listeners":[` + open + `,"mask":{"rules":[]}}]}`,
+		"own replaces": `{"mask":` + columns + `,"listeners":[` + open + `,"mask":` + entities + `}]}`,
+	} {
+		if _, err := LoadConfigBytes([]byte(doc)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 // An mcp lane masks results with the mask rules it resolves, its own or the
 // top-level ones; mask: {rules: []} opts out.
 func TestAnMCPLaneMasksWithItsMaskRules(t *testing.T) {

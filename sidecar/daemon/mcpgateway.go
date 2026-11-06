@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -58,6 +59,36 @@ func (m *MCPGatewayConfig) transport() string {
 		return MCPTransportStreamableHTTP
 	}
 	return m.Transport
+}
+
+// validateMCPMasking refuses a resolved mask rule that names columns: the
+// redactor hands the lane a string without its key, so the rule never fires.
+func validateMCPMasking(mc MaskConfig, name string) []string {
+	if !mc.hasRules() {
+		return nil
+	}
+	var rules []struct {
+		Name    string   `json:"name"`
+		Columns []string `json:"columns"`
+	}
+	if err := json.Unmarshal(mc.Rules, &rules); err != nil {
+		return nil // the plugin reports shape errors
+	}
+	var problems []string
+	for i, r := range rules {
+		if len(r.Columns) == 0 {
+			continue
+		}
+		where := fmt.Sprintf("mask rule %d", i+1)
+		if r.Name != "" {
+			where = fmt.Sprintf("mask rule %q", r.Name)
+		}
+		problems = append(problems, fmt.Sprintf(
+			"%s: %s names columns, which an mcp listener never matches: it masks result strings without their keys. "+
+				"Name entities instead, or give this listener its own mask rules, or mask: {rules: []}, to replace inherited ones",
+			name, where))
+	}
+	return problems
 }
 
 func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
