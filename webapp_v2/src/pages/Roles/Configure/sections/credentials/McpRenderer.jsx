@@ -36,6 +36,7 @@ const MCP_FIELDS = [
     key: 'remote_url',
     label: 'MCP Server URL',
     required: true,
+    type: 'text',
     placeholder: 'e.g. https://mcp.linear.app',
   },
 ]

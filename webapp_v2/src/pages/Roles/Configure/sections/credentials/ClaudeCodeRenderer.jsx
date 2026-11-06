@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Stack, Title } from '@mantine/core'
 import { Info } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -8,7 +8,7 @@ import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/share
 import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/HttpHeaders'
 import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
-import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
+import { useCredentialsStore, useFormState } from '@/pages/Roles/Configure/sections/credentials/store'
 import { decodeSecretValue, encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 // Claude Code httpproxy connection. Catalog's `httpproxy/claude-code`
@@ -29,6 +29,7 @@ const ANTHROPIC_FIELDS = [
     key: 'remote_url',
     label: 'Anthropic API URL',
     required: true,
+    type: 'text',
     placeholder: 'https://api.anthropic.com',
   },
   {
@@ -47,12 +48,14 @@ const VERTEX_FIELDS = [
     key: 'GCP_REGION',
     label: 'GCP Region',
     required: true,
+    type: 'text',
     placeholder: 'us-east5',
   },
   {
     key: 'GCP_PROJECT_ID',
     label: 'GCP Project ID',
     required: true,
+    type: 'text',
     placeholder: 'my-gcp-project',
   },
   {
@@ -144,7 +147,7 @@ export default function ClaudeCodeRenderer({
     () => (isVertexConnection(connection) ? 'vertex' : 'anthropic'),
     [connection],
   )
-  const [provider, setProvider] = useState(initialProvider)
+  const [provider, setProvider] = useFormState('claudeCodeProvider', initialProvider)
   const flagOn = useUserStore((s) => !!s.featureFlags?.[VERTEX_FLAG])
   const showProviderSelect = flagOn || initialProvider === 'vertex'
 

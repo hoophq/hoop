@@ -489,6 +489,19 @@ describe('POST /resources matches the CLJS wizard: Claude Code, MCP, MCP Gateway
     expect(defaultAuthMode(entry)).toBe(mode)
   })
 
+  it('keeps the picked provider, server and auth mode across Back and Next', () => {
+    start('mcpproxy', 'gw-back')
+    const credentials = role(0).credentials
+    credentials.getState().setFormState('mcpServer', 'context7')
+    credentials.getState().setFormState('mcpAuthMode', 'oauth')
+    typeKey(0, 'envvar:HEADER_CONTEXT7_API_KEY', 'c7')
+    store().setStep('agent')
+    store().goToRoles()
+    expect(role(0).credentials).toBe(credentials)
+    expect(credentials.getState().formState).toEqual({ mcpServer: 'context7', mcpAuthMode: 'oauth' })
+    expect(secretOf(credentials)['envvar:HEADER_CONTEXT7_API_KEY']).toBe(btoa('c7'))
+  })
+
   it('warns about an MCP OAuth login the gateway did not attach', async () => {
     start('mcpproxy', 'gw-oauth')
     useResourceSetupStore.setState({ roleOptions: 'ready' })

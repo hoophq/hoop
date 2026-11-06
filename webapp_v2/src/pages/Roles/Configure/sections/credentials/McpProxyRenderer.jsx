@@ -39,7 +39,7 @@ import {
   staticHeaderFor,
   textSetting,
 } from '@/pages/Roles/Configure/utils/mcpGateway'
-import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
+import { useCredentialsStore, useFormState } from '@/pages/Roles/Configure/sections/credentials/store'
 import { connectionsService } from '@/services/connections'
 import { showSnackbar } from '@/utils/snackbar'
 
@@ -69,9 +69,21 @@ const URL_FIELD = [
     key: 'remote_url',
     label: 'MCP Server URL',
     required: true,
+    type: 'text',
     placeholder: 'e.g. https://mcp.linear.app/mcp',
   },
 ]
+
+// The catalog is the gateway's built-in list: one request per page load, not
+// one per role or per remount.
+let catalogRequest = null
+function loadCatalog() {
+  catalogRequest ??= connectionsService.mcpCatalog().catch((err) => {
+    catalogRequest = null
+    throw err
+  })
+  return catalogRequest
+}
 
 const POPUP_TIMEOUT_MS = 5 * 60 * 1000
 const POPUP_POLL_MS = 500
@@ -168,7 +180,7 @@ export default function McpProxyRenderer({
   const commandLine = (commandDraft || []).join(' ')
 
   const [catalog, setCatalog] = useState({ status: 'idle', entries: [] })
-  const [server, setServer] = useState(null)
+  const [server, setServer] = useFormState('mcpServer', null)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [busy, setBusy] = useState(false)
@@ -180,8 +192,7 @@ export default function McpProxyRenderer({
   useEffect(() => {
     let cancelled = false
     setCatalog({ status: 'loading', entries: [] })
-    connectionsService
-      .mcpCatalog()
+    loadCatalog()
       .then((entries) => {
         if (!cancelled) setCatalog({ status: 'ready', entries: entries || [] })
       })
@@ -245,7 +256,7 @@ export default function McpProxyRenderer({
   const storedAuthMode = createMode
     ? defaultAuthMode(entry)
     : deriveAuthMode({ secret, granted, entry })
-  const [authModeOverride, setAuthModeOverride] = useState(null)
+  const [authModeOverride, setAuthModeOverride] = useFormState('mcpAuthMode', null)
   const authOptions = authModesFor(entry)
   const authMode =
     authModeOverride && authOptions.some((o) => o.value === authModeOverride)
@@ -262,10 +273,10 @@ export default function McpProxyRenderer({
 
   // Extra header rows stay staged under placeholder keys, so only the
   // credential the auth widget collected matches here.
-  const forgetCredential = () =>
-    Object.keys(stagedSecrets)
-      .filter((k) => k.startsWith(HEADER_PREFIX) && !PLACEHOLDER_KEY_RE.test(k))
-      .forEach((k) => cancelSecretChange(k))
+  const stagedCredentialKeys = Object.keys(stagedSecrets).filter(
+    (k) => k.startsWith(HEADER_PREFIX) && !PLACEHOLDER_KEY_RE.test(k),
+  )
+  const forgetCredential = () => stagedCredentialKeys.forEach((k) => cancelSecretChange(k))
 
   // A completed login this session, or a grant the gateway already holds.
   // Both mean the credential renews itself; a pasted token never does.
@@ -891,7 +902,7 @@ export default function McpProxyRenderer({
         <HttpHeaders
           connection={connection}
           availableSources={availableSources}
-          excludeKeys={[credentialKey]}
+          excludeKeys={createMode ? [credentialKey, ...stagedCredentialKeys] : [credentialKey]}
           hideRoleInfo={hideRoleInfo}
         />
       )}

@@ -112,9 +112,11 @@ export function createRoleCredentialsStore({ type, subtype }) {
     hideRoleInfo: false,
     parkedPass: null,
     mcpOAuthFlowId: null,
+    formState: {},
     ...credentialsSlice(set),
     setDraft: (patch) => set((state) => ({ drafts: { ...state.drafts, ...patch } })),
     setMcpOAuthFlowId: (mcpOAuthFlowId) => set({ mcpOAuthFlowId }),
+    setFormState: (key, value) => set((state) => ({ formState: { ...state.formState, [key]: value } })),
     // The SSH form hides the credential of the other auth method, so it is not
     // sent. CLJS sent a password typed before a switch to key.
     chooseSshAuth: (method) => get().cancelSecretChange(method === 'password' ? SSH_KEY_KEY : PASS_KEY),
