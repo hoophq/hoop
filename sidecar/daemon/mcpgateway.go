@@ -62,8 +62,16 @@ func (m *MCPGatewayConfig) transport() string {
 	return m.Transport
 }
 
-// columnMaskRules splits off the rules that name columns: an mcp lane masks
-// strings without their keys, so it never matches them. ok is false when the
+// MaskRuleNamesColumns reports a mask rule an mcp lane never matches: it masks
+// strings without their keys. The control plane uses it to skip the same rules.
+func MaskRuleNamesColumns(rule json.RawMessage) bool {
+	var r struct {
+		Columns []string `json:"columns"`
+	}
+	return json.Unmarshal(rule, &r) == nil && len(r.Columns) > 0
+}
+
+// columnMaskRules splits off the rules that name columns. ok is false when the
 // rules do not parse; the plugin reports that.
 func columnMaskRules(raw json.RawMessage) (kept [][]byte, columns []string, ok bool) {
 	var rules []json.RawMessage
@@ -71,21 +79,25 @@ func columnMaskRules(raw json.RawMessage) (kept [][]byte, columns []string, ok b
 		return nil, nil, false
 	}
 	for i, r := range rules {
-		var rule struct {
-			Name    string   `json:"name"`
-			Columns []string `json:"columns"`
-		}
-		if json.Unmarshal(r, &rule) != nil || len(rule.Columns) == 0 {
+		if !MaskRuleNamesColumns(r) {
 			kept = append(kept, r)
 			continue
 		}
 		label := fmt.Sprintf("mask rule %d", i+1)
-		if rule.Name != "" {
-			label = fmt.Sprintf("mask rule %q", rule.Name)
+		if name := maskRuleName(r); name != "" {
+			label = fmt.Sprintf("mask rule %q", name)
 		}
 		columns = append(columns, label)
 	}
 	return kept, columns, true
+}
+
+func maskRuleName(rule json.RawMessage) string {
+	var r struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(rule, &r)
+	return r.Name
 }
 
 // ValidateMCPMasking refuses a rule that names columns in an mcp lane's own

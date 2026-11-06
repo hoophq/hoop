@@ -354,21 +354,28 @@ func TestValidateSpecForLane(t *testing.T) {
 	}
 }
 
-// The plane folds a bound mask rule into the mcp lane's own mask block. It
-// accepts only what the sidecar loads, so a served document never stops it.
-func TestAMaskRuleBoundToAnMCPListenerLoadsOnTheSidecar(t *testing.T) {
-	lane := daemon.ListenerConfig{Name: "tools", Protocol: "mcp", Listen: "127.0.0.1:18901", Upstream: "https://h/mcp"}
-	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{lane}}
-	for name, spec := range map[string]string{
-		"columns":  `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
-		"entities": `{"rules":[{"name":"ssn","entities":["US_SSN"],"strategy":"redact"}]}`,
+// The sidecar refuses a column rule in an mcp lane's own mask block. The
+// served document never puts one there, whatever route bound it: the mcp
+// lane masks with the entity rules only, and a postgres lane keeps both.
+func TestAServedMCPLaneNeverHoldsAColumnMaskRule(t *testing.T) {
+	const columnRule = `{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}`
+	const entityRule = `{"name":"email","entities":["EMAIL_ADDRESS"],"strategy":"redact"}`
+	column := models.BoundRule{RuleName: "ssn-column", Spec: json.RawMessage(`{"rules":[` + columnRule + `]}`)}
+	entity := models.BoundRule{RuleName: "email", Spec: json.RawMessage(`{"rules":[` + entityRule + `]}`)}
+	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{
+		{Name: "appdb", Protocol: "postgres", Listen: "127.0.0.1:15432", Upstream: "db:5432"},
+		{Name: "tools", Protocol: "mcp", Listen: "127.0.0.1:18901", Upstream: "https://h/mcp"},
+	}}
+	on := func(b models.BoundRule, lane string) models.BoundRule { b.ListenerName = lane; return b }
+	for name, c := range map[string]struct {
+		bound      []models.BoundRule
+		mcp, appdb string
+	}{
+		"columns only":         {[]models.BoundRule{on(column, "tools"), on(column, "appdb")}, "", `[` + columnRule + `]`},
+		"columns and entities": {[]models.BoundRule{on(column, "tools"), on(entity, "tools"), on(column, "appdb"), on(entity, "appdb")}, `[` + entityRule + `]`, `[` + columnRule + `,` + entityRule + `]`},
+		"entities":             {[]models.BoundRule{on(entity, "tools")}, `[` + entityRule + `]`, ""},
 	} {
-		raw := json.RawMessage(spec)
-		if err := ValidateSidecarRuleSpec(SidecarRuleMask, name, raw); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		bindErr := validateSpecForLane(SidecarRuleMask, name, raw, "sc", lane, false)
-		composed, err := foldSidecarRules(cfg, nil, []models.BoundRule{{RuleName: name, ListenerName: "tools", Spec: raw}}, nil)
+		composed, err := foldSidecarRules(cfg, nil, c.bound, nil)
 		if err != nil {
 			t.Fatalf("%s: fold: %v", name, err)
 		}
@@ -376,9 +383,17 @@ func TestAMaskRuleBoundToAnMCPListenerLoadsOnTheSidecar(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		loadErr := daemon.CheckConfigBytes(served)
-		if (bindErr == nil) != (loadErr == nil) {
-			t.Errorf("%s: the plane says %v, the sidecar says %v", name, bindErr, loadErr)
+		if err := daemon.CheckConfigBytes(served); err != nil {
+			t.Errorf("%s: the sidecar refuses the served document: %v", name, err)
+		}
+		for i, want := range []string{c.appdb, c.mcp} {
+			got := ""
+			if m := composed.Listeners[i].Mask; m != nil {
+				got = string(m.Rules)
+			}
+			if got != want {
+				t.Errorf("%s: %s mask %s, want %s", name, composed.Listeners[i].Name, got, want)
+			}
 		}
 	}
 }

@@ -360,6 +360,8 @@ func listBoundRules(db *gorm.DB, kind SidecarRuleKind, orgID uuid.UUID, sidecarI
 	return nil, fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
 
+func isMCPListener(l daemon.ListenerConfig) bool { return strings.EqualFold(l.Protocol, "mcp") }
+
 // validateSpecForLane runs the refusals that depend on which lane the rule
 // lands on. Everything here is a startup refusal on the sidecar.
 //
@@ -384,7 +386,7 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 				ruleName, where, strings.Join(problems, "; "))
 		}
 	case SidecarRuleMask:
-		isMCP := strings.EqualFold(lane.Protocol, "mcp")
+		isMCP := isMCPListener(lane)
 		if !isSSH && !isMCP {
 			return nil
 		}
