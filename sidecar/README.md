@@ -4668,6 +4668,8 @@ in both, joined by a line feed. Without these keys the lane's statement is
   is rows the server parses with that format, never SQL. The statement is
   judged alone, as an insert on its table, and `http.sql_inline_rows` marks
   it. The rows can be binary, compressed or longer than `max_body_bytes`.
+  `FORMAT Values` is the exception: its rows can be expressions with scalar
+  subqueries, so it is read whole, as a `VALUES` clause is.
 - **Unreadable is `unknown`.** A multipart body (ClickHouse reads a form
   field as a parameter), a body under `Content-Encoding`, a body cut at
   `max_body_bytes`, a malformed percent-escape and bytes that are not text

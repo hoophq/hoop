@@ -1,5 +1,7 @@
 package lexer
 
+import "strings"
+
 // InsertData splits a ClickHouse INSERT whose rows follow its FORMAT clause,
 // `INSERT INTO t FORMAT JSONEachRow\n{"id":1}`, at the end of the format name.
 // The server parses what follows with that format, never as SQL, so a caller
@@ -34,7 +36,9 @@ func InsertData(sql string, d Dialect) (head string, ok bool) {
 			return "", false
 		case tok.isWord("format"):
 			name, more := s.next()
-			if !more || s.incomplete != "" || !name.isName() {
+			// Values rows can be expressions with scalar subqueries, so
+			// they are read as SQL like a VALUES clause.
+			if !more || s.incomplete != "" || !name.isName() || strings.EqualFold(name.Text, "values") {
 				return "", false
 			}
 			return sql[:s.pos], true
