@@ -158,7 +158,7 @@ require (
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/hoophq/libhoop-ica v0.8.0 // indirect
-	github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e // indirect
+	github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect

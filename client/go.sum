@@ -350,8 +350,8 @@ github.com/hoophq/libhoop-ica v0.8.0 h1:oC8ikk4JQ2JYlAysgLxACio12j/fUWOmUISD1nK6
 github.com/hoophq/libhoop-ica v0.8.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e h1:lrqN7AeM95TVYfyoSxDnXxNBdGibuC3evnoNJfV4CQQ=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c h1:GQpTSl4SHNSZAQ0URjFDL/emIGx7h5cdn2dol4KuMQ8=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

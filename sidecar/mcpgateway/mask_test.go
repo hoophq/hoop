@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
@@ -185,5 +186,77 @@ func TestALaneWithoutMaskRulesForwardsResultsAsSent(t *testing.T) {
 	c := startMaskLane(t, ln, false)
 	if body := c.call(t, 3, "customer_lookup", `{"id":"42"}`); !strings.Contains(body, "jane.doe@example.com") {
 		t.Fatalf("result: %s", body)
+	}
+}
+
+// rawUpstream answers as an MCP server whose tools/call returns the raw
+// result its "result" argument names.
+func rawUpstream(t *testing.T) string {
+	t.Helper()
+	results := map[string]string{
+		"object": `{"content":{"type":"text","text":"Customer jane.doe@example.com"}}`,
+		"array":  `[{"type":"text","text":"Customer jane.doe@example.com"}]`,
+		"ok":     `{"content":[{"type":"text","text":"Customer jane.doe@example.com"}]}`,
+	}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params struct {
+				Arguments struct {
+					Result string `json:"result"`
+				} `json:"arguments"`
+			} `json:"params"`
+		}
+		if json.NewDecoder(r.Body).Decode(&req) != nil || req.ID == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		result := `{}`
+		switch req.Method {
+		case "initialize":
+			result = `{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"raw","version":"1"}}`
+		case "tools/call":
+			result = results[req.Params.Arguments.Result]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "raw-1")
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":%s}`, req.ID, result)
+	}))
+	t.Cleanup(up.Close)
+	return up.URL + "/mcp"
+}
+
+// A result that is not an object, or a content field that is not an array,
+// is withheld with -32010 and quotes nothing of it. The session survives.
+func TestAResultOfAnUnexpectedTypeIsWithheld(t *testing.T) {
+	ln := &testLane{mask: stubMask}
+	_, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: rawUpstream(t),
+		Transport: daemon.MCPTransportStreamableHTTP, MaskResults: true, Open: ln.open})
+	c := &client{url: url}
+	c.init(t)
+	for i, shape := range []string{"object", "array"} {
+		body := c.call(t, 3+i, "lookup", fmt.Sprintf(`{"result":%q}`, shape))
+		var r struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(body), &r); err != nil || r.Error == nil || r.Error.Code != -32010 ||
+			!strings.Contains(r.Error.Message, "unexpected type") || hasPII(body) {
+			t.Fatalf("a %s result: %s", shape, body)
+		}
+	}
+	body := c.call(t, 5, "lookup", `{"result":"ok"}`)
+	if r := decodeReply(t, body); r.Error != nil || len(r.Result.Content) != 1 || r.Result.Content[0].Text != "Customer <EMAIL_ADDRESS>" {
+		t.Fatalf("the next call on the session: %s", body)
+	}
+	if _, _, closed := ln.session(0).snapshot(); ln.count() != 1 || closed {
+		t.Fatalf("sessions %d, closed %v", ln.count(), closed)
 	}
 }
