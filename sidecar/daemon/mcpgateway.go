@@ -421,6 +421,9 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 	var v MCPVerdict
 	for _, stmt := range stmts {
 		d := s.g.EvaluateStatement(ctx, stmt)
+		if d.Err != nil {
+			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
+		}
 		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
 			break
 		}

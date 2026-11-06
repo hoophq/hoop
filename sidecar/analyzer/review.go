@@ -343,6 +343,10 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 
+	if stmt.Protocol == inspect.MCP {
+		// ENG-967: the mcp lane cannot hold a tool call yet, so it files nothing.
+		return e.denyHold(notes, "", "", "an mcp lane does not hold a tool call for approval yet")
+	}
 	if e.cfg.Review == nil {
 		// An observed lane is built without one on purpose, and its
 		// denial is turned back into an allow by policy.Observe. Any
