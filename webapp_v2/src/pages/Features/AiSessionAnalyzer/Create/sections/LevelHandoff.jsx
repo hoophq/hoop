@@ -74,7 +74,7 @@ export default function LevelHandoff({
       </SettingsCard>
       {holds && (
         <>
-          <Box ml={36} w={1} h={24} bg="gray.2" />
+          <Box ml={36} w={1} h={24} bg="var(--hoop-border-strong)" />
           <ApproverCard
             approval={approval}
             approvalRule={approvalRule}

@@ -10,7 +10,13 @@ export default function SettingsCard({ icon: Icon, title, subtitle, children }) 
   const [open, setOpen] = useState(true)
   return (
     <Paper withBorder radius="lg" className={classes.clipped}>
-      <UnstyledButton w="100%" p="md" bg={open ? 'green.0' : 'gray.0'} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <UnstyledButton
+        w="100%"
+        p="md"
+        bg={open ? 'var(--mantine-color-green-light)' : 'var(--mantine-color-gray-light)'}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
         <Group wrap="nowrap" gap="md">
           <ThemeIcon size={40} radius="md" variant="light" color={open ? 'green' : 'gray'}>
             <Icon size={18} aria-hidden="true" />

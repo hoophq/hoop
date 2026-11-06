@@ -19,7 +19,7 @@ function ApproverOption({ value, label, description, selected, onSelect }) {
       p="sm"
       bdrs="md"
       bd={`1px solid var(--mantine-color-${selected ? 'indigo-6' : 'gray-2'})`}
-      bg={selected ? 'indigo.0' : 'var(--mantine-color-body)'}
+      bg={selected ? 'var(--mantine-color-indigo-light)' : 'var(--mantine-color-body)'}
     >
       <Group gap={10} wrap="nowrap">
         <Radio.Indicator checked={selected} size="xs" />
