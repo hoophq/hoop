@@ -460,10 +460,16 @@ type Decision struct {
 
 // Gate inspects one connection.
 //
-// It is stateful, because the underlying codec reassembles messages across
-// reads, so it is NOT safe for concurrent use. Use one Gate per connection.
-// The Policy, Audit and Masker it holds ARE shared and must themselves be
-// concurrency-safe.
+// Request and Response feed codecs that reassemble messages across reads, so
+// each takes one caller at a time. Use one Gate per connection.
+//
+// On a gate from NewStatementGate, EvaluateStatement, RecordActivity,
+// RecordMasked, Start, Adopt, Session, Stats and Close are safe for concurrent
+// use: mu guards the state they share. A statement judged after Close is
+// recorded after session_end, so a caller ends its calls first.
+//
+// The Policy, Audit, Masker, Metrics, Telemetry and Settle it holds are
+// shared and must themselves be concurrency-safe.
 type Gate struct {
 	cfg     Config
 	sess    *session.Session
