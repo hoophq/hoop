@@ -25,7 +25,10 @@ vi.mock('@/services/aiSessionAnalyzer', () => ({
 }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar }))
 
-const { setupConfigFor, isReactSetup, metadataForSubtype } = await import('@/pages/Resources/Setup/catalog')
+const { setupConfigFor, isReactSetup, metadataForSubtype, hiddenByFlags } = await import(
+  '@/pages/Resources/Setup/catalog'
+)
+const { defaultAuthMode } = await import('@/pages/Roles/Configure/utils/mcpGateway')
 const { useResourceSetupStore } = await import('@/pages/Resources/Setup/store')
 const { buildCreatePayload } = await import('@/pages/Resources/Setup/payload')
 const { secretOf } = await import('@/pages/Resources/Setup/roleCredentials')
@@ -130,9 +133,25 @@ describe('isReactSetup', () => {
     ['httpproxy', true],
     ['grafana', true],
     ['linux-vm', true],
+    ['claude-code', true],
+    ['mcp', true],
+    ['mcpproxy', true],
     ['bigquery', false],
   ])('%s renders React: %s', (id, react) => {
     expect(isReactSetup(setupConfigFor(id, connections))).toBe(react)
+  })
+})
+
+describe('hiddenByFlags', () => {
+  const gateway = { 'experimental.mcp_gateway': true }
+  it.each([
+    ['mcpproxy', {}, true],
+    ['mcpproxy', gateway, false],
+    ['mcp', {}, false],
+    ['mcp', gateway, true],
+    ['claude-code', gateway, false],
+  ])('%s with %j: %s', (id, flags, hidden) => {
+    expect(hiddenByFlags(id, flags)).toBe(hidden)
   })
 })
 
@@ -329,6 +348,173 @@ describe('POST /resources matches the CLJS wizard: SSH, TCP, Linux VM, HTTP prox
     expect(secretOf(role(0).credentials)).toEqual({
       'filesystem:SSH_PRIVATE_KEY': encodeSecretForSource('KEY\n', SOURCES.MANUAL),
     })
+  })
+})
+
+// What the Claude Code, MCP and MCP Gateway renderers stage: settings plain,
+// fields through typeKey. Fixtures recorded from CLJS on origin/main.
+function setting(index, envKey, value) {
+  role(index).credentials.getState().replaceSecret(envKey, encodeSecretForSource(value, SOURCES.MANUAL))
+}
+
+describe('POST /resources matches the CLJS wizard: Claude Code, MCP, MCP Gateway', () => {
+  const agentId = '75122bce-f957-49eb-a812-2ab60977cd9f'
+  const start = (catalogId, name) => {
+    begin(catalogId, { name, agentId, profile: null })
+    store().setRoleName(role(0).id, `${name}-role`)
+  }
+
+  it('claude-code, Anthropic, with a header', () => {
+    start('claude-code', 'cc')
+    typeKey(0, 'envvar:HEADER_X_API_KEY', 'sk-ant-1')
+    row(0, 'envvar:HEADER_NEW_HEADER_1', 'envvar:HEADER_X-Org', 'acme')
+    expect(payload()).toEqual(fixture('claude-code'))
+  })
+
+  it('claude-code, Secrets Manager: the default URL takes the provider too', () => {
+    start('claude-code', 'cc-vault')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    typeKey(0, 'envvar:HEADER_X_API_KEY', 'secret/claude:KEY')
+    expect(payload()).toEqual(fixture('claude-code-vault'))
+  })
+
+  it('claude-code, Vertex: the URL from the region, every field manual', () => {
+    start('claude-code', 'cc-vertex')
+    const { cancelSecretChange } = role(0).credentials.getState()
+    cancelSecretChange('envvar:REMOTE_URL')
+    setting(0, 'envvar:GCP_REGION', 'europe-west1')
+    setting(0, 'envvar:GCP_PROJECT_ID', 'p1')
+    setting(0, 'envvar:GCP_SERVICE_ACCOUNT_JSON', '{"type":"service_account"}')
+    setting(0, 'envvar:REMOTE_URL', 'https://europe-west1-aiplatform.googleapis.com')
+    expect(payload()).toEqual(fixture('claude-code-vertex'))
+  })
+
+  it('mcp, with a header and insecure SSL', () => {
+    start('mcp', 'mcp')
+    typeKey(0, 'envvar:REMOTE_URL', 'https://mcp.internal/mcp')
+    row(0, 'envvar:HEADER_NEW_HEADER_1', 'envvar:HEADER_X-Team', 'core')
+    setting(0, 'envvar:INSECURE', 'true')
+    expect(payload()).toEqual(fixture('mcp'))
+  })
+
+  it('mcp, an OAuth token: no flow id on the role', () => {
+    start('mcp', 'mcp')
+    typeKey(0, 'envvar:REMOTE_URL', 'https://mcp.internal/mcp')
+    setting(0, 'envvar:HEADER_AUTHORIZATION', 'Bearer t')
+    role(0).credentials.getState().setMcpOAuthFlowId('flow-1')
+    const [sent] = payload().roles
+    expect(sent.secret['envvar:HEADER_AUTHORIZATION']).toBe(btoa('Bearer t'))
+    expect(sent).not.toHaveProperty('mcp_oauth_flow_id')
+  })
+
+  it('mcpproxy, custom server, static token and a header', () => {
+    start('mcpproxy', 'gw-custom')
+    typeKey(0, 'envvar:REMOTE_URL', 'https://mcp.internal/mcp')
+    typeKey(0, 'envvar:HEADER_Authorization', 'tok-1')
+    row(0, 'envvar:HEADER_NEW_HEADER_1', 'envvar:HEADER_X-Team', 'core')
+    expect(payload()).toEqual(fixture('mcpproxy-custom'))
+  })
+
+  it('mcpproxy, context7: the header name the catalog names, case kept', () => {
+    start('mcpproxy', 'gw-c7')
+    setting(0, 'envvar:REMOTE_URL', 'https://mcp.context7.com/mcp')
+    typeKey(0, 'envvar:HEADER_CONTEXT7_API_KEY', 'c7')
+    expect(payload()).toEqual(fixture('mcpproxy-context7'))
+  })
+
+  it('mcpproxy, a server with no auth on SSE', () => {
+    start('mcpproxy', 'gw-none')
+    setting(0, 'envvar:MCP_TRANSPORT', 'sse')
+    setting(0, 'envvar:REMOTE_URL', 'https://docs.mcp.cloudflare.com/sse')
+    setting(0, 'envvar:MCP_AUTH', 'none')
+    expect(payload()).toEqual(fixture('mcpproxy-none'))
+  })
+
+  it('mcpproxy, github with a denied-tools policy', () => {
+    start('mcpproxy', 'gw-gh')
+    setting(0, 'envvar:REMOTE_URL', 'https://api.githubcopilot.com/mcp')
+    typeKey(0, 'envvar:HEADER_Authorization', 'ghp-1')
+    setting(0, 'envvar:MCP_DENIED_TOOLS', 'delete_*')
+    expect(payload()).toEqual(fixture('mcpproxy-github-policy'))
+  })
+
+  it('mcpproxy, stdio: the typed command, MCPENV_ variables, no INSECURE', () => {
+    start('mcpproxy', 'gw-stdio')
+    setting(0, 'envvar:MCP_TRANSPORT', 'stdio')
+    role(0).credentials.getState().setDraft({ command: ['npx', '-y', '@mcp/server', '/data'] })
+    row(0, 'envvar:MCPENV_NEW_HEADER_1', 'envvar:MCPENV_FIGMA_TOKEN', 'f1')
+    expect(payload()).toEqual(fixture('mcpproxy-stdio'))
+  })
+
+  it('mcpproxy, remote: a leftover command draft is not sent', () => {
+    start('mcpproxy', 'gw-custom')
+    role(0).credentials.getState().setDraft({ command: ['npx', 'x'] })
+    expect(payload().roles[0].command).toEqual([])
+  })
+
+  it('mcpproxy, Secrets Manager: settings stay values, not references (Q37)', () => {
+    start('mcpproxy', 'gw-vault')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    store().setRoleProvider(role(0).id, SOURCES.VAULT_KV1)
+    typeKey(0, 'envvar:REMOTE_URL', 'secret/mcp:URL')
+    typeKey(0, 'envvar:HEADER_Authorization', 'secret/mcp:TOKEN')
+    const cljs = fixture('mcpproxy-vault')
+    const secret = {
+      ...cljs.roles[0].secret,
+      'envvar:MCP_TRANSPORT': btoa('streamable-http'),
+      'envvar:MCP_AUTH': btoa('static'),
+    }
+    expect(payload()).toEqual({ ...cljs, roles: [{ ...cljs.roles[0], secret }] })
+  })
+
+  it('mcpproxy, OAuth: the token stays manual and the flow id rides on the role', () => {
+    start('mcpproxy', 'gw-oauth')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    setting(0, 'envvar:REMOTE_URL', 'https://mcp.linear.app/mcp')
+    setting(0, 'envvar:HEADER_AUTHORIZATION', 'Bearer t')
+    role(0).credentials.getState().setMcpOAuthFlowId('flow-1')
+    store().setRoleProvider(role(0).id, SOURCES.AWS_SECRETS_MANAGER)
+    const [sent] = payload().roles
+    expect(sent.mcp_oauth_flow_id).toBe('flow-1')
+    expect(sent.secret['envvar:HEADER_AUTHORIZATION']).toBe(btoa('Bearer t'))
+    expect(sent.secret['envvar:MCP_AUTH']).toBe(btoa('static'))
+  })
+
+  it.each([
+    [null, 'static'],
+    [{ auth: 'oauth' }, 'oauth'],
+    [{ auth: 'none' }, 'none'],
+    [{ auth: 'static' }, 'static'],
+  ])('a picked server %j starts on %s', (entry, mode) => {
+    expect(defaultAuthMode(entry)).toBe(mode)
+  })
+
+  it('keeps the picked provider, server and auth mode across Back and Next', () => {
+    start('mcpproxy', 'gw-back')
+    const credentials = role(0).credentials
+    credentials.getState().setFormState('mcpServer', 'context7')
+    credentials.getState().setFormState('mcpAuthMode', 'oauth')
+    typeKey(0, 'envvar:HEADER_CONTEXT7_API_KEY', 'c7')
+    store().setStep('agent')
+    store().goToRoles()
+    expect(role(0).credentials).toBe(credentials)
+    expect(credentials.getState().formState).toEqual({ mcpServer: 'context7', mcpAuthMode: 'oauth' })
+    expect(secretOf(credentials)['envvar:HEADER_CONTEXT7_API_KEY']).toBe(btoa('c7'))
+  })
+
+  it('warns about an MCP OAuth login the gateway did not attach', async () => {
+    start('mcpproxy', 'gw-oauth')
+    useResourceSetupStore.setState({ roleOptions: 'ready' })
+    resourcesService.create.mockResolvedValueOnce({
+      data: { mcp_oauth_warnings: [{ name: 'gw-oauth-role', warning: 'flow expired' }] },
+    })
+    await store().submit(connections)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'warning',
+      text: 'MCP OAuth login not attached to gw-oauth-role',
+      description: 'flow expired',
+    })
+    expect(store().step).toBe('success')
   })
 })
 

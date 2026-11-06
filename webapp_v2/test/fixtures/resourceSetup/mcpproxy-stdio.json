@@ -1,0 +1,34 @@
+{
+  "name": "gw-stdio",
+  "type": "httpproxy",
+  "subtype": "mcpproxy",
+  "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "gw-stdio-role",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "npx",
+        "-y",
+        "@mcp/server",
+        "/data"
+      ],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:MCP_TRANSPORT": "c3RkaW8=",
+        "envvar:MCP_AUTH": "c3RhdGlj",
+        "envvar:MCPENV_FIGMA_TOKEN": "ZjE="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "mcpproxy"
+    }
+  ]
+}

@@ -275,8 +275,10 @@ export const useResourceSetupStore = create((set, get) => {
       })
       const current = latest('submit')
       set({ submitting: true })
+      let warned = []
       try {
-        await resourcesService.create(payload)
+        const response = await resourcesService.create(payload)
+        warned = response?.data?.mcp_oauth_warnings ?? []
       } catch (error) {
         if (!current()) return
         set({ submitting: false })
@@ -285,6 +287,13 @@ export const useResourceSetupStore = create((set, get) => {
       }
       if (!current()) return
       showSnackbar({ level: 'success', text: 'Resource created successfully!' })
+      if (warned.length > 0) {
+        showSnackbar({
+          level: 'warning',
+          text: `MCP OAuth login not attached to ${warned.map((w) => w.name).join(', ')}`,
+          description: warned[0].warning,
+        })
+      }
       set({ submitting: false, createdRoles: payload.roles, step: 'success' })
     },
 

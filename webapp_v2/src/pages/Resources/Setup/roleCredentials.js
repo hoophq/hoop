@@ -10,16 +10,30 @@ import {
   SOURCES,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
-import { roleFormFor } from './catalog'
 
 const PASS_KEY = 'envvar:PASS'
 const SSH_KEY_KEY = 'envvar:AUTHORIZED_SERVER_KEYS'
 const AWS_IAM_KEYS = new Set(['envvar:USER', PASS_KEY])
 const INSECURE_KEY = 'envvar:INSECURE'
 const SSH_PRIVATE_KEY = 'filesystem:SSH_PRIVATE_KEY'
+export const MCP_OAUTH_KEY = 'envvar:HEADER_AUTHORIZATION'
+
+const HTTP_PROXY_SUBTYPES = new Set(['httpproxy', 'grafana', 'kibana', 'claude-code', 'mcp', 'mcpproxy'])
+
+// Settings and the OAuth token are values, never secret references: CLJS
+// prefixed them under Secrets Manager (Q37).
+function manualOnly(key) {
+  return (
+    key.startsWith('filesystem:') ||
+    key === INSECURE_KEY ||
+    key === MCP_OAUTH_KEY ||
+    key.startsWith('envvar:MCP_') ||
+    key.startsWith('envvar:GCP_')
+  )
+}
 
 function sourceFor(key, method, provider) {
-  if (key.startsWith('filesystem:') || key === INSECURE_KEY) return SOURCES.MANUAL
+  if (manualOnly(key)) return SOURCES.MANUAL
   if (method === CONNECTION_METHODS.SECRETS_MANAGER) return provider
   if (method === CONNECTION_METHODS.AWS_IAM && AWS_IAM_KEYS.has(key)) return SOURCES.AWS_IAM_ROLE
   return SOURCES.MANUAL
@@ -60,10 +74,28 @@ function swapPass(state, method) {
   return { stagedSecrets: state.stagedSecrets, parkedPass: state.parkedPass }
 }
 
-// The CLJS HTTP proxy form always sends INSECURE.
+// The values the CLJS forms write on their first render: the HTTP proxy family
+// always sends INSECURE, Claude Code the Anthropic URL, and the MCP Gateway its
+// transport and auth mode, which the agent requires.
 function initialSecrets(subtype) {
-  if (roleFormFor(subtype) !== 'httpproxy') return {}
-  return { [INSECURE_KEY]: { action: 'new', value: encodeSecretValue('false') } }
+  if (!HTTP_PROXY_SUBTYPES.has(subtype)) return {}
+  const values = { [INSECURE_KEY]: 'false' }
+  if (subtype === 'claude-code') values['envvar:REMOTE_URL'] = 'https://api.anthropic.com'
+  if (subtype === 'mcpproxy') {
+    values['envvar:MCP_TRANSPORT'] = 'streamable-http'
+    values['envvar:MCP_AUTH'] = 'static'
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, { action: 'new', value: encodeSecretValue(value) }]),
+  )
+}
+
+// config->json: every key is upper-cased, except a header of the HTTP proxy family.
+function wireKey(key, subtype) {
+  const colon = key.indexOf(':') + 1
+  const name = key.slice(colon)
+  if (HTTP_PROXY_SUBTYPES.has(subtype) && name.startsWith('HEADER_')) return key
+  return key.slice(0, colon) + name.toUpperCase()
 }
 
 // One store per wizard role. The Configure Role credential renderers read it
@@ -79,8 +111,12 @@ export function createRoleCredentialsStore({ type, subtype }) {
     renames: {},
     hideRoleInfo: false,
     parkedPass: null,
+    mcpOAuthFlowId: null,
+    formState: {},
     ...credentialsSlice(set),
     setDraft: (patch) => set((state) => ({ drafts: { ...state.drafts, ...patch } })),
+    setMcpOAuthFlowId: (mcpOAuthFlowId) => set({ mcpOAuthFlowId }),
+    setFormState: (key, value) => set((state) => ({ formState: { ...state.formState, [key]: value } })),
     // The SSH form hides the credential of the other auth method, so it is not
     // sent. CLJS sent a password typed before a switch to key.
     chooseSshAuth: (method) => get().cancelSecretChange(method === 'password' ? SSH_KEY_KEY : PASS_KEY),
@@ -96,11 +132,11 @@ export function createRoleCredentialsStore({ type, subtype }) {
 // key. Blank values and unnamed rows are left out, and the SSH private key file
 // gets a trailing newline, as config->json does.
 export function secretOf(credentialsStore) {
-  const { stagedSecrets, renames } = credentialsStore.getState()
+  const { stagedSecrets, renames, connection } = credentialsStore.getState()
   const secret = {}
   for (const [key, change] of Object.entries(stagedSecrets)) {
-    const name = renames[key] ?? key
-    if (change.action !== 'new' || PLACEHOLDER_KEY_RE.test(name)) continue
+    if (change.action !== 'new' || PLACEHOLDER_KEY_RE.test(renames[key] ?? key)) continue
+    const name = wireKey(renames[key] ?? key, connection.subtype)
     if (decodeForDisplay(change.value) === '') continue
     secret[name] =
       name === SSH_PRIVATE_KEY ? encodeSecretValue(decodeSecretValue(change.value) + '\n') : change.value

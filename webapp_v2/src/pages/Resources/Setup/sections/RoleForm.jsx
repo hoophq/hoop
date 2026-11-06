@@ -17,8 +17,11 @@ import {
   SecretsManagerProviderSection,
 } from '@/pages/Roles/Configure/components/ConnectionMethod'
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
+import ClaudeCodeRenderer from '@/pages/Roles/Configure/sections/credentials/ClaudeCodeRenderer'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
 import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
+import McpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/McpProxyRenderer'
+import McpRenderer from '@/pages/Roles/Configure/sections/credentials/McpRenderer'
 import SshRenderer from '@/pages/Roles/Configure/sections/credentials/SshRenderer'
 import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
 import { metadataForSubtype, roleFormFor } from '../catalog'
@@ -82,6 +85,9 @@ function CredentialsForm({ form, role, fields, connection, availableSources }) {
   if (form === 'ssh') return <SshRenderer {...props} />
   if (form === 'httpproxy') return <HttpProxyRenderer {...props} />
   if (form === 'linux-vm') return <FreeFormCustomRenderer {...props} />
+  if (form === 'claude-code') return <ClaudeCodeRenderer {...props} />
+  if (form === 'mcp') return <McpRenderer {...props} />
+  if (form === 'mcpproxy') return <McpProxyRenderer {...props} connectionMethod={role.method} />
   return <PredefinedFields {...props} fields={fields} connectionMethod={role.method} />
 }
 
