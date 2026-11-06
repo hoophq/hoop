@@ -8708,7 +8708,7 @@
             "type": "boolean"
           },
           "capabilities": {
-            "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+            "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
             "example": [
               "protocol:mcp",
               "rule:mcp_tool"
@@ -8716,6 +8716,7 @@
             "items": {
               "type": "string"
             },
+            "nullable": true,
             "readOnly": true,
             "type": "array"
           },
@@ -9049,7 +9050,7 @@
             "type": "boolean"
           },
           "capabilities": {
-            "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+            "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
             "example": [
               "protocol:mcp",
               "rule:mcp_tool"
@@ -9057,6 +9058,7 @@
             "items": {
               "type": "string"
             },
+            "nullable": true,
             "readOnly": true,
             "type": "array"
           },

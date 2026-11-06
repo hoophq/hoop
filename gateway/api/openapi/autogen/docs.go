@@ -21747,11 +21747,12 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "capabilities": {
-                    "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+                    "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
+                    "x-nullable": true,
                     "readOnly": true,
                     "example": [
                         "protocol:mcp",
@@ -22088,11 +22089,12 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "capabilities": {
-                    "description": "Capabilities is what the last handshake reported in the\nhoop-sidecar-capabilities header, such as protocol:mcp. Null before the\nfirst handshake, empty for a build too old to report.",
+                    "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
+                    "x-nullable": true,
                     "readOnly": true,
                     "example": [
                         "protocol:mcp",

@@ -434,10 +434,9 @@ type SidecarResponse struct {
 	ReportedConfiguration *daemon.Config `json:"reported_configuration,omitempty" swaggertype:"object"`
 	// When the sidecar last reported ReportedConfiguration.
 	ReportedConfigurationAt *time.Time `json:"reported_configuration_at,omitempty"`
-	// Capabilities is what the last handshake reported in the
-	// hoop-sidecar-capabilities header, such as protocol:mcp. Null before the
-	// first handshake, empty for a build too old to report.
-	Capabilities []string `json:"capabilities" readonly:"true" example:"protocol:mcp,rule:mcp_tool"`
+	// Capabilities from the last handshake, such as protocol:mcp. Null: the
+	// sidecar never connected. Empty: an old build that reports none.
+	Capabilities []string `json:"capabilities" readonly:"true" example:"protocol:mcp,rule:mcp_tool" extensions:"x-nullable"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
