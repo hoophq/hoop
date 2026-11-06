@@ -139,12 +139,20 @@ func selectOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
 	if matchOperation(ops, stmt) {
 		return true
 	}
-	m := stmt.Metadata["http.sql_method"]
-	return m != "" && slices.Contains(ops, inspect.Operation(m))
+	if m := stmt.Metadata["http.sql_method"]; m != "" && slices.Contains(ops, inspect.Operation(m)) {
+		return true
+	}
+	return mcpSQLTool(stmt) != "" && slices.Contains(ops, inspect.OpCall)
 }
 
+// matchTable also matches SQL an mcp lane read out of a tool call by the
+// tool's name, which the call itself carries in Tables.
 func matchTable(tables []string, stmt inspect.Statement) bool {
+	tool := mcpSQLTool(stmt)
 	for _, want := range tables {
+		if tool != "" && strings.EqualFold(want, tool) {
+			return true
+		}
 		for _, got := range stmt.Tables {
 			if strings.EqualFold(want, got) {
 				return true
@@ -152,6 +160,15 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 		}
 	}
 	return false
+}
+
+// mcpSQLTool names the tool whose call carried stmt, when stmt is SQL an mcp
+// lane read out of its arguments.
+func mcpSQLTool(stmt inspect.Statement) string {
+	if _, ok := stmt.Metadata[inspect.MetadataMCPSQLIndex]; !ok {
+		return ""
+	}
+	return stmt.Metadata[inspect.MetadataMCPTool]
 }
 
 // matchResource matches an HTTP target: an HTTP statement's resource, or

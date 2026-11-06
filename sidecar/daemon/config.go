@@ -1691,9 +1691,6 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 		if lc.Mask != nil && lc.Mask.hasRules() {
 			problems = append(problems, name+": a mask block on an mcp listener does not apply yet; mask rules inherited from the top level are accepted and noted")
 		}
-		if lc.Analyzer != nil {
-			problems = append(problems, name+": analyzer does not apply to an mcp listener yet")
-		}
 	} else if lc.MCPGateway != nil {
 		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))
 	}

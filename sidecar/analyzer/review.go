@@ -340,6 +340,10 @@ func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
 // goes away, so an approval is never spent on a statement that cannot run.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
 	mode ReviewMode, source string) policy.Verdict {
+	if stmt.Protocol == inspect.MCP {
+		// ENG-967: the mcp lane cannot hold a tool call yet, so it files nothing.
+		return e.deny(notes, "call refused because an mcp lane cannot hold a call for approval yet")
+	}
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 

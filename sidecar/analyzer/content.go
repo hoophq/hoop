@@ -24,6 +24,7 @@ func init() {
 	RegisterBuilder(grpcBuilder{})
 	RegisterBuilder(spannerBuilder{})
 	RegisterBuilder(sshBuilder{})
+	RegisterBuilder(mcpBuilder{})
 }
 
 // SQLBuilder renders a SQL statement for classification.
@@ -527,6 +528,44 @@ func (spannerBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool
 		return SQLBuilder{Protocol_: inspect.Spanner}.Build(stmt, maxBytes)
 	}
 	return grpcBuilder{}.Build(stmt, maxBytes)
+}
+
+// mcpBuilder renders a tools/call as its tool name and arguments, and each SQL
+// statement read out of an mcp_gateway.sql tool's call as SQL.
+type mcpBuilder struct{}
+
+func (mcpBuilder) Protocol() inspect.Protocol { return inspect.MCP }
+
+func (mcpBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if _, ok := stmt.Metadata[inspect.MetadataMCPSQLIndex]; ok {
+		return SQLBuilder{Protocol_: inspect.MCP}.Build(stmt, maxBytes)
+	}
+	tool := stmt.Metadata[inspect.MetadataMCPTool]
+	if stmt.Operation != inspect.OpCall || tool == "" {
+		return Content{}, false
+	}
+	args, ok := strings.CutPrefix(stmt.Text, tool+"\n")
+	if !ok {
+		return Content{}, false
+	}
+	args = strings.TrimSpace(args)
+
+	var sb strings.Builder
+	sb.WriteString("Protocol: mcp\nTool: ")
+	sb.WriteString(tool)
+	sb.WriteString("\n\nArguments:\n")
+	sb.WriteString(Truncate(args, maxBytes))
+
+	h := sha256.New()
+	h.Write([]byte("mcp"))
+	h.Write([]byte{0})
+	h.Write([]byte(tool))
+	h.Write([]byte{0})
+	h.Write([]byte(normalizeSpace(args)))
+	return Content{
+		Text:     Truncate(sb.String(), maxBytes),
+		CacheKey: hex.EncodeToString(h.Sum(nil)[:16]),
+	}, true
 }
 
 // OperationScoped is implemented by a Builder that answers for a FIXED set

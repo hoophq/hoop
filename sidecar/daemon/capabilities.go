@@ -86,6 +86,9 @@ const (
 	// downstream_tls on an mcp listener. 1.289.0 decodes both keys and
 	// refuses them there.
 	CapabilityMCPCallerToken = "mcp_caller_token"
+	// CapabilityMCPAnalyzer means this build runs an analyzer on an mcp
+	// listener. Older builds from 1.289.0 decode the block and refuse it there.
+	CapabilityMCPAnalyzer = "mcp_analyzer"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -176,7 +179,7 @@ var behaviourCapabilities = []string{CapabilitySessionEvents}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
-var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken}
+var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken, CapabilityMCPAnalyzer}
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
@@ -286,6 +289,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 		}
 		if isMCPGateway(l) && (l.CallerToken != nil || l.DownstreamTLS != nil) {
 			need(where, "sets caller_token or downstream_tls on an mcp listener", CapabilityMCPCallerToken)
+		}
+		if isMCPGateway(l) && served.laneAnalyzes(l) {
+			need(where, "runs an analyzer on an mcp listener", CapabilityMCPAnalyzer)
 		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.

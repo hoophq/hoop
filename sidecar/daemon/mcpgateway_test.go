@@ -96,7 +96,6 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"mcp_gateway":{"denied_tools":["x"]}}`, "unknown field"},
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
 		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "mask block"},
-		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "analyzer does not apply"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"https://user:token@h/mcp"}`, "carries no user"},
@@ -112,6 +111,12 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 	}
 	if p := mcpProblems(t, `{`+ok+`,"identity_header":"x-user"}`); p != "" {
 		t.Fatalf("identity_header refused on an mcp lane: %s", p)
+	}
+	if p := mcpProblems(t, `{`+ok+`,"analyzer":{"trigger":{"operations":["call"]},"high":"block"}}`); p != "" {
+		t.Fatalf("an analyzer refused on an mcp lane: %s", p)
+	}
+	if p := mcpProblems(t, `{`+ok+`,"guardrails":{"rules":[{"name":"risky","type":"ai_analysis","high":"block"}]}}`); p != "" {
+		t.Fatalf("an ai_analysis rule refused on an mcp lane: %s", p)
 	}
 }
 
