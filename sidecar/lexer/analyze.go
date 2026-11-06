@@ -175,6 +175,9 @@ type analyzer struct {
 	// sparkScriptDML.
 	script bool
 
+	// stmtStart is the index of the first token of the current statement.
+	stmtStart int
+
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
 	// Its INSERT and SELECT follow a relation, not a head position.
@@ -419,8 +422,18 @@ func (a *analyzer) walk() {
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
 				a.inCTEList, a.expectCTEName, a.fromFirst = false, false, false
+				a.stmtStart = i + 1
 				atHead = true
 				continue
+			case ":":
+				// A BigQuery label, in any spelling: the loop or block after
+				// it opens a script wherever it stands.
+				if a.d == GoogleSQL && !a.script && len(a.stack) == 1 && a.googleSQLOpener(i+1) {
+					a.openScript()
+					i++
+					atHead = true
+					continue
+				}
 			case ",":
 				if a.inCTEList && len(a.stack) == 1 {
 					a.expectCTEName = true
@@ -464,6 +477,11 @@ func (a *analyzer) walk() {
 				}
 			}
 			atHead = a.wrapper
+			continue
+		}
+
+		// A label at head is no statement; the colon after it opens the script.
+		if a.d == GoogleSQL && atHead && !a.script && t.isName() && a.puncts(i+1, ":") && a.googleSQLOpener(i+2) {
 			continue
 		}
 
@@ -525,6 +543,13 @@ func (a *analyzer) walk() {
 			a.script = true
 			a.sawStatement = true
 			a.fail("SQL script; control flow decides which of its statements run")
+			continue
+		}
+
+		// BigQuery scripting, read as a Spark script. Split cuts a script at
+		// its semicolons, so each loop or block fragment opens one.
+		if a.d == GoogleSQL && atHead && !a.script && len(a.stack) == 1 && a.googleSQLScriptAt(i) {
+			a.openScript()
 			continue
 		}
 
@@ -657,6 +682,39 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 func (a *analyzer) sparkTransactionAt(i int) bool {
 	return i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text] &&
 		(i+2 == len(a.toks) || a.puncts(i+2, ";"))
+}
+
+// googleSQLOpener reports whether the word at i is a BigQuery loop or block
+// keyword. A bare BEGIN, or BEGIN TRANSACTION, starts a transaction.
+func (a *analyzer) googleSQLOpener(i int) bool {
+	if i >= len(a.toks) || a.toks[i].Kind != Word {
+		return false
+	}
+	end := func(k int) bool { return k == len(a.toks) || a.puncts(k, ";") }
+	switch a.toks[i].Text {
+	case "loop", "repeat", "while", "for":
+		return true
+	case "begin":
+		return !end(i+1) && !(a.toks[i+1].isWord("transaction") && end(i+2))
+	}
+	return false
+}
+
+// googleSQLScriptAt reports whether the opener at i opens a script: first in
+// its statement, or after THEN or ELSE of a script statement. In a CASE
+// expression, `THEN begin` names a column.
+func (a *analyzer) googleSQLScriptAt(i int) bool {
+	if !a.googleSQLOpener(i) {
+		return false
+	}
+	s := a.stmtStart
+	return s == i || a.toks[s].Kind == Word && googleSQLScriptStatement[a.toks[s].Text]
+}
+
+func (a *analyzer) openScript() {
+	a.script = true
+	a.sawStatement = true
+	a.fail("SQL script; control flow decides which of its statements run")
 }
 
 // sparkNotDML reports whether a DML word at i inside a Spark script is not a

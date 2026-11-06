@@ -126,3 +126,43 @@ func TestValidPath(t *testing.T) {
 		}
 	}
 }
+
+// Member reads one member by its exact key, as a server does, after JSON
+// unescape. A key that could name another value on the server is refused.
+func TestMemberReadsOneStringByItsExactKey(t *testing.T) {
+	for _, tc := range []struct{ name, doc, want, err string }{
+		{"plain", `{"query":"SELECT 1","limit":5}`, "SELECT 1", ""},
+		{"space around the value", `{ "query" :  "SELECT 1" }`, "SELECT 1", ""},
+		{"escaped value", `{"query":"\u0055PDATE t SET a = 1"}`, "UPDATE t SET a = 1", ""},
+		{"escaped key", `{"\u0071uery":"SELECT 1"}`, "SELECT 1", ""},
+		{"same key in a nested object", `{"query":"SELECT 1","opts":{"query":"DELETE FROM t"}}`, "SELECT 1", ""},
+		{"twice", `{"query":"SELECT 1","query":"DELETE FROM t"}`, "", "appears twice"},
+		{"twice after unescape", `{"query":"SELECT 1","\u0071uery":"DELETE FROM t"}`, "", "appears twice"},
+		{"in another case", `{"query":"SELECT 1","Query":"DELETE FROM t"}`, "", "differ only in case"},
+		{"only in another case", `{"Query":"DELETE FROM t"}`, "", "differs from it in case"},
+		{"absent", `{"sql":"SELECT 1"}`, "", "is absent"},
+		{"null", `{"query":null}`, "", "not a string"},
+		{"number", `{"query":1}`, "", "not a string"},
+		{"object", `{"query":{"sql":"DELETE FROM t"}}`, "", "not a string"},
+		{"blank", `{"query":" \n "}`, "", "is blank"},
+		{"lone surrogate", `{"query":"\ud800DELETE FROM t"}`, "", "lone surrogate"},
+		{"invalid UTF-8", "{\"query\":\"\xffDELETE FROM t\"}", "", "lone surrogate"},
+		{"a JSON string", `"{\"query\":\"DELETE FROM t\"}"`, "", "not a JSON object"},
+		{"null document", `null`, "", "not a JSON object"},
+		{"empty document", ``, "", "not a JSON object"},
+		{"trailing data", `{"query":"SELECT 1"} {}`, "", "not a JSON object"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := jsonsql.Member([]byte(tc.doc), "query")
+			if tc.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("Member = %q, %v; want an error with %q", got, err, tc.err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("Member = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}

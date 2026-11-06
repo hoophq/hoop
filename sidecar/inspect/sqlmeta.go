@@ -84,7 +84,7 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 }
 
 // sqlDialect is the lexical dialect a protocol's statements are read under.
-// ok is false for a protocol whose statements carry no SQL (grpc, ssh);
+// ok is false for a protocol whose statements carry no SQL (grpc, ssh, mcp);
 // AnalyzeSQL says why for each.
 func sqlDialect(proto Protocol) (d lexer.Dialect, ok bool) {
 	switch proto {
@@ -100,7 +100,7 @@ func sqlDialect(proto Protocol) (d lexer.Dialect, ok bool) {
 		// Spanner payloads carry GoogleSQL (ZetaSQL) unless the database
 		// was created with the PostgreSQL interface; see lexer.GoogleSQL.
 		return lexer.GoogleSQL, true
-	case GRPC, SSH:
+	case GRPC, SSH, MCP:
 		return lexer.Postgres, false
 	}
 	return lexer.Postgres, true
@@ -133,6 +133,9 @@ func ProceduresOf(stmt Statement) []string {
 		return out
 	}
 	d, ok := sqlDialect(stmt.Protocol)
+	if stmt.Protocol == MCP {
+		d, ok = lexer.DialectNamed(stmt.Metadata[MetadataMCPSQLDialect])
+	}
 	if !ok {
 		return out
 	}
