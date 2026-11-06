@@ -112,6 +112,11 @@ func (r *sqlReader) unreadable(rt sqlRoute, text, reason string) []inspect.State
 // reached past the lane. A second value is refused: reading one would
 // leave the other unread.
 func queryValue(target, name string) (value string, found bool, err error) {
+	// RFC 9112 allows no fragment here. ClickHouse drops one and runs the
+	// body alone, another server may not: either reading can hide SQL.
+	if strings.IndexByte(target, '#') >= 0 {
+		return "", false, fmt.Errorf("the request-target holds a #, which servers read differently: %w", inspect.ErrStreamUnsafe)
+	}
 	q := strings.IndexByte(target, '?')
 	if q < 0 {
 		return "", false, nil

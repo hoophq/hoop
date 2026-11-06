@@ -192,6 +192,20 @@ func TestSQLParamTwiceIsRefused(t *testing.T) {
 	}
 }
 
+// ClickHouse drops a fragment from the request-target and runs the body
+// alone, so a query parameter after # would be judged and never run.
+func TestSQLParamFragmentIsRefused(t *testing.T) {
+	for _, target := range []string{
+		"/?max_threads=1#&query=SELECT%201",
+		"/#?query=SELECT%201",
+	} {
+		_, err := decodeClient(t, codechttp.New(codechttp.Options{SQL: clickhouseSQL()}), request("POST", target, "", "DROP TABLE t"))
+		if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), "#") {
+			t.Errorf("%s: err = %v, want the request refused", target, err)
+		}
+	}
+}
+
 // A text route reads the body alone, for an API that takes SQL as a plain
 // body and no parameter.
 func TestSQLTextReadsTheBody(t *testing.T) {

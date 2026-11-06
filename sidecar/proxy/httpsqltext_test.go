@@ -70,11 +70,20 @@ func TestHTTPSQLClickHouseIsJudgedBeforeItIsForwarded(t *testing.T) {
 		})
 	}
 
+	// ClickHouse drops a fragment and runs the body alone, so a query
+	// parameter after # must not stand in for the DROP in the body.
+	up := newRouteUpstream(t, map[string][]byte{"/": ok})
+	got := roundTrip(t, clickhouseLane(t, up.addr(), denyWritesAndUnknown(t)).Addr().String(),
+		chRequest("POST", "/?max_threads=1#&query=SELECT%201", "", "DROP TABLE appdb.customers"))
+	if !strings.HasPrefix(got, "403") || !strings.Contains(got, "#") || len(up.received()) != 0 {
+		t.Fatalf("a fragment hid the DROP: %q, upstream %q", got, up.received())
+	}
+
 	// A lane that refuses drops only lets an INSERT through with its
 	// binary rows as the client sent them.
-	up := newRouteUpstream(t, map[string][]byte{"/": ok})
+	up = newRouteUpstream(t, map[string][]byte{"/": ok})
 	rows := "\x01\x00\x00\x00\x00\x00\x00\x00\x03Ada\xff"
-	got := roundTrip(t, clickhouseLane(t, up.addr(), denyDrops(t)).Addr().String(),
+	got = roundTrip(t, clickhouseLane(t, up.addr(), denyDrops(t)).Addr().String(),
 		chRequest("POST", "/?query=INSERT%20INTO%20appdb.customers%20FORMAT%20RowBinary", "", rows))
 	if r := up.received(); !strings.HasPrefix(got, "200") || len(r) != 1 || !strings.HasSuffix(r[0], rows) {
 		t.Fatalf("the INSERT was not relayed intact: %q, upstream %q", got, r)

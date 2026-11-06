@@ -4676,6 +4676,12 @@ in both, joined by a line feed. Without these keys the lane's statement is
   each become an `unknown` statement with the reason in `sql.incomplete`.
   The text check also catches ClickHouse's own `decompress=1` format.
 - **`tools` and `refuse`** read JSON bodies and need `fields`.
+- **`{t:Identifier}` hides the table.** ClickHouse binds `param_t=customers`
+  into `FROM {t:Identifier}`, so the SQL names no table and a `table` rule
+  matches nothing. Set `require_table_match: true` on a `table` rule that
+  protects something: it denies a statement whose tables cannot be read.
+- **A `#` in the request line is refused.** ClickHouse drops what follows it
+  and runs the body alone; another server may read it as a parameter.
 - **What the statement carries.** As for `fields`; `http.sql_field` is
   `?query` for a parameter route and `body` for a text route. The codec
   captures `Content-Encoding` to read the body and records it only when
