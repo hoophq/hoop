@@ -132,7 +132,7 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
               onToggle={onToggleRule}
               onSelectAll={() => onChange({ rules: null })}
             />
-            <Paper radius="md" p="md" bg="gray.1">
+            <Paper variant="strong" radius="md" p="md">
               <Checkbox
                 label={
                   <Text size="sm" fw={600}>

@@ -7,11 +7,11 @@ import Badge from '@/components/Badge'
 export default function CardConnector() {
   return (
     <Stack gap={0} align="center" w={72} aria-hidden="true">
-      <Box w={1} h={12} bg="gray.2" />
+      <Box w={1} h={12} bg="var(--hoop-border-strong)" />
       <Badge variant="light" color="indigo" radius="xl" tag>
         Next
       </Badge>
-      <Box w={1} h={12} bg="gray.2" />
+      <Box w={1} h={12} bg="var(--hoop-border-strong)" />
     </Stack>
   )
 }
