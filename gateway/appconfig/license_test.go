@@ -3,6 +3,7 @@ package appconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,6 +110,7 @@ func TestLoadOrgID(t *testing.T) {
 		{"unset", "", "", false, ""},
 		{"valid", id, "", false, id},
 		{"surrounding space", " " + id + "\n", "", false, id},
+		{"uppercase is canonicalized", strings.ToUpper(id), "", false, id},
 		{"not a uuid", "default", "", true, ""},
 		{"refused with multi tenant", id, "true", true, ""},
 	} {

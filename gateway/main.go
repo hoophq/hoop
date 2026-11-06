@@ -134,6 +134,17 @@ func Run() {
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
 
+		// Verified before the organization exists: a refused document must
+		// not leave behind an organization a corrected restart sees as old.
+		bootLicense := appconfig.Get().LicenseData()
+		if bootLicense != nil {
+			bootLicense, err = apiorgs.VerifyOrgLicense(bootLicense)
+			if err != nil {
+				orgStep.Fail(err)
+				log.Fatalf("failed applying HOOP_LICENSE, reason=%v", err)
+			}
+		}
+
 		wantOrgID := appconfig.Get().OrgID()
 		orgID := wantOrgID
 		if orgID == "" {
@@ -151,12 +162,12 @@ func Run() {
 
 		// Both run at every boot, so a rotated env value replaces the stored one.
 		licenseData := org.LicenseData
-		if data := appconfig.Get().LicenseData(); data != nil {
-			if err := apiorgs.ApplyOrgLicense(org.ID, data); err != nil {
+		if bootLicense != nil {
+			if err := models.UpdateOrgLicense(org.ID, bootLicense); err != nil {
 				orgStep.Fail(err)
-				log.Fatalf("failed applying HOOP_LICENSE, reason=%v", err)
+				log.Fatalf("failed storing HOOP_LICENSE, reason=%v", err)
 			}
-			licenseData = data
+			licenseData = bootLicense
 		}
 
 		enterprise := analytics.IsEnterpriseLicense(licenseData, appconfig.Get().ApiHostname())

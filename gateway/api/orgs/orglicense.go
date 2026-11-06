@@ -49,21 +49,17 @@ func UpdateOrgLicense(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// ApplyOrgLicense stores a signed document after the checks an upload goes
-// through: signature, validity window and this gateway's host. It stores the
-// marshaled document, as the upload does, so both paths yield the same bytes.
-func ApplyOrgLicense(orgID string, licenseData []byte) error {
+// VerifyOrgLicense runs the checks an upload goes through, signature, validity
+// window and this gateway's host, and returns the marshaled document, as the
+// upload stores it, so both paths yield the same bytes. An expired document is
+// kept: the gateway reports it as expired instead of refusing to start.
+func VerifyOrgLicense(licenseData []byte) ([]byte, error) {
 	l, err := license.Parse(licenseData, appconfig.Get().ApiHostname())
-	if err != nil {
-		return err
+	if err != nil && err != license.ErrExpired {
+		return nil, err
 	}
 
-	data, err := json.Marshal(l)
-	if err != nil {
-		return err
-	}
-
-	return models.UpdateOrgLicense(orgID, data)
+	return json.Marshal(l)
 }
 
 type SignRequest struct {

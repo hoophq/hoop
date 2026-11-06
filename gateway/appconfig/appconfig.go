@@ -514,15 +514,20 @@ func loadAnalyticsTracking() (string, error) {
 }
 
 // loadOrgID reads ORG_ID, the id the default organization is created with.
+// It returns the canonical lowercase form, the one PostgreSQL returns, so the
+// boot check compares like with like.
 func loadOrgID() (string, error) {
 	v := strings.TrimSpace(os.Getenv("ORG_ID"))
 	if v == "" {
 		return "", nil
 	}
-	if _, err := uuid.Parse(v); err != nil {
+
+	id, err := uuid.Parse(v)
+	if err != nil {
 		return "", fmt.Errorf("invalid ORG_ID %q: it is not a UUID", v)
 	}
-	return v, nil
+
+	return id.String(), nil
 }
 
 func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {

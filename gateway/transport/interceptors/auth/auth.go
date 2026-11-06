@@ -206,12 +206,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
-			// Single tenant: the key prefix is any UUID, the organization is
-			// the default one, which the gateway creates at boot.
-			org, err := models.GetOrganizationByNameOrID(pb.DefaultOrgName)
+			org, err := models.GetOrganizationByNameOrID(serverConfig.OrgID)
 			if err != nil {
-				log.Errorf("failed looking up the default organization, err=%v", err)
-				return status.Errorf(codes.Internal, "internal error")
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			ctx := &models.Context{
 				OrgID:          org.ID,
