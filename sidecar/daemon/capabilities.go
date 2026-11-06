@@ -290,8 +290,10 @@ func CheckServable(cfg Config, hs Handshake) error {
 		if isMCPGateway(l) && (l.CallerToken != nil || l.DownstreamTLS != nil) {
 			need(where, "sets caller_token or downstream_tls on an mcp listener", CapabilityMCPCallerToken)
 		}
-		if _, _, mc := served.resolve(l); isMCPGateway(l) && mc.hasRules() {
-			need(where, "binds mask rules to an mcp listener", CapabilityMCPMask)
+		if _, _, mc := served.resolve(l); isMCPGateway(l) {
+			if applied, _ := mcpMask(l, mc); applied.hasRules() {
+				need(where, "binds mask rules to an mcp listener", CapabilityMCPMask)
+			}
 		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -61,34 +62,59 @@ func (m *MCPGatewayConfig) transport() string {
 	return m.Transport
 }
 
-// validateMCPMasking refuses a resolved mask rule that names columns: the
-// redactor hands the lane a string without its key, so the rule never fires.
-func validateMCPMasking(mc MaskConfig, name string) []string {
-	if !mc.hasRules() {
-		return nil
+// columnMaskRules splits off the rules that name columns: an mcp lane masks
+// strings without their keys, so it never matches them. ok is false when the
+// rules do not parse; the plugin reports that.
+func columnMaskRules(raw json.RawMessage) (kept [][]byte, columns []string, ok bool) {
+	var rules []json.RawMessage
+	if json.Unmarshal(raw, &rules) != nil {
+		return nil, nil, false
 	}
-	var rules []struct {
-		Name    string   `json:"name"`
-		Columns []string `json:"columns"`
-	}
-	if err := json.Unmarshal(mc.Rules, &rules); err != nil {
-		return nil // the plugin reports shape errors
-	}
-	var problems []string
 	for i, r := range rules {
-		if len(r.Columns) == 0 {
+		var rule struct {
+			Name    string   `json:"name"`
+			Columns []string `json:"columns"`
+		}
+		if json.Unmarshal(r, &rule) != nil || len(rule.Columns) == 0 {
+			kept = append(kept, r)
 			continue
 		}
-		where := fmt.Sprintf("mask rule %d", i+1)
-		if r.Name != "" {
-			where = fmt.Sprintf("mask rule %q", r.Name)
+		label := fmt.Sprintf("mask rule %d", i+1)
+		if rule.Name != "" {
+			label = fmt.Sprintf("mask rule %q", rule.Name)
 		}
+		columns = append(columns, label)
+	}
+	return kept, columns, true
+}
+
+// validateMCPMasking refuses a column rule in the lane's own mask block.
+func validateMCPMasking(lc ListenerConfig, name string) []string {
+	if lc.Mask == nil || !lc.Mask.hasRules() {
+		return nil
+	}
+	_, columns, _ := columnMaskRules(lc.Mask.Rules)
+	problems := make([]string, 0, len(columns))
+	for _, label := range columns {
 		problems = append(problems, fmt.Sprintf(
-			"%s: %s names columns, which an mcp listener never matches: it masks result strings without their keys. "+
-				"Name entities instead, or give this listener its own mask rules, or mask: {rules: []}, to replace inherited ones",
-			name, where))
+			"%s: %s names columns, which an mcp listener never matches: it masks result strings without their keys. Name entities instead",
+			name, label))
 	}
 	return problems
+}
+
+// mcpMask drops the inherited rules that name columns and labels them in
+// skipped. They are not refused: 1.290 accepts them on an mcp lane.
+func mcpMask(lc ListenerConfig, mc MaskConfig) (applied MaskConfig, skipped []string) {
+	if !mc.hasRules() || (lc.Mask != nil && lc.Mask.hasRules()) {
+		return mc, nil
+	}
+	kept, skipped, ok := columnMaskRules(mc.Rules)
+	if !ok || len(skipped) == 0 {
+		return mc, nil
+	}
+	mc.Rules = append(append([]byte("["), bytes.Join(kept, []byte(","))...), ']')
+	return mc, skipped
 }
 
 func validateMCPGatewayLane(lc ListenerConfig, name string) []string {

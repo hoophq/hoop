@@ -1688,7 +1688,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	}
 	if isMCPGateway(lc) {
 		problems = append(problems, validateMCPGatewayLane(lc, name)...)
-		problems = append(problems, validateMCPMasking(mc, name)...)
+		problems = append(problems, validateMCPMasking(lc, name)...)
 		if lc.Analyzer != nil {
 			problems = append(problems, name+": analyzer does not apply to an mcp listener yet")
 		}

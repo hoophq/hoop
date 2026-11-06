@@ -3391,10 +3391,11 @@ It masks these strings of a `tools/call`, `resources/read` and
 Object keys, numbers and every other field are not masked: the client reads
 them as protocol. Prompts and upstream error messages are not masked.
 
-- A rule finds values by entity. Validate refuses a rule that names
-  `columns`, own or inherited: the redactor hands the lane a string, not
-  its key, so the rule would never fire. The lane's own mask rules, or
-  `mask: {rules: []}`, replace inherited ones.
+- A rule finds values by entity. The redactor hands the lane a string, not
+  its key, so a rule that names `columns` never fires. Validate refuses
+  one in the lane's own `mask` block. An inherited one does not apply and
+  `-validate` notes it; inherited entity rules apply. The lane's own mask
+  rules, or `mask: {rules: []}`, replace inherited ones.
 - Each masked result is one `masked` audit row with the count and the
   entities, never the values.
 - A result is withheld with JSON-RPC error `-32010`, and the MCP session
@@ -3677,8 +3678,9 @@ What the lane refuses at validate, and why: a `listen` off loopback
 without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
 requests, not connections); an `mcp_gateway.sql` entry without a glob, an
-argument or a known dialect (the dialect is never guessed); a mask rule
-that names `columns` (see "Masking results"); an `analyzer`
+argument or a known dialect (the dialect is never guessed); a rule in
+the lane's own `mask` block that names `columns` (see "Masking results");
+an `analyzer`
 block (ENG-964) until it lands; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as

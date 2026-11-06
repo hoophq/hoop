@@ -20,6 +20,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/analytics"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -224,29 +225,68 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 	}
 }
 
-// A mask rule that names columns never fires on an mcp lane, so validate
-// refuses it whether the lane holds it or inherits it. The lane's own rules
-// or mask: {rules: []} replace inherited ones.
+// recordingPlugin keeps the rules each masker is built from.
+type recordingPlugin struct {
+	stubPlugin
+	rules *[]string
+}
+
+func (p recordingPlugin) BuildMasker(raw []byte) (gate.Masker, error) {
+	*p.rules = append(*p.rules, string(raw))
+	return p.stubPlugin.BuildMasker(raw)
+}
+
+// A mask rule that names columns never fires on an mcp lane. Validate refuses
+// one in the lane's own mask block. An inherited one passes, as on 1.290, but
+// the lane's masker never gets it and -validate notes it.
 func TestAnMCPLaneRefusesColumnMaskRules(t *testing.T) {
-	const columns = `{"rules":[{"name":"by-column","columns":["email"]}]}`
-	const labeled = `{"rules":[{"name":"labeled","entities":["US_SSN"],"columns":["ssn"]}]}`
-	const entities = `{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"]}]}`
+	const columnRule = `{"name":"by-column","columns":["email"]}`
+	const entityRule = `{"name":"pii","entities":["EMAIL_ADDRESS"]}`
 	open := strings.TrimSuffix(mcpLane, "}")
 	for name, doc := range map[string]string{
-		"own":         `{"listeners":[` + open + `,"mask":` + columns + `}]}`,
-		"own labeled": `{"listeners":[` + open + `,"mask":` + labeled + `}]}`,
-		"inherited":   `{"mask":` + columns + `,"listeners":[` + mcpLane + `]}`,
+		"own":         `{"listeners":[` + open + `,"mask":{"rules":[` + columnRule + `]}}]}`,
+		"own labeled": `{"listeners":[` + open + `,"mask":{"rules":[{"name":"labeled","entities":["US_SSN"],"columns":["ssn"]}]}}]}`,
 	} {
 		if _, err := LoadConfigBytes([]byte(doc)); err == nil || !strings.Contains(err.Error(), "names columns") {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	for name, doc := range map[string]string{
-		"opted out":    `{"mask":` + columns + `,"listeners":[` + open + `,"mask":{"rules":[]}}]}`,
-		"own replaces": `{"mask":` + columns + `,"listeners":[` + open + `,"mask":` + entities + `}]}`,
+	for name, c := range map[string]struct {
+		doc, applied, note string
+	}{
+		"inherited":       {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + mcpLane + `]}`, "", "by-column"},
+		"inherited mixed": {`{"mask":{"rules":[` + columnRule + `,` + entityRule + `]},"listeners":[` + mcpLane + `]}`, `[` + entityRule + `]`, "by-column"},
+		"opted out":       {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + open + `,"mask":{"rules":[]}}]}`, "", ""},
+		"own replaces":    {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + open + `,"mask":{"rules":[` + entityRule + `]}}]}`, `[` + entityRule + `]`, ""},
 	} {
-		if _, err := LoadConfigBytes([]byte(doc)); err != nil {
+		cfg, err := LoadConfigBytes([]byte(c.doc))
+		if err != nil {
 			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		cfg.lic = licensed(t)
+		build, built := fakeMCPEngine()
+		withMCPGatewayEngine(t, build)
+		var seen []string
+		info, err := Validate(cfg, recordingPlugin{stubPlugin{entities: []string{"EMAIL_ADDRESS"}}, &seen})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		masks := c.applied != ""
+		if got := (*built)[0].lane.MaskResults; got != masks || info[0].Masking != masks {
+			t.Errorf("%s: MaskResults %v, Masking %v, want %v", name, got, info[0].Masking, masks)
+		}
+		var want []string
+		if masks {
+			want = []string{c.applied}
+		}
+		if !slices.Equal(seen, want) {
+			t.Errorf("%s: maskers built from %q, want %q", name, seen, want)
+		}
+		notes := strings.Join(info[0].Notes, "\n")
+		note := `top-level mask rule "by-column" names columns and does not apply to lane "github"`
+		if got := strings.Contains(notes, note); got != (c.note != "") {
+			t.Errorf("%s: notes %q", name, notes)
 		}
 	}
 }
@@ -361,9 +401,11 @@ func TestAnMCPLaneWithMaskRulesNeedsTheCapability(t *testing.T) {
 			t.Errorf("%s: a build that masks was refused: %v", name, err)
 		}
 	}
+	columns := &MaskConfig{Rules: json.RawMessage(`[{"name":"by-column","columns":["email"]}]`)}
 	for name, cfg := range map[string]Config{
-		"opted out": {Mask: rules, Listeners: []ListenerConfig{optedOut, web}},
-		"no rules":  {Listeners: []ListenerConfig{mcp}},
+		"opted out":         {Mask: rules, Listeners: []ListenerConfig{optedOut, web}},
+		"no rules":          {Listeners: []ListenerConfig{mcp}},
+		"inherited columns": {Mask: columns, Listeners: []ListenerConfig{mcp}},
 	} {
 		if err := CheckServable(cfg, old); err != nil {
 			t.Errorf("%s: refused: %v", name, err)

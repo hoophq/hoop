@@ -695,6 +695,11 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
+			_, _, mc := cfg.resolve(ln.cfg)
+			_, skipped := mcpMask(ln.cfg, mc)
+			for _, rule := range skipped {
+				notes = append(notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, ln.name))
+			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -1515,6 +1520,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		var pluginFactory func() inspect.Codec
 		if plugin != nil {
 			pluginFactory = factory
+		}
+		if isMCPGateway(lc) {
+			mc, _ = mcpMask(lc, mc)
 		}
 		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
 		if err != nil {
