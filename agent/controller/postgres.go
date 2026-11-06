@@ -12,6 +12,10 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
+// postgresFastMaskingFlag lets libhoop skip masking for catalog query
+// responses and mask batches at the same time.
+const postgresFastMaskingFlag = "experimental.postgres_fast_masking"
+
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
@@ -83,6 +87,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		// on more intensive environments this is a problem, we can enable it later based on specific rules
 		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
+	a.setPostgresFastMasking(opts)
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with postgres server, err=%v", err)
@@ -96,4 +101,12 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	// write the first packet when establishing the connection
 	_, _ = serverWriter.Write(pkt.Payload)
 	a.connStore.Set(clientConnectionIDKey, serverWriter)
+}
+
+// setPostgresFastMasking sets the libhoop option when the flag is on. An
+// absent option keeps the old masking path.
+func (a *Agent) setPostgresFastMasking(opts map[string]string) {
+	if a.flags.IsEnabled(postgresFastMaskingFlag) {
+		opts["postgres_fast_masking"] = "true"
+	}
 }

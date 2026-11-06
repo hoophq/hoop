@@ -71,6 +71,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.postgres_fast_masking": {
+		Name:        "experimental.postgres_fast_masking",
+		Description: "Faster data masking on native Postgres connections. Responses to catalog queries (pg_catalog, information_schema), which IDEs send to list tables and columns, skip the masking call; output guardrails still run on them. Other results are masked in up to 4 batches at the same time. When off, every result is masked one batch at a time, catalog queries included.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
