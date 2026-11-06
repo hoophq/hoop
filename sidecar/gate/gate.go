@@ -1533,6 +1533,11 @@ func MaskSupported(p inspect.Protocol) bool {
 	if p == inspect.SSH {
 		return true
 	}
+	// mcp has no codec either: its lane masks result strings through
+	// mcpproxy's redactor, which rewrites the decoded JSON.
+	if p == inspect.MCP {
+		return true
+	}
 	insp, err := inspect.New(p)
 	if err != nil {
 		return false

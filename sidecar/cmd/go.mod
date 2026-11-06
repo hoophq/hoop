@@ -43,7 +43,7 @@ require (
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 // indirect
 	github.com/hoophq/libhoop-ica v0.8.0 // indirect
-	github.com/hoophq/mcpproxy v0.1.5 // indirect
+	github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect

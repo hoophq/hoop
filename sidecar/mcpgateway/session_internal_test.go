@@ -32,6 +32,8 @@ func (nopSession) ToolList(context.Context, []daemon.MCPToolInfo, []string) daem
 	return daemon.MCPVerdict{Allowed: true}
 }
 func (nopSession) Record(context.Context, string, map[string]string) {}
+func (nopSession) Mask(text string) (string, []string, int, error)   { return text, nil, 0, nil }
+func (nopSession) RecordMasked(context.Context, []string, int) error { return nil }
 func (nopSession) Close(context.Context)                             {}
 
 // A message that reaches the pipeline after its MCP session ended, after a
