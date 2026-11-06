@@ -30,8 +30,9 @@ const (
 	// CallClassify is a risk classification.
 	CallClassify CallKind = "classify"
 
-	// CallDecide is the approval agent's decision on a held statement.
-	// It spends from the same purse as a classification.
+	// CallDecide is an agent's decision: the approval agent's on a held
+	// statement, or the hand-off agent's on an ai-handoff level. It spends
+	// from the same purse as a classification.
 	CallDecide CallKind = "decide"
 )
 

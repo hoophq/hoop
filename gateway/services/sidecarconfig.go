@@ -272,7 +272,7 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	// would make a rule unable to widen what it narrowed.
 	out.Trigger = rule.Trigger
 	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
-	out.Approvers = rule.Approvers
+	out.Approvers, out.Handoffs = rule.Approvers, rule.Handoffs
 	out.Prompt, out.Message = rule.Prompt, rule.Message
 
 	// The overrides, kept from the listener unless the rule names one. The

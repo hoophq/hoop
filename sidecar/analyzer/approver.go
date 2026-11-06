@@ -192,12 +192,18 @@ const (
 	// decision. The statement is then rejected.
 	undecidedReason = "the approval agent did not decide"
 
-	reasonOverInput = "the statement is longer than max_input_bytes, so the approval agent " +
-		"cannot read all of it"
-	reasonBodyCut = "the request body is larger than the capture limit, so the approval agent " +
-		"cannot read all of it"
 	reasonObserving = "the approval agent is not consulted in observe mode"
 )
+
+// incompleteReason renders the fixed reason for a statement an agent cannot
+// read in full. agent names it: "approval agent" or "hand-off agent".
+func incompleteReason(agent string, bodyCut bool) string {
+	if bodyCut {
+		return "the request body is larger than the capture limit, so the " + agent +
+			" cannot read all of it"
+	}
+	return "the statement is longer than max_input_bytes, so the " + agent + " cannot read all of it"
+}
 
 type filedLevelKey struct{}
 
@@ -219,22 +225,22 @@ const maxAgentReasonBytes = 1 << 10
 // bounded rendering. A statement past it is refused too.
 const noCutLimit = 1 << 30
 
-// incompleteForAgent reports why the agent's content would not hold the
-// whole statement, or "". It rebuilds the content without the input bound
-// and compares, so it catches every builder that truncates by
-// max_input_bytes. Redaction runs after this and is not a cut.
-func (e *Evaluator) incompleteForAgent(stmt inspect.Statement) string {
+// incompleteFor reports why an agent's content would not hold the whole
+// statement, or "". It rebuilds the content without the input bound and
+// compares, so it catches every builder that truncates by max_input_bytes.
+// Redaction runs after this and is not a cut.
+func (e *Evaluator) incompleteFor(stmt inspect.Statement, agent string) string {
 	if stmt.HTTP != nil && stmt.HTTP.BodyTruncated {
-		return reasonBodyCut
+		return incompleteReason(agent, true)
 	}
 	builder, ok := BuilderFor(stmt.Protocol)
 	if !ok {
-		return reasonOverInput
+		return incompleteReason(agent, false)
 	}
 	bounded, ok1 := builder.Build(stmt, e.cfg.MaxInputBytes)
 	full, ok2 := builder.Build(stmt, noCutLimit)
 	if !ok1 || !ok2 || bounded.Text != full.Text || len(full.Text) >= noCutLimit {
-		return reasonOverInput
+		return incompleteReason(agent, false)
 	}
 	return ""
 }
@@ -248,18 +254,32 @@ type decision struct {
 	reason   string
 }
 
+type viaHandoffKey struct{}
+
+// ViaHandoff reports a hold the hand-off agent selected on an ai-handoff
+// level. Its FiledLevel is that level.
+func ViaHandoff(ctx context.Context) bool {
+	v, _ := ctx.Value(viaHandoffKey{}).(bool)
+	return v
+}
+
+func withViaHandoff(ctx context.Context) context.Context {
+	return context.WithValue(ctx, viaHandoffKey{}, true)
+}
+
 // requestAgentApproval hands the agent's decision to the Chain like a hold,
 // so it runs (and spends a model call) only after every later evaluator
 // allowed. A decide-phase policy reads input.review.mode "agent". It has no
-// wait mode: the decision is synchronous.
+// wait mode: the decision is synchronous. prompt is the agent's whole
+// system prompt.
 func (e *Evaluator) requestAgentApproval(ctx context.Context, stmt inspect.Statement,
-	ec *policy.EvalContext, notes map[string]string, level RiskLevel, res Result, text string) policy.Verdict {
+	ec *policy.EvalContext, notes map[string]string, level RiskLevel, res Result, text, prompt string) policy.Verdict {
 	user := ""
 	if ec != nil {
 		user = ec.Context["principal"]
 	}
 	resolve := func() policy.Verdict {
-		return e.agentApproval(ctx, stmt, notes, level, res, text, user)
+		return e.agentApproval(ctx, stmt, notes, level, res, text, user, prompt)
 	}
 	if ec.RequestReview(policy.ReviewRequest{
 		Mode: ReviewModeAgent, ModeSource: reviewModeSourceAgent, Resolve: resolve,
@@ -275,7 +295,7 @@ func (e *Evaluator) requestAgentApproval(ctx context.Context, stmt inspect.State
 // ctx is the connection's. A client gone before or during the call records
 // no decision and denies with the cause.
 func (e *Evaluator) agentApproval(ctx context.Context, stmt inspect.Statement, notes map[string]string,
-	level RiskLevel, res Result, text, user string) policy.Verdict {
+	level RiskLevel, res Result, text, user, prompt string) policy.Verdict {
 	notes[MetadataApprover] = string(ApproverAIAgent)
 	if e.cfg.Observing {
 		// policy.Observe turns this denial into would_deny. A dry run
@@ -285,7 +305,7 @@ func (e *Evaluator) agentApproval(ctx context.Context, stmt inspect.Statement, n
 	if ctx.Err() != nil {
 		return e.agentEnded(ctx, notes)
 	}
-	d, cause := e.agentDecide(ctx, stmt, level, res, text, user)
+	d, cause := e.agentDecide(ctx, stmt, level, res, text, user, prompt)
 	if ctx.Err() != nil {
 		return e.agentEnded(ctx, notes)
 	}
@@ -339,11 +359,11 @@ func agentMessage(operator, reason string) string {
 // decision. It never returns an approval it could not verify. The error is
 // why it did not decide, for the record, or nil.
 func (e *Evaluator) agentDecide(ctx context.Context, stmt inspect.Statement, level RiskLevel,
-	res Result, text, user string) (decision, error) {
+	res Result, text, user, prompt string) (decision, error) {
 	undecided := decision{reason: undecidedReason}
 	// The agent must read the whole statement: an approval of a prefix
 	// would release bytes nobody read. No model call is made.
-	if reason := e.incompleteForAgent(stmt); reason != "" {
+	if reason := e.incompleteFor(stmt, "approval agent"); reason != "" {
 		return decision{reason: reason}, errors.New(reason)
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
@@ -351,7 +371,28 @@ func (e *Evaluator) agentDecide(ctx context.Context, stmt inspect.Statement, lev
 		// New refuses this; kept so a broken invariant still rejects.
 		return undecided, fmt.Errorf("provider %q cannot run the approval agent", e.cfg.Provider.Name())
 	}
-	// One call against the same purse as the classification.
+	if err := e.takeCall(); err != nil {
+		return undecided, err
+	}
+	content := approvalContent(text, level, res.Title, e.cfg.Listener, stmt.Protocol, user)
+	var d decision
+	err := e.agentCall(ctx, caller, prompt, content, ApprovalTools(), func(calls []ToolCall) error {
+		var ok bool
+		if d, ok = parseDecision(calls); !ok {
+			return fmt.Errorf("the approval agent answered %d tool call(s), not one approve or reject "+
+				"with a known reason_code and a reason", len(calls))
+		}
+		return nil
+	})
+	if err != nil {
+		return undecided, err
+	}
+	return d, nil
+}
+
+// takeCall reserves one call for an agent from the classification's purse:
+// max_calls and the rate limit. The error says why none is left.
+func (e *Evaluator) takeCall() error {
 	status, edge, refused := e.budget.take(e.cfg.MaxCalls, e.cfg.RateLimit)
 	if edge != edgeNone && e.cfg.OnRateLimit != nil {
 		e.cfg.OnRateLimit(edge == edgeStarted, refused)
@@ -363,31 +404,35 @@ func (e *Evaluator) agentDecide(ctx context.Context, stmt inspect.Statement, lev
 				e.onBudget()
 			}
 		})
-		return undecided, fmt.Errorf("the risk analysis budget is spent")
+		return errors.New("the risk analysis budget is spent")
 	case StatusRateLimited:
 		e.rateLimited.Add(1)
-		return undecided, fmt.Errorf("the risk analysis rate limit is reached")
+		return errors.New("the risk analysis rate limit is reached")
 	}
+	return nil
+}
 
+// agentCall makes one agent's tool call under the timeout and the retries,
+// and reports it through OnCall. accept judges the calls; its error makes
+// the call a failure.
+func (e *Evaluator) agentCall(ctx context.Context, caller ToolCaller, prompt, content string,
+	tools []ToolSpec, accept func([]ToolCall) error) error {
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	defer cancel()
 	start := time.Now()
-	content := approvalContent(text, level, res.Title, e.cfg.Listener, stmt.Protocol, user)
 	var calls []ToolCall
 	attempts, err := e.retrying(callCtx, func() error {
 		var err error
-		calls, err = caller.Decide(callCtx, e.agentPrompts[level], content, ApprovalTools())
+		calls, err = caller.Decide(callCtx, prompt, content, tools)
 		return err
 	})
 	if err == nil {
-		if d, ok := parseDecision(calls); ok {
-			return d, e.reportCall(callCtx, CallDecide, start, attempts, nil)
-		}
-		err = fmt.Errorf("the approval agent answered %d tool call(s), not one approve or reject "+
-			"with a known reason_code and a reason", len(calls))
+		err = accept(calls)
 	}
-	e.errs.Add(1)
-	return undecided, e.reportCall(callCtx, CallDecide, start, attempts, err)
+	if err != nil {
+		e.errs.Add(1)
+	}
+	return e.reportCall(callCtx, CallDecide, start, attempts, err)
 }
 
 // parseDecision accepts exactly one call of approve or reject with a

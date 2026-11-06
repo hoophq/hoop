@@ -385,6 +385,9 @@
 
             [session-analysis/main {:ai-analysis (:ai_analysis session)}]
 
+            [session-analysis/ai-decisions {:decisions (get-in metadata [:sidecar :ai_decisions])
+                                            :dropped (get-in metadata [:sidecar :ai_decisions_dropped])}]
+
             [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
 
             [data-masking-analytics/main {:session session}]
