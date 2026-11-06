@@ -110,7 +110,7 @@ compose logs --no-log-prefix otel-collector | awk '
 
 step "the trace of each tool call: hoop.statement and its policy stage"
 compose logs --no-log-prefix otel-collector |
-    grep -E '^ +(Trace ID|Parent ID|Name) +: |-> hoop\.(tables|operation|verdict|rule|deny\.source|engine|outcome): ' | head -60
+    grep -E '^ +(Trace ID|Parent ID|Name) +: |-> hoop\.(tables|operation|verdict|rule|deny\.source|engine|outcome): ' | awk 'NR <= 60'
 
 echo
 echo "stop with: ./demo-mcp.sh down"
