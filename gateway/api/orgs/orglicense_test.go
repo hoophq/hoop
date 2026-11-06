@@ -50,3 +50,22 @@ func TestSignedLicenseProperties(t *testing.T) {
 		}
 	}
 }
+
+// A valid document cannot be produced here: the signing key is not in the
+// repository. These are the states that MUST be refused at boot.
+func TestVerifyOrgLicenseRefuses(t *testing.T) {
+	for _, tt := range []struct {
+		msg  string
+		data string
+	}{
+		{"malformed document", `{"payload":`},
+		{"enterprise type without a valid signature", `{"payload":{"type":"enterprise","issued_at":1,"expire_at":4102444800,"allowed_hosts":["*"],"description":"d"},"key_id":"k","signature":"c2ln"}`},
+		{"unknown license type", `{"payload":{"type":"trial","issued_at":1,"expire_at":4102444800,"allowed_hosts":["*"],"description":"d"},"key_id":"k","signature":"c2ln"}`},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			if _, err := VerifyOrgLicense([]byte(tt.data)); err == nil {
+				t.Fatal("expected VerifyOrgLicense to refuse, got nil")
+			}
+		})
+	}
+}
