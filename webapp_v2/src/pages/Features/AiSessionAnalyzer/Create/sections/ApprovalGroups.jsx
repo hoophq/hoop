@@ -28,7 +28,7 @@ export default function ApprovalGroups({ options, value, onChange }) {
   return (
     <Stack gap={6}>
       <Paper withBorder radius="lg" className={classes.clipped}>
-        <UnstyledButton w="100%" px="md" py="sm" bg="gray.0" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <UnstyledButton w="100%" px="md" py="sm" bg="var(--hoop-surface-muted)" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
           <Group justify="space-between" wrap="nowrap" gap="md">
             <Stack gap={2}>
               <Text size="sm" fw={600}>
