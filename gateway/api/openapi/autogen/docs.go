@@ -1551,6 +1551,38 @@ const docTemplate = `{
                 }
             }
         },
+        "/approvals/routing/integrations": {
+            "get": {
+                "description": "List the integrations AI routing can notify through, and the channels each reaches. Slack channels are the channels of every sidecar listener and the default channel; a channel name is its id when unknown. An integration that is not set up reads integrated false.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Approvals"
+                ],
+                "summary": "Approval Routing Integrations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ApprovalRoutingIntegrations"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/approvals/{id}": {
             "get": {
                 "description": "Get an approval request by the id or session id. An approval request the user did not make and cannot decide answers 404; admins and auditors get any approval request. ` + "`" + `/reviews/{id}` + "`" + ` is an alias.",
@@ -14502,6 +14534,49 @@ const docTemplate = `{
                 "AnalyticsModeDisabled"
             ]
         },
+        "openapi.ApprovalRoutingChannel": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "The channel id",
+                    "type": "string",
+                    "example": "C0123ABC"
+                },
+                "name": {
+                    "description": "The channel name; the id when unknown",
+                    "type": "string",
+                    "example": "C0123ABC"
+                }
+            }
+        },
+        "openapi.ApprovalRoutingIntegration": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "description": "The channels it reaches",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ApprovalRoutingChannel"
+                    }
+                },
+                "integrated": {
+                    "description": "The organization set the integration up",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "openapi.ApprovalRoutingIntegrations": {
+            "type": "object",
+            "properties": {
+                "slack": {
+                    "$ref": "#/definitions/openapi.ApprovalRoutingIntegration"
+                },
+                "teams": {
+                    "$ref": "#/definitions/openapi.ApprovalRoutingIntegration"
+                }
+            }
+        },
         "openapi.AttributeRequest": {
             "type": "object",
             "required": [
@@ -19193,6 +19268,15 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "high"
                 },
+                "routing": {
+                    "description": "The AI routing decision. Absent on an approval request with static routing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewRouting"
+                        }
+                    ],
+                    "readOnly": true
+                },
                 "session": {
                     "description": "The id of session",
                     "type": "string",
@@ -19390,6 +19474,235 @@ const docTemplate = `{
                 "ReviewStatusRequestRejectedType",
                 "ReviewStatusRequestRevokedType"
             ]
+        },
+        "openapi.ReviewRouting": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "description": "The groups the AI selected from",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "payments-approvers",
+                        "sre"
+                    ]
+                },
+                "channels": {
+                    "description": "The channels that got the approval request",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewRoutingChannel"
+                    },
+                    "readOnly": true
+                },
+                "decided_at": {
+                    "description": "When the decision was made",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "fallback_cause": {
+                    "description": "Why the AI routing fell back. Set with mode static",
+                    "type": "string",
+                    "enum": [
+                        "no_provider",
+                        "timeout",
+                        "provider_error",
+                        "no_tool_call",
+                        "refusal",
+                        "invalid_decision",
+                        "no_valid_group"
+                    ],
+                    "readOnly": true,
+                    "example": "timeout"
+                },
+                "fallback_detail": {
+                    "description": "Detail of the fallback, bounded",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "no answer in 20s"
+                },
+                "groups": {
+                    "description": "The groups that got the approval request",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "sre"
+                    ]
+                },
+                "integrations": {
+                    "description": "The notify integrations of the configuration, and their state at the decision",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewRoutingIntegration"
+                    },
+                    "readOnly": true
+                },
+                "mode": {
+                    "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request",
+                    "type": "string",
+                    "enum": [
+                        "ai",
+                        "static"
+                    ],
+                    "readOnly": true,
+                    "example": "ai"
+                },
+                "notified_users": {
+                    "description": "The users that got a direct message",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewRoutingUser"
+                    },
+                    "readOnly": true
+                },
+                "reason": {
+                    "description": "The reason the AI gave, at most 500 characters",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "The sre group approved similar statements fast."
+                },
+                "unreachable": {
+                    "description": "The selected users an integration could not reach",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewRoutingUnreachable"
+                    },
+                    "readOnly": true
+                }
+            }
+        },
+        "openapi.ReviewRoutingChannel": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "The channel id",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "C0123ABC"
+                },
+                "integration": {
+                    "description": "The integration",
+                    "type": "string",
+                    "enum": [
+                        "slack",
+                        "teams"
+                    ],
+                    "readOnly": true,
+                    "example": "slack"
+                },
+                "name": {
+                    "description": "The channel name; the id when unknown",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "#payments-approvals"
+                }
+            }
+        },
+        "openapi.ReviewRoutingIntegration": {
+            "type": "object",
+            "properties": {
+                "delivery": {
+                    "description": "How it notifies",
+                    "type": "string",
+                    "enum": [
+                        "dm",
+                        "channel",
+                        "both"
+                    ],
+                    "readOnly": true,
+                    "example": "both"
+                },
+                "integrated": {
+                    "description": "The organization set the integration up when the decision was made",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
+                },
+                "name": {
+                    "description": "The integration",
+                    "type": "string",
+                    "enum": [
+                        "slack",
+                        "teams"
+                    ],
+                    "readOnly": true,
+                    "example": "slack"
+                }
+            }
+        },
+        "openapi.ReviewRoutingUnreachable": {
+            "type": "object",
+            "properties": {
+                "cause": {
+                    "description": "Why it could not reach the user",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "no slack id"
+                },
+                "integration": {
+                    "description": "The integration",
+                    "type": "string",
+                    "enum": [
+                        "slack",
+                        "teams"
+                    ],
+                    "readOnly": true,
+                    "example": "slack"
+                },
+                "name": {
+                    "description": "The display name of the user",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "Bob"
+                },
+                "user_id": {
+                    "description": "The user id",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90"
+                }
+            }
+        },
+        "openapi.ReviewRoutingUser": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "The email of the user",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "ana@example.com"
+                },
+                "id": {
+                    "description": "The user id",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90"
+                },
+                "integrations": {
+                    "description": "The integrations that sent the direct message",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "slack"
+                    ]
+                },
+                "name": {
+                    "description": "The display name of the user",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "Ana"
+                }
+            }
         },
         "openapi.ReviewSessionTimeWindow": {
             "type": "object",
@@ -22238,6 +22551,12 @@ const docTemplate = `{
                     "description": "The statement to approve, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                },
+                "principal": {
+                    "description": "Who sent the statement, as the sidecar saw it: a hoop user id, an auth\nsubject or an email. Sent only for a level with AI routing; every user\nit names is never routed to nor notified. At most 256 characters",
+                    "type": "string",
+                    "maxLength": 256,
+                    "example": "ana@example.com"
                 },
                 "reserve": {
                     "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",

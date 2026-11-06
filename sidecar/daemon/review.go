@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -63,27 +64,51 @@ const maxReviewResponse = 1 << 20
 // reserve asks the plane to reserve an approval rather than spend it
 // (spend_approval_on: accepted); the lane's gate then settles it with the
 // upstream's answer through Config.reviewSettler.
+//
+// routed lists the levels whose approver sets routing. Only their filings
+// send the principal, so the plane can keep the requester out of the people
+// it notifies (ENG-663).
 type planReviewer struct {
 	cp       *controlPlane
 	listener string
 	rule     string
 	reserve  bool
+	routed   map[analyzer.RiskLevel]bool
 	log      *slog.Logger
 }
+
+// maxFiledPrincipal bounds the principal a filing sends. An email address
+// is at most 254 bytes.
+const maxFiledPrincipal = 256
 
 // File implements analyzer.Reviewer. A hold under a level's human approver
 // (analyzer.FiledLevel) files that risk level and no approval_rule; the plane
 // then authorizes it against the level's groups. A hold the hand-off agent
-// selected (analyzer.ViaHandoff) says so with handoff.
+// selected (analyzer.ViaHandoff) says so with handoff. A routed level also
+// sends the principal.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	f := reviewFiling{listener: r.listener, rule: r.rule, statement: statement, reserve: r.reserve}
 	if level, ok := analyzer.FiledLevel(ctx); ok {
 		f.rule, f.level = "", level
 		f.handoff = analyzer.ViaHandoff(ctx)
+		if r.routed[level] {
+			f.principal = boundUTF8(analyzer.FiledPrincipal(ctx), maxFiledPrincipal)
+		}
 	}
 	res, err := r.cp.fileReview(ctx, f)
 	r.checkReserved(res)
 	return res, err
+}
+
+// boundUTF8 cuts s to at most n bytes, on a rune boundary.
+func boundUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // Claim implements analyzer.Reviewer.
@@ -241,18 +266,21 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 // level set files under that level's human approver and omits
 // approval_rule; the plane reads approvers.<level> in the stored block.
 // handoff marks a hold the hand-off agent selected on an ai-handoff level.
+// principal is set only for a routed level.
 type reviewFiling struct {
 	listener, rule, statement string
 	reserve                   bool
 	level                     analyzer.RiskLevel
 	handoff                   bool
+	principal                 string
 }
 
 // fileReview runs one POST /api/sidecars/reviews.
 //
-// ctx carries the lane's analyzer timeout, so each call is bounded by the same
-// number that bounds the model call. controlPlaneHTTPClient's own timeout is
-// the backstop for a caller that passed none.
+// ctx carries the lane's filing budget: the longer of the analyzer timeout
+// and analyzer.DefaultReviewTimeout, since the plane can run AI routing
+// before it answers (ENG-663). The HTTP client's backstop is filingTimeout:
+// never shorter than that budget, and reviewFilingTimeout with no deadline.
 //
 // Every failure returns an error, and the caller denies on one. There is no
 // retry here: a hold that is still pending asks again through claimReview.
@@ -278,6 +306,11 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 		if f.handoff {
 			req["handoff"] = true
 		}
+		// Only for a routed level, so the plane can keep the requester
+		// out of the routing. A static level sends the body it always sent.
+		if f.principal != "" {
+			req["principal"] = f.principal
+		}
 	}
 	// Only when set, so a lane that does not reserve sends the body it
 	// always sent.
@@ -289,7 +322,7 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 		return out, fmt.Errorf("encoding the approval request: %w", err)
 	}
 
-	resp, raw, err := cp.reviewRequest(ctx, http.MethodPost, body, controlPlaneReviewsPath)
+	resp, raw, err := cp.reviewRoundTrip(ctx, filingTimeout(ctx), http.MethodPost, body, nil, controlPlaneReviewsPath)
 	if err != nil {
 		return out, err
 	}
@@ -376,19 +409,44 @@ func (cp *controlPlane) settleReview(ctx context.Context, reviewID string, accep
 	return out.Status, nil
 }
 
+// reviewFilingTimeout is the HTTP backstop of a filing. It is longer than
+// controlPlaneTimeout because the plane can run AI routing first.
+const reviewFilingTimeout = max(controlPlaneTimeout, analyzer.DefaultReviewTimeout)
+
+// filingTimeout is a filing's HTTP budget: the time left on ctx when that is
+// longer than reviewFilingTimeout (an analyzer timeout_sec above it), else
+// reviewFilingTimeout. ctx still ends the call at its own deadline.
+func filingTimeout(ctx context.Context) time.Duration {
+	if d, ok := ctx.Deadline(); ok {
+		return max(time.Until(d), reviewFilingTimeout)
+	}
+	return reviewFilingTimeout
+}
+
+// reviewClient is the HTTP client of one review call, with timeout as its
+// backstop. A variable so a test can read the timeout a call was given.
+var reviewClient = func(timeout time.Duration) *http.Client {
+	c := controlPlaneHTTPClient()
+	c.Timeout = timeout
+	return c
+}
+
 // reviewRequest sends one request under the reviews path and reads the
 // answer, bounded. The status is the caller's to interpret: reviewAnswer
 // handles what every review call shares.
 func (cp *controlPlane) reviewRequest(ctx context.Context, method string, body []byte, elem ...string) (*http.Response, []byte, error) {
-	return cp.reviewRoundTrip(ctx, method, body, nil, elem...)
+	return cp.reviewRoundTrip(ctx, controlPlaneTimeout, method, body, nil, elem...)
 }
 
 // reviewQuery is a GET under the reviews path with a query string.
 func (cp *controlPlane) reviewQuery(ctx context.Context, query url.Values, elem ...string) (*http.Response, []byte, error) {
-	return cp.reviewRoundTrip(ctx, http.MethodGet, nil, query, elem...)
+	return cp.reviewRoundTrip(ctx, controlPlaneTimeout, http.MethodGet, nil, query, elem...)
 }
 
-func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body []byte, query url.Values, elem ...string) (*http.Response, []byte, error) {
+// reviewRoundTrip sends one review call; timeout is the HTTP client's
+// backstop beside ctx.
+func (cp *controlPlane) reviewRoundTrip(ctx context.Context, timeout time.Duration, method string, body []byte,
+	query url.Values, elem ...string) (*http.Response, []byte, error) {
 	// The base was validated by checkControlPlaneURL; JoinPath keeps a
 	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
 	u, err := url.Parse(cp.url)
@@ -412,7 +470,8 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 	}
 	req.Header.Set(header, value)
 
-	resp, err := controlPlaneHTTPClient().Do(req)
+	client := reviewClient(timeout)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("the control plane at %s is unreachable: %w", cp.url, err)
 	}

@@ -88,7 +88,9 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: message creation failed: %w", err)
 	}
-	if len(msg.Content) == 0 {
+	// A refusal can come with no content: it is an answer, not an empty one.
+	refused := msg.StopReason == anthropic.StopReasonRefusal
+	if len(msg.Content) == 0 && !refused {
 		return nil, fmt.Errorf("anthropic: empty response content")
 	}
 
@@ -113,13 +115,20 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 		}
 	}
 
-	return &ChatResponse{
+	resp := &ChatResponse{
 		Content:      textContent,
 		Model:        string(msg.Model),
 		InputTokens:  int(msg.Usage.InputTokens),
 		OutputTokens: int(msg.Usage.OutputTokens),
 		ToolCalls:    toolCalls,
-	}, nil
+	}
+	if refused {
+		resp.Refusal = "the model stopped with stop_reason refusal"
+		if textContent != "" {
+			resp.Refusal += ": " + textContent
+		}
+	}
+	return resp, nil
 }
 
 // anthropicMessages converts provider-agnostic turns to SDK message params.
@@ -176,17 +185,7 @@ func anthropicMessages(in []Message) []anthropic.MessageParam {
 func anthropicTools(tools []Tool) []anthropic.ToolUnionParam {
 	result := make([]anthropic.ToolUnionParam, len(tools))
 	for i, t := range tools {
-		props := make(map[string]any, len(t.InputSchema.Properties))
-		for name, prop := range t.InputSchema.Properties {
-			p := map[string]any{"type": prop.Type}
-			if prop.Description != "" {
-				p["description"] = prop.Description
-			}
-			if len(prop.Enum) > 0 {
-				p["enum"] = prop.Enum
-			}
-			props[name] = p
-		}
+		props := propertiesSchema(t.InputSchema.Properties)
 		tp := anthropic.ToolParam{
 			Name:        t.Name,
 			Description: anthropic.String(t.Description),

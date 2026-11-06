@@ -21,6 +21,7 @@ import {
   readLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
+import { ROUTING_AI, emptyRouting, readRouting, routingToSpec } from './approvalRouting'
 
 const LEVEL_KEYS = ['high', 'medium', 'low']
 
@@ -30,8 +31,9 @@ const LEVEL_KEYS = ['high', 'medium', 'low']
 export const APPROVER_RULE = 'approval_rule'
 
 // Who approves one level's hold. A new hold uses the AI agent. A hand-off
-// level keeps here the approver of its "Hold for approval" choice.
-const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '' })
+// level keeps here the approver of its "Hold for approval" choice. `routing`
+// is a human level's AI routing (ENG-663): static (groups) by default.
+const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '', routing: emptyRouting() })
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
 
 // A hand-off level's prompt and allowed actions (ENG-661). A new one allows all.
@@ -123,7 +125,7 @@ function specToForm(spec, ruleName, reviewers) {
     if (!canHold(form, level)) continue
     const read = readLevelApprover(spec, level)
     if (read) {
-      form.approval[level] = read
+      form.approval[level] = { ...read, routing: readRouting(read.routing) }
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
@@ -145,9 +147,11 @@ function holdApprovers(f) {
 }
 
 // approvers.<level> (ENG-680). A level an imported approval rule decides has
-// no entry: it files under that rule.
+// no entry: it files under that rule. An AI-routed human level writes its
+// routing and no groups: the sidecar refuses both.
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
+    if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
     return approval.groups.length > 0 ? { type: APPROVER_HUMAN, groups: approval.groups } : { type: APPROVER_HUMAN }
   }
   if (approval.approver === APPROVER_AI) {
@@ -156,6 +160,7 @@ function approverToSpec(approval) {
   }
   return null
 }
+
 
 // handoffs.<level> (ENG-661): the actions the agent may select, and its prompt.
 function handoffToSpec(handoff) {
@@ -254,6 +259,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const ruleLibrary = useAiSessionAnalyzerStore((s) => s.ruleLibrary)
   const ruleLibraryStatus = useAiSessionAnalyzerStore((s) => s.ruleLibraryStatus)
   const fetchRuleLibrary = useAiSessionAnalyzerStore((s) => s.fetchRuleLibrary)
+  const fetchRoutingIntegrations = useAiSessionAnalyzerStore((s) => s.fetchRoutingIntegrations)
 
   const [name, setName] = useState(stored?.name ?? '')
   const [description, setDescription] = useState(stored?.description ?? '')
@@ -412,6 +418,11 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     fetchRuleLibrary()
   }, [fetchRuleLibrary])
 
+  // The integrations an AI-routed level can notify through: once per form.
+  useEffect(() => {
+    fetchRoutingIntegrations()
+  }, [fetchRoutingIntegrations])
+
   const protocol = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
     const first = targets[0]
@@ -432,7 +443,10 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
 
   const canSubmit = name.trim() !== '' && !submitting
   // Plus the level's stored ones, so a removed group can still be unselected.
-  const groupOptionsFor = (level) => [...new Set([...groupOptions, ...form.approval[level].groups])].sort()
+  const groupOptionsFor = (level) => {
+    const { groups, routing } = form.approval[level]
+    return [...new Set([...groupOptions, ...groups, ...routing.candidates])].sort()
+  }
   const approvers = holdApprovers(form)
   // A person decides: the hold waits, so its mode applies.
   const waits = approvers.has(APPROVER_HUMAN) || approvers.has(APPROVER_RULE)

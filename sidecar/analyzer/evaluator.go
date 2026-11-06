@@ -20,6 +20,11 @@ import (
 // in ten seconds has already cost more than its verdict is worth.
 const DefaultTimeout = 10 * time.Second
 
+// DefaultReviewTimeout is the least time one approval filing gets. The
+// control plane can run AI routing (up to 20 s) before it answers a filing
+// that opens a new review (ENG-663).
+const DefaultReviewTimeout = 30 * time.Second
+
 // DefaultMaxInputBytes bounds what is sent per statement.
 const DefaultMaxInputBytes = 8 << 10
 
@@ -251,6 +256,11 @@ type Config struct {
 	// Timeout bounds one classification. Zero uses DefaultTimeout.
 	Timeout time.Duration
 
+	// ReviewTimeout bounds one approval filing when it is longer than
+	// Timeout. Zero uses DefaultReviewTimeout. A claim or a settle keeps
+	// Timeout: only a filing waits for the plane's routing.
+	ReviewTimeout time.Duration
+
 	// MaxRetries is how many times a classification is re-sent after a
 	// retryable provider answer (408, 429, 500, 502, 503, 504). Zero sends
 	// once. Every attempt shares Timeout, so retries never hold a
@@ -447,6 +457,9 @@ func New(cfg Config) (*Evaluator, error) {
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = DefaultTimeout
+	}
+	if cfg.ReviewTimeout <= 0 {
+		cfg.ReviewTimeout = DefaultReviewTimeout
 	}
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
@@ -741,7 +754,7 @@ func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalConte
 	case ApproverAIAgent:
 		return e.requestAgentApproval(ctx, stmt, ec, notes, level, c.res, c.text, agentPrompt)
 	case ApproverHuman:
-		ctx = withFiledLevel(ctx, level)
+		ctx = withFiledPrincipal(withFiledLevel(ctx, level), principal(ec))
 	}
 	return e.requestHold(ctx, stmt, ec, notes)
 }

@@ -46,11 +46,15 @@ const RISK_ACTIONS = {
 }
 
 // Who approves a hold: the block's approval rule, the AI agent, or the members
-// of some groups. `sep` follows "Human": ": " in a level, " " inside a hand-off
-// list.
+// of some groups, which an AI agent selects with AI routing (ENG-663). `sep`
+// follows "Human": ": " in a level, " " inside a hand-off list.
 function approverDetail(read, sep) {
   if (!read) return 'approval rule'
   if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  if (read.routing) {
+    const candidates = Array.isArray(read.routing.candidates) ? read.routing.candidates : []
+    return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}`
+  }
   return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
 }
 

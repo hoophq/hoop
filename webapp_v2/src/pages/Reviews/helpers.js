@@ -56,6 +56,38 @@ export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
 export const isHandoffReview = (review) => review?.via_handoff === true
 export const HANDOFF_ROUTE = 'Hand-off → Hold for approval'
 
+// How the review found its approvers when its level uses AI routing
+// (ENG-663). Absent for a static level. `mode` "static" means the AI routing
+// fell back and every candidate group got the review.
+export const ROUTING_AI = 'ai'
+export const reviewRouting = (review) => (review?.routing && typeof review.routing === 'object' ? review.routing : null)
+
+const FALLBACK_CAUSE = {
+  no_provider: 'No AI provider is set up.',
+  timeout: 'The AI agent did not answer in time.',
+  provider_error: 'The AI provider returned an error.',
+  no_tool_call: 'The AI agent did not return exactly one decision.',
+  refusal: 'The AI agent refused to decide.',
+  invalid_decision: 'The AI agent returned a decision that is not valid.',
+  no_valid_group: 'The AI agent selected no valid group.',
+}
+
+// The fallback cause in plain words. A cause this build does not know shows as sent.
+export const fallbackCauseLabel = (cause) =>
+  FALLBACK_CAUSE[cause] ?? (cause ? `AI routing did not complete (${cause}).` : 'AI routing did not complete.')
+
+const INTEGRATION_LABEL = { slack: 'Slack', teams: 'MS Teams' }
+export const integrationLabel = (key) => INTEGRATION_LABEL[key] ?? key
+
+// One entry of routing.integrations: a notify key and its state when the AI
+// decided. An integration that was not set up notified nobody.
+const DELIVERY_LABEL = { dm: 'Direct message', channel: 'Channel', both: 'Direct message and channel' }
+export function notifyIntegrationLabel(entry) {
+  const name = integrationLabel(entry?.name)
+  if (entry?.integrated !== true) return `${name}: not set up`
+  return `${name}: ${DELIVERY_LABEL[entry.delivery] ?? DELIVERY_LABEL.dm}`
+}
+
 // The table's rule cell: the approval rule, else the risk level and the route.
 export function ruleLabel(review) {
   if (review?.access_request_rule_name) return review.access_request_rule_name
