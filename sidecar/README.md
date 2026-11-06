@@ -4644,6 +4644,66 @@ column like a write verb after THEN. `IDENTIFIER(:t)` hides the table from
 table rules; the operation is still read. Table rules miss the table of
 `SHOW TBLPROPERTIES`, `SHOW COLUMNS`, `SHOW PARTITIONS` and `table_changes()`.
 
+### SQL in URL parameters and plain bodies: ClickHouse
+
+**`params` and `text` read SQL that is not JSON.** ClickHouse's HTTP
+interface takes its SQL in the `query` URL parameter, in the POST body, or
+in both, joined by a line feed. Without these keys the lane's statement is
+`POST /` and an `operation` or table rule matches nothing.
+
+- **params** maps a resource pattern to a URL parameter. The SQL is that
+  parameter, then a line feed, then the body. A route always reads the body
+  too: reading more than the server runs can only refuse, reading less lets
+  SQL through.
+- **text** lists resource patterns whose plain-text body is the SQL, for an
+  API without a parameter.
+- **One source per route.** A pattern in two of `fields`, `params` and
+  `text` is refused at load. Routes resolve by the longest pattern, as
+  `fields` does.
+- **The parameter.** It is read from the request line, split on `&`, with
+  every name unescaped and compared without case. A second value for it is
+  refused. A parameter the lane redacts (`sensitive_query_params` or the
+  codec's defaults) cannot be named.
+- **INSERT rows.** In ClickHouse, what follows `INSERT ... FORMAT <name>`
+  is rows the server parses with that format, never SQL. The statement is
+  judged alone, as an insert on its table, and `http.sql_inline_rows` marks
+  it. The rows can be binary, compressed or longer than `max_body_bytes`.
+- **Unreadable is `unknown`.** A multipart body (ClickHouse reads a form
+  field as a parameter), a body under `Content-Encoding`, a body cut at
+  `max_body_bytes`, a malformed percent-escape and bytes that are not text
+  each become an `unknown` statement with the reason in `sql.incomplete`.
+  The text check also catches ClickHouse's own `decompress=1` format.
+- **`tools` and `refuse`** read JSON bodies and need `fields`.
+- **What the statement carries.** As for `fields`; `http.sql_field` is
+  `?query` for a parameter route and `body` for a text route. The codec
+  captures `Content-Encoding` to read the body and records it only when
+  `headers` lists it.
+
+A lane in front of ClickHouse's HTTP interface that allows reads only:
+
+```yaml
+listeners:
+  - name: clickhouse-http
+    protocol: http
+    listen: 0.0.0.0:18123
+    upstream: clickhouse:8123
+    http:
+      sql:
+        dialect: clickhouse
+        params:
+          /: query
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, create, drop, alter, truncate, grant, revoke, unknown]
+          message: this listener allows reads only
+```
+
+ClickHouse's native protocol on `:9000` is the `clickhouse` lane; this block
+is for clients that speak HTTP. A request still incomplete at 8 MiB is
+refused on every http lane, so a larger INSERT goes over `:9000`.
+
 ## Guardrails and OPA
 
 Two evaluators under two config sections, layered via `policy.Chain{local,
