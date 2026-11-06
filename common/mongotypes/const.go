@@ -13,4 +13,7 @@ const (
 	// Reply to a client request. responseTo is set.
 	// Deprecated in MongoDB 5.0. Removed in MongoDB 5.1.
 	OpReplyType uint32 = 1
+
+	// opMsgChecksumPresent is the OP_MSG flag bit for a CRC-32C trailer.
+	opMsgChecksumPresent uint32 = 1 << 0
 )
