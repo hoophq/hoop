@@ -1676,6 +1676,9 @@ type SessionReview struct {
 	// The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.
 	// Only GET /sessions/{session_id} returns it
 	RiskLevel *string `json:"risk_level,omitempty" readonly:"true" enums:"high,medium,low" example:"high"`
+	// The email of the user who ran the approved request. Absent before it runs, and on older requests.
+	// Only GET /sessions/{session_id} returns it
+	ExecutedBy *string `json:"executed_by,omitempty" readonly:"true" example:"alice@example.com"`
 }
 
 type ReviewCount struct {

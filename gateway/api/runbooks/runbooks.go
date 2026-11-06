@@ -2,7 +2,6 @@ package apirunbooks
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -145,6 +144,10 @@ func RunExec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	if err := validateNotRedacted(req.Parameters); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 	if err := sessionapi.CoerceMetadataFields(req.Metadata); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -188,14 +191,13 @@ func RunExec(c *gin.Context) {
 		runbook.EnvVars[key] = val
 	}
 
-	runbookParamsJson, _ := json.Marshal(req.Parameters)
+	runbookParamsJson := encodeRequestParams(req.Parameters, runbook)
 	sessionLabels := openapi.SessionLabelsType{
 		"runbookFile":       req.FileName,
 		"runbookParameters": string(runbookParamsJson),
 	}
 
 	sessionID := uuid.NewString()
-	apiroutes.SetSidSpanAttr(c, sessionID)
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.runbook.exec"

@@ -151,6 +151,9 @@ func (l ListenerConfig) usesAddressURL() bool {
 // addressProblems checks a listener's URL-form listen and upstream. A
 // host:port value is not checked: it is dialed as written, as it always was.
 func (l ListenerConfig) addressProblems(name string) []string {
+	if isMCPGateway(l) {
+		return nil // an mcp upstream is an endpoint URL with a path; validateMCPGatewayLane checks it
+	}
 	var problems []string
 	listen, listenURL, listenErr := parseAddressURL(l.Listen)
 	if listenErr != nil {

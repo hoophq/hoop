@@ -78,6 +78,14 @@ const (
 	// listen and upstream written as URLs (address.go). An older build
 	// decodes the string and binds or dials it verbatim, which fails.
 	CapabilityAddressURL = "address_url"
+	// CapabilityPIINER means this build's detector reads the pii section's
+	// ner block and loads the NER model. An older build decodes pii, drops
+	// the key, and then refuses a rule naming PERSON.
+	CapabilityPIINER = "pii_ner"
+	// CapabilityMCPCallerToken means this build reads caller_token and
+	// downstream_tls on an mcp listener. 1.289.0 decodes both keys and
+	// refuses them there.
+	CapabilityMCPCallerToken = "mcp_caller_token"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -168,7 +176,7 @@ var behaviourCapabilities = []string{CapabilitySessionEvents}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
-var valueCapabilities = []string{CapabilityAddressURL}
+var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken}
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
@@ -265,6 +273,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 			need(where, fmt.Sprintf("binds the %s rule %q", r.Type, r.Name), capabilityRulePrefix+string(r.Type))
 		}
 	})
+	if served.usesPIINER() {
+		need("the configuration", "sets pii.ner", CapabilityPIINER)
+	}
 	for _, l := range served.Listeners {
 		if l.Protocol == "" {
 			continue
@@ -272,6 +283,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 		where := fmt.Sprintf("listener %q", l.Name)
 		if l.usesAddressURL() {
 			need(where, "writes listen or upstream as a URL", CapabilityAddressURL)
+		}
+		if isMCPGateway(l) && (l.CallerToken != nil || l.DownstreamTLS != nil) {
+			need(where, "sets caller_token or downstream_tls on an mcp listener", CapabilityMCPCallerToken)
 		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.

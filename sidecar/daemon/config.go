@@ -201,6 +201,12 @@ type Config struct {
 	// The zero value is missing, so an embedder who skips it keeps the caps.
 	lic license.Status
 
+	// licPinned is the license flag or HOOP_LICENSE reference lic resolved
+	// from, empty when neither held one. Both outrank the config key and
+	// cannot change while the process runs; the file a path names can, and
+	// the reloader watches it. Setup fills it.
+	licPinned license.Ref
+
 	// cp is the resolved control plane connection, when one is configured.
 	// resolveConfigSource fills it; Run starts the heartbeat from it. Not a
 	// config key: the file names a URL and does not carry a token or a
@@ -238,6 +244,48 @@ type Config struct {
 	codecPluginInfo []CodecPluginInfo
 }
 
+// piiNER reports whether the pii section sets a ner block, and the backend
+// it names. It reads those two keys and nothing else of the shape, which
+// stays the detector plugin's.
+func (c Config) piiNER() (set bool, backend string) {
+	if len(c.PII) == 0 {
+		return false, ""
+	}
+	var s struct {
+		NER *struct {
+			Backend string `json:"backend"`
+		} `json:"ner"`
+	}
+	if json.Unmarshal(c.PII, &s) != nil || s.NER == nil {
+		return false, ""
+	}
+	return true, strings.ToLower(strings.TrimSpace(s.NER.Backend))
+}
+
+// usesPIINER reports whether the pii section sets a ner block.
+func (c Config) usesPIINER() bool {
+	set, _ := c.piiNER()
+	return set
+}
+
+// checkOneORTSession refuses pii.ner beside an ica lane when both would
+// open ONNX Runtime: hugot allows one ORT session per process
+// (hugot_ort.go NewORTSession), so the second load fails at startup with
+// a message that names neither block. Either side on the go backend is
+// fine. The default of each side is ort in the build that links the ica
+// engine, so the check wants an explicit go on one of them.
+func (c *Config) checkOneORTSession() []string {
+	set, backend := c.piiNER()
+	if !set || backend == "go" || !slices.ContainsFunc(c.Listeners, isICA) {
+		return nil
+	}
+	if c.ICA != nil && c.ICA.Options != nil && c.ICA.Options.NERBackend != nil && *c.ICA.Options.NERBackend == "go" {
+		return nil
+	}
+	return []string{"pii.ner and an ica listener would both open ONNX Runtime, and this process can hold one session; " +
+		"run the ica lanes in their own sidecar, or set pii.ner.backend: go, or set ica.options.ner_backend: go"}
+}
+
 // Licensing reports the license this config runs under. The zero value is a
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }
@@ -256,6 +304,13 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		return s.Err
 	}
 	c.lic = s
+	// The reference a running process watches follows the license in
+	// force: a path is re-read when its file is replaced, a document is
+	// not, and a flag or HOOP_LICENSE path Setup pinned no longer applies.
+	c.licPinned = license.Ref{}
+	if licenseIsPath(ref.Value) {
+		c.licPinned = ref
+	}
 	return nil
 }
 
@@ -281,7 +336,7 @@ type ListenerConfig struct {
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
-	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
+	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic" protocols:"!mcp"`
 
 	// Upstream is the real backend. An http listener also takes a URL,
 	// which makes it a reverse proxy in front of that origin; see
@@ -312,6 +367,8 @@ type ListenerConfig struct {
 	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
+	// An mcp lane serves MCP over TLS with it.
+	//
 	// MySQL negotiates in-band too and is still refused, because the relay
 	// does not speak that exchange: the server greets first there, and the
 	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
@@ -321,7 +378,7 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner,mcp" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
@@ -334,7 +391,7 @@ type ListenerConfig struct {
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
-	IdentityHeader string `json:"identity_header,omitempty" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
+	IdentityHeader string `json:"identity_header,omitempty" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner,mcp"`
 
 	// GoogleIdentity names the caller from the Google OAuth2 bearer in the
 	// request's own Authorization header, verified with Google's tokeninfo
@@ -351,20 +408,20 @@ type ListenerConfig struct {
 
 	// CallerToken refuses every request whose header does not hold a token
 	// listed in a file on the sidecar host, and names the caller with a
-	// configured name. http lanes only, and exclusive with identity_header
+	// configured name. http and mcp lanes only, and exclusive with identity_header
 	// and google_identity: one lane, one authority for who the caller is.
 	//
 	// It is for a lane reachable from anywhere, where identity_header would
 	// let any caller claim any name. See CallerTokenConfig.
-	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
+	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http,mcp" ui:"presence"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
-	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
+	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it (an mcp listener keeps the 30-minute default). A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited."`
+	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited." protocols:"!mcp"`
 
 	// Guardrails overrides the top-level default for this listener.
 	//
@@ -450,6 +507,10 @@ type ListenerConfig struct {
 	// that predates it (EVL-338). The protocol entry alone cannot gate this
 	// key, because an older build refuses the whole document on it.
 	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
+
+	// MCPGateway is an mcp lane upstream transport and mcpproxy tool policy.
+	// Out of the control plane form for now.
+	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" ui:"-"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a
@@ -733,8 +794,7 @@ type AuditConfig struct {
 	// QuerySessions enables the queryable in-memory store behind the admin
 	// query API (/api/sessions, /api/events, /api/stats), the endpoints a UI
 	// renders. The value bounds how many sessions are retained; when full the
-	// oldest session and its whole timeline are evicted, and the API reports
-	// the drop count so a reader can tell the window is partial.
+	// oldest session and its whole timeline are evicted.
 	//
 	// In-memory by design. A durable, queryable backend lives in the nested
 	// module github.com/hoophq/hoop/sidecar/store/sqlite, which this binary
@@ -746,6 +806,16 @@ type AuditConfig struct {
 	// Zero disables the query API; the JSONL file remains the record of truth
 	// either way.
 	QuerySessions int `json:"query_sessions,omitempty"`
+
+	// QueryMaxBytes bounds the memory the query store's events hold, by
+	// estimate. Past it the oldest events are dropped from whichever session
+	// holds them, and that session reports events_dropped. A session count
+	// alone never bounds a connection pool or an agent that keeps a few
+	// sessions open for days. Zero uses 64 MiB. Size a container for about
+	// 2.5x this: allocator fragmentation and the runtime come on top. The
+	// session records are outside it and bounded by QuerySessions: each keeps
+	// its counters and at most one Postgres StartupMessage of metadata (10 kB).
+	QueryMaxBytes int64 `json:"query_max_bytes,omitempty" cap:"audit_query_max_bytes"`
 
 	// FailOpen allows a statement whose audit record could not be written.
 	//
@@ -1290,6 +1360,7 @@ func (c *Config) validate(onHost bool) error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true, onHost)...)
+	problems = append(problems, c.checkOneORTSession()...)
 
 	// Loaded, not merely checked for a path: a bundle with no certificate in
 	// it must fail here, where -validate reports it, and not at the first
@@ -1308,8 +1379,12 @@ func (c *Config) validate(onHost bool) error {
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 	problems = append(problems, c.Telemetry.Validate()...)
+	if c.Audit.QueryMaxBytes < 0 {
+		problems = append(problems, fmt.Sprintf("audit.query_max_bytes: %d is negative; omit it for the 64 MiB default", c.Audit.QueryMaxBytes))
+	}
 
 	problems = append(problems, c.validatePlugins()...)
+	problems = append(problems, c.validateICASlotBinds()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
@@ -1328,6 +1403,8 @@ func (c *Config) validate(onHost bool) error {
 			// the connection is encrypted end to end, so there are no relay
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
+		} else if isMCPGateway(l) {
+			// mcp has no codec: the lane embeds mcpproxy; see mcpgateway.go.
 		} else if isICA(l) {
 			// ica has no codec for a fourth reason: the lane embeds an
 			// engine that terminates the session and masks pixels on the
@@ -1420,13 +1497,13 @@ func (c *Config) validate(onHost bool) error {
 
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
-		// negotiates in-band; grpc/spanner, ClickHouse and http use
+		// negotiates in-band; grpc/spanner, ClickHouse, http and mcp use
 		// TLS-on-connect, http with ALPN.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) && !isMCPGateway(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc, spanner and mcp, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -1446,7 +1523,7 @@ func (c *Config) validate(onHost bool) error {
 		// analytics, and leave every session anonymous, which is how the
 		// http path behaved before it read the header at all.
 		if l.IdentityHeader != "" && !isSSH(l) {
-			if p := inspect.Protocol(l.Protocol); p != inspect.HTTP && !isGRPCTransport(l) {
+			if p := inspect.Protocol(l.Protocol); p != inspect.HTTP && !isGRPCTransport(l) && !isMCPGateway(l) {
 				problems = append(problems, fmt.Sprintf(
 					"%s: identity_header is only supported on http, grpc and spanner, not %q",
 					name, l.Protocol))
@@ -1466,9 +1543,9 @@ func (c *Config) validate(onHost bool) error {
 			}
 		}
 		if l.CallerToken != nil {
-			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+			if (inspect.Protocol(l.Protocol) != inspect.HTTP && !isMCPGateway(l)) || isGRPCTransport(l) || isSSH(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: caller_token is only supported on http, not %q", name, l.Protocol))
+					"%s: caller_token is only supported on http and mcp, not %q", name, l.Protocol))
 			}
 			if l.IdentityHeader != "" {
 				problems = append(problems, fmt.Sprintf(
@@ -1478,7 +1555,7 @@ func (c *Config) validate(onHost bool) error {
 				problems = append(problems, fmt.Sprintf(
 					"%s: caller_token and google_identity both name the caller; keep one", name))
 			}
-			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
+			problems = append(problems, l.CallerToken.validate(name, l)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
@@ -1538,6 +1615,16 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+		// The gate queues and spends an approval on an HTTP request
+		// statement only. An approval the analyzer asked for on SQL read
+		// out of a body would never be spent, so one approval would
+		// release that SQL again and again. Refuse the pair until the gate
+		// settles those statements too.
+		if lc.HTTP.SQL != nil && analyzerHolds(lc.Analyzer) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: http.sql cannot be combined with an analyzer that holds for approval yet: "+
+					"an approval on SQL read from a request body would never be spent", name))
+		}
 	}
 
 	if lc.ClickHouse != nil {
@@ -1629,6 +1716,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 			"%s: an \"ica\" block is only valid on an ica listener, not %s",
 			name, lc.Protocol))
 	}
+	if isMCPGateway(lc) {
+		problems = append(problems, validateMCPGatewayLane(lc, name)...)
+		if lc.Mask != nil && lc.Mask.hasRules() {
+			problems = append(problems, name+": a mask block on an mcp listener does not apply yet; mask rules inherited from the top level are accepted and noted")
+		}
+		if lc.Analyzer != nil {
+			problems = append(problems, name+": analyzer does not apply to an mcp listener yet")
+		}
+	} else if lc.MCPGateway != nil {
+		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))
+	}
 
 	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds
 	// only the method path unless the lane captures payloads. The rule
@@ -1660,7 +1758,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	if isSpanner(lc) && anySQLDerived(localRules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has operation/table rule(s) on a spanner listener but "+
+			"%s: has operation/table/procedure rule(s) on a spanner listener but "+
 				"grpc.capture_payload is not set, so rules would only ever see "+
 				"the generic RPC statement and never the extracted SQL; add a "+
 				"\"grpc\" block with capture_payload: true and descriptors", name))
@@ -1779,7 +1877,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
 						"or set mask: {rules: []} on this lane.", name))
 			}
-		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !isMCPGateway(lc) && !gate.MaskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
 			// capability), and buildMasker asks it through the factory; the
 			// config alone cannot say, and the plane never loads one.
@@ -1811,7 +1909,7 @@ func anyPII(rules []policy.Rule) bool {
 func anySQLDerived(rules []policy.Rule) bool {
 	for _, r := range rules {
 		switch r.Type {
-		case policy.MatchOperation, policy.MatchTable:
+		case policy.MatchOperation, policy.MatchTable, policy.MatchProcedure:
 			return true
 		}
 	}

@@ -109,6 +109,7 @@ var statementVerb = map[string]Verb{
 	"savepoint": Other,
 	"explain":   Explain,
 	"analyze":   Other,
+	"analyse":   Other, // PostgreSQL's British spelling of ANALYZE
 	"vacuum":    Other,
 	"comment":   Other,
 	"prepare":   Other,
@@ -460,9 +461,10 @@ var headAfter = map[string]bool{
 //
 // They exist so head position survives `EXPLAIN (ANALYZE, BUFFERS) DELETE`.
 // Without them the DELETE is not recognised as a statement head and an
-// executing command reports no effects at all.
+// executing command reports no effects at all. ANALYSE is PostgreSQL's
+// British spelling of ANALYZE, in both the bare and the parenthesised form.
 var wrapperModifier = map[string]bool{
-	"analyze": true, "verbose": true, "costs": true, "settings": true,
+	"analyze": true, "analyse": true, "verbose": true, "costs": true, "settings": true,
 	"buffers": true, "wal": true, "timing": true, "summary": true,
 	"format": true, "generic_plan": true, "memory": true, "serialize": true,
 	"on": true, "off": true, "true": true, "false": true,

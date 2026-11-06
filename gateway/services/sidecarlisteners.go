@@ -98,6 +98,7 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 	inspect.GRPC:       {"custom", string(inspect.GRPC)},
 	inspect.Spanner:    {"custom", string(inspect.Spanner)},
 	inspect.ICA:        {"custom", string(inspect.ICA)},
+	inspect.MCP:        {"custom", string(inspect.MCP)},
 }
 
 // ProjectListeners renders the mirror connection of every listener of sc, in

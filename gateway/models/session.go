@@ -274,6 +274,8 @@ type SessionReview struct {
 	// The analyzer risk level a sidecar filed the review under. Like
 	// ListenerName, GetSessionByID reads it; the list does not.
 	RiskLevel *string `json:"risk_level"`
+	// The email of who ran the approved review. GetSessionByID reads it; the list does not.
+	ExecutedBy *string `json:"executed_by"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -368,6 +370,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'rejection_reason', rv.rejection_reason,
 				'listener_name', rv.listener_name,
 				'risk_level', rv.risk_level,
+				'executed_by', rv.executed_by,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (

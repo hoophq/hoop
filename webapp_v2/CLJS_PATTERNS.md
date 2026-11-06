@@ -264,6 +264,27 @@ Common mappings:
 | `w-full` | `w="100%"` |
 | `max-w-md` | `maw={448}` |
 
+Colors come from the theme, not from the page. Port a Radix surface to the
+component that draws it, and let the component's theme default or variant set
+the color. A CSS Module names no color, except a one-off effect (a fade, a
+translucent bar, a video stage), which says so in a comment.
+
+| CLJS (Radix) | React |
+|--------------|-------|
+| card: `bg-[--gray-1] border border-[--gray-3]` | `<Paper withBorder variant="subtle">` |
+| framed viewer: `border border-[--gray-a4]` | `<Paper withBorder variant="outline">` |
+| gray strip or "preview" card: `bg-[--gray-3]` | `<Paper variant="muted">` |
+| chip or notice: `bg-[--gray-4]` | `<Paper variant="strong">` |
+| `border-t border-[--gray-3]` between blocks | `<Divider />` |
+| red comment or error box | `<Alert color="red">` |
+| dark terminal | `CodeSnippet` (`black`), or `--hoop-terminal-bg` / `--hoop-terminal-text` |
+| `--gray-11` text | `c="dimmed"` |
+
+The theme gray scale starts at Radix step 3, so a CLJS `--gray-N` is never the
+theme's `gray-N`. Where no component fits (rows of a custom list), use the role
+tokens in `src/theme.js` (`--hoop-surface-*`, `--hoop-border-*`). Modals dim the
+page at 40%, as Radix dialogs do (`components/Modal/theme.js`).
+
 ---
 
 ## Recurring CLJS features → shared React building blocks

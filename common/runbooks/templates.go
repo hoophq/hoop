@@ -82,7 +82,15 @@ func parseSpecFromTemplate(node parse.Node, into map[string]any) error {
 		}
 		inputKey := strings.TrimSpace(findings[0])
 		inputKey = inputKey[3:] // remove prefix {{.
-		into[inputKey] = parseNode(node.String())
+		spec := parseNode(node.String())
+		// A later reference to the same input must not drop a secret type
+		// set by an earlier one: the type decides what is redacted.
+		if prev, ok := into[inputKey].(map[string]any); ok {
+			if prevType, _ := prev["type"].(string); isSecretInputType(prevType) {
+				spec["type"] = prevType
+			}
+		}
+		into[inputKey] = spec
 	}
 	if ln, ok := node.(*parse.ListNode); ok {
 		for _, n := range ln.Nodes {
@@ -166,3 +174,7 @@ func ReadBlob(f *object.File) ([]byte, error) {
 	}
 	return io.ReadAll(reader)
 }
+
+// isSecretInputType reports whether a value of this input type must not be
+// stored as typed.
+func isSecretInputType(t string) bool { return t == "password" || t == "file" }

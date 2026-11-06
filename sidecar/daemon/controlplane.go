@@ -823,7 +823,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		if cp.events != nil {
 			cp.events.setEnabled(answer.sessionEvents)
 		}
-		outcome := rl.handle(log, answer.raw)
+		outcome := rl.handleAnswer(log, answer.raw, answer.managed)
 		cp.outcome = outcome.String()
 		cp.reason = ""
 		if outcome == reloadRefused || outcome == reloadRestart {

@@ -1,7 +1,9 @@
 (ns webapp.resources.setup.agent-step
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link]]
-   ["lucide-react" :refer [Plus ArrowUpRight]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text Link Popover TextField]]
+   ["lucide-react" :refer [Plus ArrowUpRight Check ChevronDown Search]]
+   [clojure.string :as cs]
+   [webapp.resources.setup.agent-options :refer [agent-options]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -120,6 +122,79 @@
       ;; Cleanup watcher on component unmount
       (remove-watch agent-key :agent-watcher))))
 
+(defn- agent-dropdown
+  "Agent select with the search inside its dropdown. Radix Select has no
+  search, so this is a Popover with a search field and the option list."
+  [_]
+  (let [open? (r/atom false)
+        search (r/atom "")]
+    (fn [{:keys [agents selected-id disabled? on-select]}]
+      (let [options (agent-options agents @search)
+            selected-name (some #(when (= (:id %) selected-id) (:name %)) agents)
+            set-open! (fn [open]
+                        (reset! open? open)
+                        (when-not open (reset! search "")))
+            pick! (fn [value]
+                    (on-select value)
+                    (set-open! false))]
+        [:> Box {:class "w-full"}
+         [:> Text {:as "label" :html-for "agent-dropdown-trigger"
+                   :size "2" :weight "bold" :class "block mb-1 text-[--gray-12]"}
+          "Agent Name"]
+         [:> Popover.Root {:open @open? :on-open-change set-open!}
+          [:> Popover.Trigger
+           [:> Button {:type "button"
+                       :id "agent-dropdown-trigger"
+                       :variant "surface"
+                       :color "gray"
+                       :size "3"
+                       :disabled disabled?
+                       :aria-label "Agent Name"
+                       :class "w-full justify-between font-normal"}
+            [:> Text {:size "3"
+                      :class (str "truncate " (when-not selected-name "text-[--gray-a10]"))}
+             (or selected-name "Select an Agent")]
+            [:> ChevronDown {:size 16}]]]
+          [:> Popover.Content {:size "1"
+                               :align "start"
+                               :style {:width "var(--radix-popover-trigger-width)"}}
+           [:> Box {:mb "2"}
+            ;; Uncontrolled: a controlled Radix TextField under Reagent drops
+            ;; keys typed fast. The content unmounts on close, so it starts
+            ;; empty on every open.
+            [:> TextField.Root {:placeholder "Search agents"
+                                :aria-label "Search agents"
+                                :auto-focus true
+                                :default-value ""
+                                :on-change #(reset! search (-> % .-target .-value))}
+             [:> TextField.Slot
+              [:> Search {:size 14}]]]]
+           (if (seq options)
+             [:> Box {:class "max-h-72 overflow-y-auto" :role "listbox"}
+              (doall
+               (for [{:keys [value text]} options]
+                 ^{:key value}
+                 [:> Flex {:align "center"
+                           :justify "between"
+                           :gap "2"
+                           :role "option"
+                           :tab-index 0
+                           :aria-selected (= value selected-id)
+                           :class "cursor-pointer hover:bg-[--gray-a3] focus:bg-[--gray-a3] focus:outline-none rounded px-3 py-2"
+                           :on-click #(pick! value)
+                           :on-key-down (fn [e]
+                                          (when (#{"Enter" " "} (.-key e))
+                                            (.preventDefault e)
+                                            (pick! value)))}
+                  [:> Text {:size "2" :class "truncate"} text]
+                  (when (= value selected-id)
+                    [:> Check {:size 14}])]))]
+             [:> Box {:px "3" :py "4"}
+              [:> Text {:size "1" :class "text-[--gray-11] italic"}
+               (if (cs/blank? @search)
+                 "No agents available"
+                 "No agents match the search")]])]]]))))
+
 (defn agent-selector [creation-mode]
   (let [agents (rf/subscribe [:agents])
         agent-id (rf/subscribe [:resource-setup/agent-id])
@@ -132,18 +207,11 @@
        "This name is used to identify your Agent in your environment."]]
 
      [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
-      [forms/select
-       {:label "Agent Name"
-        :placeholder "Select an Agent"
-        :required true
-        :full-width? true
-        :disabled is-creating?
-        :options (mapv #(hash-map :value (:id %)
-                                  :text (:name %))
-                       (:data @agents))
-        :selected (or @agent-id "")
-        :on-change #(when (and % (not= % @agent-id) (not= % ""))
-                      (rf/dispatch [:resource-setup->set-agent-id %]))}]
+      [agent-dropdown {:agents (:data @agents)
+                       :selected-id @agent-id
+                       :disabled? is-creating?
+                       :on-select #(when (and % (not= % @agent-id))
+                                     (rf/dispatch [:resource-setup->set-agent-id %]))}]
 
       (when-not is-creating?
         [:> Button {:variant "ghost"

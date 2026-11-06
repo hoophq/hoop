@@ -58,3 +58,36 @@ GO
 
 SELECT 'seeded' AS status, COUNT(*) AS customers FROM dbo.customers;
 GO
+
+-- Stored procedures, so the demo exercises the call paths a driver uses that
+-- are not a batch: an RPC by name (callproc, EXEC from an ORM), an OUTPUT
+-- parameter (RETURNVALUE on the wire), and a body that reads a table the
+-- lane's rules protect. dbo.secrets exists only to be reached through
+-- dbo.get_secrets; the relay never sees its name inside the procedure body
+-- and refuses the procedure by its own name instead.
+IF OBJECT_ID('dbo.secrets', 'U') IS NOT NULL
+    DROP TABLE dbo.secrets;
+GO
+
+CREATE TABLE dbo.secrets (id INT PRIMARY KEY, value NVARCHAR(200) NOT NULL);
+INSERT INTO dbo.secrets VALUES (1, N'the-secret');
+GO
+
+CREATE OR ALTER PROCEDURE dbo.get_customers AS
+    SELECT id, name, email, ssn FROM dbo.customers;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.get_secrets AS
+    SELECT value FROM dbo.secrets;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.delete_customer @id INT AS
+    DELETE FROM dbo.customers WHERE id = @id;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.count_customers @n INT OUTPUT AS
+    SELECT @n = COUNT(*) FROM dbo.customers;
+GO
+
+GRANT EXECUTE ON SCHEMA::dbo TO appuser;
+GO

@@ -157,7 +157,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			name				query		string	false	"Specify a name to filter"
 //	@Param			aql					query		string	false	"AQL expression scoping the values; replaces the object_type_id filter when set"
 //	@Success		200					{object}	openapi.JiraAssetObjects
-//	@Failure		422,500				{object}	openapi.HTTPError
+//	@Failure		404,422,500			{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
 func GetAssetObjects(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -169,6 +169,10 @@ func GetAssetObjects(c *gin.Context) {
 	config, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
+		return
+	}
+	if config == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Jira integration not found"})
 		return
 	}
 	query := buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), c.Query("aql"))
@@ -203,7 +207,7 @@ func GetAssetObjects(c *gin.Context) {
 //	@Produce		json
 //	@Param			jira_fields	query		string	true	"Comma-separated list of Jira custom field ids (e.g. customfield_10092)"
 //	@Success		200			{object}	openapi.JiraAssetFieldConfigs
-//	@Failure		422,500		{object}	openapi.HTTPError
+//	@Failure		404,422,500	{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/fieldconfigs [get]
 func GetAssetFieldConfigs(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -215,6 +219,10 @@ func GetAssetFieldConfigs(c *gin.Context) {
 	config, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
+		return
+	}
+	if config == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Jira integration not found"})
 		return
 	}
 	fieldConfigs, err := jira.FetchAssetFieldConfigs(config, fieldIDs)

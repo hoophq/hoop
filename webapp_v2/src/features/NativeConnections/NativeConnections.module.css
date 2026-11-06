@@ -1,13 +1,13 @@
-/* Light-blue badge on the drawer title — indigo-0 fill, indigo-4 glyph. */
+/* Light-blue badge on the drawer title: the primary color's light variant. */
 .drawerIcon {
-  background-color: var(--mantine-color-indigo-0);
-  color: var(--mantine-color-indigo-4);
+  background-color: var(--mantine-primary-color-light);
+  color: var(--mantine-primary-color-light-color);
 }
 
 /* The list is a bordered, rounded card — the container the Figma draws around
    the rows. Overflow clips the first/last row corners to the radius. */
 .accordionRoot {
-  border: 1px solid var(--mantine-color-gray-2);
+  border: 1px solid var(--hoop-border-subtle);
   border-radius: var(--mantine-radius-md);
   overflow: hidden;
 }
@@ -31,7 +31,7 @@
    expand into is not clickable and must not look like it is. */
 .rowHeader:has(.rowControl):hover,
 .rowHeader:has([data-active]) {
-  background-color: var(--mantine-color-gray-0);
+  background-color: var(--hoop-surface-muted);
 }
 
 /* Row metrics measured off the Figma accordion component: 76px rows and 16px
@@ -90,8 +90,8 @@
 .timerBadge {
   height: 24px;
   padding-inline: var(--mantine-spacing-sm);
-  background-color: var(--mantine-color-gray-0);
-  color: var(--mantine-color-gray-9);
+  background-color: var(--hoop-surface-muted);
+  color: var(--mantine-color-dimmed);
   border: none;
   text-transform: none;
 }
@@ -100,22 +100,14 @@
   margin-inline-end: 6px;
 }
 
-/* Mantine's `light` variant paints amber text with --mantine-color-amber-light-color,
-   which lands around 2:1 on the tint — a WCAG 1.4.3 failure. amber-8 (#926c00)
-   is ~5.5:1 on the same surface and is the step Toast.module.css already uses
-   for amber foregrounds. */
-.amberText {
-  color: var(--mantine-color-amber-8);
-}
-
 /* Connected indicator: 24px circle, green-1 on green-6. */
 .activeIndicator {
-  background-color: var(--mantine-color-green-1);
-  color: var(--mantine-color-green-6);
+  background-color: var(--mantine-color-green-light);
+  color: var(--mantine-color-green-light-color);
 }
 
 .accordionItem {
-  border-bottom: 1px solid var(--mantine-color-gray-2);
+  border-bottom: 1px solid var(--hoop-border-subtle);
 }
 
 .accordionItem:last-of-type {
@@ -123,15 +115,15 @@
 }
 
 /* 40px rounded square holding the connection icon. The tint is the Figma's
-   Neutral Alpha 2 (rgba(0,0,85,0.02)) — an alpha overlay rather than a flat
-   colour, so it darkens slightly against the gray-0 of an expanded header and
-   keeps its contrast there. Sampled off the Figma render: #f9f9fb on a white
-   row, #eaeaef on the expanded one. Mantine exposes no alpha-tint variable. */
+   Neutral Alpha 2, an alpha overlay rather than a flat colour, so it darkens
+   slightly against the muted fill of an expanded header and keeps its contrast
+   there. Sampled off the Figma render: #f9f9fb on a white row, #eaeaef on the
+   expanded one. */
 .rowAvatar {
   width: 40px;
   height: 40px;
   border-radius: var(--mantine-radius-md);
-  background-color: rgba(0, 0, 85, 0.02);
+  background-color: var(--hoop-overlay-faint);
   display: flex;
   align-items: center;
   justify-content: center;

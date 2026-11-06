@@ -1,0 +1,14 @@
+/* Every option label sits in one grid cell and only the active one shows, so
+   the button keeps the width of the longest label: switching sources never
+   moves the input, and the inputs of a form line up. */
+.labels {
+  display: inline-grid;
+}
+
+.labels > * {
+  grid-area: 1 / 1;
+}
+
+.labels > [data-hidden] {
+  visibility: hidden;
+}

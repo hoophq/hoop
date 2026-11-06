@@ -1,0 +1,580 @@
+{
+  "source": "webapp/test/webapp/audit/views/session_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:sessions",
+  "function": "webapp.audit.views.ssh-decoder/terminal-recording",
+  "cases": [
+    {
+      "name": "an interactive shell replays its terminal bytes",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0.1,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAeAAAACgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          0.2,
+          "i",
+          "AgEAc2hlbGwAAQ=="
+        ],
+        [
+          0.3,
+          "o",
+          "BQEAAQ=="
+        ],
+        [
+          0.4,
+          "o",
+          "AwEAJCA="
+        ],
+        [
+          0.5,
+          "i",
+          "AwEAZA=="
+        ],
+        [
+          0.6,
+          "o",
+          "AwEAZA=="
+        ],
+        [
+          0.7,
+          "o",
+          "BAEAc2Vzc2lvbg=="
+        ],
+        [
+          0.8,
+          "e",
+          "Y29ubmVjdGlvbiBjbG9zZWQ="
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 120,
+        "height": 40,
+        "texts": [
+          [
+            0.4,
+            "o",
+            "$ "
+          ],
+          [
+            0.5,
+            "i",
+            "d"
+          ],
+          [
+            0.6,
+            "o",
+            "d"
+          ],
+          [
+            0.8,
+            "e",
+            "connection closed"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a window-change resizes the terminal",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "i",
+          "AgEAd2luZG93LWNoYW5nZQABAAAAyAAAADIAAAAAAAAAAA=="
+        ],
+        [
+          2,
+          "o",
+          "AwEAeA=="
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            1,
+            "r",
+            "200x50"
+          ],
+          [
+            2,
+            "o",
+            "x"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "only pty channels reach the terminal",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "i",
+          "AQIAZGlyZWN0LXRjcGlwAA=="
+        ],
+        [
+          2,
+          "i",
+          "AwIAR0VUIC8gSFRUUC8xLjE="
+        ],
+        [
+          3,
+          "i",
+          "AQMAc2Vzc2lvbgA="
+        ],
+        [
+          3,
+          "i",
+          "AgMAc3Vic3lzdGVtAAFzZnRw"
+        ],
+        [
+          4,
+          "o",
+          "AwMAc2Z0cCBieXRlcw=="
+        ],
+        [
+          5,
+          "o",
+          "AwEAcHJvbXB0"
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            5,
+            "o",
+            "prompt"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a reused channel id starts clean",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "o",
+          "AwEAZmlyc3Q="
+        ],
+        [
+          2,
+          "o",
+          "BAEAc2Vzc2lvbg=="
+        ],
+        [
+          3,
+          "i",
+          "AQEAZGlyZWN0LXRjcGlwAA=="
+        ],
+        [
+          4,
+          "o",
+          "AwEAZm9yd2FyZGVk"
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            1,
+            "o",
+            "first"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "overlapping connections are not replayed",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          1,
+          "i",
+          "AgEAZXhlYwABAAAAA3NjcA=="
+        ],
+        [
+          2,
+          "o",
+          "AwEAd2hpY2ggb25lPw=="
+        ]
+      ],
+      "expected": {
+        "terminal": false,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": []
+      }
+    },
+    {
+      "name": "concurrent terminals are not replayed",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "i",
+          "AQIAc2Vzc2lvbgA="
+        ],
+        [
+          1,
+          "i",
+          "AgIAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          2,
+          "o",
+          "AwEAZmlyc3Q="
+        ],
+        [
+          3,
+          "o",
+          "AwIAc2Vjb25k"
+        ]
+      ],
+      "expected": {
+        "terminal": false,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            1,
+            "r",
+            "80x24"
+          ],
+          [
+            2,
+            "o",
+            "first"
+          ],
+          [
+            3,
+            "o",
+            "second"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sequential terminals replay",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          1,
+          "o",
+          "AwEAZmlyc3Q="
+        ],
+        [
+          2,
+          "o",
+          "BAEAc2Vzc2lvbg=="
+        ],
+        [
+          3,
+          "i",
+          "AQIAc2Vzc2lvbgA="
+        ],
+        [
+          3,
+          "i",
+          "AgIAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          4,
+          "o",
+          "AwIAc2Vjb25k"
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            1,
+            "o",
+            "first"
+          ],
+          [
+            3,
+            "r",
+            "80x24"
+          ],
+          [
+            4,
+            "o",
+            "second"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a channel opened before the stream is not a terminal",
+      "events": [
+        [
+          0,
+          "o",
+          "AwEAJCA="
+        ],
+        [
+          1,
+          "i",
+          "AgEAd2luZG93LWNoYW5nZQABAAAAeAAAAB4AAAAAAAAAAA=="
+        ],
+        [
+          2,
+          "i",
+          "AwEAbA=="
+        ]
+      ],
+      "expected": {
+        "terminal": false,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": []
+      }
+    },
+    {
+      "name": "a channel opened before the stream still overlaps",
+      "events": [
+        [
+          0,
+          "o",
+          "AwEAZmlyc3QgY29ubmVjdGlvbg=="
+        ],
+        [
+          1,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          1,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAUAAAABgAAAAAAAAAAAAAAAA="
+        ],
+        [
+          2,
+          "o",
+          "AwEAd2hpY2ggb25lPw=="
+        ]
+      ],
+      "expected": {
+        "terminal": false,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": [
+          [
+            2,
+            "o",
+            "which one?"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a new connection after an unopened channel closes replays",
+      "events": [
+        [
+          0,
+          "o",
+          "AwEAZmlyc3QgY29ubmVjdGlvbg=="
+        ],
+        [
+          1,
+          "o",
+          "BAEAc2Vzc2lvbg=="
+        ],
+        [
+          2,
+          "i",
+          "AwEAbGF0ZSBrZXlzdHJva2U="
+        ],
+        [
+          3,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          3,
+          "i",
+          "AgEAcHR5LXJlcQABAAAABXh0ZXJtAAAAZAAAAB4AAAAAAAAAAAAAAAA="
+        ],
+        [
+          4,
+          "o",
+          "AwEAc2Vjb25k"
+        ]
+      ],
+      "expected": {
+        "terminal": true,
+        "data": true,
+        "width": 100,
+        "height": 30,
+        "texts": [
+          [
+            4,
+            "o",
+            "second"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a session without a pty is not a terminal",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          0,
+          "i",
+          "AgEAZXhlYwABAAAAD2dpdC11cGxvYWQtcGFjaw=="
+        ],
+        [
+          1,
+          "o",
+          "AwEAMDAwMA=="
+        ]
+      ],
+      "expected": {
+        "terminal": false,
+        "data": true,
+        "width": 80,
+        "height": 24,
+        "texts": []
+      }
+    },
+    {
+      "name": "pty output recorded under an ssh subtype is not ssh",
+      "events": [
+        [
+          0,
+          "o",
+          "G1sxbXJvb3RAaG9zdBtbMG06fiQg"
+        ],
+        [
+          1,
+          "i",
+          "bHMN"
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "an empty stream is not ssh",
+      "events": [],
+      "expected": null
+    },
+    {
+      "name": "a stream of gateway errors only is not ssh",
+      "events": [
+        [
+          0,
+          "e",
+          "YWdlbnQgb2ZmbGluZQ=="
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "a broken frame is not ssh",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          1,
+          "o",
+          "CQEAQQ=="
+        ]
+      ],
+      "expected": null
+    }
+  ]
+}

@@ -150,6 +150,36 @@ func TestHTTPResourceMethodNarrowing(t *testing.T) {
 	}
 }
 
+func TestHTTPRulesMatchTheUnresolvedResource(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-admin", Type: policy.MatchHTTPResource}.WithResources("/admin/**"),
+		policy.Rule{Name: "no-json-secrets", Type: policy.MatchHTTPHeader}.
+			WithResources("/secrets/**").
+			WithHeaders(map[string][]string{"Accept": {"application/json"}}),
+	})
+	stmt := func(resource, unresolved string) inspect.Statement {
+		s := httpStmt(&inspect.HTTPDetail{
+			Method: "GET", Resource: resource, Headers: map[string]string{"accept": "application/json"},
+		})
+		if unresolved != "" {
+			s.Metadata = map[string]string{inspect.MetadataHTTPResourceUnresolved: unresolved}
+		}
+		return s
+	}
+	if !rules.Evaluate(stmt("/public", "/admin/../public")).Denied {
+		t.Error("http_resource ignored the unresolved resource")
+	}
+	if !rules.Evaluate(stmt("/public", "/secrets/../public")).Denied {
+		t.Error("an http_header scope ignored the unresolved resource")
+	}
+	if !rules.Evaluate(stmt("/v1/namespaces", "/../admin/users")).Denied {
+		t.Error("http_resource ignored the unresolved resource resolved on its own")
+	}
+	if rules.Evaluate(stmt("/public", "")).Denied {
+		t.Error("a clean resource outside every scope was denied")
+	}
+}
+
 // A request whose intent is in its headers: kubectl fetches a Secret's
 // table view with `Accept: application/json;as=Table;...` and its contents
 // with `Accept: application/json`, on the same GET. The fail-closed rule
@@ -429,5 +459,30 @@ func TestOPAInputOmitsHTTPForSQL(t *testing.T) {
 	input := got["input"].(map[string]any)
 	if _, present := input["http"]; present {
 		t.Error("input.http present on a SQL statement")
+	}
+}
+
+// A pattern matchResource can never match as written is named: "**" only
+// as the trailing /**, "*" only as a whole segment, no empty or dot segment.
+func TestValidResourcePattern(t *testing.T) {
+	for p, ok := range map[string]bool{
+		"/": true, "/api/2.0/sql/statements": true, "/api/2.0/sql/statements/": true,
+		"/ai-gateway/mcp-services/**": true, "/api/*/sql": true, "/**": true,
+		"/api/**/": false, "/api/**/x": false, "/api/v*": false, "/api//x": false,
+		"/api/./x": false, "/api/../x": false, "/x/../api/**": false,
+	} {
+		if err := policy.ValidResourcePattern(p); (err == nil) != ok {
+			t.Errorf("ValidResourcePattern(%q) = %v, want ok=%v", p, err, ok)
+		}
+		if ok {
+			continue
+		}
+		// Every pattern it refuses is inert: it matches none of the
+		// resources a client could mean by it.
+		for _, r := range []string{"/api", "/api/x", "/api/x/y", "/api/v1"} {
+			if policy.MatchResource(p, r) {
+				t.Errorf("refused %q, yet it matches %q", p, r)
+			}
+		}
 	}
 }

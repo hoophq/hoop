@@ -2,17 +2,40 @@
   (:require
    [clojure.string]
    [re-frame.core :as rf]
-   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]))
+   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
+   [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
 
 ;; Event handlers for command palette
 
 ;; Debounce timer for search
 (def search-debounce-timer (atom nil))
 
+(defn- search-on? [db]
+  (constants/search-enabled? (get-in db [:gateway->info :data :feature_flags])))
+
 (rf/reg-event-fx
  :command-palette->open
  (fn [{:keys [db]} [_]]
-   {:db (assoc-in db [:command-palette :open?] true)}))
+   ;; The flags loaded with the app go stale when an admin toggles one.
+   (let [request-id (inc (get-in db [:command-palette :flags-request-id] 0))]
+     {:db (-> db
+              (assoc-in [:command-palette :open?] true)
+              (assoc-in [:command-palette :flags-request-id] request-id))
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/serverinfo"
+                               :on-success #(rf/dispatch [:command-palette->set-feature-flags request-id (:feature_flags %)])
+                               :on-failure (fn [_])}]]]})))
+
+(rf/reg-event-fx
+ :command-palette->set-feature-flags
+ (fn [{:keys [db]} [_ request-id flags]]
+   ;; A late answer to an earlier open must not restore older flags. Never creates
+   ;; :gateway->info :data: license gating reads its absence as "not loaded".
+   (when (and (= request-id (get-in db [:command-palette :flags-request-id]))
+              (get-in db [:gateway->info :data]))
+     (cond-> {:db (assoc-in db [:gateway->info :data :feature_flags] flags)}
+       (get-in db [:command-palette :open?])
+       (assoc :fx [[:dispatch [:command-palette->search (get-in db [:command-palette :query])]]])))))
 
 (rf/reg-event-fx
  :command-palette->close
@@ -49,46 +72,53 @@
        (js/clearTimeout @search-debounce-timer)
        (reset! search-debounce-timer nil))
 
-     (if (contains? search-enabled-pages current-page)
-       ;; Main page - search enabled
-       (if (< (count trimmed-query) 2)
-         ;; Query too short, clear results
+     (cond
+       ;; Other pages, just update query (no search)
+       (not (contains? search-enabled-pages current-page))
+       {:db (assoc-in db [:command-palette :query] safe-query)}
+
+       ;; Query too short or search off, clear results
+       (or (< (count trimmed-query) 2) (not (search-on? db)))
+       {:db (-> db
+                (assoc-in [:command-palette :query] safe-query)
+                (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}
+
+       ;; Valid query, search with debounce
+       :else
+       (do
+         ;; Set new debounce timer
+         (reset! search-debounce-timer
+                 (js/setTimeout
+                  #(rf/dispatch [:command-palette->perform-search trimmed-query])
+                  300)) ; 300ms debounce
+
+         ;; Update query immediately but keep status as :searching for subtle feedback
          {:db (-> db
                   (assoc-in [:command-palette :query] safe-query)
-                  (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}
-         ;; Valid query, search with debounce
-         (do
-           ;; Set new debounce timer
-           (reset! search-debounce-timer
-                   (js/setTimeout
-                    #(rf/dispatch [:command-palette->perform-search trimmed-query])
-                    300)) ; 300ms debounce
-
-           ;; Update query immediately but keep status as :searching for subtle feedback
-           {:db (-> db
-                    (assoc-in [:command-palette :query] safe-query)
-                    (assoc-in [:command-palette :search-results :status] :searching))}))
-       ;; Other pages, just update query (no search)
-       {:db (assoc-in db [:command-palette :query] safe-query)}))))
+                  (assoc-in [:command-palette :search-results :status] :searching))})))))
 
 (rf/reg-event-fx
  :command-palette->perform-search
- (fn [_ [_ query]]
-   ;; Debounced search execution
-   {:fx [[:dispatch
-          [:fetch
-           {:method "GET"
-            :uri "/search"
-            :query-params {:term query}
-            :on-success #(rf/dispatch [:command-palette->search-success %])
-            :on-failure #(rf/dispatch [:command-palette->search-failure %])}]]]}))
+ (fn [{:keys [db]} [_ query]]
+   ;; Debounced search execution; the flag may have turned off since it was scheduled
+   (if (search-on? db)
+     {:fx [[:dispatch
+            [:fetch
+             {:method "GET"
+              :uri "/search"
+              :query-params {:term query}
+              :on-success #(rf/dispatch [:command-palette->search-success %])
+              :on-failure #(rf/dispatch [:command-palette->search-failure %])}]]]}
+     {:db (assoc-in db [:command-palette :search-results] {:status :idle :data {}})})))
 
 (rf/reg-event-fx
  :command-palette->search-success
  (fn [{:keys [db]} [_ results]]
    {:db (assoc-in db [:command-palette :search-results]
-                  {:status :ready
-                   :data results})}))
+                  (if (search-on? db)
+                    {:status :ready
+                     :data results}
+                    {:status :idle :data {}}))}))
 
 (rf/reg-event-fx
  :command-palette->search-failure

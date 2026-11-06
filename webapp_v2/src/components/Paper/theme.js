@@ -3,7 +3,8 @@ import classes from './Paper.module.css'
 
 // Global border color for Paper (and Card, which renders through Paper).
 // Only visible on instances with the `withBorder` prop; keeps card/panel
-// borders in step with the app-wide input border.
+// borders in step with the app-wide input border. The `variant` prop picks a
+// surface by role (subtle, outline, muted, strong, accent, info, warning); see Paper.module.css.
 export const PaperTheme = Paper.extend({
   classNames: { root: classes.root },
 })

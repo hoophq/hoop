@@ -1,0 +1,53 @@
+# hoop sidecar config: one Citrix ICA lane that a Citrix Gateway dials
+# directly, in single mode.
+#
+#   Workspace -> Citrix Gateway -> this host :2598 -> VDA (upstream)
+#
+# The Gateway's STA/broker hands out THIS host's address as the VDA, so the
+# Gateway's CGP connection for that VDA lands on `listen` and the lane
+# relays it to `upstream`, inspecting VDA-to-client video on the way (OCR,
+# NER, masking). Client-to-VDA bytes, including authentication, pass
+# unchanged. No TPROXY, no policy route, no CAP_NET_ADMIN: a plain socket.
+# For a network that cannot re-register VDAs, see config.cidr.yaml.
+#
+# One lane serves one VDA. Add a listener per VDA (distinct `listen` ports
+# or hosts) when the Gateway fronts several.
+#
+# The addresses below are examples; the EDIT lines are specific to the
+# deployment.
+#
+# Runs as   hoop-ica -config config.yaml                 (install.sh's unit)
+# or        hoop start sidecar --config config.yaml     (the Linux hoop CLI, in-process)
+# Check it: hoop-ica -validate -config config.yaml
+
+log_level: info
+
+admin:
+  # /healthz, /readyz, /stats, /metrics, /config. Unauthenticated: keep it on
+  # loopback, and put a network control in front if another host must reach it.
+  listen: 127.0.0.1:19000
+
+audit:
+  # One JSON row per session event (start, end, refusal), never a frame or a
+  # pixel. '-' is stdout: the journal under systemd. A connection from a
+  # source outside `source_cidrs` is a refusal row with stage
+  # gateway_source_policy.
+
+# The engine's production profile and its default asset paths, which
+# install.sh lays out. Override a path only if the assets live elsewhere:
+#   ica: {ocr_worker: ..., ner_model: ..., ort_library: ..., tessdata: ...}
+# `max_sessions` (default 32) bounds every ica lane in the process together.
+ica: {}
+
+listeners:
+  - name: vdi
+    protocol: ica
+    listen: 0.0.0.0:2598              # CGP; the Gateway dials this host as the VDA
+    upstream: 10.77.0.30:2598         # EDIT: the real VDA this lane serves (IP or hostname, resolved once at start)
+    ica:
+      tenant_id: citrix-gateway       # EDIT: the principal on every audit row
+      # Only the Gateway may connect. Its SNIP (the address it dials VDAs
+      # from), not its VIP. Omit to admit any source, as the other lanes do.
+      source_cidrs: [10.20.1.10/32]   # EDIT: the Citrix Gateway SNIP
+      # display: {width: 1264, height: 1040, thinwire_channel: 9}   # engine defaults
+      # edt: true                     # also accept Citrix EDT (UDP) on the same port; publish it for UDP too

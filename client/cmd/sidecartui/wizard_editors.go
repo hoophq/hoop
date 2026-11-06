@@ -117,12 +117,14 @@ var ruleTypeLabel = map[string]string{
 	string(policy.MatchPattern):      "Regex pattern",
 	string(policy.MatchOperation):    "Operations",
 	string(policy.MatchTable):        "Tables",
+	string(policy.MatchProcedure):    "Stored procedures",
 	string(policy.MatchPII):          "Sensitive data in the statement",
 	string(policy.MatchHTTPResource): "HTTP resources",
 	string(policy.MatchHTTPStatus):   "HTTP status",
 	string(policy.MatchHTTPHeader):   "HTTP headers",
 	string(policy.MatchGRPCStatus):   "gRPC status",
 	string(policy.MatchMetadata):     "Statement metadata",
+	string(policy.MatchMCPTool):      "MCP tools",
 }
 
 // ruleTypesFor lists the rule types a lane of protocol can evaluate, in
@@ -141,7 +143,7 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			if rpc && !captures {
 				continue
 			}
-		case policy.MatchTable:
+		case policy.MatchTable, policy.MatchProcedure:
 			if protocol == "http" || protocol == "ssh" || (rpc && !captures) {
 				continue
 			}
@@ -151,6 +153,10 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			}
 		case policy.MatchGRPCStatus:
 			if protocol != "grpc" && protocol != "spanner" {
+				continue
+			}
+		case policy.MatchMCPTool:
+			if protocol != "mcp" {
 				continue
 			}
 		}
@@ -528,6 +534,8 @@ func ruleDetail(r policy.Rule) string {
 		return strings.Join(opStrings(r.Operations), ", ")
 	case policy.MatchTable:
 		return strings.Join(r.Tables, ", ")
+	case policy.MatchProcedure:
+		return strings.Join(r.Procedures, ", ")
 	case policy.MatchPII:
 		return strings.Join(r.Entities, ", ")
 	case policy.MatchHTTPResource:
@@ -538,6 +546,11 @@ func ruleDetail(r policy.Rule) string {
 		return headerText(r.Headers)
 	case policy.MatchMetadata:
 		return headerText(r.Metadata)
+	case policy.MatchMCPTool:
+		if len(r.Allow) > 0 {
+			return "only " + strings.Join(r.Allow, ", ")
+		}
+		return strings.Join(r.Tools, ", ")
 	}
 	return ""
 }
@@ -597,6 +610,8 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 			optLabel: map[string]string{"": "read and write"}, help: "Match only reads, only writes, or both.", hidden: is(policy.MatchTable)},
 		{id: "require", label: "Require table match", kind: fBool, on: r.RequireTableMatch,
 			help: "Also match statements whose tables could not be read.", hidden: is(policy.MatchTable)},
+		{id: "procedures", label: "Procedures", kind: fText, text: strings.Join(r.Procedures, ", "), placeholder: "get_secrets, dbo.delete_customer",
+			help: "Stored procedures called by name, in any spelling (dbo.x, [dbo].[x], appdb.dbo.x). Comma-separated.", hidden: is(policy.MatchProcedure)},
 		{id: "entities", label: "Data types", kind: fMulti, multi: r.Entities, options: entities, placeholder: "pick at least one",
 			help: "A statement carrying one of these is matched.", hidden: is(policy.MatchPII)},
 		{id: "resources", label: "Resources", kind: fText, text: strings.Join(r.Resources, ", "), placeholder: "/admin/*, /users/{id}",
@@ -613,6 +628,10 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 		{id: "metadata", label: "Metadata", kind: fText, text: headerText(r.Metadata), placeholder: "grpc.method=DeleteUser|DropTable",
 			help:   "Match when every key has one of its values; keys come from the codec (grpc.*, mongodb.command, <plug-in>.verb). key=v1|v2, comma-separated.",
 			hidden: is(policy.MatchMetadata)},
+		{id: "tools", label: "Deny tools", kind: fText, text: strings.Join(r.Tools, ", "), placeholder: "*delete*, run_query",
+			help: "Tools the rule denies and hides from tools/list. * matches anything; comma-separated.", hidden: is(policy.MatchMCPTool)},
+		{id: "allow", label: "Allow only", kind: fText, text: strings.Join(r.Allow, ", "), placeholder: "get_*, list_*",
+			help: "The only tools the rule lets through. Set this or Deny tools, not both.", hidden: is(policy.MatchMCPTool)},
 		{id: "message", label: "Message", kind: fText, text: r.Message, placeholder: "not allowed through the sidecar",
 			help: "What the client is told when the rule refuses a statement."},
 		{id: "action", label: "On match", kind: fEnum, options: []string{"", "defer"}, text: r.Action,
@@ -687,6 +706,10 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		if r.Tables = g("tables").list(); len(r.Tables) == 0 {
 			empty = "Tables"
 		}
+	case policy.MatchProcedure:
+		if r.Procedures = g("procedures").list(); len(r.Procedures) == 0 {
+			empty = "Procedures"
+		}
 	case policy.MatchPII:
 		if r.Entities = g("entities").multi; len(r.Entities) == 0 {
 			empty = "Data types"
@@ -718,6 +741,14 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		}
 		if len(r.Metadata) == 0 {
 			empty = "Metadata"
+		}
+	case policy.MatchMCPTool:
+		r.Tools, r.Allow = g("tools").list(), g("allow").list()
+		if len(r.Tools) > 0 && len(r.Allow) > 0 {
+			return r, errors.New("set Deny tools or Allow only, not both")
+		}
+		if len(r.Tools) == 0 && len(r.Allow) == 0 {
+			empty = "Deny tools"
 		}
 	}
 	if empty != "" {

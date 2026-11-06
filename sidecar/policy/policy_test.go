@@ -142,6 +142,15 @@ func TestRequireTableMatchFailsClosed(t *testing.T) {
 	if v.Message != "cannot verify which tables this statement touches" {
 		t.Errorf("Message = %q", v.Message)
 	}
+
+	catalog := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromServer, Operation: inspect.OpShow, Text: "get_file_contents: Read a file\n"}
+	if strict.Evaluate(catalog).Denied {
+		t.Error("strict rule denied the MCP tool catalog, which names no tool")
+	}
+	call := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromClient, Operation: inspect.OpCall, Text: "customers\n{}", Tables: []string{"customers"}}
+	if !strict.Evaluate(call).Denied {
+		t.Error("strict rule allowed an MCP call to the tool it names")
+	}
 }
 
 func TestPatternMatch(t *testing.T) {
@@ -725,5 +734,50 @@ func TestOperationRuleMatchesEffectsOfUnknownStatements(t *testing.T) {
 	inBlock.Effects = []inspect.Operation{inspect.OpCall, inspect.OpDelete}
 	if !scoped.Evaluate(inBlock).Denied {
 		t.Error("delete-scoped table rule missed a DELETE inside an unknown statement")
+	}
+}
+
+// `unknown` names a client statement the classifier could not read. A
+// response carries no verb, so a Postgres result and an HTTP response both
+// arrive as unknown; a rule naming unknown must not refuse them (ENG-893,
+// ENG-545), and must still refuse the client statement.
+func TestUnknownRuleDoesNotMatchResponses(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{Name: "fail-closed", Type: policy.MatchOperation,
+		Operations: []inspect.Operation{inspect.OpDrop, inspect.OpUnknown}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	for _, resp := range []inspect.Statement{
+		{Protocol: inspect.Postgres, Direction: inspect.FromServer, Text: "SELECT 1", Operation: inspect.OpUnknown},
+		{Protocol: inspect.HTTP, Direction: inspect.FromServer, Text: "200 OK", Operation: inspect.OpUnknown,
+			HTTP: &inspect.HTTPDetail{StatusCode: 200}},
+	} {
+		if v := rules.Evaluate(resp); v.Denied {
+			t.Errorf("a %s response was refused: %+v", resp.Protocol, v)
+		}
+	}
+	unread := stmt("EXECUTE IMMEDIATE 'DROP TABLE t'", inspect.OpUnknown)
+	unread.Direction = inspect.FromClient
+	if !rules.Evaluate(unread).Denied {
+		t.Error("an unknown client statement was allowed")
+	}
+	if !rules.Evaluate(stmt("SELECT ?", inspect.OpUnknown)).Denied {
+		t.Error("an unknown statement with no direction was allowed")
+	}
+}
+
+// The exemption above is the operation rule's. Another rule type scoped to
+// `unknown` still reaches responses, which is how an operator aims a
+// pattern at them.
+func TestUnknownScopeStillReachesResponses(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{Name: "no-ssn", Type: policy.MatchPattern,
+		Pattern: `\d{3}-\d{2}-\d{4}`, Operations: []inspect.Operation{inspect.OpUnknown}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	resp := inspect.Statement{Protocol: inspect.HTTP, Direction: inspect.FromServer,
+		Text: `{"ssn":"123-45-6789"}`, Operation: inspect.OpUnknown, HTTP: &inspect.HTTPDetail{StatusCode: 200}}
+	if !rules.Evaluate(resp).Denied {
+		t.Error("a pattern rule scoped to unknown no longer reaches a response")
 	}
 }

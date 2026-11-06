@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { Box, Card, Group, Stack, Text, Title } from "@mantine/core"
+import { Box, Card, Group, Stack, Text, Title, ThemeIcon } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
 import {
   ArrowLeft,
@@ -45,19 +45,9 @@ function TargetRunbookCard({ sub }) {
     <Card padding="sm" withBorder>
       <Group justify="space-between" align="center" wrap="nowrap">
         <Group gap="md" align="center" wrap="nowrap">
-          <Box
-            w={36}
-            h={36}
-            bg="gray.2"
-            style={{
-              borderRadius: "var(--mantine-radius-sm)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <BookUp2 size={16} color="var(--mantine-color-gray-9)" />
-          </Box>
+          <ThemeIcon variant="light" color="gray" size={36} radius="sm">
+            <BookUp2 size={16} />
+          </ThemeIcon>
           <Stack gap={2}>
             <Text size="sm" fw={500}>
               {sub.runbookFile || "—"}
@@ -83,13 +73,7 @@ function TargetRunbookCard({ sub }) {
 
 function EventChip({ name }) {
   return (
-    <Code
-      bg="indigo.1"
-      c="indigo.9"
-      px="sm"
-      py={5}
-      style={{ border: "1px solid var(--mantine-color-indigo-3)" }}
-    >
+    <Code variant="accent-outline" px="sm" py={5}>
       {name}
     </Code>
   )
@@ -105,7 +89,7 @@ function MappingTable({ mapping }) {
           py="sm"
           wrap="nowrap"
           gap="md"
-          bg="gray.0"
+          bg="var(--hoop-surface-muted)"
           style={{
             borderBottom: "1px solid var(--mantine-color-default-border)",
           }}
@@ -150,7 +134,7 @@ function MappingTable({ mapping }) {
                 <Code>{param}</Code>
               </Box>
               <Box w={16} style={{ textAlign: "center" }}>
-                <ArrowRight size={14} color="var(--mantine-color-gray-6)" />
+                <ArrowRight size={14} color="var(--mantine-color-dimmed)" />
               </Box>
               <Box style={{ flex: 1, minWidth: 0 }}>
                 <Code>{source}</Code>
@@ -189,7 +173,7 @@ function DispatchHistory({ subId }) {
         <History
           size={28}
           strokeWidth={1.5}
-          color="var(--mantine-color-gray-6)"
+          color="var(--mantine-color-dimmed)"
         />
         <Text size="sm" fw={500}>
           No dispatches yet
@@ -242,7 +226,7 @@ function DispatchHistory({ subId }) {
               .slice(0, 19) || "—"}
           </Text>
           <Box style={{ flex: 1, minWidth: 0 }}>
-            <Code bg="indigo.1" c="indigo.9">
+            <Code variant="accent">
               {d.eventType}
             </Code>
           </Box>

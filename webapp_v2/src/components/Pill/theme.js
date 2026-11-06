@@ -5,8 +5,8 @@ import { Pill, rem } from '@mantine/core'
 // PillsInput composition, so this single extension keeps chips consistent
 // across the app — matching the legacy webapp's react-select chips, which
 // use the same values in webapp/src/webapp/components/multiselect.cljs.
-// Instances that need a variant look (e.g. the managed protection-profile
-// pill) override with `bg`/`c` style props.
+// `variant="managed"` is the managed protection-profile pill: indigo, set
+// here because these styles are inline and a page class cannot override them.
 export const PillTheme = Pill.extend({
   defaultProps: { radius: 'xl' },
   // One chip size everywhere, like the legacy react-select chips: 22px tall,
@@ -21,10 +21,10 @@ export const PillTheme = Pill.extend({
       '--pill-fz': 'var(--mantine-font-size-xs)',
     },
   }),
-  styles: {
-    root: {
-      backgroundColor: 'rgba(0, 0, 51, 0.06)',
-      color: '#60646c',
-    },
-  },
+  styles: (_theme, props) => ({
+    root:
+      props.variant === 'managed'
+        ? { backgroundColor: 'var(--mantine-color-indigo-0)', color: 'var(--mantine-color-indigo-7)' }
+        : { backgroundColor: 'rgba(0, 0, 51, 0.06)', color: '#60646c' },
+  }),
 })

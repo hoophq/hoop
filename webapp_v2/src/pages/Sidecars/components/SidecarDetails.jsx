@@ -61,7 +61,7 @@ function SourceCallout({ fromFile, configured, awaitingFile, reported, editable,
   // its file on its next check-in.
   if (awaitingFile) {
     return (
-      <Callout icon={Info} color="gray.0">
+      <Callout icon={Info} tone="neutral">
         <Text size="sm">
           {'Hoop manages this configuration. It waits for the sidecar to send its config file on its next check-in.'}
         </Text>
@@ -72,7 +72,7 @@ function SourceCallout({ fromFile, configured, awaitingFile, reported, editable,
     return (
       <Callout
         icon={Lock}
-        color="indigo.0"
+        tone="info"
         action={
           editable && (
             <Button variant="light" size="xs" onClick={() => onSwitch(false)} flex="0 0 auto">
@@ -103,17 +103,7 @@ function SourceCallout({ fromFile, configured, awaitingFile, reported, editable,
   }
   if (configured) {
     return (
-      <Callout
-        icon={Lock}
-        color="indigo.0"
-        action={
-          editable && (
-            <Button variant="light" size="xs" onClick={() => onSwitch(true)} flex="0 0 auto">
-              Change config
-            </Button>
-          )
-        }
-      >
+      <Callout icon={Lock} tone="info">
         <Text size="sm">
           {
             "Hoop owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
@@ -123,7 +113,7 @@ function SourceCallout({ fromFile, configured, awaitingFile, reported, editable,
     )
   }
   return (
-    <Callout icon={Info} color="gray.0">
+    <Callout icon={Info} tone="neutral">
       <Text size="sm">
         {
           'Hoop stores no listeners for this sidecar yet. A sidecar started with a config file runs that file, and this page shows it. Hoop manages the configuration only after you select Manage in Hoop.'
@@ -153,6 +143,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
   const reported = fromFile ? reportedConfiguration(sidecar) : null
   const shown = reported ? { ...sidecar, configuration: reported } : sidecar
   const configured = hasConfiguration(shown.configuration)
+  const canUseFile = editable && configured && !fromFile
   const deprecations = sidecar.deprecations ?? []
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
@@ -207,11 +198,18 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <Title order={3}>Sidecar Details</Title>
             <Group gap="lg" align="center">
               <SidecarStatusBadge sidecar={sidecar} />
-              {onDelete && (
-                <ActionMenu width={200}>
-                  <ActionMenu.Item danger onClick={onDelete}>
-                    Delete sidecar
-                  </ActionMenu.Item>
+              {(onDelete || canUseFile) && (
+                <ActionMenu width={260}>
+                  {canUseFile && (
+                    <ActionMenu.Item disabled={saving || asking} onClick={() => ask(true)}>
+                      Use the sidecar configuration file
+                    </ActionMenu.Item>
+                  )}
+                  {onDelete && (
+                    <ActionMenu.Item danger onClick={onDelete}>
+                      Delete sidecar
+                    </ActionMenu.Item>
+                  )}
                 </ActionMenu>
               )}
             </Group>
@@ -221,7 +219,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
           <GlobalSettings key={String(editable && !fromFile)} sidecar={shown} editable={editable && !fromFile} />
 
           {deprecations.length > 0 && (
-            <Callout icon={TriangleAlert} color="amber.0">
+            <Callout icon={TriangleAlert} tone="warning">
               <Text size="sm">
                 This configuration uses deprecated keys. The sidecar still accepts them; rewrite them before they
                 are removed.

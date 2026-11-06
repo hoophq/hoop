@@ -4571,6 +4571,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.JiraAssetFieldConfigs"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
@@ -4628,6 +4634,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.JiraAssetObjects"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "422": {
@@ -21585,6 +21597,12 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "executed_by": {
+                    "description": "The email of the user who ran the approved request. Absent before it runs, and on older requests.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "alice@example.com"
                 },
                 "force_approval_groups": {
                     "description": "Groups that can force approve sessions for this approval request",

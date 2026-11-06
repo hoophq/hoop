@@ -1,7 +1,9 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -164,12 +166,7 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		if !r.methodAllowed(d.Method) {
 			return false, true
 		}
-		for _, pattern := range r.Resources {
-			if matchResource(pattern, d.Resource) {
-				return true, true
-			}
-		}
-		return false, true
+		return r.matchesResource(stmt), true
 
 	case MatchHTTPStatus:
 		if stmt.Protocol == inspect.GRPC {
@@ -198,7 +195,7 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		if d.StatusCode != 0 || stmt.Direction == inspect.FromServer {
 			return false, true // a response; this rule reads the request
 		}
-		if !r.methodAllowed(d.Method) || !r.resourceAllowed(d.Resource) {
+		if !r.methodAllowed(d.Method) || !r.resourceAllowed(stmt) {
 			return false, true
 		}
 		for name, patterns := range r.Headers {
@@ -219,13 +216,23 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 }
 
 // resourceAllowed applies Resources as a scope: empty means every resource.
-func (r Rule) resourceAllowed(resource string) bool {
-	if len(r.Resources) == 0 {
-		return true
+func (r Rule) resourceAllowed(stmt inspect.Statement) bool {
+	return len(r.Resources) == 0 || r.matchesResource(stmt)
+}
+
+// matchesResource also tries the resource with its dot segments unresolved,
+// raw and resolved on its own: a gateway can route the raw prefix and leave
+// the rest to a cluster that resolves it.
+func (r Rule) matchesResource(stmt inspect.Statement) bool {
+	forms := []string{stmt.HTTP.Resource}
+	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
+		forms = append(forms, u, path.Clean(u))
 	}
 	for _, pattern := range r.Resources {
-		if matchResource(pattern, resource) {
-			return true
+		for _, resource := range forms {
+			if matchResource(pattern, resource) {
+				return true
+			}
 		}
 	}
 	return false
@@ -309,6 +316,28 @@ func (r Rule) methodAllowed(method string) bool {
 // matches and a trigger that does not.
 func MatchResource(pattern, resource string) bool {
 	return matchResource(pattern, resource)
+}
+
+// ValidResourcePattern says why pattern can never match what it appears to
+// name, or returns nil. It sits beside matchResource so the two read one
+// syntax: "*" stands for one whole segment and "**" only as the trailing
+// "/**". Any other segment holding a "*" is compared as text, and an empty,
+// "." or ".." segment never matches a cleaned resource.
+func ValidResourcePattern(pattern string) error {
+	segs := strings.Split(strings.Trim(pattern, "/"), "/")
+	for i, s := range segs {
+		switch {
+		case s == "." || s == "..":
+			return fmt.Errorf("segment %q: a resource arrives with its dot segments resolved", s)
+		case s == "*":
+		case s == "**" && i == len(segs)-1 && strings.HasSuffix(pattern, "/**"):
+		case strings.Contains(s, "*"):
+			return fmt.Errorf("segment %q: \"*\" stands for one whole segment, and \"**\" only as the trailing /**", s)
+		case s == "" && pattern != "/":
+			return errors.New("it has an empty segment")
+		}
+	}
+	return nil
 }
 
 // matchResource compares a normalized resource against a pattern.

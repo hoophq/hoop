@@ -84,7 +84,7 @@ function LoginDecision({ code }) {
   const pending = login.status === 'pending'
 
   return (
-    <Paper bg="gray.0" radius="xl" p="lg">
+    <Paper variant="muted" radius="xl" p="lg">
       <Stack gap="md">
         <Group gap="xs">
           <Terminal size={16} aria-hidden="true" />
@@ -147,7 +147,7 @@ export default function SidecarLogin() {
       {code ? (
         <LoginDecision key={code} code={code} />
       ) : (
-        <Paper bg="gray.0" radius="xl" p="lg">
+        <Paper variant="muted" radius="xl" p="lg">
           <Stack gap="md">
             <TextInput
               label="Code"

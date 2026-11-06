@@ -41,6 +41,9 @@ services:
   sidecar:
     # 1.260.3 or later: older builds miss a DELETE after `-- x<CR>` (ENG-855).
     image: hoophq/hoopsidecar:1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992
+    environment:
+      # The free tier runs with no login code: nobody can approve one here (ENG-906).
+      HOOP_SIDECAR_FREE_STANDALONE: "true"
     restart: unless-stopped
     networks: [data, pgwire]
     volumes:

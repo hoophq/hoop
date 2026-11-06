@@ -348,6 +348,8 @@ jobs:
           out=$(helm template t "$chart" -f "$values")
           echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "managed-agents-http"' \
             || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q "HOOP_SIDECAR_FREE_STANDALONE: 'true'" \
+            || { echo "::error::the template lost HOOP_SIDECAR_FREE_STANDALONE: its free sidecar would wait for a login code"; exit 1; }
           echo "$out" | grep -q 'type: LoadBalancer' \
             || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
           echo "$out" | grep -qE 'port: 443$' \
@@ -365,6 +367,8 @@ jobs:
           out=$(helm template t "$chart" -f "$values")
           echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "managed-agents-kubernetes"' \
             || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q "HOOP_SIDECAR_FREE_STANDALONE: 'true'" \
+            || { echo "::error::the template lost HOOP_SIDECAR_FREE_STANDALONE: its free sidecar would wait for a login code"; exit 1; }
           echo "$out" | grep -q 'type: LoadBalancer' \
             || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
           echo "$out" | grep -qE 'port: 443$' \
@@ -387,6 +391,8 @@ jobs:
           out=$(helm template t "$chart" -f "$values")
           echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-http"' \
             || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q "HOOP_SIDECAR_FREE_STANDALONE: 'true'" \
+            || { echo "::error::the template lost HOOP_SIDECAR_FREE_STANDALONE: its free sidecar would wait for a login code"; exit 1; }
           echo "$out" | grep -q 'type: LoadBalancer' \
             || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
           echo "$out" | grep -qE 'port: 443$' \
@@ -444,6 +450,8 @@ jobs:
           out=$(helm template t "$chart" -f "$values")
           echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-kubernetes"' \
             || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q "HOOP_SIDECAR_FREE_STANDALONE: 'true'" \
+            || { echo "::error::the template lost HOOP_SIDECAR_FREE_STANDALONE: its free sidecar would wait for a login code"; exit 1; }
           echo "$out" | grep -q 'type: LoadBalancer' \
             || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
           echo "$out" | grep -qE 'port: 443$' \
