@@ -204,8 +204,8 @@ github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106173506-861b327c6c8d h1:WAkIjRtcsJatcqM3GOGyeb1HDbsM60RWS/PZnAwVpGc=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106173506-861b327c6c8d/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e h1:lrqN7AeM95TVYfyoSxDnXxNBdGibuC3evnoNJfV4CQQ=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

@@ -552,14 +552,15 @@ func (r *recRecorder) count(msg string) int {
 // mcpproxy's observer feeds the lane's telemetry by method, tool and
 // decision, and every refusal reaches the lane's denied count, mcpproxy's
 // own included. A tool the upstream did not list, a call refused as invalid
-// params and a method MCP does not define are counted as (other).
+// params and a method MCP does not define are counted as (other). Invalid
+// params are refused before the budget, so they spend none of it.
 func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	rec := &recRecorder{}
 	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
 	t.Cleanup(up.Close)
 	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
-		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 4}, Open: ln.open, Telemetry: rec})
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 3}, Open: ln.open, Telemetry: rec})
 	c := &client{url: url}
 	c.init(t)
 	c.list(t)

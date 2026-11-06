@@ -6,7 +6,7 @@ go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/mcpproxy v0.1.8-0.20261106173506-861b327c6c8d
+	github.com/hoophq/mcpproxy v0.1.8-0.20261106174312-826f2e66df5e
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 
