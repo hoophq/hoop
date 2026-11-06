@@ -59,7 +59,7 @@ type HTTPCodecConfig struct {
 	// SQL reads the SQL out of JSON request bodies into statements of their
 	// own, so operation and table rules judge it. It captures request
 	// bodies. See httpsql.go.
-	SQL *HTTPSQLConfig `json:"sql,omitempty" cap:"http_sql" label:"SQL in request bodies" help:"Reads the SQL a JSON API carries in its request body, so operation and table rules judge it. Request bodies are captured."`
+	SQL *HTTPSQLConfig `json:"sql,omitempty" cap:"http_sql" label:"SQL in requests" help:"Reads the SQL an API carries in a JSON field, a URL parameter or a plain-text body, so operation and table rules judge it. Request bodies are captured."`
 }
 
 // headerNames is the allowlist as the codec receives it: trimmed and
@@ -135,7 +135,7 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 	if h.MaxBodyBytes < 0 {
 		problems = append(problems, fmt.Sprintf("listener %q: http.max_body_bytes is negative", lane))
 	}
-	problems = append(problems, h.SQL.validate(lane)...)
+	problems = append(problems, h.SQL.validate(lane, h.SensitiveQueryParams)...)
 	return problems
 }
 

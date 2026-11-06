@@ -3,7 +3,7 @@
 An overlay on the stack in the parent directory: one `clickhouse-server`
 behind four lanes, one per wire protocol it exposes. The lanes add no rules;
 all four inherit the process's one guardrail and one mask rule. The HTTP
-lane masks the result set and enforces nothing on the SQL.
+lane reads the SQL in ClickHouse's query parameter and body.
 
 ```
 client   ──TLS───────> envoy :8446 ──OPA──> hoop-inspect :18123 ──http──> clickhouse :8123   http codec
@@ -57,7 +57,7 @@ ClickHouse has four front doors and all four become explicit lanes:
 | 9000 | native | `clickhouse` | `clickhouse-native` | statement text, guardrails, bounded LZ4 block decoding, row masking |
 | 9004 | MySQL emulation | `mysql` | `clickhouse-mysql` | statement text, guardrails, row masking |
 | 9005 | PostgreSQL emulation | `postgres` | `clickhouse-pg` | statement text, guardrails, row masking |
-| 8123 | HTTP | `http` | `clickhouse-http` | fat gate, request line guardrails, audit with the SQL, result masking by re-chunking |
+| 8123 | HTTP | `http` | `clickhouse-http` | fat gate, guardrails on the SQL in `query` and the body, result masking by re-chunking |
 
 **Prefer :9000.** It is ClickHouse's own protocol. The codec clamps both
 hello revisions to 54450 so peers and inspector use one known packet layout,
@@ -68,14 +68,17 @@ and scratch space is reused block by block. The overlay sets 16 MiB per frame
 and 64 MiB per block; `clickhouse.max_frame_bytes` and
 `clickhouse.max_block_bytes` are the per-listener controls.
 
-**:8446 enforces nothing on the SQL.** Guardrails scan `Statement.Text`,
-which on `http` is the request line (`sidecar/policy/pii.go`); ClickHouse
-takes the SQL as the POST body, so a rule never sees it. The request line is
-still scanned, which covers `?param_x=` values ClickHouse binds into
-`{x:Type}`, and `?query=` on a GET, which ClickHouse makes read-only. OPA's
-fat gate on `X-Hoop-User` sits in front (port `8446` is the `clickhouse`
-service in `../opa/authz.rego`), and every request is recorded with its SQL
-(`capture_body`).
+**:8446 judges the SQL.** ClickHouse takes its SQL in the `query`
+parameter, in the POST body, or in both joined by a line feed. The lane's
+`http.sql` block (`params: {/**: query}`) reads it the same way, so each
+request is followed by a SQL statement the guardrail and the trail read.
+`/**`, because ClickHouse also runs `/query?query=`. The rows after
+`INSERT ... FORMAT` are not read as SQL. A compressed or multipart body is an
+`unknown` statement. See "SQL in URL parameters and plain bodies" in
+`sidecar/README.md`. The request line is still scanned too, which covers
+`?param_x=` values ClickHouse binds into `{x:Type}`. OPA's fat gate on
+`X-Hoop-User` sits in front (port `8446` is the `clickhouse` service in
+`../opa/authz.rego`).
 
 **:8446 does mask the result set.** ClickHouse always answers
 `Transfer-Encoding: chunked`, and the WebSocket-aware `http` codec re-chunks
@@ -90,12 +93,9 @@ zstd, br or lz4 for a text or JSON result is answered 403 and the trail gets
 an error row: with a masker on the lane, that response would be the one
 that leaked.
 
-`capture_body` records both directions, and the relay has no request-only
-setting. The audit row is built from the bytes the server sent, so the
-original result set lands in the trail in the clear, up to `max_body_bytes`,
-even though the client received it masked. `../sidecar/read-audit.py`
-reports that as a `LEAK` on this overlay; it is right, and the demo says so
-before printing it.
+`http.sql` captures request bodies on its routes and no response body, so
+the trail holds the SQL and none of the result set. `capture_body` would
+record the result set as the server sent it, before masking.
 
 **:9000 is the native lane.** `clickhouse-client` reaches it through an Envoy
 TCP proxy and the sidecar's `clickhouse` codec. The demo proves both response
@@ -109,7 +109,8 @@ the sidecar has decoded the Query packet.
 (`mask: {rules: []}`), the shape of a lane that streams large results. Its
 Envoy route has no total timeout: a route `timeout` bounds the whole
 response, so `:8446`'s 300s cuts a result that takes longer to send.
-`idle_timeout: 60s` still ends a stalled stream.
+`idle_timeout: 60s` still ends a stalled stream. It reads the SQL like
+`:8446`; that work is on the request and leaves the response stream alone.
 
 `stream-clickhouse.sh` pulls one result through it and checks that it
 arrived whole. It runs the same query straight to `clickhouse:8123` first,
@@ -249,8 +250,9 @@ go-sql-driver, mysql-connector-python.
 3. **Emulation masking and denial.** MySQL and pgwire enforce the same two
    process-level rules.
 4. **Gated.** bob gets OPA's 403 on `:8446` before the relay sees a byte.
-5. **Audited, not enforced.** alice's HTTP POST returns emails in the clear
-   and lands in the trail with its SQL.
+5. **SQL judged on HTTP.** alice's HTTP POST returns the masked rows. A
+   taxpayer id in the body, or split between `query` and the body, is
+   refused by the same rule as on the database lanes.
 6. **The gap.** The MySQL 8 CLI walks a taxpayer id past the emulation lane.
 
 ## Files

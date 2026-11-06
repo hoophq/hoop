@@ -288,8 +288,8 @@
         {
           "key": "sql",
           "type": "object",
-          "label": "SQL in request bodies",
-          "help": "Reads the SQL a JSON API carries in its request body, so operation and table rules judge it. Request bodies are captured.",
+          "label": "SQL in requests",
+          "help": "Reads the SQL an API carries in a JSON field, a URL parameter or a plain-text body, so operation and table rules judge it. Request bodies are captured.",
           "fields": [
             {
               "key": "dialect",
@@ -312,6 +312,20 @@
               "label": "Fields",
               "help": "A resource pattern, as an http_resource rule writes it, and the JSON path of the SQL in a request to it, such as statement or params.arguments.query.",
               "placeholder": "/api/2.0/sql/statements"
+            },
+            {
+              "key": "params",
+              "type": "map",
+              "label": "URL parameters",
+              "help": "A resource pattern and the URL parameter holding the SQL of a request to it, such as query for ClickHouse. A request body is read as the rest of the SQL.",
+              "placeholder": "/"
+            },
+            {
+              "key": "text",
+              "type": "list",
+              "label": "Plain-text bodies",
+              "help": "Resource patterns whose request body is the SQL as plain text.",
+              "placeholder": "/v1/statement"
             },
             {
               "key": "tools",
