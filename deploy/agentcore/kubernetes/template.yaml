@@ -1,0 +1,706 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  hoop sidecar in front of one EKS cluster's private API endpoint for Amazon
+  Bedrock AgentCore agents. A new VPC whose agent subnets have no route out,
+  peered to the cluster's VPC from the sidecar's subnet only, the sidecar on
+  ECS Fargate, and an AgentCore harness with kubectl.
+  deploy/agentcore/kubernetes/README.md has the steps.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: Agent}
+        Parameters: [AgentKind, HarnessName, ModelId, HarnessImage, KubeTokenSecretArn, KubeUser, KubeNamespace]
+      - Label: {default: Cluster}
+        Parameters: [ClusterEndpoint, ClusterCaData, ClusterVpcId, ClusterVpcCidr, ClusterSecurityGroupId]
+      - Label: {default: Sidecar}
+        Parameters: [LaneCertificate, LaneKey, HoopSidecarToken, HoopLicense, SidecarImage]
+      - Label: {default: Network}
+        Parameters: [AgentAzIds, S3PrefixListId]
+
+Parameters:
+  AgentKind:
+    Type: String
+    Description: >-
+      harness creates an AgentCore harness that uses the sidecar. none creates
+      the network and the sidecar only, for your own Runtime agent: put the
+      outputs in its network configuration.
+    Default: harness
+    AllowedValues: [harness, none]
+  HarnessImage:
+    Type: String
+    Description: >-
+      The harness's linux/arm64 image with kubectl and hoop-kubeconfig, by
+      digest, in AgentRepositoryUri. setup.sh builds image/ and pushes it.
+      Empty only with AgentKind none.
+    Default: ''
+    AllowedPattern: '^([0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9._/-]+@sha256:[0-9a-f]{64})?$'
+    ConstraintDescription: an ECR image of this account by digest, or empty.
+  ClusterEndpoint:
+    Type: String
+    Description: The EKS cluster's API endpoint, from aws eks describe-cluster.
+    AllowedPattern: '^https://[A-Za-z0-9.-]+$'
+    ConstraintDescription: https:// and a host, no port and no path.
+  ClusterCaData:
+    Type: String
+    Description: The cluster's certificateAuthority.data, base64. The sidecar verifies the API server with it.
+    AllowedPattern: '^[A-Za-z0-9+/=]+$'
+  ClusterVpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The cluster's VPC. The stack peers its VPC with it.
+  ClusterVpcCidr:
+    Type: String
+    Description: >-
+      The cluster VPC's CIDR that holds the cluster's subnets. It must not
+      overlap 10.90.0.0/16, this stack's VPC.
+    AllowedPattern: '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'
+  ClusterSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >-
+      The cluster security group (clusterSecurityGroupId). The stack admits
+      the sidecar on 443 there.
+  KubeTokenSecretArn:
+    Type: String
+    Description: >-
+      A Secrets Manager secret that holds the agent's ServiceAccount token
+      (rbac.yaml). The harness gets it as KUBE_TOKEN. Empty only with
+      AgentKind none.
+    Default: ''
+    AllowedPattern: '^(arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+)?$'
+  KubeUser:
+    Type: String
+    Description: The ServiceAccount that KubeTokenSecretArn's token belongs to. The agent impersonates it to name its session.
+    Default: system:serviceaccount:hoop:agentcore-agent
+    AllowedPattern: '^system:serviceaccount:[a-z0-9-]+:[a-z0-9.-]+$'
+  KubeNamespace:
+    Type: String
+    Description: The namespace the agent manages, as in rbac.yaml.
+    Default: demo
+    AllowedPattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+  LaneCertificate:
+    Type: String
+    Description: >-
+      The lane's certificate for sidecar.hoop.internal, PEM in base64.
+      setup.sh makes it. kubectl sends its token over HTTPS only, and the
+      agent's kubeconfig trusts this certificate and no other.
+    AllowedPattern: '^[A-Za-z0-9+/=]+$'
+  LaneKey:
+    Type: String
+    Description: LaneCertificate's private key, PEM in base64.
+    NoEcho: true
+    AllowedPattern: '^[A-Za-z0-9+/=]+$'
+  HoopSidecarToken:
+    Type: String
+    Description: >-
+      The free plan runs logged in. Sign in to https://use.hoop.dev, then
+      Sidecars, Connect an existing Sidecar, and paste its token. Set this or
+      HoopLicense.
+    NoEcho: true
+    Default: ''
+  HoopLicense:
+    Type: String
+    Description: >-
+      A hoop license document, for a sidecar without HoopSidecarToken. It
+      lifts the free tier's one guardrail rule and one mask rule. With a
+      token, the control plane's organization license decides and this one
+      is ignored.
+    NoEcho: true
+    Default: ''
+  ModelId:
+    Type: String
+    Description: The harness's Bedrock model or inference profile.
+    Default: us.anthropic.claude-haiku-5-5
+  HarnessName:
+    Type: String
+    Description: Unique in the account and Region.
+    Default: hoop_agentcore_kubernetes
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9_]{0,39}$'
+  AgentAzIds:
+    Type: CommaDelimitedList
+    Description: >-
+      Two Availability Zone ids that AgentCore supports in this Region. In
+      us-east-1 it accepts use1-az1, use1-az2 and use1-az4.
+    Default: use1-az1,use1-az2
+  S3PrefixListId:
+    Type: String
+    Description: >-
+      The AWS prefix list com.amazonaws.<region>.s3. The default is
+      us-east-1's. Find it with: aws ec2 describe-managed-prefix-lists
+      --filters Name=prefix-list-name,Values=com.amazonaws.<region>.s3
+    Default: pl-63a5400a
+    AllowedPattern: '^pl-[0-9a-f]+$'
+  SidecarImage:
+    Type: String
+    Description: >-
+      hoophq/hoopsidecar, from Docker Hub or your mirror, by digest. 1.272.0 is
+      the first release that reports this template's install source. Not the
+      -distroless tag: the entry point needs bash.
+    AllowedPattern: '^([a-z0-9.-]+(:[0-9]+)?/)*hoophq/hoopsidecar:[0-9]+\.[0-9]+\.[0-9]+(@sha256:[0-9a-f]{64})?$'
+    ConstraintDescription: hoophq/hoopsidecar:X.Y.Z, optionally after a registry host and by digest.
+    Default: hoophq/hoopsidecar:1.272.0@sha256:5fbf5967bb084e064be377a4968ad1a8b2058d620255e64fa4020a8954cd589c
+
+Rules:
+  SidecarCredential:
+    Assertions:
+      - Assert: !Not [!And [!Equals [!Ref HoopSidecarToken, ''], !Equals [!Ref HoopLicense, '']]]
+        AssertDescription: >-
+          Set HoopSidecarToken or HoopLicense. Without one the sidecar waits
+          for a person to approve a login code and serves nothing.
+  HarnessInputs:
+    RuleCondition: !Equals [!Ref AgentKind, harness]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref HarnessImage, '']]
+        AssertDescription: >-
+          Set HarnessImage: the managed environment has no kubectl, and the
+          agent subnets cannot download it.
+      - Assert: !Not [!Equals [!Ref KubeTokenSecretArn, '']]
+        AssertDescription: Set KubeTokenSecretArn, the agent's ServiceAccount token.
+
+Conditions:
+  # The image test is for cfn-lint, which reads the empty default; the
+  # HarnessInputs rule refuses a harness without an image first.
+  IsHarness: !And [!Equals [!Ref AgentKind, harness], !Not [!Equals [!Ref HarnessImage, '']]]
+  HasSidecarToken: !Not [!Equals [!Ref HoopSidecarToken, '']]
+  HasLicense: !Not [!Equals [!Ref HoopLicense, '']]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.90.0.0/16
+      # Private DNS for the endpoints and the sidecar's name.
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: !Ref AWS::StackName}]
+
+  # Agent tier. The route table holds the local route and the S3 gateway
+  # endpoint, nothing else: no NAT, no internet gateway, no peering.
+  AgentRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent'}]
+  AgentSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.0.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent-a'}]
+  AgentSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.1.0/24
+      AvailabilityZoneId: !Select [1, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent-b'}]
+  AgentSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetA, RouteTableId: !Ref AgentRouteTable}
+  AgentSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetB, RouteTableId: !Ref AgentRouteTable}
+
+  # Service tier: the sidecar only. A public IP and an internet gateway let
+  # it pull its image and reach its control plane without a NAT.
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
+  ServiceRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-service'}]
+  ServiceDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref ServiceRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  ServiceSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.10.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-service'}]
+  ServiceSubnetRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref ServiceSubnet, RouteTableId: !Ref ServiceRouteTable}
+
+  # A private-only endpoint answers inside the cluster's VPC and the
+  # networks joined to it; its public DNS name resolves to private
+  # addresses there. Only the sidecar's route table gets the route.
+  # setup.sh adds the return route in the cluster's route tables.
+  ClusterPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref Vpc
+      PeerVpcId: !Ref ClusterVpcId
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-cluster'}]
+  ServiceToCluster:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ServiceRouteTable
+      DestinationCidrBlock: !Ref ClusterVpcCidr
+      VpcPeeringConnectionId: !Ref ClusterPeering
+  # A group in a peered VPC can name this one once the peering is active.
+  ClusterFromSidecar:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: ClusterPeering
+    Properties:
+      GroupId: !Ref ClusterSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref SidecarSecurityGroup
+      Description: !Sub 'hoop sidecar, stack ${AWS::StackName}'
+
+  # The inline egress replaces the default allow-all. Each rule is one path
+  # the agent may take; scripts/ci/check-agentcore-egress.py fails on others.
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AgentCore agents, harness or Runtime
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationSecurityGroupId: !Ref EndpointSecurityGroup, Description: VPC endpoints}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationPrefixListId: !Ref S3PrefixListId, Description: 'S3 gateway endpoint, ECR image layers'}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent'}]
+  # A separate resource: the sidecar's group names the agent's, so an inline
+  # rule would make a cycle.
+  AgentToSidecar:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8443
+      ToPort: 8443
+      DestinationSecurityGroupId: !Ref SidecarSecurityGroup
+      Description: sidecar kubernetes lane
+  # Private DNS for an endpoint covers the whole VPC, so the sidecar task
+  # writes its logs through the logs endpoint too. A group that admits only
+  # the agents stops a new task (ENG-880).
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC interface endpoints, whole VPC
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: !GetAtt Vpc.CidrBlock}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-endpoints'}]
+  SidecarSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: hoop sidecar kubernetes lane, agents only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8443, ToPort: 8443, SourceSecurityGroupId: !Ref AgentSecurityGroup}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-sidecar'}]
+
+  # A harness pulls its image from private ECR at each session start, and
+  # its model calls leave from the VPC. Without one of these a session
+  # hangs for minutes with no error (ENG-880).
+  # The default endpoint policy admits any account's keys: an agent that
+  # holds an outside account's keys could write its logs or push to its ECR.
+  # Each policy admits this account's principals only.
+  EndpointEcrDkr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointBedrockRuntime:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  # The default policy lets the agent write to any bucket, an outside one
+  # included. ECR keeps image layers in this AWS bucket; nothing else is
+  # needed (ENG-880).
+  EndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref AgentRouteTable]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::prod-${AWS::Region}-starport-layer-bucket/*
+
+  # The VPC resolver answers any public name, so a query can carry data out.
+  # The rule group covers the whole VPC, the sidecar too: the list names its
+  # hosts as well. The agent can resolve them, and still has no route.
+  DnsAllowed:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Properties:
+      Domains:
+        - amazonaws.com.
+        - '*.amazonaws.com.'
+        - hoop.internal.
+        - '*.hoop.internal.'
+        # The cluster endpoint, also under *.amazonaws.com: it stays allowed
+        # if that entry narrows.
+        - !Sub
+          - '${Host}.'
+          - Host: !Select [2, !Split ['/', !Ref ClusterEndpoint]]
+        # The sidecar's image, its control plane and its analytics.
+        - docker.io.
+        - '*.docker.io.'
+        - '*.docker.com.'
+        - use.hoop.dev.
+        - api.segment.io.
+  DnsEverything:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Properties:
+      Domains: ['*.']
+  DnsFirewall:
+    Type: AWS::Route53Resolver::FirewallRuleGroup
+    Properties:
+      FirewallRules:
+        # An allowed name's CNAME targets are allowed too. By default the
+        # firewall checks each name in the chain, and blocks
+        # auth.docker.io -> auth.docker.io.cdn.cloudflare.net: the sidecar
+        # cannot pull its image.
+        - FirewallDomainListId: !Ref DnsAllowed
+          Priority: 100
+          Action: ALLOW
+          FirewallDomainRedirectionAction: TRUST_REDIRECTION_DOMAIN
+        - {FirewallDomainListId: !Ref DnsEverything, Priority: 200, Action: BLOCK, BlockResponse: NXDOMAIN}
+  DnsFirewallAssociation:
+    Type: AWS::Route53Resolver::FirewallRuleGroupAssociation
+    Properties:
+      FirewallRuleGroupId: !Ref DnsFirewall
+      VpcId: !Ref Vpc
+      Priority: 101
+      Name: !Sub '${AWS::StackName}-dns'
+
+  LaneKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: the sidecar lane's TLS private key, PEM in base64
+      SecretString: !Ref LaneKey
+  SidecarToken:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasSidecarToken
+    Properties:
+      Description: the sidecar's use.hoop.dev token
+      SecretString: !Ref HoopSidecarToken
+  SidecarLicense:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasLicense
+    Properties:
+      Description: the sidecar's hoop license
+      SecretString: !Ref HoopLicense
+
+  SidecarDnsNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: hoop.internal
+      Vpc: !Ref Vpc
+  SidecarDnsName:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: sidecar
+      NamespaceId: !Ref SidecarDnsNamespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+
+  # Each request's audit row is a line here.
+  SidecarLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 90
+  Cluster:
+    Type: AWS::ECS::Cluster
+  SidecarExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns: [!Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy']
+      Policies:
+        - PolicyName: sidecar-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref LaneKeySecret
+                  - !If [HasSidecarToken, !Ref SidecarToken, !Ref AWS::NoValue]
+                  - !If [HasLicense, !Ref SidecarLicense, !Ref AWS::NoValue]
+  # The image reads its config, the cluster CA and the lane's certificate
+  # from files, and Fargate mounts none: the entry point writes each value
+  # to a file, then starts the sidecar. HOOP_SIDECAR_TOKEN and HOOP_LICENSE
+  # stay in the environment, where the sidecar reads them. The config holds
+  # no secret and lives in the task, so a change to it registers a new
+  # revision and ECS replaces the task.
+  SidecarTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt SidecarExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: sidecar
+          Image: !Ref SidecarImage
+          EntryPoint: [/usr/bin/tini, --, bash, -c]
+          Command:
+            - >-
+              umask 077 && mkdir -p /tmp/hoop &&
+              printf '%s' "$SIDECAR_YAML" > /tmp/hoop/sidecar.yaml &&
+              printf '%s' "$CLUSTER_CA" | base64 -d > /tmp/hoop/cluster-ca.pem &&
+              printf '%s' "$LANE_CERT" | base64 -d > /tmp/hoop/lane.crt &&
+              printf '%s' "$LANE_KEY" | base64 -d > /tmp/hoop/lane.key &&
+              unset SIDECAR_YAML CLUSTER_CA LANE_CERT LANE_KEY &&
+              exec hoop start sidecar --config /tmp/hoop/sidecar.yaml
+          Environment:
+            - {Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: agentcore-kubernetes}
+            - {Name: CLUSTER_CA, Value: !Ref ClusterCaData}
+            - {Name: LANE_CERT, Value: !Ref LaneCertificate}
+            # The free tier enforces one guardrail rule and one mask rule per
+            # process. CI keeps both equal to
+            # deploy/openai-agents/kubernetes/values.yaml.
+            - Name: SIDECAR_YAML
+              Value: !Sub |
+                audit:
+                  file: '-'
+                listeners:
+                  - name: kubernetes
+                    protocol: http
+                    # kubectl sends its token over HTTPS only. setup.sh makes the
+                    # certificate, and the agent's kubeconfig trusts it alone.
+                    listen: 'https://0.0.0.0:8443'
+                    upstream: '${ClusterEndpoint}'
+                    upstream_tls:
+                      ca_file: /tmp/hoop/cluster-ca.pem
+                    downstream_tls:
+                      cert_file: /tmp/hoop/lane.crt
+                      key_file: /tmp/hoop/lane.key
+                    http:
+                      # Accept tells a Secret's table view from its contents. The other
+                      # two name the kubectl subcommand and the AgentCore session
+                      # (rbac.yaml). All three land in each row.
+                      headers: [Accept, Kubectl-Command, Impersonate-Extra-Hoop-Session]
+                guardrails:
+                  rules:
+                    # The DELETE method on any path: delete, and deletecollection.
+                    - name: no-delete
+                      type: operation
+                      operations: [delete]
+                      message: this agent may not delete cluster objects
+                mask:
+                  rules:
+                    # Every value under a JSON key `data`: a Secret's, and a
+                    # ConfigMap's too. The annotation holds a copy of the Secret as
+                    # `kubectl apply` last wrote it.
+                    - name: secret-values
+                      columns: [data, kubectl.kubernetes.io/last-applied-configuration]
+                      entities: [K8S_DATA]
+                      strategy: redact
+          Secrets:
+            - {Name: LANE_KEY, ValueFrom: !Ref LaneKeySecret}
+            - !If [HasSidecarToken, {Name: HOOP_SIDECAR_TOKEN, ValueFrom: !Ref SidecarToken}, !Ref AWS::NoValue]
+            - !If [HasLicense, {Name: HOOP_LICENSE, ValueFrom: !Ref SidecarLicense}, !Ref AWS::NoValue]
+          PortMappings: [{ContainerPort: 8443}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref SidecarLogs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: sidecar}
+  SidecarService:
+    Type: AWS::ECS::Service
+    # The task writes its logs through the logs endpoint (private DNS).
+    DependsOn: [EndpointLogs, ServiceDefaultRoute, DnsFirewallAssociation]
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref SidecarTask
+      # A task that cannot start fails the stack after a few tries, instead
+      # of holding it in CREATE_IN_PROGRESS for hours.
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref SidecarSecurityGroup]
+      ServiceRegistries: [{RegistryArn: !GetAtt SidecarDnsName.Arn}]
+
+  # For the harness's kubectl image, and for your own Runtime agent's.
+  AgentRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+  # The harness or your Runtime agent assumes this role. Every VPC endpoint
+  # is an AWS API the agent's shell can call with it, so it holds no more
+  # than a session needs (ENG-880).
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition: {StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}}
+      Policies:
+        - PolicyName: agent
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}'
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource:
+                  # AWS's managed harness image, in an AWS account.
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:*:repository/harness-*'
+                  - !GetAtt AgentRepository.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:DescribeLogStreams]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition: {StringEquals: {cloudwatch:namespace: bedrock-agentcore}}
+
+  Harness:
+    Type: AWS::BedrockAgentCore::Harness
+    Condition: IsHarness
+    # A session with a missing endpoint hangs instead of failing (ENG-880).
+    DependsOn: [EndpointEcrDkr, EndpointEcrApi, EndpointBedrockRuntime, EndpointLogs, EndpointS3, DnsFirewallAssociation, SidecarService]
+    Properties:
+      HarnessName: !Ref HarnessName
+      ExecutionRoleArn: !GetAtt AgentRole.Arn
+      Model: {BedrockModelConfig: {ModelId: !Ref ModelId}}
+      SystemPrompt:
+        - Text: |
+            You operate a Kubernetes cluster with kubectl.
+
+            Reach the cluster only at $SIDECAR_URL. That host is a hoop sidecar in
+            front of the API server: it refuses deletes, masks Secret values and
+            records every request. No other host is reachable from this environment.
+
+            The first message gives your session id. Before your first kubectl
+            command, run this once with that id:
+
+            hoop-kubeconfig <your session id>
+
+            It writes a kubeconfig that sends each request to the sidecar and names
+            the session in it. Do not edit that kubeconfig. $KUBE_TOKEN is your
+            cluster token: use it only through that kubeconfig, never in a kubectl
+            argument, a URL or a request body, and never print it.
+
+            `Error from server (Forbidden)` followed by a plain sentence, such as
+            `this agent may not delete cluster objects`, is the sidecar's policy.
+            Report it; do not retry it in another form. Values such as
+            [REDACTED:K8S_DATA] are intended. Use `kubectl apply --server-side`: a
+            client-side apply reads an annotation that the sidecar masks.
+      Environment:
+        AgentCoreRuntimeEnvironment:
+          NetworkConfiguration:
+            NetworkMode: VPC
+            NetworkModeConfig:
+              SecurityGroups: [!Ref AgentSecurityGroup]
+              Subnets: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      # The managed environment has no kubectl, and the agent subnets reach
+      # no download host.
+      EnvironmentArtifact:
+        ContainerConfiguration: {ContainerUri: !Ref HarnessImage}
+      # The harness keeps these in its definition: GetHarness returns them,
+      # and a value the agent prints lands in CloudWatch (ENG-880).
+      EnvironmentVariables:
+        SIDECAR_URL: https://sidecar.hoop.internal:8443
+        SIDECAR_CA: !Ref LaneCertificate
+        KUBE_TOKEN: !Sub '{{resolve:secretsmanager:${KubeTokenSecretArn}}}'
+        KUBE_USER: !Ref KubeUser
+        KUBE_NAMESPACE: !Ref KubeNamespace
+      # Managed memory was not tested in VPC mode.
+      Memory: {Disabled: {}}
+      MaxIterations: 20
+      TimeoutSeconds: 600
+
+Outputs:
+  SidecarUrl:
+    Description: The sidecar's kubernetes lane, reachable from the agent subnets only.
+    Value: https://sidecar.hoop.internal:8443
+  AgentSubnetIds:
+    Description: The agent's networkModeConfig.subnets.
+    Value: !Join [',', [!Ref AgentSubnetA, !Ref AgentSubnetB]]
+  AgentSecurityGroupId:
+    Description: The agent's networkModeConfig.securityGroups.
+    Value: !Ref AgentSecurityGroup
+  AgentRoleArn:
+    Description: An execution role for the harness or your Runtime agent.
+    Value: !GetAtt AgentRole.Arn
+  AgentRepositoryUri:
+    Description: The ECR repository for the harness's image, or your Runtime agent's.
+    Value: !GetAtt AgentRepository.RepositoryUri
+  PeeringConnectionId:
+    Description: The peering to the cluster's VPC. Its route tables need a route to SidecarSubnetCidr through it.
+    Value: !Ref ClusterPeering
+  SidecarSubnetCidr:
+    Description: The sidecar's subnet, the one address range the cluster's VPC routes back.
+    Value: !GetAtt ServiceSubnet.CidrBlock
+  SidecarLogGroup:
+    Description: The sidecar's log and audit trail.
+    Value: !Ref SidecarLogs
+  HarnessArn:
+    Condition: IsHarness
+    Value: !GetAtt Harness.Arn

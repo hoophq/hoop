@@ -499,3 +499,19 @@ func (g *Gate) MaskCell(column string, value []byte) ([]byte, []string, int) {
 func (g *Gate) masksResponses() bool {
 	return g.reframer != nil && (g.masker != nil || g.maskScope.bytePath())
 }
+
+// mustMask reports a server read the codec must mask: one under a lane
+// masker or a plan, or any read of a codec that needs a callback to keep
+// its framing. masksResponses says the stream goes through the reframer;
+// this says whether this exchange is masked.
+//
+// The HTTP codec takes the callback per response head. Non-nil obliges it
+// to mask that response, and to refuse one it cannot (RefuseUnmaskable);
+// nil frames the response and forwards it as it arrives, as an HTTP lane
+// with no masker does. So an HTTP exchange with no plan and no lane masker
+// passes through. A database codec keeps framing state across reads that
+// a nil callback skips (postgres would forward a held partial message out
+// of order), so a serial lane always passes one.
+func (g *Gate) mustMask(plan []policy.ResponseMask) bool {
+	return g.masker != nil || len(plan) > 0 || g.maskScope != MaskScopeHTTP
+}

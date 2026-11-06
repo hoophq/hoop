@@ -34,6 +34,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -85,6 +86,12 @@ type Options struct {
 	// one lane must share one, or a credential learned on one connection
 	// is not watched on the next. Nil gives the codec a memory of its own.
 	Seen *SeenCredentials
+
+	// SQL, when set, reads the SQL out of JSON request bodies into
+	// statements of their own. It captures the bodies of requests to its
+	// routes; other requests keep theirs only under CaptureBody or
+	// CaptureRequestBody. See sqlbody.go.
+	SQL *SQLOptions
 }
 
 // Codec is libhoop's HTTP Inspector with the relay's additions.
@@ -100,6 +107,11 @@ type Codec struct {
 
 	creds credentials
 	via   viaFilter
+	sql   *sqlReader
+	// keepBodies is whether the operator asked for request bodies. The
+	// Inspector captures every request body on a lane that reads SQL, and
+	// withSQL drops those that reach no SQL route unless this is set.
+	keepBodies bool
 }
 
 // New builds an HTTP codec.
@@ -134,14 +146,23 @@ func New(o Options) *Codec {
 	c := &Codec{
 		Inspector: codechttp.New(codechttp.Options{
 			CaptureBody:          o.CaptureBody,
-			CaptureRequestBody:   o.CaptureRequestBody,
+			CaptureRequestBody:   o.CaptureRequestBody || o.SQL != nil,
 			MaxBodyBytes:         o.MaxBodyBytes,
 			Headers:              headers,
 			SensitiveQueryParams: o.SensitiveQueryParams,
 			MaxMessageBytes:      o.MaxMessageBytes,
+			// A lane with a mask rule promises the operator masked
+			// responses. A body too large to mask, held or inflated, is
+			// refused rather than forwarded as it came: a gzip body is small
+			// on the wire, so the server, not the limit, decides whether it
+			// reaches the client unmasked.
+			RefuseUnmaskable: true,
 		}),
 		creds: credentials{header: header, keep: keep, authenticates: o.AuthenticatesCaller},
 		via:   viaFilter{origin: o.Origin},
+		sql:   newSQLReader(o.SQL),
+
+		keepBodies: o.CaptureBody || o.CaptureRequestBody,
 	}
 	c.via.guard.seen = o.Seen
 	if c.via.guard.seen == nil {
@@ -185,22 +206,100 @@ func (c *Codec) CredentialHeader() string { return c.creds.header }
 // origin lane passes a connection through only once the server grants the
 // switch a request asked for. The gate decodes a response before it
 // forwards it, so the filter knows before the client can act on it.
+//
+// On a lane that reads SQL bodies, each client request is followed by the
+// SQL statements its body carries (sqlbody.go). A request the lane refuses
+// for its body is reported as an error wrapping inspect.ErrStreamUnsafe, the
+// same way a lifting failure is.
 func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
 	stmts, n, err := c.Inspector.Decode(dir, data)
+	if liftErr := c.fixup(dir, stmts); liftErr != nil {
+		err = errors.Join(liftErr, err)
+	}
+	if c.sql != nil && dir == inspect.FromClient {
+		var sqlErr error
+		stmts, sqlErr = c.withSQL(stmts)
+		if sqlErr != nil {
+			err = errors.Join(sqlErr, err)
+		}
+	}
+	return stmts, n, err
+}
+
+// EndOfStream is libhoop's, followed by the same fixups Decode applies: the
+// response a close-delimited body completes answers the request filter and
+// is scrubbed like any other. A response never fails the lift.
+func (c *Codec) EndOfStream(dir inspect.Direction) []inspect.Statement {
+	stmts := c.Inspector.EndOfStream(dir)
+	_ = c.fixup(dir, stmts)
+	return stmts
+}
+
+// fixup applies the relay's per-statement pass and reports the first
+// lifting failure.
+func (c *Codec) fixup(dir inspect.Direction, stmts []inspect.Statement) error {
 	var liftErr error
 	for i := range stmts {
 		if dir == inspect.FromServer && stmts[i].HTTP != nil && stmts[i].HTTP.StatusCode != 0 {
 			c.via.answer(stmts[i].HTTP.StatusCode)
 		}
+		cleanResource(&stmts[i])
 		stripConnectGatewayPrefix(&stmts[i])
 		if e := c.creds.lift(&stmts[i]); e != nil && liftErr == nil {
 			liftErr = e
 		}
 	}
-	if liftErr != nil {
-		err = errors.Join(liftErr, err)
+	return liftErr
+}
+
+// withSQL places each request's SQL statements right after it. The order is
+// load-bearing: the gate resolves the caller and rotates the session on the
+// request statement, so the SQL that follows is judged under that caller.
+//
+// A request to no SQL route drops the body the lane captured only to look
+// for SQL, so a secret posted to another API reaches neither the audit trail
+// nor an analyzer unless the operator asked for bodies.
+func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) {
+	var out []inspect.Statement
+	for i := range stmts {
+		out = append(out, stmts[i])
+		d := stmts[i].HTTP
+		if d == nil || d.Method == "" || d.StatusCode != 0 {
+			continue // a response
+		}
+		// A WebSocket message carries its handshake's method and resource
+		// (libhoop fillRequestIdentity), but its payload is a frame, not a
+		// request body: no SQL is read from it, and it keeps its body only
+		// as a request to no SQL route does.
+		var (
+			rt sqlRoute
+			ok bool
+		)
+		if d.WebSocket == nil {
+			rt, ok = c.sql.route(d)
+			rt.method = stmts[i].Operation
+		}
+		if !ok {
+			if !c.keepBodies {
+				d.Body, d.BodyTruncated = "", false
+			}
+			continue
+		}
+		sql, err := c.sql.extract(d, rt)
+		if err != nil {
+			return out, err
+		}
+		if len(sql) == 0 {
+			continue
+		}
+		req := &out[len(out)-1]
+		if req.Metadata == nil {
+			req.Metadata = map[string]string{}
+		}
+		req.Metadata[MetadataSQLStatements] = strconv.Itoa(len(sql))
+		out = append(out, sql...)
 	}
-	return stmts, n, err
+	return out, nil
 }
 
 // InspectRequest is libhoop's InspectRequest with the Connect Gateway
@@ -213,6 +312,7 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 // allowlist, so it cannot reach policy input this way either.
 func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 	stmt := c.Inspector.InspectRequest(r, body)
+	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
 	return stmt
@@ -222,6 +322,7 @@ func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 // InspectRequest.
 func (c *Codec) InspectResponse(resp *http.Response, req *http.Request, body []byte) inspect.Statement {
 	stmt := c.Inspector.InspectResponse(resp, req, body)
+	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
 	return stmt

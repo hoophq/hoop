@@ -105,7 +105,7 @@ Plugins are registered in `gateway/main.go` in a **fixed, intentional order** �
 6. `slack` (`gateway/transport/plugins/slack/`)
 
 Plugin interface: `gateway/transport/plugins/types/` — each plugin implements `OnStartup`, `Name`, and lifecycle hooks.
-gRPC stream interceptors, in order (`gateway/transport/server.go` → `NewGRPCServer()`): `sessionuuid` → `auth` → `tracing`. `accessrequest` is not an interceptor; it runs during packet handling in `gateway/transport/client.go`.
+gRPC stream interceptors, in order (`gateway/transport/server.go` → `NewGRPCServer()`): `sessionuuid` → `auth`. `accessrequest` is not an interceptor; it runs during packet handling in `gateway/transport/client.go`.
 
 ## Gateway ↔ Agent Compatibility
 
@@ -406,6 +406,6 @@ tooling enforces:
 - Branch names come from Linear's `branchName`; commits start with the ticket ID
 - Go changes: `go test` on the changed packages before the first push; the
   full suite (`make test-oss` and the integration tests) runs in the PR's CI;
-  `webapp_v2/`: `npm run lint`
-  and `npm run build`
+  `webapp_v2/`: `npm run lint`,
+  `npm test` and `npm run build`
 - Every PR is born draft

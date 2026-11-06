@@ -121,6 +121,7 @@ export default function WaitingStep({ sidecar, onConnected, onGone, onDelete, on
 
           {!connected && !gone && (
             <Button
+              size="sm"
               color="red"
               variant="light"
               leftSection={<X size={16} aria-hidden="true" />}

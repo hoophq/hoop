@@ -357,6 +357,43 @@ func NewServer(cfg Config) (*Server, error) {
 	return s, nil
 }
 
+// writeDenyFrame writes the protocol's refusal for d to target, the client.
+// The codec goes first: a plug-in or custom codec is the only thing that
+// knows its own error frame, and the writer knows only the shipped
+// protocols by name.
+func (s *Server) writeDenyFrame(g *gate.Gate, target net.Conn, dir inspect.Direction, d gate.Decision, log *slog.Logger) {
+	frame, _ := g.DenyFrame(dir, d.Message)
+	if len(frame) == 0 && s.cfg.DenyWriter != nil {
+		if d.DeniedStatement != nil {
+			if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
+				frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
+			}
+		}
+		if len(frame) == 0 {
+			frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
+		}
+	}
+	writeBeforeClose(target, frame, "deny frame", dir, log)
+}
+
+// writeBeforeClose writes b to target on a connection about to close and
+// reports whether all of it went out. The connection closes either way; the
+// log is the only place a client left without what it was owed shows.
+func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direction, log *slog.Logger) bool {
+	if len(b) == 0 {
+		return true
+	}
+	err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err == nil {
+		_, err = target.Write(b)
+	}
+	if err != nil {
+		log.Warn(what+" not delivered", "direction", string(dir), "error", err)
+		return false
+	}
+	return true
+}
+
 func (s *Server) reserveMySQLHandshake() bool {
 	if s.mysqlHandshakeSlots == nil {
 		return true
@@ -596,7 +633,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 
 	identity := base
 	var requestIdentity gate.RequestIdentity
-	if s.cfg.CredentialHeader != "" {
+	switch {
+	case s.cfg.CredentialHeader != "":
 		requestIdentity = s.requestIdentity(base)
 		// Before session.New on purpose: the gate writes session_start
 		// from the identity it is handed, so a first caller learned later
@@ -623,6 +661,13 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		} else {
 			s.log.Debug("first request's credential did not resolve", "peer", base.PeerAddr, "error", rerr)
 		}
+	case s.cfg.RequestIdentity != nil:
+		// A frame lane: the codec lifts the credential from the frame that
+		// carries it (an mssql LOGIN7), which comes after a handshake the
+		// relay has to forward first, so there is nothing to peek here. The
+		// session opens as the connection and the gate rotates it to the
+		// named caller when the login frame is decoded.
+		requestIdentity = s.requestIdentity(base)
 	}
 
 	sess := session.New(s.cfg.Protocol, identity)
@@ -890,16 +935,51 @@ func (s *Server) pump(
 	// them when the server stream ends normally. A response denial writes a
 	// protocol error instead, so held rows must be discarded: appending them
 	// after the error leaks denied data and corrupts the client stream.
+	//
+	// A statement that completes only with the stream (a close-delimited
+	// body) is judged on a normal EOF only: after a reset or a timeout the
+	// body is not whole, and the trail must not record it as a reply.
 	discardResponse := false
+	serverEOF := false
 	if dir == inspect.FromServer {
 		defer func() {
 			if discardResponse {
 				g.DiscardResponse()
 				return
 			}
+			if serverEOF {
+				d := g.EndOfStream()
+				clock.answered(ctx, finalAnswers(d.Statements))
+				if d.Err != nil {
+					log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
+				}
+				if !d.Allowed {
+					// What the reframer still holds is dropped. A body that
+					// reached the client in part is cut, as for a denial
+					// inside one; one held whole gets the deny frame.
+					s.denied.Add(1)
+					log.Info("statement denied", "direction", string(dir), "rule", d.Rule, "message", d.Message)
+					g.DiscardResponse()
+					if !d.NoFrame {
+						s.writeDenyFrame(g, dst, dir, d, log)
+					}
+					return
+				}
+			}
 			tail, err := g.FlushResponseChecked()
-			if err != nil {
+			if errors.Is(err, gate.ErrMaskedTailDropped) {
+				// An AI mask owned the response in flight: the held bytes
+				// were dropped, and the client gets a cut response.
 				log.Warn("response tail dropped at connection end", "error", err)
+				return
+			}
+			if err != nil {
+				// A close-delimited body too large to mask ends only here,
+				// and its head is still held: answer as for any refusal.
+				s.denied.Add(1)
+				log.Info("statement denied", "direction", string(dir), "rule", "stream-unsafe", "message", err.Error())
+				s.writeDenyFrame(g, dst, dir, gate.Decision{Rule: "stream-unsafe", Message: err.Error()}, log)
+				return
 			}
 			if len(tail) > 0 {
 				_, _ = dst.Write(tail)
@@ -996,34 +1076,23 @@ func (s *Server) pump(
 				// denial came from: on a response denial the offending bytes
 				// travel toward the client, so the client needs to know why
 				// the connection ended.
-				// The codec goes first: a plug-in or custom codec is the
-				// only thing that knows its own error frame, and the
-				// writer below knows only the shipped protocols by name.
 				target := dst
 				if dir == inspect.FromClient {
 					target = src // the client is the source of a request
 				}
-				frame, _ := g.DenyFrame(dir, d.Message)
-				if len(frame) == 0 && s.cfg.DenyWriter != nil {
-					if d.DeniedStatement != nil {
-						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
-							frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
-						}
-					}
-					if len(frame) == 0 {
-						frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
-					}
+				if d.NoFrame {
+					// The response already reached the client in part. Send
+					// what the codec masked before it refused and cut the
+					// response: a deny frame now would sit inside it.
+					writeBeforeClose(target, d.Payload, "masked part of a refused response", dir, log)
+					return
 				}
-				if len(frame) > 0 {
-					// The connection closes either way; the log is the
-					// only place a client left without its reason shows.
-					err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-					if err == nil {
-						_, err = target.Write(frame)
-					}
-					if err != nil {
-						log.Warn("deny frame not delivered", "direction", string(dir), "error", err)
-					}
+				// Responses the codec finished before the refused one go
+				// first, or the client reads the deny frame as their answer.
+				// After a write that may have stopped inside one of them, a
+				// deny frame would garble it: close instead.
+				if writeBeforeClose(target, d.Preceding, "responses before a refused one", dir, log) {
+					s.writeDenyFrame(g, target, dir, d, log)
 				}
 				return
 			}
@@ -1048,6 +1117,7 @@ func (s *Server) pump(
 		}
 
 		if readErr != nil {
+			serverEOF = readErr == io.EOF
 			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)

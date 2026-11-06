@@ -15,7 +15,7 @@ function PrintControlRow({ control }) {
     <Group align="flex-start" gap="sm" wrap="nowrap">
       <Icon
         size={18}
-        color={`var(--mantine-color-${meta.color}-6)`}
+        color={`var(--mantine-color-${meta.color}-filled)`}
         className={styles.rowIcon}
         aria-label={meta.label}
       />

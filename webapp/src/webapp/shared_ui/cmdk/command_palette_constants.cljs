@@ -62,7 +62,15 @@
              :icon (fn [] [:> Settings {:size 16}])
              :action :configure}))))
 
-(defn filter-items-by-permissions [user-data]
+(defn- flag-enabled? [feature-flags flag]
+  (boolean (or (get feature-flags (keyword flag))
+               (get feature-flags flag))))
+
+;; /search returns agent resources, roles and runbooks only.
+(defn search-enabled? [feature-flags]
+  (flag-enabled? feature-flags sidebar-constants/agents-flag))
+
+(defn filter-items-by-permissions [user-data feature-flags]
   (let [admin? (:admin? user-data)
         selfhosted? (= (:tenancy_type user-data) "selfhosted")
         all-routes (concat sidebar-constants/main-routes
@@ -76,4 +84,6 @@
                      (and
                       (not= (:id item) "Search")
                       (or (not (:admin-only? route)) admin?)
-                      (or (not (:selfhosted-only? route)) selfhosted?))))))))
+                      (or (not (:selfhosted-only? route)) selfhosted?)
+                      (or (not (:feature-flag route))
+                          (flag-enabled? feature-flags (:feature-flag route))))))))))

@@ -1,0 +1,13 @@
+/* A managed attribute. The pill's colors come from the Pill theme
+   (`variant="managed"`); its icon and remove button take the pill's text color. */
+.managedPill svg {
+  color: inherit;
+}
+
+.managedPill button {
+  color: inherit;
+}
+
+.managedOption {
+  color: var(--hoop-text-accent);
+}

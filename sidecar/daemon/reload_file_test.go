@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -22,6 +21,13 @@ import (
 // as the compare. It returns the file's path so a case edits it.
 func testFileReloader(t *testing.T, raw string) (*reloader, string, *bytes.Buffer) {
 	t.Helper()
+	return testFileReloaderWith(t, raw, "")
+}
+
+// testFileReloaderWith is testFileReloader for a process started with the
+// license flag set to licenseFlag; empty means no flag.
+func testFileReloaderWith(t *testing.T, raw, licenseFlag string) (*reloader, string, *bytes.Buffer) {
+	t.Helper()
 	path := writeConfig(t, raw)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -29,7 +35,8 @@ func testFileReloader(t *testing.T, raw string) (*reloader, string, *bytes.Buffe
 	}
 	cfg.configPath = path
 	cfg.load = LoadConfig
-	cfg.lic = ResolveLicense("", cfg.License)
+	cfg.lic = ResolveLicense(licenseFlag, cfg.License)
+	cfg.licPinned = pinnedLicenseRef(cfg.lic, licenseFlag)
 
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
@@ -75,8 +82,11 @@ func editFile(t *testing.T, path, body string) {
 	}
 }
 
+// pollWith is one tick of watchFile: the config file, then the license file.
 func pollWith(rl *reloader, buf *bytes.Buffer) {
-	rl.pollFile(slog.New(slog.NewTextHandler(buf, nil)))
+	log := slog.New(slog.NewTextHandler(buf, nil))
+	rl.pollFile(log)
+	rl.pollLicense(log, false)
 }
 
 // The reason this source exists: a rule edited in the file reaches the lane
@@ -287,46 +297,6 @@ func TestAFileNamingAControlPlaneKeepsTheRestartPath(t *testing.T) {
 	pollWith(rl, buf)
 	if buf.Len() != before {
 		t.Errorf("the restart line repeated:\n%s", buf)
-	}
-}
-
-// A renewal dropped onto the same mount: the config's `license` key is a
-// path and does not change, the file behind it does. The string compare
-// cannot see that, so a forced reload re-resolves the path and adopts the
-// new document.
-func TestAReplacedLicenseFileBehindTheSamePathIsAdopted(t *testing.T) {
-	t.Setenv(license.EnvVar, "")
-	licPath := filepath.Join(t.TempDir(), "license.json")
-	first := licensetest.Document(t, licensetest.Enterprise())
-	if err := os.WriteFile(licPath, []byte(first), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	rl, _, buf := testFileReloader(t, withLicense(t, reloadBase, licPath))
-	was := rl.lic.get()
-	if was.State() != license.StateValid || was.Source != fileLicenseSource {
-		t.Fatalf("test bug: license = %q from %q", was.State(), was.Source)
-	}
-
-	// licensetest signs under a fresh trust root each time, so this is a
-	// genuinely different document with a different signature.
-	second := licensetest.Document(t, licensetest.Enterprise())
-	if err := os.WriteFile(licPath, []byte(second), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The config file did not move: a tick sees nothing.
-	pollWith(rl, buf)
-	if got := rl.lic.get(); got.License.Signature != was.License.Signature {
-		t.Fatal("a tick over an untouched config re-read the license; only a forced reload should")
-	}
-	// SIGHUP's path.
-	rl.lastHandled = nil
-	rl.reloadFile(slog.New(slog.NewTextHandler(buf, nil)))
-	got := rl.lic.get()
-	if got.State() != license.StateValid {
-		t.Fatalf("license = %q after the forced reload, want valid; log:\n%s", got.State(), buf)
-	}
-	if got.License.Signature == was.License.Signature {
-		t.Errorf("the running license is still the replaced document; log:\n%s", buf)
 	}
 }
 

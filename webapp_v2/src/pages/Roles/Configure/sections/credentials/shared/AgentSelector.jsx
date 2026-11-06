@@ -2,24 +2,31 @@ import { useEffect } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import { useAgentStore } from '@/stores/useAgentStore'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
+import { sortAgents } from '@/pages/Agents/filters'
 
 // Lets the admin re-assign which agent runs this connection. The agent
 // list is shared with /agents and lives in useAgentStore so we just
 // trigger a fetch on mount and read the cached state. Every bespoke
 // renderer ends with this section — keeps the agent picker in a
 // consistent position across the credentials tab.
+// The resource setup wizard picks one agent for every role.
 export default function AgentSelector() {
+  const createMode = useCredentialsStore((s) => s.createMode)
+  return createMode ? null : <AgentPicker />
+}
+
+function AgentPicker() {
   const agents = useAgentStore((s) => s.agents)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
-  const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)
-  const setDraft = useConfigureRoleStore((s) => s.setDraft)
+  const agentId = useCredentialsStore((s) => s.drafts.agent_id)
+  const setDraft = useCredentialsStore((s) => s.setDraft)
 
   useEffect(() => {
     if (!agents || agents.length === 0) fetchAgents()
   }, [agents, fetchAgents])
 
-  const data = (agents || []).map((a) => ({ value: a.id, label: a.name }))
+  const data = sortAgents(agents).map((a) => ({ value: a.id, label: a.name }))
 
   return (
     <Stack gap="xs">

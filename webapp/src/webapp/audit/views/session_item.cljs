@@ -7,7 +7,7 @@
    [webapp.formatters :as formatters]
    [webapp.components.user-icon :as user-icon]
    [webapp.components.icon :as icon]
-   [webapp.audit.views.session-details :as session-details]))
+   [webapp.audit.session-details-bridge]))
 
 (defmulti ^:private access-request-badge identity)
 (defmethod ^:private access-request-badge "APPROVED" [_]
@@ -77,10 +77,7 @@
       :align "center"
       :class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"
                   " p-regular text-sm")
-      :on-click (fn []
-                  (rf/dispatch [:modal->open {:id "session-details"
-                                              :maxWidth "95vw"
-                                              :content [session-details/main session]}]))}
+      :on-click #(rf/dispatch [:session-details/open session])}
 
      [:> Flex {:id "user-info"
                :gap "2"

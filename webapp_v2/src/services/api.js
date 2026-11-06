@@ -17,30 +17,44 @@ const api = axios.create({
 
 // Request interceptor: Add JWT token to all requests
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
+  const token = useAuthStore.getState().getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// Response interceptor: Handle 401 by saving redirect URL and logging out
+// The gateway sends a renewed token in this header, on an error response too.
+// Stored as the CLJS app does (webapp/src/webapp/http/request.cljs), so the
+// session slides on React routes. `sent` is the token the request carried.
+export function storeRenewedToken(sent, headers) {
+  useAuthStore.getState().renewToken(sent, headers?.get('X-New-Access-Token'))
+}
+
+function renew(response) {
+  if (!response) return
+  const sent = response.config?.headers?.Authorization?.replace(/^Bearer /, '')
+  storeRenewedToken(sent, response.headers)
+}
+
+// A 401: save the URL to come back to, log out and go to the login page. The
+// fetch streams call it too: they do not pass through the interceptor.
+export function redirectToLogin() {
+  const authStore = useAuthStore.getState()
+  authStore.saveRedirectUrl(window.location.href)
+  authStore.logout()
+  window.location.href = '/login'
+}
+
+// Response interceptor: store a renewed token; handle 401 by saving redirect URL and logging out
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    renew(response)
+    return response
+  },
   (error) => {
-    if (error.response?.status === 401) {
-      const authStore = useAuthStore.getState()
-
-      // Save current URL for redirect after auth
-      const currentUrl = window.location.href
-      authStore.saveRedirectUrl(currentUrl)
-
-      // Logout (clears token)
-      authStore.logout()
-
-      // Redirect to login
-      window.location.href = '/login'
-    }
+    renew(error.response)
+    if (error.response?.status === 401) redirectToLogin()
     return Promise.reject(error)
   },
 )

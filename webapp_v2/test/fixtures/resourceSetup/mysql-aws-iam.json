@@ -1,0 +1,32 @@
+{
+  "name": "mysql-iam",
+  "type": "database",
+  "subtype": "mysql",
+  "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "mysql-iam-rw",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "database",
+      "secret": {
+        "envvar:HOST": "bXlzcWwuaW50ZXJuYWw=",
+        "envvar:USER": "X2F3c19pYW1fcmRzOmlhbV91c2Vy",
+        "envvar:PORT": "MzMwNg==",
+        "envvar:DB": "YXBw",
+        "envvar:PASS": "X2F3c19pYW1fcmRzOmF1dGh0b2tlbg==",
+        "filesystem:PRE_SQL_SCRIPT_FILE": "U0VUIFNFU1NJT04gc3FsX21vZGU9J0FOU0knOw=="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "mysql"
+    }
+  ]
+}

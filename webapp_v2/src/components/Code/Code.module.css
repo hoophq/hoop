@@ -1,0 +1,17 @@
+/* An identifier that stands out from the text around it, such as an event
+   name. */
+.root[data-variant='accent'],
+.root[data-variant='accent-outline'] {
+  background-color: var(--mantine-color-indigo-1);
+  color: var(--mantine-color-indigo-9);
+}
+
+.root[data-variant='accent-outline'] {
+  border: 1px solid var(--mantine-color-indigo-3);
+}
+
+/* A dark block: a raw payload. */
+.root[data-variant='terminal'] {
+  background-color: var(--hoop-terminal-bg);
+  color: var(--mantine-color-gray-0);
+}

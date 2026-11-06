@@ -52,14 +52,14 @@
 // pairing for the permissive form, subtracting the recognizers this
 // deployment's ordinary data trips.
 //
-// # Pattern core only
+// # Pattern core, NER on request
 //
-// This wires the pattern-and-checksum core. Alcatraz's PERSON, LOCATION and
-// NRP entities need the optional alcatraz/ner module, which loads an ONNX
-// model: a different deployment shape (hundreds of MB of weights, per-call
-// inference latency on the response path) and a different decision. Adding it
-// later stays open, because ner plugs into the same engine and costs one
-// constructor option.
+// This wires the pattern-and-checksum core. Alcatraz's PERSON, LOCATION,
+// ORGANIZATION and NRP entities come from the optional alcatraz/ner module,
+// an ONNX model: hundreds of MB of weights and per-call inference on the
+// response path, so it loads only when Options.NER is set (the "pii.ner"
+// config block). Without it the four names are refused at NewDetector. See
+// ner.go for the model, the backends and the engine's lifetime.
 package alcatraz
 
 import (
@@ -168,6 +168,10 @@ type Options struct {
 	// recognizers all detect language-independent structured identifiers, so
 	// this only matters once a language-specific recognizer is added.
 	Language string
+
+	// NER loads the statistical recognizers. Nil refuses PERSON, LOCATION,
+	// ORGANIZATION and NRP by name; see NER.
+	NER *NER
 }
 
 // Detector adapts an alcatraz engine to sidecar's masking and policy
@@ -192,27 +196,36 @@ var (
 )
 
 // newEngine builds the alcatraz engine this package uses: the full built-in
-// recognizer set plus the credential recognizers in secrets.go.
+// recognizer set, the credential recognizers in secrets.go and, when nlp is
+// not nil, the NER recognizer sharing nlp's one pass per Analyze.
 //
 // One builder keeps AllEntities and NewDetector from disagreeing about what
 // is registered. A mismatch there would reject a valid config with "unknown
 // entity type".
-func newEngine(lang string) *alcatraz.Engine {
+func newEngine(lang string, nlp nlpEngine) *alcatraz.Engine {
 	reg := analyzer.NewRegistry(lang)
 	recognizers.LoadDefaults(reg, lang)
 	registerSecrets(reg, lang)
-	return analyzer.NewEngine(reg, []string{lang})
+	if nlp != nil {
+		reg.Add(lang, nlp.Recognizer(lang))
+	}
+	eng := analyzer.NewEngine(reg, []string{lang})
+	if nlp != nil {
+		eng.SetNlpEngine(nlp)
+	}
+	return eng
 }
 
-// AllEntities returns every entity type this package detects: alcatraz's 52
-// built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY, 55 in all.
+// AllEntities returns every entity type this package detects without a NER
+// model: alcatraz's 52 built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY,
+// 55 in all. NEREntities lists the four a model adds.
 //
 // NewDetector activates the same set for an empty Options.Entities, so this
 // exists for a caller that wants the list itself: to print it at startup, to
 // diff a config against it, or to write "everything" somewhere an empty
 // slice would read as an oversight.
 func AllEntities() []string {
-	return newEngine("en").SupportedEntities("en")
+	return newEngine("en", nil).SupportedEntities("en")
 }
 
 // NewDetector builds a Detector over the named entity types. An empty
@@ -230,7 +243,14 @@ func NewDetector(o Options) (*Detector, error) {
 	if lang == "" {
 		lang = "en"
 	}
-	eng := newEngine(lang)
+	var nlp nlpEngine
+	if o.NER != nil {
+		var err error
+		if nlp, err = loadNER(*o.NER, lang); err != nil {
+			return nil, fmt.Errorf("alcatraz: %w", err)
+		}
+	}
+	eng := newEngine(lang, nlp)
 
 	known := make(map[string]bool)
 	for _, e := range eng.SupportedEntities(lang) {
@@ -254,9 +274,12 @@ func NewDetector(o Options) (*Detector, error) {
 		problems = append(problems, "ignored: "+strings.Join(bad, ", "))
 	}
 	if len(problems) > 0 {
-		return nil, fmt.Errorf("alcatraz: unknown entity type(s) in %s "+
-			"(PERSON, LOCATION and NRP need the alcatraz/ner module, which this package does not wire)",
-			strings.Join(problems, "; "))
+		hint := ""
+		if o.NER == nil && namesNEREntity(o.Entities, o.Ignored) {
+			hint = " (PERSON, LOCATION, ORGANIZATION and NRP need the NER model: set the pii.ner block)"
+		}
+		return nil, fmt.Errorf("alcatraz: unknown entity type(s) in %s%s",
+			strings.Join(problems, "; "), hint)
 	}
 
 	// An empty list is the permissive form: every recognizer the engine
@@ -324,6 +347,20 @@ func unknownIn(known map[string]bool, want []string) []string {
 	}
 	sort.Strings(bad)
 	return slices.Compact(bad)
+}
+
+// namesNEREntity reports whether any list names an entity only the NER
+// model detects, so the refusal can say what to set.
+func namesNEREntity(lists ...[]string) bool {
+	ner := NEREntities()
+	for _, l := range lists {
+		for _, e := range l {
+			if slices.Contains(ner, e) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Entities returns the active entity types. The returned slice is a copy: a caller

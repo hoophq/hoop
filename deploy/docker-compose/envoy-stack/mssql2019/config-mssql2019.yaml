@@ -32,7 +32,10 @@ listeners:
     # packet alone and travels inside the TDS stream, so no terminator can sit
     # in front. The relay reads the PRELOGIN, forwards the 0x12-wrapped
     # handshake and the encrypted login untouched, and inspects the plaintext
-    # statements that follow.
+    # statements that follow. Because the LOGIN7 is the encrypted packet, the
+    # session's principal is `anonymous` here, where the 2022 lane names it
+    # for the SQL login; `mssql.login_encrypted: true` on each statement says
+    # why.
     listen: 0.0.0.0:11433
     upstream: mssql2019:1433
     connection: mssql2019
@@ -51,6 +54,12 @@ listeners:
           type: operation
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on mssql2019
+        # A procedure call is `unknown` to the rule above: its body is in
+        # the catalog. Name it instead. Same seed as the 2022 lane.
+        - name: no-secret-procs
+          type: procedure
+          procedures: [get_secrets, delete_customer]
+          message: this procedure is not callable through mssql2019
     mask:
       enabled: true
       rules:

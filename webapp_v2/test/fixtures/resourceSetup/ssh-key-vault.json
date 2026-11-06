@@ -1,0 +1,29 @@
+{
+  "name": "ssh-key",
+  "type": "application",
+  "subtype": "ssh",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "ssh-key-ops",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "application",
+      "secret": {
+        "envvar:HOST": "X3ZhdWx0a3YxOnNlY3JldC9zc2g6SE9TVA==",
+        "envvar:USER": "X3ZhdWx0a3YxOnNlY3JldC9zc2g6VVNFUg==",
+        "envvar:AUTHORIZED_SERVER_KEYS": "X3ZhdWx0a3YxOnNlY3JldC9zc2g6S0VZ"
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "ssh"
+    }
+  ]
+}

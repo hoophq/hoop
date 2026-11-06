@@ -1,4 +1,4 @@
-import { Box, Card, Flex, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Card, Flex, Group, Stack, Text, Title, ThemeIcon } from '@mantine/core'
 import { EyeOff, Shield } from 'lucide-react'
 
 function RuleRow({ rule, isLast }) {
@@ -33,16 +33,9 @@ function Section({ icon, title, description, rules }) {
   return (
     <Stack gap="md">
       <Group gap="md" align="center">
-        <Flex
-          align="center"
-          justify="center"
-          w={40}
-          h={40}
-          bg="gray.1"
-          style={{ borderRadius: 12, flexShrink: 0 }}
-        >
+        <ThemeIcon variant="light" color="gray" size={40} radius="lg">
           <Icon size={16} />
-        </Flex>
+        </ThemeIcon>
         <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
           <Title order={4}>{`${title} • ${rules.length} ${ruleLabel}`}</Title>
           {description && (

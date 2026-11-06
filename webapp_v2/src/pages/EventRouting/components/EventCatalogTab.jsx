@@ -47,7 +47,7 @@ export default function EventCatalogTab() {
 
       {filtered.length === 0 ? (
         <Stack align="center" gap="sm" py="xxlAlt">
-          <Filter size={32} strokeWidth={1.5} color="var(--mantine-color-gray-6)" />
+          <Filter size={32} strokeWidth={1.5} color="var(--mantine-color-dimmed)" />
           <Title order={4}>No events match</Title>
           <Text size="sm" c="dimmed">Try a different search term or change the category filter.</Text>
         </Stack>
@@ -68,7 +68,7 @@ export default function EventCatalogTab() {
                 style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
               >
                 <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                  <Code bg="indigo.1" c="indigo.9">{e.name}</Code>
+                  <Code variant="accent">{e.name}</Code>
                   <EventDescription text={e.description} size="xs" c="dimmed" />
                 </Stack>
                 <Box w={120}>

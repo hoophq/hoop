@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -572,33 +573,35 @@ func TestAMaskedResponseTheCodecPassesThroughIsRefused(t *testing.T) {
 	}
 }
 
-// mysqlServerCodec is the real mysql codec on the server side, behind a
-// client side that reports each read as one statement, so a test needs no
-// handshake to reach the server stream.
-type mysqlServerCodec struct {
+// serverSideCodec is a real codec on the server side, behind a client side
+// that reports each read as one statement, so a test needs no handshake to
+// reach the server stream.
+type serverSideCodec struct {
 	inspect.Codec
 	rf gate.Reframer
 }
 
-func newMySQLServerCodec() inspect.Codec {
-	insp, err := inspect.New(inspect.MySQL)
-	if err != nil {
-		panic(err)
+func newServerSideCodec(proto inspect.Protocol) func() inspect.Codec {
+	return func() inspect.Codec {
+		insp, err := inspect.New(proto)
+		if err != nil {
+			panic(err)
+		}
+		c := insp.Codec()
+		return &serverSideCodec{Codec: c, rf: c.(gate.Reframer)}
 	}
-	c := insp.Codec()
-	return &mysqlServerCodec{Codec: c, rf: c.(gate.Reframer)}
 }
 
-func (c *mysqlServerCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+func (c *serverSideCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
 	if dir == inspect.FromClient {
-		return []inspect.Statement{{Protocol: inspect.MySQL, Direction: dir, Text: string(data)}}, len(data), nil
+		return []inspect.Statement{{Protocol: c.Protocol(), Direction: dir, Text: string(data)}}, len(data), nil
 	}
 	return c.Codec.Decode(dir, data)
 }
-func (c *mysqlServerCodec) Rewrite(data []byte, mask func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+func (c *serverSideCodec) Rewrite(data []byte, mask func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
 	return c.rf.Rewrite(data, mask)
 }
-func (c *mysqlServerCodec) Flush(mask func(string, []byte) []byte) []byte { return c.rf.Flush(mask) }
+func (c *serverSideCodec) Flush(mask func(string, []byte) []byte) []byte { return c.rf.Flush(mask) }
 
 // Review case: the connection ends inside a masked response, and the codec
 // holds a truncated frame whose complete first cell is sensitive. The
@@ -620,7 +623,7 @@ func TestATruncatedMaskedFrameIsDroppedAtTheEnd(t *testing.T) {
 	t.Run("mysql", func(t *testing.T) {
 		g, err := gate.New(session.New(inspect.MySQL, session.Identity{Subject: "alice"}), gate.Config{
 			Protocol: inspect.MySQL, Policy: maskingPolicy{aiMask}, MaskScope: gate.MaskScopeSerial,
-			CodecFactory: newMySQLServerCodec,
+			CodecFactory: newServerSideCodec(inspect.MySQL),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -648,6 +651,124 @@ func TestATruncatedMaskedFrameIsDroppedAtTheEnd(t *testing.T) {
 			t.Errorf("out %q, tail %q, err %v", out, tail, err)
 		}
 	})
+}
+
+// The HTTP codec discards what it holds on a nil-mask flush and returns
+// nothing, so the drop of a masked body cut short is still recorded: one
+// error row, one mask-scope denial, ErrMaskedTailDropped, and no bytes.
+func TestATruncatedMaskedHTTPBodyIsDroppedAndRecorded(t *testing.T) {
+	sink := &recordingSink{}
+	m := &countingMetrics{}
+	g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
+		Protocol: inspect.HTTP, Policy: maskingPolicy{aiMask}, MaskScope: gate.MaskScopeHTTP,
+		Audit: sink, Metrics: m,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if d := g.Request(ctx, httpRequest("/masked")); !d.Allowed {
+		t.Fatalf("masked request denied: %s", d.Message)
+	}
+	d := g.Response(ctx, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 30\r\n\r\nada@example.com"))
+	if !d.Allowed || len(d.Payload) != 0 {
+		t.Fatalf("partial body: allowed %t, payload %q", d.Allowed, d.Payload)
+	}
+	if e := g.EndOfStream(); !e.Allowed || len(e.Statements) != 0 {
+		t.Fatalf("EndOfStream = %+v", e)
+	}
+	assertTailDropRecorded(t, g, sink, m)
+}
+
+// The Oracle codec returns what it holds only on a nil-callback flush, the
+// opposite of the HTTP codec: the drop of a held partial packet is still
+// recorded.
+func TestATruncatedMaskedOraclePacketIsDroppedAndRecorded(t *testing.T) {
+	sink := &recordingSink{}
+	m := &countingMetrics{}
+	g, err := gate.New(session.New(inspect.Oracle, session.Identity{Subject: "alice"}), gate.Config{
+		Protocol: inspect.Oracle, Policy: maskingPolicy{aiMask}, MaskScope: gate.MaskScopeSerial,
+		CodecFactory: newServerSideCodec(inspect.Oracle), Audit: sink, Metrics: m,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if d := g.Request(ctx, []byte("SELECT mail FROM users -- masked")); !d.Allowed {
+		t.Fatalf("masked statement denied: %s", d.Message)
+	}
+	// A TNS header that declares 64 bytes, cut after five.
+	if d := g.Response(ctx, []byte("\x00\x40\x00\x00\x06")); !d.Allowed || len(d.Payload) != 0 {
+		t.Fatalf("partial packet: allowed %t, payload %q, message %q", d.Allowed, d.Payload, d.Message)
+	}
+	assertTailDropRecorded(t, g, sink, m)
+}
+
+// assertTailDropRecorded flushes g at connection end and checks the held
+// tail was dropped and recorded once: no bytes, ErrMaskedTailDropped, one
+// error row, one mask-scope denial.
+func assertTailDropRecorded(t *testing.T, g *gate.Gate, sink *recordingSink, m *countingMetrics) {
+	t.Helper()
+	before := len(m.statements)
+	_, deniedBefore := g.Stats()
+	tail, err := g.FlushResponseChecked()
+	if len(tail) != 0 || !errors.Is(err, gate.ErrMaskedTailDropped) {
+		t.Fatalf("tail %q, err %v", tail, err)
+	}
+	drops := 0
+	for _, ev := range sink.events {
+		if ev.Kind == audit.KindError && ev.Error == gate.ErrMaskedTailDropped.Error() {
+			drops++
+		}
+	}
+	if drops != 1 {
+		t.Errorf("%d tail-drop error rows, want 1", drops)
+	}
+	if got := m.statements[before:]; len(got) != 1 || !got[0].denied || got[0].source != gate.SourceMaskScope {
+		t.Errorf("counted %+v, want one %s denial", got, gate.SourceMaskScope)
+	}
+	if _, denied := g.Stats(); denied != deniedBefore+1 {
+		t.Errorf("denied = %d, want %d", denied, deniedBefore+1)
+	}
+}
+
+// An HTTP lane that can take an AI mask, with no lane masker and no mask on
+// this request, forwards a compressed body that inflates past the codec's
+// masking limit as it came: nothing obliges the codec to mask it.
+func TestAnUnmaskedHTTPResponseIsNotRefusedForItsSize(t *testing.T) {
+	var big bytes.Buffer
+	w := gzip.NewWriter(&big)
+	w.Write([]byte(`{"email":"ada@example.com","pad":"`))
+	w.Write(bytes.Repeat([]byte("a"), gate.AIMaskMaxResponseBytes+1))
+	w.Write([]byte(`"}`))
+	w.Close()
+	const head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n"
+	for name, resp := range map[string][]byte{
+		"close-delimited": append([]byte(head+"Connection: close\r\n\r\n"), big.Bytes()...),
+		"content-length":  append([]byte(head+"Content-Length: "+strconv.Itoa(big.Len())+"\r\n\r\n"), big.Bytes()...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+			ctx := context.Background()
+			if d := g.Request(ctx, httpRequest("/plain")); !d.Allowed {
+				t.Fatalf("request denied: %s", d.Message)
+			}
+			d := g.Response(ctx, resp)
+			if !d.Allowed {
+				t.Fatalf("response refused: %s", d.Message)
+			}
+			if e := g.EndOfStream(); !e.Allowed {
+				t.Fatalf("EndOfStream refused: %s", e.Message)
+			}
+			tail, err := g.FlushResponseChecked()
+			if err != nil {
+				t.Fatalf("flush refused: %v", err)
+			}
+			if out := append(d.Payload, tail...); !bytes.Equal(out, resp) {
+				t.Errorf("forwarded %d bytes, want the %d it came as", len(out), len(resp))
+			}
+		})
+	}
 }
 
 // splitTextResponse is a chunked text/plain body whose first chunk fills the

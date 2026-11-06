@@ -370,9 +370,57 @@ func TestRequestIdentityNeedsACodecThatLiftsTheCredential(t *testing.T) {
 	}
 }
 
-// The WASM host answers ("", true) when the guest's credential export
-// failed. An empty credential names nobody, so the gate refuses the
-// request itself, before a resolver that would accept anything sees it.
+// The HTTP codec lifts a credential from every request, so an empty one is
+// a request without the header. The resolver sees it and decides: a
+// proxy-trust header names nobody, and the request runs as the connection
+// rather than as the caller a previous request named.
+func TestARequestWithoutTheHeaderReachesTheResolver(t *testing.T) {
+	ctx := context.Background()
+	sink := &recordingSink{}
+	pol := &principalRecorder{}
+	var seen []string
+	headerOrConnection := gate.RequestIdentityFunc(func(_ context.Context, cred string) (session.Identity, error) {
+		seen = append(seen, cred)
+		return session.Identity{Subject: cred, PeerAddr: "10.0.0.7:51234"}, nil
+	})
+	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
+	g, err := gate.New(sess, gate.Config{
+		Protocol:        inspect.HTTP,
+		Policy:          pol,
+		Audit:           sink,
+		CodecFactory:    func() inspect.Codec { return &lineCodec{} },
+		RequestIdentity: headerOrConnection,
+	})
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	if err := g.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	mustAllow(t, g.Request(ctx, []byte("REQ alice@example.com\n")))
+	mustAllow(t, g.Response(ctx, []byte("RESP 200\n")))
+	alice := g.Session().ID
+	mustAllow(t, g.Request(ctx, []byte("REQ \n")))
+	if len(seen) != 2 || seen[1] != "" {
+		t.Fatalf("resolver saw %q, want the empty credential of the second request", seen)
+	}
+	if g.Session().ID == alice || g.Session().Identity.Principal() != session.AnonymousPrincipal {
+		t.Fatalf("session = %q %q, want a new anonymous one", g.Session().ID, g.Session().Identity.Principal())
+	}
+	pol.mu.Lock()
+	defer pol.mu.Unlock()
+	if last := pol.seen[len(pol.seen)-1]; last != session.AnonymousPrincipal {
+		t.Errorf("policy judged the headerless request under %q", last)
+	}
+	if end := sink.find(audit.KindSessionEnd); end == nil || end.Principal != "alice@example.com" {
+		t.Errorf("session_end = %+v, want alice's session closed before the anonymous one", end)
+	}
+}
+
+// A frame protocol lifts a credential only off the frames that carry one,
+// so an empty lifted credential is the WASM host answering ("", true) when
+// the guest's credential export failed. The gate refuses the frame itself,
+// before a resolver that would accept anything sees it.
 func TestEmptyLiftedCredentialIsRefusedBeforeResolution(t *testing.T) {
 	ctx := context.Background()
 	sink := &recordingSink{}
@@ -381,23 +429,22 @@ func TestEmptyLiftedCredentialIsRefusedBeforeResolution(t *testing.T) {
 		resolved++
 		return session.Identity{Subject: "resolved:" + cred, PeerAddr: "10.0.0.7:51234"}, nil
 	})
-	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
+	sess := session.New("x-frame", session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
 	g, err := gate.New(sess, gate.Config{
-		Protocol:        inspect.HTTP,
+		Protocol:        "x-frame",
 		Audit:           sink,
-		CodecFactory:    func() inspect.Codec { return &lineCodec{} },
+		CodecFactory:    func() inspect.Codec { return &frameCodec{} },
 		RequestIdentity: anyone,
 	})
 	if err != nil {
 		t.Fatalf("gate.New: %v", err)
 	}
-	d := g.Request(ctx, []byte("REQ \n"))
+	d := g.Request(ctx, []byte("AUTH \n"))
 	if d.Allowed || d.Rule != "identity" || d.Payload != nil {
 		t.Fatalf("decision = %+v, want an identity refusal forwarding nothing", d)
 	}
-	// The client's 403 body: it says what the request lacked.
-	if d.Message != "request refused: the request carried no credential" {
-		t.Errorf("message %q does not say the request carried no credential", d.Message)
+	if d.Message != "request refused: the codec lifted an empty credential" {
+		t.Errorf("message %q does not name the failed lift", d.Message)
 	}
 	if resolved != 0 {
 		t.Errorf("the resolver saw %d credentials, want none", resolved)

@@ -42,20 +42,7 @@ import (
 // not say which. This function reads it as GoogleSQL, the API's default; a
 // caller that knows the database's dialect uses AnalyzeSQLIn.
 func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
-	d := lexer.Postgres
 	switch proto {
-	case MSSQL:
-		d = lexer.MSSQL
-	case MySQL:
-		d = lexer.MySQL
-	case ClickHouse:
-		d = lexer.ClickHouse
-	case Oracle:
-		d = lexer.Oracle
-	case Spanner:
-		// Spanner payloads carry GoogleSQL (ZetaSQL) unless the database
-		// was created with the PostgreSQL interface; see lexer.GoogleSQL.
-		d = lexer.GoogleSQL
 	case GRPC:
 		// gRPC statements carry protobuf renderings, not SQL. Falling
 		// through to the PostgreSQL lexer would "analyze" protojson and
@@ -85,8 +72,71 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 			Complete:  false,
 			Reason:    "ssh statements carry no SQL to analyze",
 		}
+	case MCP:
+		return SQLAnalysis{
+			Operation: OpUnknown,
+			Complete:  false,
+			Reason:    "mcp statements carry a tool call, not SQL",
+		}
 	}
+	d, _ := sqlDialect(proto)
 	return AnalyzeSQLIn(sql, d)
+}
+
+// sqlDialect is the lexical dialect a protocol's statements are read under.
+// ok is false for a protocol whose statements carry no SQL (grpc, ssh);
+// AnalyzeSQL says why for each.
+func sqlDialect(proto Protocol) (d lexer.Dialect, ok bool) {
+	switch proto {
+	case MSSQL:
+		return lexer.MSSQL, true
+	case MySQL:
+		return lexer.MySQL, true
+	case ClickHouse:
+		return lexer.ClickHouse, true
+	case Oracle:
+		return lexer.Oracle, true
+	case Spanner:
+		// Spanner payloads carry GoogleSQL (ZetaSQL) unless the database
+		// was created with the PostgreSQL interface; see lexer.GoogleSQL.
+		return lexer.GoogleSQL, true
+	case GRPC, SSH:
+		return lexer.Postgres, false
+	}
+	return lexer.Postgres, true
+}
+
+// MetadataMSSQLProc is the metadata key under which the mssql codec records
+// the procedure a TDS RPCRequest named, as the client sent it.
+const MetadataMSSQLProc = "mssql.proc"
+
+// ProceduresOf returns the stored procedures a client statement calls, as
+// the client named them, or nil when it calls none.
+//
+// Two sources, both read. A TDS RPCRequest carries the procedure it called
+// under Metadata["mssql.proc"]. When that procedure is one that runs a
+// statement — sp_executesql, sp_prepexec, an sp_execute of a prepared
+// handle — the statement's text is the SQL it ran, and that SQL may itself
+// be `EXEC dbo.get_secrets`: a .NET or JDBC parameterized EXEC arrives this
+// way, and so does callproc("sp_executesql", ("EXEC dbo.get_secrets",)).
+// Reading only the metadata would judge those as calls to sp_executesql.
+// So the lexer also reads every top-level EXEC, EXECUTE or CALL in the
+// text, and a batch `SET NOCOUNT ON; EXEC a; EXEC b` names both. A
+// response calls nothing. The names are not normalized; policy folds
+// `[dbo].[x]`, dbo.x and DBO.X into one.
+func ProceduresOf(stmt Statement) []string {
+	var out []string
+	if p := stmt.Metadata[MetadataMSSQLProc]; p != "" {
+		out = append(out, p)
+	}
+	if stmt.Direction == FromServer || stmt.Text == "" {
+		return out
+	}
+	d, ok := sqlDialect(stmt.Protocol)
+	if !ok {
+		return out
+	}
+	return append(out, lexer.Analyze(stmt.Text, d).Callees...)
 }
 
 // AnalyzeSQLIn classifies a statement under an explicit lexical dialect, for

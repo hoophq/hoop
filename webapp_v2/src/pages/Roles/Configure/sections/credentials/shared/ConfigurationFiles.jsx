@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Stack, Title, Text, Grid } from '@mantine/core'
-import { Plus, Trash2 } from 'lucide-react'
+import { Group, Stack, Title, Text, Grid } from '@mantine/core'
+import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
-import ActionIcon from '@/components/ActionIcon'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import SecretField from '@/pages/Roles/Configure/components/SecretField'
@@ -12,15 +11,19 @@ import {
   isValidPosixKey,
   PLACEHOLDER_KEY_RE,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 // Configuration files for a custom connection. Same pattern as the
 // environment variables section: rename commits on blur via the store's
 // renames map so position stays put; an empty placeholder row is kept
 // around so the section never collapses.
 
-function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace, onRemove }) {
+function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace }) {
   const [draftName, setDraftName] = useState(displayName)
+  const commit = () => {
+    const trimmed = draftName.trim()
+    if (trimmed) onCommitName(trimmed)
+  }
 
   useEffect(() => {
     setDraftName(displayName)
@@ -28,7 +31,7 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
 
   return (
     <Grid gutter="md" align="center" key={rowKey}>
-      <Grid.Col span={11}>
+      <Grid.Col span={12}>
         <Stack gap="md">
           <TextInput
             label="Name"
@@ -41,11 +44,9 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
               const next = e.currentTarget.value.toUpperCase()
               if (isValidPosixKey(next)) setDraftName(next)
             }}
-            onBlur={() => {
-              const trimmed = draftName.trim()
-              if (!trimmed) return
-              onCommitName(trimmed)
-            }}
+            onBlur={commit}
+            // Enter submits the wizard's form before the field blurs.
+            onKeyDown={(e) => e.key === 'Enter' && commit()}
           />
           {writeOnly ? (
             <SecretField
@@ -59,40 +60,28 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
               onCancel={onCancelReplace}
             />
           ) : (
-            <Stack gap={4}>
-              <Text size="sm" fw={500}>Content</Text>
-              <Textarea
-                autosize
-                minRows={4}
-                placeholder="Paste your file content here"
-                value={content}
-                onChange={(e) => onContentChange(e.currentTarget.value)}
-              />
-            </Stack>
+            <Textarea
+              label="Content"
+              autosize
+              minRows={4}
+              placeholder="Paste your file content here"
+              value={content}
+              onChange={(e) => onContentChange(e.currentTarget.value)}
+            />
           )}
         </Stack>
-      </Grid.Col>
-      <Grid.Col span={1}>
-        <ActionIcon
-          variant="subtle"
-          color="red"
-          onClick={onRemove}
-          aria-label={'Remove configuration file ' + displayName}
-        >
-          <Trash2 size={16} />
-        </ActionIcon>
       </Grid.Col>
     </Grid>
   )
 }
 
 export default function ConfigurationFiles({ connection, hideRoleInfo }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const renames = useConfigureRoleStore((s) => s.renames)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const renames = useCredentialsStore((s) => s.renames)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const renameSecret = useCredentialsStore((s) => s.renameSecret)
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(
@@ -124,6 +113,14 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
     while (allKeys.includes(`filesystem:NEW_FILE_${i}`)) i += 1
     replaceSecret(`filesystem:NEW_FILE_${i}`, '')
   }
+
+  const removeLastRow = () => {
+    const last = allKeys.at(-1)
+    if (last in currentSecrets) deleteSecret(last)
+    else cancelSecretChange(last)
+  }
+  // The only row is removable once saved; a blank row then takes its place.
+  const canRemove = allKeys.length > 1 || allKeys.at(-1) in currentSecrets
 
   return (
     <Stack gap="xl">
@@ -175,21 +172,19 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
                 replaceSecret(fsKey, encodeSecretValue(plain))
               }
               onCancelReplace={() => cancelSecretChange(fsKey)}
-              onRemove={() => {
-                if (isExisting) deleteSecret(fsKey)
-                else cancelSecretChange(fsKey)
-              }}
             />
           )
         })}
-        <Button
-          variant="light"
-          leftSection={<Plus size={14} />}
-          w="fit-content"
-          onClick={addEmptyRow}
-        >
-          Add
-        </Button>
+        <Group gap="sm">
+          <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
+            Add
+          </Button>
+          {canRemove && (
+            <Button variant="light" color="gray" onClick={removeLastRow}>
+              Remove
+            </Button>
+          )}
+        </Group>
       </Stack>
     </Stack>
   )

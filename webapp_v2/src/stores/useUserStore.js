@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { identify as analyticsIdentify } from '@/services/analytics'
+import { identify as analyticsIdentify, track as analyticsTrack } from '@/services/analytics'
 import { authService } from '@/services/auth'
 import licenseService from '@/services/license'
 import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
@@ -31,6 +31,9 @@ export const useUserStore = create((set, get) => ({
   analyticsTracking: false,
   analyticsMode: 'anonymous',
   disableClipboard: false,
+  // /serverinfo disable_sessions_download (DISABLE_SESSIONS_DOWNLOAD): the
+  // gateway answers 403 to a session download, so the UI hides the items.
+  disableSessionsDownload: false,
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
@@ -79,6 +82,7 @@ export const useUserStore = create((set, get) => ({
       analyticsTracking, 
       analyticsMode, 
       disableClipboard, 
+      disableSessionsDownload: !!serverInfo?.disable_sessions_download,
       featureFlags, 
       redactProvider, 
       apiUrl,
@@ -202,6 +206,13 @@ export const useUserStore = create((set, get) => ({
     if (!analyticsTracking) return
     analyticsIdentify(user, analyticsMode).catch((err) => {
       console.warn('[analytics] identify failed:', err)
+    })
+  },
+
+  trackEvent: (event, properties) => {
+    if (!get().analyticsTracking) return
+    analyticsTrack(event, properties).catch((err) => {
+      console.warn('[analytics] track failed:', err)
     })
   },
 }))

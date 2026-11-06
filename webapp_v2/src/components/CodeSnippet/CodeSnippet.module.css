@@ -3,7 +3,7 @@
 }
 
 .root[data-variant='black'] {
-  background-color: var(--mantine-color-dark-8);
+  background-color: var(--hoop-terminal-bg);
 }
 
 .root[data-variant='gray'] {
@@ -25,7 +25,7 @@
 }
 
 .root[data-variant='black'] .pre {
-  color: var(--mantine-color-gray-2);
+  color: var(--hoop-terminal-text);
 }
 
 .root[data-variant='gray'] .pre {
@@ -39,4 +39,9 @@
 
 .copyBtn[data-visible] {
   opacity: 1;
+}
+
+/* The gray icon disappears on the dark ground: paint it like the code text. */
+.root[data-variant='black'] .copyIcon:not([data-copied]) {
+  color: var(--mantine-color-gray-2);
 }

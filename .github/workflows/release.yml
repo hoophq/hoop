@@ -33,7 +33,7 @@ jobs:
     environment: production
     strategy:
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
       - name: Checkout Hoop
@@ -222,7 +222,6 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
@@ -231,7 +230,6 @@ jobs:
       - name: Build hsh-tunneld (${{ matrix.goos }}/${{ matrix.goarch }})
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
@@ -907,14 +905,18 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # hoophq/hoopsidecar: the inspection sidecar image, the three targets of
+  # hoophq/hoopsidecar: the inspection sidecar image, the image targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
-  #   :<version>              Ubuntu 24.04 LTS + the binary only
-  #   :<version>-distroless   distroless static + the binary only
-  #   :<version>-ica          Ubuntu 24.04 LTS + hoop-inspect with the Citrix
-  #                           ICA engine, tesseract and ONNX Runtime
-  #   :latest                 an alias of the unsuffixed tag
+  #   :<version>                      Ubuntu 24.04 LTS + the binary only
+  #   :<version>-distroless           distroless cc + the binary only
+  #   :<version>-alcatraz             the unsuffixed flavour + the alcatraz
+  #                                   NER model and ONNX Runtime
+  #   :<version>-distroless-alcatraz  distroless + the same
+  #   :<version>-ica                  Ubuntu 24.04 LTS + hoop-inspect with
+  #                                   the Citrix ICA engine, tesseract and
+  #                                   ONNX Runtime
+  #   :latest                         an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
   # keeps a shell, so the tag someone reaches for without thinking is the one
@@ -922,14 +924,16 @@ jobs:
   # is named. deploy/helm-chart/chart/sidecar/ defaults to :latest, so the two
   # have to agree.
   #
-  # No -alcatraz pair, unlike hoopagent: sidecar/pii/alcatraz wires the
-  # pattern-and-checksum core only and never loads the ONNX model, so baking it
-  # in would ship ~250MB nothing reads. The bright-line note in
-  # Dockerfile.sidecar has the rest.
+  # The -alcatraz pair is for a config whose `pii.ner` block serves
+  # PERSON/LOCATION/ORGANIZATION/NRP: the model is never fetched at runtime,
+  # so a relay without it on disk refuses those rules at config load.
+  # Everything else — invocation contract, user, what the image can serve —
+  # is the base flavour's. No :latest alias for them.
   #
   # hoophq/hoopsidecar is a clean-only repository: nothing published under it
   # may carry an AGPL/SSPL component, so that the repository has none in its
   # history. The slim flavours are a stock rootfs plus the `hoop` binary; the
+  # -alcatraz pair adds model weights and ONNX Runtime, which carry none; the
   # ica flavour adds Ubuntu's tesseract packages, ONNX Runtime and the
   # libhoop-ica worker, none built FROM hoophq/agent-tools. Do not add a tag
   # here without reading that note.
@@ -968,6 +972,26 @@ jobs:
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      # Opt in to the GPU flavour only with a reviewed GPU-native asset set
+      # matching the engine module pin; both the image and the native bundle
+      # use this exact digest. Checked before the first push so a half-set
+      # pair or an unreachable asset fails this job with nothing published,
+      # instead of after the CPU tags are already on Docker Hub. The engine
+      # pin inside the archive is checked by the ica-gpu-native stage, which
+      # needs the download; a mismatch there fails this job the same way.
+      - name: Check ICA GPU release inputs
+        env:
+          GPU_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
+          GPU_SHA: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
+        run: |
+          set -euo pipefail
+          if { [ -n "$GPU_URL" ] && [ -z "$GPU_SHA" ]; } || { [ -z "$GPU_URL" ] && [ -n "$GPU_SHA" ]; }; then
+            echo "Set both ICA_GPU_ASSETS_URL and ICA_GPU_ASSETS_SHA256, or neither" >&2
+            exit 1
+          fi
+          [ -z "$GPU_URL" ] && exit 0
+          printf '%s' "$GPU_SHA" | grep -Eq '^[a-f0-9]{64}$' || { echo "ICA_GPU_ASSETS_SHA256 is not a lowercase hex sha256" >&2; exit 1; }
+          curl --proto '=https' -fsSIL "$GPU_URL" -o /dev/null || { echo "ICA_GPU_ASSETS_URL is not reachable: $GPU_URL" >&2; exit 1; }
       - name: Build and push (default)
         uses: docker/build-push-action@v7
         with:
@@ -993,6 +1017,40 @@ jobs:
           push: true
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Same check as the hoopagent job: export the published image's
+      # filesystem, the only way into the distroless flavour.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
       # The ica flavour builds hoop-inspect from source with the libhoop-ica
       # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
       # a token that reads both private modules and the libhoop-ica release
@@ -1037,6 +1095,48 @@ jobs:
             gh_token=${{ secrets.GH_TOKEN }}
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           outputs: type=local,dest=ica-assets
+      - name: Build and push (ica-gpu)
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          tags: hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
+      - name: Export the ica GPU assets bundle
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu-assets
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          outputs: type=local,dest=ica-gpu-assets
+      - name: Stage the ica GPU assets bundle
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        run: |
+          mkdir -p stage/binaries
+          mv ica-gpu-assets/binaries/* stage/binaries/
       - name: Stage the ica assets bundle
         run: |
           set -euo pipefail
@@ -1401,6 +1501,11 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # release-s3 writes CHANGELOG.txt from scripts/release-notes.sh,
+          # which lists the ICA GPU artifacts only when both are set — the
+          # same gate as the ica-gpu steps in docker-publish-hoopsidecar.
+          ICA_GPU_ASSETS_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
+          ICA_GPU_ASSETS_SHA256: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
         run: |-
           make release-s3
           make release-s3-latest

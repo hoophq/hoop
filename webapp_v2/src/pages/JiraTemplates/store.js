@@ -22,7 +22,7 @@ export const useJiraTemplatesStore = create((set, get) => ({
   fetchList: async () => {
     set({ listStatus: 'loading' })
     try {
-      const data = await jiraTemplatesService.list()
+      const { data } = await jiraTemplatesService.list()
       set({ list: data ?? [], listStatus: 'success' })
     } catch {
       set({ listStatus: 'error' })
@@ -32,7 +32,7 @@ export const useJiraTemplatesStore = create((set, get) => ({
   fetchIntegration: async () => {
     set({ integrationStatus: 'loading' })
     try {
-      const data = await jiraTemplatesService.getIntegration()
+      const { data } = await jiraTemplatesService.getIntegration()
       const integration = data && Object.keys(data).length ? data : null
       set({ integration, integrationStatus: 'success' })
     } catch {
@@ -43,7 +43,7 @@ export const useJiraTemplatesStore = create((set, get) => ({
   fetchActive: async (id) => {
     set({ active: null, activeStatus: 'loading' })
     try {
-      const data = await jiraTemplatesService.get(id)
+      const { data } = await jiraTemplatesService.get(id)
       set({ active: data, activeStatus: 'success' })
     } catch {
       set({ activeStatus: 'error' })
@@ -105,7 +105,7 @@ export const useJiraTemplatesStore = create((set, get) => ({
   saveIntegration: async (payload) => {
     set({ submitting: true })
     try {
-      const data = get().integration
+      const { data } = get().integration
         ? await jiraTemplatesService.updateIntegration(payload)
         : await jiraTemplatesService.createIntegration(payload)
       set({ submitting: false, integration: data ?? payload })

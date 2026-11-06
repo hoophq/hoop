@@ -106,6 +106,16 @@ and keep the two ports.
   caveat: PostCSS rebuilds it, Vite proxies the next request, you need a
   reload.
 
+### Test
+
+```bash
+npm test
+```
+
+vitest, in Node. `test/fixtures/sessions/*.json` are the ClojureScript session
+test vectors with the CLJS output; regenerate them with
+`npm --prefix ../webapp run fixtures:sessions`, never by hand.
+
 ### Build
 
 ```bash

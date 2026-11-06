@@ -305,6 +305,59 @@ func TestExplainPlansButAnalyzeExecutes(t *testing.T) {
 	if !paren.Writes() {
 		t.Errorf("EXPLAIN (ANALYZE) reported no write: %v", paren.Effects)
 	}
+
+	// ANALYSE is the same option, and PostgreSQL compares a quoted option
+	// name verbatim. A quoted name the option table does not know is
+	// rejected by PostgreSQL or is an escape the scanner does not decode,
+	// so it counts as ANALYZE.
+	for _, sql := range []string{
+		`EXPLAIN ANALYSE DELETE FROM customers`,
+		`EXPLAIN ANALYSE VERBOSE DELETE FROM customers`,
+		`EXPLAIN (ANALYSE) DELETE FROM customers`,
+		`EXPLAIN ("analyze") DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers`,
+		`EXPLAIN (U&"\0061nalyze") DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)
+		}
+	}
+	// A quoted FORMAT value and a quoted CTE column are not the ANALYZE
+	// option, and false, off or 0 turn ANALYZE off, so these stay plans.
+	for _, sql := range []string{
+		`EXPLAIN (FORMAT "json") DELETE FROM customers`,
+		`EXPLAIN ("verbose") DELETE FROM customers`,
+		`EXPLAIN WITH x("analyze") AS (SELECT 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false) DELETE FROM customers`,
+		`EXPLAIN (ANALYSE OFF, BUFFERS) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYZE 0) DELETE FROM customers`,
+		`EXPLAIN ("analyze" false) DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); a.Writes() {
+			t.Errorf("a plan reported a write: %v: %s", a.Effects, sql)
+		}
+	}
+	// Any other value runs the statement. A string literal's text is not
+	// kept, so 'off' reads as on, and one ANALYZE that is on is enough.
+	for _, sql := range []string{
+		`EXPLAIN (ANALYZE true) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE on) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 'off') DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false, ANALYZE) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE, "analyze" off) DELETE FROM customers`,
+		// PostgreSQL 16 integer literals that start with 0 and are 1.
+		`EXPLAIN (ANALYZE 0x1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0X1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0_1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0b1) DELETE FROM customers`,
+		`EXPLAIN ("analyze" 0o1) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYSE 0X1) DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)
+		}
+	}
 }
 
 // A conditional clause is still a statement head.
@@ -572,6 +625,254 @@ func TestOnIntroducesOnlyUnderDDL(t *testing.T) {
 	}
 }
 
+// A column or alias that spells a relation introducer introduces nothing.
+// Read as one, `s.update` or `amount AS update` took the FROM after it for the
+// relation and lost the table, so a rule fencing reads of salaries let the
+// select through (ENG-859). An alias is enough to name a column update.
+func TestKeywordColumnIntroducesNoRelation(t *testing.T) {
+	type tc struct {
+		sql   string
+		reads []string
+	}
+	salaries := []string{"salaries"}
+	var cases []tc
+	for _, w := range []string{"from", "join", "into", "update", "table", "view", "truncate",
+		"using", "copy", "on", "overwrite"} {
+		cases = append(cases, tc{`SELECT s.` + w + ` FROM salaries s`, salaries})
+	}
+	cases = append(cases,
+		tc{`SELECT s.update FROM (SELECT amount AS update FROM salaries) s`, salaries},
+		tc{`SELECT x.into FROM (SELECT * FROM salaries) x`, salaries},
+		tc{`SELECT amount AS update FROM salaries`, salaries},
+		tc{`SELECT amount truncate FROM salaries`, salaries},
+		tc{`SELECT update FROM salaries`, salaries},
+		tc{`SELECT view FROM salaries`, salaries},
+		tc{`SELECT 1 AS from FROM salaries`, salaries},
+		tc{`SELECT * FROM salaries update JOIN secrets ON true`, []string{"salaries", "secrets"}},
+		tc{`SELECT * FROM salaries AS join JOIN secrets ON true`, []string{"salaries", "secrets"}},
+		// A keyword alias on a VALUES list and in a CTE, joined and in a
+		// comma list. The comma forms also need the FROM list to continue
+		// past an aliased item; see TestFromListContinuesPastAnyItem.
+		tc{`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`, salaries},
+		tc{`SELECT x.update FROM (VALUES (1)) x(update), salaries`, salaries},
+		tc{`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`, salaries},
+		tc{`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`, salaries},
+		tc{`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s, salaries`, salaries},
+	)
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		// ClickHouse and Spark do not reserve AS, so `AS from FROM` may be
+		// a column called as and a real FROM, and the alias after AS is
+		// recorded too. Every relation the statement reads must still be.
+		permissive := d == lexer.ClickHouse || d == lexer.Spark
+		for _, c := range cases {
+			a := lexer.Analyze(c.sql, d)
+			got := reads(a)
+			missing := slices.ContainsFunc(c.reads, func(r string) bool { return !slices.Contains(got, r) })
+			if missing || len(writes(a)) != 0 || !permissive && !slices.Equal(got, c.reads) {
+				t.Errorf("%s: reads = %v, writes = %v, want reads %v: %s", d, got, writes(a), c.reads, c.sql)
+			}
+		}
+	}
+}
+
+// A FROM list continues past an item with an alias, a subquery, a CTE name or
+// a function call. The scanner followed a list only across bare names, so
+// `SELECT * FROM a x, salaries` read a, and a rule fencing reads of salaries
+// let it through (ENG-859). The same list after DELETE's USING, UPDATE's FROM
+// and MySQL's multi-table UPDATE names relations too.
+func TestFromListContinuesPastAnyItem(t *testing.T) {
+	all := []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark}
+	for _, tc := range []struct {
+		ds            []lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{all, `SELECT * FROM a x, salaries`, []string{"a", "salaries"}, nil},
+		{all, `SELECT * FROM a AS x, b y, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM (SELECT 1) x, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM a x, (SELECT * FROM salaries) y`, []string{"a", "salaries"}, nil},
+		{all, `WITH s AS (SELECT 1) SELECT * FROM s, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM generate_series(1, 2) g, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM a JOIN b ON a.id = b.id, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a JOIN b USING (id), salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a x LEFT OUTER JOIN b y ON true, salaries`, []string{"a", "b", "salaries"}, nil},
+		// A clause word as a member or an alias ends nothing.
+		{all, `SELECT * FROM a JOIN b ON a.limit = b.limit, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a AS limit, salaries`, []string{"a", "salaries"}, nil},
+		{all, `SELECT 1 AS limit FROM a x, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a limit, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a limit JOIN salaries ON true`, []string{"a", "salaries"}, nil},
+		// DISTINCT as a member is not IS DISTINCT FROM; Spark allows a
+		// table called as.
+		{all, `SELECT s.distinct FROM a s, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM as x, salaries`, []string{"as", "salaries"}, nil},
+		{all, `SELECT * FROM t1 UNION SELECT * FROM t2 x, salaries`, []string{"t1", "t2", "salaries"}, nil},
+		{all, `CREATE VIEW v AS SELECT * FROM a x, salaries`, []string{"a", "salaries"}, []string{"v"}},
+		{[]lexer.Dialect{lexer.Postgres}, `DELETE FROM t x USING s y, salaries WHERE x.id = y.id`,
+			[]string{"s", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres, lexer.MSSQL}, `UPDATE t SET a = 1 FROM s x, salaries WHERE t.id = x.id`,
+			[]string{"s", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MySQL}, `UPDATE t1 a, salaries b SET a.x = b.y`, []string{"salaries"}, []string{"t1"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM a x WITH (NOLOCK), salaries`, []string{"a", "salaries"}, nil},
+		// T-SQL's OUTPUT comes before UPDATE's FROM.
+		{[]lexer.Dialect{lexer.MSSQL}, `UPDATE t SET x = s.amount OUTPUT inserted.x FROM a q, salaries s WHERE t.id = s.id`,
+			[]string{"a", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM a FOR SYSTEM_TIME AS OF '2020-01-01' x, salaries`,
+			[]string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a x, b@link y, salaries`, []string{"a", "b", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.GoogleSQL}, `SELECT * FROM t x, UNNEST(x.arr) AS e WITH OFFSET AS o, salaries`,
+			[]string{"t", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `FROM a x, salaries INSERT INTO t SELECT c, d`,
+			[]string{"a", "salaries"}, []string{"t"}},
+		// Spark does not reserve TABLE: here it aliases a.
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM a table JOIN salaries ON true`,
+			[]string{"a", "join", "salaries"}, nil},
+	} {
+		for _, d := range tc.ds {
+			a := lexer.Analyze(tc.sql, d)
+			if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+				t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+			}
+		}
+	}
+}
+
+// The clause after a FROM list ends it. Its commas separate columns, sort
+// keys or settings, and read as list items they would name relations that a
+// rule acts on.
+func TestFromListEndsAtTheNextClause(t *testing.T) {
+	all := []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark}
+	for _, tc := range []struct {
+		ds            []lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{all, `SELECT a, b FROM t x GROUP BY a, b ORDER BY a, b`, []string{"t"}, nil},
+		{all, `SELECT * FROM t x WHERE a IN (1, 2) AND b = 1`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Postgres}, `SELECT * FROM t x WINDOW w AS (ORDER BY a), v AS (ORDER BY b)`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Postgres}, `DELETE FROM t USING s x WHERE t.id = x.id RETURNING t.a, t.b`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres}, `UPDATE t SET a = 1, b = 2 FROM s x WHERE t.id = x.id`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres}, `INSERT INTO t SELECT * FROM s x ON CONFLICT (k) DO UPDATE SET c = 1, d = 2`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MySQL}, `SELECT * FROM t x LIMIT 1, 2`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.MSSQL}, `DELETE FROM t OUTPUT deleted.a, deleted.b WHERE id = 1`, nil, []string{"t"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM t x OPTION (MAXDOP 1), a`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse}, `SELECT * FROM t x SETTINGS max_threads = 1, max_memory_usage = 2`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse}, `SELECT * FROM t x LIMIT 1 BY a, b`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM t x DISTRIBUTE BY a, b SORT BY a, b`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Spark, lexer.GoogleSQL}, `SELECT * FROM t x QUALIFY row_number() OVER (PARTITION BY a) = 1, b`,
+			[]string{"t"}, nil},
+		// ClickHouse and Spark do not reserve FROM: before a comma it is a
+		// column, and no item can follow it.
+		{[]lexer.Dialect{lexer.ClickHouse, lexer.Spark}, `SELECT * FROM t ORDER BY from, salaries`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse, lexer.Spark}, `SELECT * FROM t ORDER BY a, from`, []string{"t"}, nil},
+	} {
+		for _, d := range tc.ds {
+			a := lexer.Analyze(tc.sql, d)
+			if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+				t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+			}
+		}
+	}
+}
+
+// IS [NOT] DISTINCT FROM compares; its FROM begins no list.
+func TestIsDistinctFromBeginsNoList(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		for _, sql := range []string{
+			`SELECT a IS DISTINCT FROM 1, salaries FROM t`,
+			`SELECT a IS NOT DISTINCT FROM 1, salaries FROM t`,
+		} {
+			if got := reads(lexer.Analyze(sql, d)); !slices.Equal(got, []string{"t"}) {
+				t.Errorf("%s: reads = %v, want [t]: %s", d, got, sql)
+			}
+		}
+	}
+}
+
+// ClickHouse's ARRAY JOIN lists arrays, after a plain or an aliased item. Its
+// commas name no relation.
+func TestClickHouseArrayJoinEndsTheList(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT * FROM salaries ARRAY JOIN tags AS tag, names AS name`,
+		`SELECT * FROM salaries s ARRAY JOIN tags AS tag, names AS name`,
+		`SELECT * FROM salaries s LEFT ARRAY JOIN tags AS tag, names AS name`,
+	} {
+		got := reads(lexer.Analyze(sql, lexer.ClickHouse))
+		if !slices.Contains(got, "salaries") || slices.Contains(got, "names") {
+			t.Errorf("reads = %v, want salaries and not names: %s", got, sql)
+		}
+	}
+}
+
+// The fix above must not cost a table its name. Oracle does not reserve JOIN,
+// and ClickHouse, and Spark unless ANSI enforcement is on, reserve neither
+// keyword, so a table called join or from is legal there and a rule naming it
+// must match. Spark does not reserve AS either: `SELECT as` selects a column.
+func TestKeywordNamesKeepTheirRelations(t *testing.T) {
+	for _, tc := range []struct {
+		d             lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{lexer.Oracle, `SELECT * FROM join`, []string{"join"}, nil},
+		{lexer.Oracle, `SELECT * FROM a JOIN join ON a.id = join.id`, []string{"a", "join"}, nil},
+		{lexer.Oracle, `DELETE FROM join`, nil, []string{"join"}},
+		{lexer.Oracle, `DROP VIEW join`, nil, []string{"join"}},
+		{lexer.Spark, `SELECT * FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `INSERT INTO from VALUES (1)`, nil, []string{"from"}},
+		{lexer.Spark, `UPDATE from SET a = 1`, nil, []string{"from"}},
+		{lexer.Spark, `INSERT INTO TABLE from VALUES (1)`, nil, []string{"from"}},
+		{lexer.Spark, `SELECT as FROM salaries`, []string{"salaries"}, nil},
+		{lexer.Spark, `SELECT as FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `SELECT id, as FROM join.salaries`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT s.as FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT 1 + as FROM from`, []string{"from"}, nil},
+		{lexer.ClickHouse, `SELECT s.as FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT amount AS select FROM join.salaries`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT s.select FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT DISTINCT distinct FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `MERGE INTO audit AS as USING join.salaries s ON as.id = s.id WHEN MATCHED THEN DELETE`,
+			[]string{"join.salaries"}, []string{"audit"}},
+		{lexer.ClickHouse, `SELECT * FROM from`, []string{"from"}, nil},
+	} {
+		a := lexer.Analyze(tc.sql, tc.d)
+		if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+			t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", tc.d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+		}
+	}
+}
+
+// ClickHouse and Spark reserve none of the introducers, so any of them may
+// name a column, and ClickHouse's catalog has one called table. Read as an
+// introducer it took FROM for the relation and lost the table, as UPDATE did
+// in TestKeywordColumnIntroducesNoRelation. Those dialects cannot rule the
+// introducer reading out, so it is kept beside the column reading: the table
+// is read, and the relation the old reading named is still recorded.
+func TestPermissiveDialectKeywordColumnsKeepTheTable(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.ClickHouse, lexer.Spark} {
+		for _, tc := range []struct{ sql, read string }{
+			{`SELECT database, table FROM system.parts`, "system.parts"},
+			{`SELECT table FROM audit`, "audit"},
+			{`SELECT DISTINCT table FROM audit`, "audit"},
+			{`SELECT into FROM audit`, "audit"},
+			{`SELECT id, using FROM audit`, "audit"},
+			{`SELECT 1 FROM audit a JOIN (SELECT table FROM audit) b ON true`, "audit"},
+		} {
+			a := lexer.Analyze(tc.sql, d)
+			if got := reads(a); !slices.Contains(got, tc.read) {
+				t.Errorf("%s: reads = %v, want %s read: %s", d, got, tc.read, tc.sql)
+			}
+		}
+	}
+}
+
 // Other spellings of "create a table from a query".
 func TestObjectCreatingForms(t *testing.T) {
 	for _, tc := range []struct{ sql, write, read string }{
@@ -588,6 +889,48 @@ func TestObjectCreatingForms(t *testing.T) {
 		}
 		if got := reads(a); !slices.Equal(got, []string{tc.read}) {
 			t.Errorf("reads = %v, want [%s]: %s", got, tc.read, tc.sql)
+		}
+	}
+
+	// SELECT INTO creates its table, so it is a create to a rule that reads
+	// the effects, whatever the persistence keyword before the name.
+	for _, sql := range []string{
+		`SELECT * INTO snap FROM customers`,
+		`SELECT * INTO TEMP snap FROM customers`,
+		`SELECT * INTO TEMPORARY TABLE snap FROM customers`,
+		`SELECT * INTO UNLOGGED snap FROM customers`,
+		`WITH c AS (SELECT 1) SELECT * INTO snap FROM c`,
+		`(SELECT * INTO snap FROM customers)`,
+		`((SELECT * INTO snap FROM customers))`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); a.Severity() != lexer.Create {
+			t.Errorf("Severity = %v, want create: effects %v: %s", a.Severity(), a.Effects, sql)
+		}
+	}
+}
+
+// A parenthesis opens a query only when a query keyword follows it. In a
+// CASE branch, a type's attribute list or a join group it is an expression,
+// and a column named after a statement is a column.
+func TestParenthesizedExpressionIsNotAStatement(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{`SELECT CASE WHEN a THEN (drop) ELSE (truncate) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN (alter) ELSE (merge) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN ((update)) END FROM privs`, lexer.Select},
+		{`SELECT * FROM ((comment c JOIN orders o ON o.c = c.id))`, lexer.Select},
+		{`CREATE TYPE ty AS (update boolean)`, lexer.Create},
+	} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.ClickHouse, lexer.GoogleSQL, lexer.Spark} {
+			a := lexer.Analyze(tc.sql, d)
+			if a.Severity() != tc.want {
+				t.Errorf("%v: Severity = %v, want %v: effects %v: %s", d, a.Severity(), tc.want, a.Effects, tc.sql)
+			}
+			if got := writes(a); tc.want == lexer.Select && len(got) > 0 {
+				t.Errorf("%v: a read reported writes %v: %s", d, got, tc.sql)
+			}
 		}
 	}
 }
@@ -1790,6 +2133,15 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 		{"DESCRIBE TABLE EXTENDED t", lexer.Show, nil, []string{"t"}},
 		{"DESC FORMATTED c.s.t", lexer.Show, nil, []string{"c.s.t"}},
 		{"DESCRIBE DETAIL t", lexer.Show, nil, []string{"t"}},
+		// A table named like a DESCRIBE keyword: no name follows it.
+		{"DESC history", lexer.Show, nil, []string{"history"}},
+		{"DESCRIBE extended", lexer.Show, nil, []string{"extended"}},
+		{"DESC history.x", lexer.Show, nil, []string{"history.x"}},
+		{"DESCRIBE TABLE EXTENDED history", lexer.Show, nil, []string{"history"}},
+		{"DESCRIBE extended PARTITION (p = 1)", lexer.Show, nil, []string{"extended"}},
+		// Delta's path form names no table, and the keyword is no name.
+		{"DESCRIBE DETAIL '/data/events'", lexer.Show, nil, nil},
+		{"DESCRIBE HISTORY '/data/events'", lexer.Show, nil, nil},
 		{"DESCRIBE FUNCTION f", lexer.Show, nil, nil},
 		{"DESCRIBE SCHEMA s", lexer.Show, nil, nil},
 		{"DESCRIBE QUERY SELECT * FROM t", lexer.Show, nil, []string{"t"}},
@@ -1804,6 +2156,77 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 			t.Errorf("verb = %q, writes = %v, reads = %v, complete = %v, want %q %v %v: %s",
 				a.Verb, writes(a), reads(a), a.Complete, tc.verb, tc.writes, tc.reads, tc.sql)
 		}
+	}
+}
+
+// SHOW TBLPROPERTIES, SHOW COLUMNS and SHOW PARTITIONS read a table's
+// metadata, and table_changes reads its rows. Each names its table read, so
+// a rule fencing reads of the table matches; before, none named a relation.
+func TestSparkMetadataAndChangeFeedReadTheirTable(t *testing.T) {
+	for _, tc := range []struct {
+		sql   string
+		reads []string
+	}{
+		{"SHOW TBLPROPERTIES salaries", []string{"salaries"}},
+		{"SHOW TBLPROPERTIES c.s.salaries ('delta.appendOnly')", []string{"c.s.salaries"}},
+		{"SHOW COLUMNS IN salaries", []string{"salaries"}},
+		{"SHOW COLUMNS FROM salaries", []string{"salaries"}},
+		// The schema after the table qualifies it; it is no relation.
+		{"SHOW COLUMNS IN salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW COLUMNS FROM salaries FROM hr", []string{"hr.salaries"}},
+		{"SHOW COLUMNS IN hr.salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW PARTITIONS salaries", []string{"salaries"}},
+		{"SHOW PARTITIONS salaries PARTITION (year = 2024)", []string{"salaries"}},
+		{"SHOW TABLES IN hr", nil},
+		// SHOW puts no modifier before its table, so a table may be called only.
+		{"SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW PARTITIONS if", []string{"if"}},
+		{"SHOW COLUMNS IN t IN only", []string{"only.t"}},
+		{"SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM table_changes('c.hr.Salaries', 1, 5)", []string{"c.hr.salaries"}},
+		{"SELECT * FROM table_changes(\"`Pay Roll`.salaries\", '2024-01-01')", []string{"Pay Roll.salaries"}},
+		{"SELECT * FROM table_changes(r'hr.salaries', 1)", []string{"hr.salaries"}},
+		{"SELECT * FROM TABLE_CHANGES ( /* feed */ 'salaries' , 1)", []string{"salaries"}},
+		{"SELECT * FROM a JOIN table_changes('salaries', 1) c ON a.id = c.id", []string{"a", "salaries"}},
+		{"SELECT * FROM table_changes('salaries', (SELECT max(v) FROM versions))", []string{"salaries", "versions"}},
+		// The qualified spellings of the same built-in.
+		{"SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM `system`.`builtin`.`table_changes`('salaries', 1)", []string{"salaries"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if !slices.Equal(reads(a), tc.reads) || len(writes(a)) != 0 || !a.Complete {
+			t.Errorf("reads = %v, writes = %v, complete = %v (%s), want reads %v: %s",
+				reads(a), writes(a), a.Complete, a.Reason, tc.reads, tc.sql)
+		}
+	}
+	// A MERGE reads the change feed it applies.
+	a := lexer.Analyze("MERGE INTO t USING table_changes('salaries', 1) c ON t.id = c.id WHEN MATCHED THEN DELETE", lexer.Spark)
+	if !slices.Equal(writes(a), []string{"t"}) || !slices.Equal(reads(a), []string{"salaries"}) {
+		t.Errorf("writes = %v, reads = %v, want [t] [salaries]", writes(a), reads(a))
+	}
+}
+
+// A table_changes whose first argument is not one plain string names a table
+// this scanner cannot see. Complete, it passed a rule fencing reads of that
+// table with no relation to match.
+func TestSparkTableChangesOverAnExpressionIsUnreadable(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM table_changes(concat('sal', 'aries'), 1)",
+		"SELECT * FROM table_changes(:tbl, 1)",
+		"SELECT * FROM table_changes(?, 1)",
+		"SELECT * FROM table_changes('sal' 'aries', 1)",
+		`SELECT * FROM table_changes('sal\aries', 1)`,
+		"SELECT * FROM table_changes('hr salaries', 1)",
+		"SELECT * FROM table_changes('', 1)",
+	} {
+		if a := lexer.Analyze(sql, lexer.Spark); a.Complete {
+			t.Errorf("complete, relations = %v: %s", a.Relations, sql)
+		}
+	}
+	// Elsewhere table_changes is any function, and names nothing.
+	if a := lexer.Analyze("SELECT * FROM table_changes(concat('a', 'b'), 1)", lexer.Postgres); !a.Complete || len(a.Relations) != 0 {
+		t.Errorf("postgres: complete = %v, relations = %v", a.Complete, a.Relations)
 	}
 }
 

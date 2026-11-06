@@ -7,6 +7,7 @@ lane masks the result set and enforces nothing on the SQL.
 
 ```
 client   ──TLS───────> envoy :8446 ──OPA──> hoop-inspect :18123 ──http──> clickhouse :8123   http codec
+client   ──TLS───────> envoy :8448 ──OPA──> hoop-inspect :18124 ──http──> clickhouse :8123   http codec, no mask
 chclient ──native────> envoy :9000 ───────> hoop-inspect :19006 ──tcp───> clickhouse :9000   clickhouse codec
 client   ──plaintext──> envoy :9004 ───────> hoop-inspect :19004 ──tcp───> clickhouse :9004   mysql codec
 client   ──plaintext──> envoy :9005 ───────> hoop-inspect :19005 ──tcp───> clickhouse :9005   postgres codec
@@ -101,6 +102,33 @@ TCP proxy and the sidecar's `clickhouse` codec. The demo proves both response
 masking on a compressed result and a denied DELETE surfaced as a native
 Exception. Envoy remains a byte router; policy decisions happen only after
 the sidecar has decoded the Query packet.
+
+## Stream a large result
+
+`clickhouse-http-stream` (Envoy `:8448`) is the HTTP lane with no mask rule
+(`mask: {rules: []}`), the shape of a lane that streams large results. Its
+Envoy route has no total timeout: a route `timeout` bounds the whole
+response, so `:8446`'s 300s cuts a result that takes longer to send.
+`idle_timeout: 60s` still ends a stalled stream.
+
+`stream-clickhouse.sh` pulls one result through it and checks that it
+arrived whole. It runs the same query straight to `clickhouse:8123` first,
+then through the lane, and passes on HTTP 200, curl exit 0, the same byte
+count and sha256 as the direct copy, no error row in the audit trail, and
+sidecar memory under `MAX_SIDECAR_MIB` (512) throughout.
+
+```bash
+./clickhouse/stream-clickhouse.sh                              # 5 GiB TSV, local build
+SIDECAR_IMAGE=hoophq/hoopsidecar:1.285.2 HOOP_LICENSE_FILE=/path/license.json \
+  ./clickhouse/stream-clickhouse.sh                            # a published release
+FORMAT=RowBinary COMPRESSION=gzip SIZE_GIB=6 ./clickhouse/stream-clickhouse.sh
+```
+
+Each TSV row is 1024 bytes, so `SIZE_GIB` is exact. The default, 5 GiB, is
+past 4 GiB, where a 32-bit byte counter would wrap. `SIDECAR_IMAGE` adds
+`docker-compose.release.yml`, which runs the published image with
+`--no-login`: without a license it runs only when logged in to a control
+plane, so it needs `HOOP_LICENSE_FILE`.
 
 ## Configure the native lane
 
@@ -230,12 +258,14 @@ go-sql-driver, mysql-connector-python.
 | Path | What it is |
 |---|---|
 | `docker-compose.clickhouse.yml` | the overlay: ClickHouse clients and server, HTTPS host port `8446`, and loopback-only database ports `9000`, `9004`, `9005` |
-| `envoy-clickhouse.yaml` | base Envoy config plus the four ClickHouse listeners |
-| `config-clickhouse.yaml` | sidecar config: `appdb`, `httpbin` and four ClickHouse lanes |
+| `docker-compose.release.yml` | runs a published sidecar image (`SIDECAR_IMAGE`, `HOOP_LICENSE_FILE`) instead of the local build |
+| `envoy-clickhouse.yaml` | base Envoy config plus the five ClickHouse listeners |
+| `config-clickhouse.yaml` | sidecar config: `appdb`, `httpbin` and five ClickHouse lanes |
 | `server/config.d/protocols.yaml` | turns on the MySQL and PostgreSQL emulation ports |
 | `server/users.d/appuser.yaml` | `appuser`, plaintext password |
 | `seed.sql` | the `customers` fixture, ClickHouse dialect |
 | `demo-clickhouse.sh` | the walk above |
+| `stream-clickhouse.sh` | the large-result check under "Stream a large result" |
 
 The audit table is printed by `../sidecar/read-audit.py`. Its leak check
 fires on this overlay for the reason given under Design.

@@ -135,7 +135,7 @@ type SidecarReviewKey struct {
 }
 
 // The statement scopes, one per key. Each implies the predicate of its
-// partial unique index (000125 for a rule, 000148 for a level), so a lookup
+// partial unique index (000125 for a rule, 000149 for a level), so a lookup
 // uses the index. IS NOT DISTINCT FROM implies neither. The statuses are
 // literal: a generic plan proves no predicate from a bound status. Args: org,
 // sidecar, listener, the key, the statement hash.
@@ -735,6 +735,34 @@ func UpdateReviewStatus(orgID, id string, status ReviewStatusType) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// MarkReviewProcessing moves an APPROVED one-time review to PROCESSING and
+// records who runs it, in one update. executedBy is an email; an empty one
+// stores NULL. A review another run already moved to PROCESSING keeps its
+// executor and returns nil. Any other status is an error; no review with this
+// id returns gorm.ErrRecordNotFound.
+func MarkReviewProcessing(db *gorm.DB, orgID, id, executedBy string) error {
+	res := db.Exec(`UPDATE private.reviews SET status = ?, executed_by = NULLIF(?, '')
+	WHERE org_id = ? AND id = ? AND type = ? AND status = ?`,
+		ReviewStatusProcessing, executedBy, orgID, id, ReviewTypeOneTime, ReviewStatusApproved)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	var status string
+	err := db.Raw(`SELECT status FROM private.reviews WHERE org_id = ? AND id = ?`, orgID, id).Row().Scan(&status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return gorm.ErrRecordNotFound
+	case err != nil:
+		return err
+	case ReviewStatusType(status) == ReviewStatusProcessing:
+		return nil
+	}
+	return fmt.Errorf("approval request %s is %s, not %s", id, status, ReviewStatusApproved)
 }
 
 // SetReviewStatusExecutedIfFinished settles the one-time review of the given

@@ -54,7 +54,7 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 				// scanner finding. Fail loudly rather than skip quietly.
 				t.Fatalf("oracle could not parse fixture: %v", err)
 			}
-			mine := scannerWrites(got)
+			mine := scannerRelations(got, lexer.Write)
 			tally := byGroup[c.group]
 
 			switch {
@@ -85,16 +85,16 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 	}
 }
 
-// scannerWrites reduces an Analysis to the sorted, lowercased set of relation
-// names it says the statement changes.
+// scannerRelations reduces an Analysis to the sorted, lowercased set of
+// relation names it says the statement reads or changes, as acc says.
 //
 // Lowercasing is what the root adapter does before a policy sees a name, so
 // it is what the comparison must do. Both sides get it, so a quoted
 // "Orders" folds the same way on both and the comparison stays sound.
-func scannerWrites(a lexer.Analysis) []string {
+func scannerRelations(a lexer.Analysis, acc lexer.Access) []string {
 	out := make([]string, 0, len(a.Relations))
 	for _, r := range a.Relations {
-		if r.Access == lexer.Write {
+		if r.Access == acc {
 			out = append(out, strings.ToLower(r.Name))
 		}
 	}
@@ -381,7 +381,7 @@ func TestClickHouseDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
 			}
 		})
@@ -430,7 +430,7 @@ func TestOracleDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
 			}
 		})
@@ -530,8 +530,45 @@ func TestSparkDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+
+	// Reads of a table's metadata or change feed. Each names the table read,
+	// and a rule fencing reads of it depends on that.
+	for _, tc := range []struct {
+		name  string
+		sql   string
+		reads []string
+	}{
+		{"table_changes reads its table", "SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
+		{"SHOW TBLPROPERTIES reads its table", "SHOW TBLPROPERTIES salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table", "SHOW COLUMNS IN salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table in a schema", "SHOW COLUMNS IN salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW PARTITIONS reads its table", "SHOW PARTITIONS salaries", []string{"salaries"}},
+		{"SHOW CREATE TABLE reads its table", "SHOW CREATE TABLE salaries", []string{"salaries"}},
+		{"DESCRIBE HISTORY reads its table", "DESCRIBE HISTORY salaries", []string{"salaries"}},
+		{"DESC of a table called history", "DESC history", []string{"history"}},
+		{"DESCRIBE of a table called extended", "DESCRIBE extended", []string{"extended"}},
+		{"DESCRIBE DETAIL of a path names no table", "DESCRIBE DETAIL '/data/events'", nil},
+		{"DESCRIBE HISTORY of a path names no table", "DESCRIBE HISTORY '/data/events'", nil},
+		{"SHOW TBLPROPERTIES of a table called only", "SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW COLUMNS in a schema called only", "SHOW COLUMNS IN t IN only", []string{"only.t"}},
+		{"builtin.table_changes reads its table", "SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"system.builtin.table_changes reads its table", "SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lexer.Analyze(tc.sql, lexer.Spark)
+			if !got.Complete {
+				t.Fatalf("analysis conceded: %s", got.Reason)
+			}
+			if writes := scannerRelations(got, lexer.Write); len(writes) != 0 {
+				t.Errorf("writes = %v, want none", writes)
+			}
+			if reads := scannerRelations(got, lexer.Read); !slices.Equal(reads, tc.reads) {
+				t.Errorf("reads = %v, want %v", reads, tc.reads)
 			}
 		})
 	}
@@ -564,6 +601,16 @@ func corpus() []stmtCase {
 		`COPY (DELETE FROM customers RETURNING *) TO STDOUT`,
 		`EXPLAIN ANALYZE DELETE FROM customers`,
 		`EXPLAIN DELETE FROM customers`,
+		// ANALYSE is ANALYZE, and a quoted option name is compared
+		// verbatim, so each of these runs its DELETE. The scanner read them
+		// as plans, and a read-only lane let the delete through (ENG-803).
+		`EXPLAIN ANALYSE DELETE FROM customers`,
+		`EXPLAIN (ANALYSE) DELETE FROM customers`,
+		`EXPLAIN ("analyze") DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers`,
+		// U& escapes spell the same option; the scanner does not decode
+		// them, so a quoted name it does not know counts as ANALYZE.
+		`EXPLAIN (U&"\0061nalyze") DELETE FROM customers`,
 		`INSERT INTO staging SELECT * FROM customers`,
 		`DO $$ BEGIN DELETE FROM customers; END $$`,
 		`CALL purge()`,
@@ -586,6 +633,23 @@ func corpus() []stmtCase {
 		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
 		        has_table_privilege(current_user, t.tablename, 'update') AS update
 		   FROM pg_catalog.pg_tables t`,
+		// A column or alias that spells a relation introducer took the
+		// FROM after it for a relation (ENG-859). Under SELECT it read a
+		// table called from; under INTO it wrote one.
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT s.update, s.truncate FROM salaries s`,
+		`SELECT amount AS update, 1 AS from FROM salaries`,
+		`SELECT * FROM salaries update JOIN secrets ON true`,
+		`INSERT INTO audit SELECT s.into FROM salaries s`,
+		`INSERT INTO audit SELECT amount AS into FROM salaries`,
+		// The FROM list now continues past an aliased item, so its commas
+		// are read up to the next clause. A comma there must not name a
+		// written relation (ENG-859).
+		`INSERT INTO audit SELECT * FROM salaries s, secrets t, (SELECT 1) u`,
+		`UPDATE t SET a = 1, b = 2 FROM s x, u WHERE t.id = x.id RETURNING t.a, t.b`,
+		`DELETE FROM t x USING s y, u WHERE x.id = y.id RETURNING x.a, x.b`,
+		`INSERT INTO t SELECT * FROM s x, u ON CONFLICT (k) DO UPDATE SET c = 1, d = 2`,
+		`SELECT * FROM a x, b y GROUP BY 1, 2 ORDER BY 1, 2 FOR UPDATE OF x, y`,
 	)
 
 	add("cte",
@@ -609,6 +673,12 @@ func corpus() []stmtCase {
 		`INSERT INTO t SELECT * FROM (SELECT * FROM u) z`,
 		`CREATE TABLE snap AS SELECT * FROM customers`,
 		`SELECT * INTO snap2 FROM customers`,
+		`SELECT * INTO TEMP snap3 FROM customers`,
+		`(SELECT * INTO snap4 FROM customers)`,
+		`((SELECT * INTO snap5 FROM customers))`,
+		`(WITH c AS (SELECT * FROM customers) SELECT * INTO snap6 FROM c)`,
+		`(VALUES (1), (2))`,
+		`(TABLE customers)`,
 		`MERGE INTO customers c USING staging s ON c.id = s.id
 		   WHEN MATCHED AND s.dead THEN DELETE
 		   WHEN MATCHED THEN UPDATE SET n = s.n
@@ -693,4 +763,64 @@ func TestCorpusGroupsAreCovered(t *testing.T) {
 	for g := range seen {
 		t.Errorf("group %q is used by the corpus but missing from groups()", g)
 	}
+}
+
+// The callees the scanner reports are held to PostgreSQL's own reading of
+// CALL. A CALL is conceded as unreadable (the body is in the catalog), so
+// the write-set check above never compares it; this one compares the name,
+// which is what a procedure rule matches on. Every top-level CALL counts;
+// an EXECUTE is a prepared statement here and names no procedure. EXPLAIN
+// CALL is not PostgreSQL, so the EXPLAIN exclusion stays a unit test.
+func TestScannerCalleesMatchPostgres(t *testing.T) {
+	for _, sql := range []string{
+		`CALL purge()`,
+		`CALL "Ops".purge(1)`,
+		`CALL public.purge(); CALL audit.touch()`,
+		`SET search_path = app; CALL purge()`,
+		`EXECUTE purge`,
+		`SELECT purge()`,
+	} {
+		t.Run(caseName(sql), func(t *testing.T) {
+			want, err := oracleCallees(sql)
+			if err != nil {
+				t.Fatalf("oracle could not parse fixture: %v", err)
+			}
+			got := normalizedCallees(lexer.Analyze(sql, lexer.Postgres).Callees)
+			if !slices.Equal(got, want) {
+				t.Errorf("callees disagree\n  sql:      %s\n  scanner:  %v\n  postgres: %v", sql, got, want)
+			}
+		})
+	}
+}
+
+// oracleCallees lists every top-level CALL's procedure as PostgreSQL parses
+// it, dotted, in statement order.
+func oracleCallees(sql string) ([]string, error) {
+	tree, err := pgquery.Parse(sql)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, raw := range tree.GetStmts() {
+		call := raw.GetStmt().GetCallStmt()
+		if call == nil {
+			continue
+		}
+		var parts []string
+		for _, n := range call.GetFunccall().GetFuncname() {
+			parts = append(parts, strings.ToLower(n.GetString_().GetSval()))
+		}
+		out = append(out, strings.Join(parts, "."))
+	}
+	return out, nil
+}
+
+// normalizedCallees folds the scanner's verbatim spellings to the
+// parser's: lowercase, double-quote delimiters removed.
+func normalizedCallees(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, c := range in {
+		out = append(out, strings.ToLower(strings.ReplaceAll(c, `"`, "")))
+	}
+	return out
 }

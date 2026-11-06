@@ -29,7 +29,7 @@ export default function SystemPromptPreview() {
       >
         <Group justify="space-between" align="center" wrap="nowrap">
           <Group gap="xs" align="center" wrap="nowrap">
-            <Sparkles size={14} color="var(--mantine-color-indigo-6)" />
+            <Sparkles size={14} color="var(--mantine-primary-color-filled)" />
             <Text size="sm" fw={500}>
               {"Hoop's appended system prompt"}
             </Text>

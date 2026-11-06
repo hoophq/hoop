@@ -197,6 +197,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
+	cfg.licPinned = pinnedLicenseRef(cfg.lic, o.licenseFlag)
 	// On the resolved config: under a plane the plugins list is the
 	// plane's. SetupWith loads the modules because they are code this
 	// process runs, which belongs to the host; Validate is a check the
@@ -207,6 +208,9 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if build == nil {
 		return cfg, nil, nil
 	}
+	// The detector may load a model and say so; the process logger is
+	// installed first so that line has the same shape as every other.
+	newLogger(cfg.LogLevel)
 	det, err := build(cfg.PII)
 	if err != nil {
 		_ = cfg.closeCodecPlugins()
@@ -224,6 +228,8 @@ const (
 	PlaneLicenseSource = "the control plane"
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
+	// adminLicenseSource names a license installed through PUT /license.
+	adminLicenseSource = "the admin API"
 )
 
 // setConfigFormat records the format of the document that is AUTHORITATIVE
@@ -253,6 +259,19 @@ func ResolveLicense(flagValue, fileValue string) license.Status {
 		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
 		license.Ref{Value: fileValue, Source: fileLicenseSource},
 	)
+}
+
+// pinnedLicenseRef is the reference lic resolved from when that is the
+// license flag or HOOP_LICENSE: the sources a running process cannot change,
+// though the file a path names can be replaced. Empty for any other source.
+func pinnedLicenseRef(lic license.Status, flagValue string) license.Ref {
+	switch lic.Source {
+	case flagLicenseSource:
+		return license.Ref{Value: flagValue, Source: flagLicenseSource}
+	case license.EnvVar:
+		return license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar}
+	}
+	return license.Ref{}
 }
 
 // resolveLicenseFor picks the license this process runs under.
@@ -597,6 +616,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkICA(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return nil, err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
@@ -669,6 +691,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err // buildICAServer names the lane
 			}
 			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isMCPGateway(ln.cfg) {
+			srv, _, err := buildMCPGatewayServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, err
+			}
+			notes = append(notes, srv.Notes()...)
+			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
+				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
+			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -877,6 +910,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkICA(cfg); err != nil {
 		return err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
@@ -1064,6 +1100,16 @@ func Run(cfg *Config, det Plugin) error {
 			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
+		case isMCPGateway(ln.cfg):
+			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, msrv)
+			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
+			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
 			if serr != nil {
@@ -1189,13 +1235,17 @@ func Run(cfg *Config, det Plugin) error {
 		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
 	}
 
+	adminSecret := os.Getenv(AdminSecretEnv)
 	if cfg.Admin.Listen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
+	} else if strings.TrimSpace(adminSecret) != "" {
+		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
+			"hint", "set admin.listen to install a license through the admin API")
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1382,6 +1432,10 @@ type lane struct {
 	// reach the client.
 	observing bool
 
+	// mcpHide holds an mcp lane's enforcing mcp_tool rules: a tool one of
+	// them denies is left out of tools/list. Nil when none applies.
+	mcpHide *policy.Rules
+
 	// notes are per-lane facts an operator has to know at startup and that
 	// no config file shows, because they are consequences of the resolved
 	// stack rather than of anything written down. A rule that defers on a
@@ -1495,7 +1549,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		// An mcp lane masks nothing yet: inherited rules are accepted and
+		// Validate notes them, so one mask block can serve every lane.
+		var masker gate.Masker
+		if !isMCPGateway(lc) {
+			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		}
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1526,6 +1585,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if opa.enabled() {
 			ln.opaURL = opa.URL
+		}
+		if isMCPGateway(lc) && gc.enforcing() {
+			if ln.mcpHide, err = mcpHideRules(gc.Rules); err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
 		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
@@ -1571,6 +1636,22 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			ln.notes = append(ln.notes,
 				"defer names a decision this lane has no opa.url for, so a deferred "+
 					"match or risk level denies instead of reporting a finding")
+		}
+		// A strict table rule with no scope refuses every statement whose
+		// relations the scanner could not read, and that set is wider
+		// than a table: a stored procedure call names none, and neither
+		// does the SET or USE a driver sends on connect. Said here, so
+		// the operator learns it from -validate and not from a login that
+		// fails.
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchTable && r.RequireTableMatch && len(r.Operations) == 0 {
+				ln.notes = append(ln.notes, fmt.Sprintf(
+					"table rule %q sets require_table_match with no operations scope, so it "+
+						"also refuses every stored-procedure call and the driver's SET/USE "+
+						"batches, whose relations the scanner cannot read. Scope it with "+
+						"operations: (select, insert, update, delete). A procedure rule names "+
+						"the calls to refuse; it does not change what this rule refuses", r.Name))
+			}
 		}
 		// An omitted trigger on an ungated lane classifies EVERYTHING.
 		// That is what the operator wrote, and it is also a model call
@@ -1880,9 +1961,14 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 	}
 
 	// The query store is both a sink and the read side, so it indexes on the
-	// same write that records the event. Two pipelines would drift.
+	// same write that records the event. Two pipelines would drift. It takes
+	// the file's options: the API must not serve what the file redacted.
 	if cfg.QuerySessions > 0 {
-		out.query = store.NewMemoryStore(cfg.QuerySessions)
+		out.query = store.NewMemoryStore(store.MemoryOptions{
+			MaxSessions: cfg.QuerySessions,
+			MaxBytes:    cfg.QueryMaxBytes,
+			Sink:        opts,
+		})
 		sinks = append(sinks, out.query)
 	}
 
@@ -1925,6 +2011,7 @@ func serveAdmin(
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	otel *otelExporter,
+	licenseAPI http.Handler,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -1933,6 +2020,11 @@ func serveAdmin(
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+
+	// The one write on this listener. licenseHandler refuses it unless the
+	// operator set AdminSecretEnv, and then asks for that secret: every
+	// read here is unauthenticated, and a write must not be.
+	mux.Handle("PUT /license", licenseAPI)
 
 	// An ica lane's engine loads a model and starts OCR workers after the
 	// socket binds, which can take minutes, and the engine refuses

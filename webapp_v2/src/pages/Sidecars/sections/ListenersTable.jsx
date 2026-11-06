@@ -42,7 +42,7 @@ function PoliciesCell({ listener, config, boundRules }) {
   const { features, inheritedOnly } = listenerPolicies(listener, config, boundRules)
   if (features.length > 0) return <FeaturePills compact features={features} />
   return (
-    <Text size="xs" fw={500} c="gray.5">
+    <Text size="xs" fw={500} c="var(--hoop-text-faint)">
       {inheritedOnly ? 'Inherited policy' : 'No policies configured'}
     </Text>
   )
@@ -101,7 +101,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
             <Text size="sm" fw={700}>
               Listeners
             </Text>
-            <Text size="xs" fw={500} c="gray.5">
+            <Text size="xs" fw={500} c="var(--hoop-text-faint)">
               {`${listeners.length} ${listeners.length === 1 ? 'Listener' : 'Listeners'}`}
             </Text>
           </Group>

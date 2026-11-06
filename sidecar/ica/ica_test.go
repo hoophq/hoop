@@ -406,3 +406,21 @@ func TestDaemonEDTBoundsMatchTheEngine(t *testing.T) {
 		}
 	}
 }
+
+func TestCPUMatchOnlyOptionAndNotes(t *testing.T) {
+	rt := daemon.ICARuntime{Options: daemon.ICAOptions{PIIMatchesOnly: ptr(true), OCRFreshReuseFrames: ptr(1)}}
+	cfg := resolveRuntimeConfig(rt)
+	if !cfg.PIIMatchesOnly || cfg.OCRFreshReuseFrames != 0 || cfg.TurboFullScreen || cfg.TurboRegionalCache {
+		t.Fatalf("invalid CPU mode: %+v", cfg)
+	}
+	if err := ica.ValidateRuntimeConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(notes(cfg, rt, singleLane(t)), "\n"), "match-only masking true") {
+		t.Fatal("mode absent from startup notes")
+	}
+	cfg = resolveRuntimeConfig(daemon.ICARuntime{})
+	if cfg.PIIMatchesOnly {
+		t.Fatal("conservative default changed")
+	}
+}

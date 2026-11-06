@@ -59,6 +59,12 @@ func isICA(lc ListenerConfig) bool {
 // share one profile. Options holds overrides only; the lane's Notes report
 // the resolved values.
 type ICARuntimeConfig struct {
+	// TurboOCR native device assets; used only with options.ocr_backend: turboocr.
+	OCRTurboLibrary  string `json:"ocr_turbo_library,omitempty" cap:"ica_gpu"`
+	OCRTurboDetModel string `json:"ocr_turbo_det_model,omitempty" cap:"ica_gpu"`
+	OCRTurboRecModel string `json:"ocr_turbo_rec_model,omitempty" cap:"ica_gpu"`
+	OCRTurboRecDict  string `json:"ocr_turbo_rec_dict,omitempty" cap:"ica_gpu"`
+	OCRTurboClsModel string `json:"ocr_turbo_cls_model,omitempty" cap:"ica_gpu"`
 	// OCRWorker is the hoop-tesseract-worker binary. Default: the engine's
 	// installed-release path (/opt/libhoop-ica/current/bin/hoop-tesseract-worker).
 	OCRWorker string `json:"ocr_worker,omitempty"`
@@ -73,6 +79,11 @@ type ICARuntimeConfig struct {
 	// MaxSessions bounds concurrent ICA sessions across every ica lane.
 	// Default 32, 1..4096.
 	MaxSessions int `json:"max_sessions,omitempty"`
+	// Capacity readiness is opt-in; validate LB behavior before enabling.
+	ReadinessCapacity bool `json:"readiness_capacity,omitempty" cap:"ica_readiness_capacity"`
+	ReadinessHeadroom int  `json:"readiness_headroom,omitempty" cap:"ica_readiness_headroom"`
+	// DrainTimeoutSec bounds graceful lane close, default 30, maximum 3600.
+	DrainTimeoutSec int `json:"drain_timeout_sec,omitempty" cap:"ica_drain_timeout"`
 	// ConnectTimeoutSec bounds the VDA dial. Default 10, 1..60.
 	ConnectTimeoutSec int `json:"connect_timeout_sec,omitempty"`
 	// FailureDiagnosticDir enables the engine's metadata-only failure files
@@ -119,22 +130,35 @@ const (
 // output_pipeline…) belong to the engine, and its validator checks them on
 // the host.
 type ICAOptions struct {
-	OCRWorkers              *int     `json:"ocr_workers,omitempty"`
-	OCRTiles                *int     `json:"ocr_tiles,omitempty"`
-	OCRThreadLimit          *int     `json:"ocr_thread_limit,omitempty"`
-	OCRTimeoutSec           *int     `json:"ocr_timeout_sec,omitempty"`
-	OCRMinConfidence        *float64 `json:"ocr_min_confidence,omitempty"`
-	OCRBrowserOptimizations *bool    `json:"ocr_browser_optimizations,omitempty"`
-	OCRScreenOptimizations  *bool    `json:"ocr_screen_optimizations,omitempty"`
-	OCRGrayPreparation      *bool    `json:"ocr_gray_preparation,omitempty"`
-	OCRNoInvert             *bool    `json:"ocr_no_invert,omitempty"`
-	OCRFreshReuseFrames     *int     `json:"ocr_fresh_reuse_frames,omitempty"`
-	OCRLineBandScale        *bool    `json:"ocr_line_band_scale,omitempty"`
-	OCRLineBandMinRows      *int     `json:"ocr_line_band_min_rows,omitempty"`
-	NERBackend              *string  `json:"ner_backend,omitempty"`
-	NERThreads              *int     `json:"ner_threads,omitempty"`
-	NERParallel             *int     `json:"ner_parallel,omitempty"`
-	PIIThreshold            *float64 `json:"pii_threshold,omitempty"`
+	// Backend selection keeps CPU defaults unchanged. TurboOCR relaxes only
+	// implicit Tesseract settings; explicit incompatible overrides are refused.
+	OCRBackend               *string  `json:"ocr_backend,omitempty" cap:"ica_gpu"`
+	OCRTurboDevice           *int     `json:"ocr_turbo_device,omitempty" cap:"ica_gpu"`
+	OCRTurboFramebufferBytes *uint64  `json:"ocr_turbo_framebuffer_bytes,omitempty" cap:"ica_gpu"`
+	OCRTurboFullScreen       *bool    `json:"ocr_turbo_full_screen,omitempty" cap:"ica_gpu"`
+	OCRTurboRegionalCache    *bool    `json:"ocr_turbo_regional_cache,omitempty" cap:"ica_gpu"`
+	NERAccelerator           *string  `json:"ner_accelerator,omitempty" cap:"ica_gpu"`
+	NERGPUDevice             *int     `json:"ner_gpu_device,omitempty" cap:"ica_gpu"`
+	NEREntities              []string `json:"ner_entities,omitempty" cap:"ica_gpu"`
+	OCRWorkers               *int     `json:"ocr_workers,omitempty"`
+	OCRTiles                 *int     `json:"ocr_tiles,omitempty"`
+	OCRThreadLimit           *int     `json:"ocr_thread_limit,omitempty"`
+	OCRTimeoutSec            *int     `json:"ocr_timeout_sec,omitempty"`
+	OCRMinConfidence         *float64 `json:"ocr_min_confidence,omitempty"`
+	OCRBrowserOptimizations  *bool    `json:"ocr_browser_optimizations,omitempty"`
+	OCRScreenOptimizations   *bool    `json:"ocr_screen_optimizations,omitempty"`
+	OCRGrayPreparation       *bool    `json:"ocr_gray_preparation,omitempty"`
+	OCRNoInvert              *bool    `json:"ocr_no_invert,omitempty"`
+	OCRFreshReuseFrames      *int     `json:"ocr_fresh_reuse_frames,omitempty"`
+	OCRLineBandScale         *bool    `json:"ocr_line_band_scale,omitempty"`
+	OCRLineBandMinRows       *int     `json:"ocr_line_band_min_rows,omitempty"`
+	NERBackend               *string  `json:"ner_backend,omitempty"`
+	NERThreads               *int     `json:"ner_threads,omitempty"`
+	NERParallel              *int     `json:"ner_parallel,omitempty"`
+	PIIThreshold             *float64 `json:"pii_threshold,omitempty"`
+	// PIIMatchesOnly replaces masks from fresh full-screen CPU OCR matches;
+	// it disables historical uncertainty coverage, not protocol checks.
+	PIIMatchesOnly *bool `json:"pii_matches_only,omitempty" cap:"ica_pii_matches_only"`
 	// PIIEntities replaces the profile's structured entity set
 	// (HEALTHCARE_IDENTIFIERS) when non-empty. NER runs in both cases.
 	PIIEntities            []string `json:"pii_entities,omitempty"`
@@ -155,6 +179,16 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 	if r.MaxSessions != 0 && (r.MaxSessions < 1 || r.MaxSessions > 4096) {
 		problems = append(problems, where+": max_sessions must be 1..4096")
 	}
+	maxSessions := r.MaxSessions
+	if maxSessions == 0 {
+		maxSessions = 32
+	}
+	if r.ReadinessHeadroom < 0 || r.ReadinessHeadroom >= maxSessions || (!r.ReadinessCapacity && r.ReadinessHeadroom != 0) {
+		problems = append(problems, "ica.readiness_headroom requires capacity readiness and must be less than max_sessions")
+	}
+	if r.DrainTimeoutSec < 0 || r.DrainTimeoutSec > 3600 {
+		problems = append(problems, "ica.drain_timeout_sec must be 0..3600")
+	}
 	if r.ConnectTimeoutSec != 0 && (r.ConnectTimeoutSec < 1 || r.ConnectTimeoutSec > 60) {
 		problems = append(problems, where+": connect_timeout_sec must be 1..60")
 	}
@@ -163,7 +197,14 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 	// lay those out, and a developer's -validate of a config that names no
 	// path must not depend on them.
 	if onHost {
-		for key, path := range map[string]string{"ocr_worker": r.OCRWorker, "tessdata": r.Tessdata, "ner_model": r.NERModel, "ner_ort_library": r.NERORTLibrary, "failure_diagnostic_dir": r.FailureDiagnosticDir} {
+		for key, path := range map[string]string{
+			"ocr_worker": r.OCRWorker, "tessdata": r.Tessdata,
+			"ner_model": r.NERModel, "ner_ort_library": r.NERORTLibrary,
+			"failure_diagnostic_dir": r.FailureDiagnosticDir,
+			"ocr_turbo_library":      r.OCRTurboLibrary, "ocr_turbo_det_model": r.OCRTurboDetModel,
+			"ocr_turbo_rec_model": r.OCRTurboRecModel, "ocr_turbo_rec_dict": r.OCRTurboRecDict,
+			"ocr_turbo_cls_model": r.OCRTurboClsModel,
+		} {
 			if path == "" {
 				continue
 			}
@@ -200,6 +241,20 @@ func (o *ICAOptions) validate(where string) []string {
 	unit := func(name string, v *float64) {
 		if v != nil && (*v < 0 || *v > 1) {
 			problems = append(problems, fmt.Sprintf("%s.%s must be 0..1", where, name))
+		}
+	}
+	rng("ocr_turbo_device", o.OCRTurboDevice, 0, 65535)
+	rng("ner_gpu_device", o.NERGPUDevice, 0, 65535)
+	if o.OCRBackend != nil && *o.OCRBackend != "tesseract" && *o.OCRBackend != "turboocr" {
+		problems = append(problems, where+".ocr_backend must be tesseract or turboocr")
+	}
+	if o.NERAccelerator != nil && *o.NERAccelerator != "cpu" && *o.NERAccelerator != "cuda" {
+		problems = append(problems, where+".ner_accelerator must be cpu or cuda")
+	}
+	for _, e := range o.NEREntities {
+		if !slices.Contains([]string{"PERSON", "LOCATION", "ORGANIZATION", "NRP"}, e) {
+			problems = append(problems, where+".ner_entities must contain PERSON, LOCATION, ORGANIZATION or NRP")
+			break
 		}
 	}
 	rng("ocr_workers", o.OCRWorkers, 1, 64)
@@ -239,6 +294,15 @@ type ICAConfig struct {
 	// lane runs in single mode and `upstream` names the VDA.
 	Transparent *ICATransparentConfig `json:"transparent,omitempty" label:"Transparent (CIDR) mode" help:"Selects the VDA for each connection from its intercepted destination. Requires Linux, CAP_NET_ADMIN and a TPROXY rule." ui:"presence"`
 
+	// SourceCIDRs, in single mode, are the networks allowed to connect: the
+	// Citrix Gateway SNIP when the Gateway dials this lane as the VDA. Empty
+	// admits any source, as the other sidecar lanes do. CIDR mode takes its
+	// list from transparent.source_cidrs instead and refuses this one.
+	SourceCIDRs []string `json:"source_cidrs,omitempty" cap:"ica_source_cidrs" label:"Source CIDRs" placeholder:"10.20.1.10/32" help:"Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source."`
+
+	// Slots selects unprivileged TCP slot routing; upstream and transparent must be empty.
+	Slots *ICASlotsConfig `json:"slots,omitempty" cap:"ica_slots" ui:"-"`
+
 	// Display pins the framebuffer geometry and ThinWire channel for every
 	// session. With no block, the engine's defaults apply (1264x1040,
 	// channel 9).
@@ -249,6 +313,19 @@ type ICAConfig struct {
 	// experimental. A client that cannot reach the UDP port falls back to
 	// TCP.
 	EDT bool `json:"edt,omitempty" cap:"ica_edt" label:"EDT (experimental)" help:"Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."`
+}
+
+// ICASlotsConfig maps consecutive listener ports to VDA names. Use either a
+// pattern (one %d or %03d) or an explicit names list. DNS is resolved per
+// connection with a 2-second timeout and a cache of at most 30 seconds.
+type ICASlotsConfig struct {
+	FirstPort       int      `json:"first_port,omitempty"`
+	Count           int      `json:"count,omitempty"`
+	UpstreamPattern string   `json:"upstream_pattern,omitempty"`
+	Names           []string `json:"names,omitempty"`
+	UpstreamPort    int      `json:"upstream_port,omitempty"`
+	UpstreamCIDRs   []string `json:"upstream_cidrs,omitempty"`
+	FrontendCIDR    string   `json:"frontend_cidr,omitempty"`
 }
 
 // ICATransparentConfig is CIDR mode's admission policy.
@@ -322,6 +399,11 @@ func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": ica.tenant_id is required and at most 128 characters")
 	}
 	switch {
+	case c.Slots != nil:
+		if c.Transparent != nil || lc.Upstream != "" || c.EDT || lc.Network == "unix" {
+			problems = append(problems, name+": slots require TCP and refuse upstream, transparent and EDT")
+		}
+		problems = append(problems, c.Slots.validate(lc, c.SourceCIDRs, name)...)
 	case c.Transparent != nil && lc.Upstream != "":
 		problems = append(problems, name+": upstream and ica.transparent are two modes; keep one: a fixed VDA, or the VDA each connection was destined to")
 	case c.Transparent == nil && lc.Upstream == "":
@@ -331,7 +413,12 @@ func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 		if lc.Network == "unix" {
 			problems = append(problems, name+": ica.transparent intercepts TCP; network: unix cannot carry it")
 		}
+		if len(c.SourceCIDRs) != 0 {
+			problems = append(problems, name+": ica.source_cidrs is single mode's; CIDR mode names its sources in ica.transparent.source_cidrs")
+		}
 		problems = append(problems, c.Transparent.validate(name)...)
+	} else if _, err := parsePrefixes(c.SourceCIDRs); err != nil {
+		problems = append(problems, fmt.Sprintf("%s: ica.source_cidrs: %v", name, err))
 	}
 	if c.EDT && lc.Network == "unix" {
 		problems = append(problems, name+": ica.edt listens on UDP; network: unix cannot carry it")
@@ -409,8 +496,9 @@ type ICALane struct {
 	// Transparent selects CIDR mode, where SourcePrefixes, UpstreamPrefixes
 	// and UpstreamPorts hold the policy and Upstream is empty. In single
 	// mode, Upstream is the configured VDA (host:port; the engine resolves a
-	// hostname once, at start) and SourcePrefixes is empty, which admits any
-	// source.
+	// hostname once, at start) and SourcePrefixes is ica.source_cidrs, which
+	// when empty admits any source.
+	Slots            *ICASlotsConfig
 	Transparent      bool
 	Upstream         string
 	SourcePrefixes   []netip.Prefix
@@ -431,10 +519,13 @@ type ICALane struct {
 // ICARuntime is the resolved top-level block: paths and bounds as the
 // operator wrote them (empty = engine default) plus the overrides.
 type ICARuntime struct {
-	OCRWorker, Tessdata, NERModel, NERORTLibrary string
-	FailureDiagnosticDir                         string
-	MaxSessions, ConnectTimeoutSec               int
-	Options                                      ICAOptions
+	OCRTurboLibrary, OCRTurboDetModel, OCRTurboRecModel, OCRTurboRecDict, OCRTurboClsModel string
+	OCRWorker, Tessdata, NERModel, NERORTLibrary                                           string
+	FailureDiagnosticDir                                                                   string
+	MaxSessions, ConnectTimeoutSec                                                         int
+	ReadinessCapacity                                                                      bool
+	ReadinessHeadroom, DrainTimeoutSec                                                     int
+	Options                                                                                ICAOptions
 	// EDTRetentionSec and EDTReplayBudgetBytes are 0 for the engine's
 	// defaults.
 	EDTRetentionSec      int
@@ -549,8 +640,11 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 	if r == nil {
 		return ICARuntime{}
 	}
-	out := ICARuntime{OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
-		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec}
+	out := ICARuntime{OCRTurboLibrary: r.OCRTurboLibrary, OCRTurboDetModel: r.OCRTurboDetModel,
+		OCRTurboRecModel: r.OCRTurboRecModel, OCRTurboRecDict: r.OCRTurboRecDict, OCRTurboClsModel: r.OCRTurboClsModel,
+		OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
+		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec,
+		ReadinessCapacity: r.ReadinessCapacity, ReadinessHeadroom: r.ReadinessHeadroom, DrainTimeoutSec: r.DrainTimeoutSec}
 	if r.Options != nil {
 		out.Options = *r.Options
 	}
@@ -571,8 +665,18 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error,
 	if ic.Display != nil {
 		lane.Width, lane.Height, lane.ThinwireChannel = ic.Display.Width, ic.Display.Height, uint(ic.Display.ThinwireChannel)
 	}
+	if ic.Slots != nil {
+		c := *ic.Slots
+		c.Names = slices.Clone(c.Names)
+		c.UpstreamCIDRs = slices.Clone(c.UpstreamCIDRs)
+		lane.Slots = &c
+	}
 	if ic.Transparent == nil {
 		lane.Upstream = lc.Upstream
+		var err error
+		if lane.SourcePrefixes, err = parsePrefixes(ic.SourceCIDRs); err != nil {
+			return ICALane{}, fmt.Errorf("%s: ica.source_cidrs: %w", name, err)
+		}
 		return lane, nil
 	}
 	lane.Transparent = true
@@ -622,7 +726,9 @@ func icaLaneNotes(lc ListenerConfig) []string {
 		return nil
 	}
 	var notes []string
-	if ic.Transparent == nil {
+	if ic.Slots != nil {
+		notes = append(notes, fmt.Sprintf("ica: TCP slot mode; ports %d..%d, VDA names resolved on connection, DNS cache at most 30s", ic.Slots.FirstPort, ic.Slots.FirstPort+ic.Slots.Count-1))
+	} else if ic.Transparent == nil {
 		notes = append(notes, fmt.Sprintf("ica: single-VDA mode; every session goes to %s, and the engine resolves that name once at start", lc.Upstream))
 	} else {
 		notes = append(notes, fmt.Sprintf("ica: CIDR mode; the VDA is each connection's original destination within %s on ports %s, admitted from %s",
@@ -779,7 +885,7 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	// suppressed and dropped ride on EDT refusals: how many datagrams the
 	// engine folded into this row, and how many refusal rows it could not
 	// queue.
-	for _, key := range []string{"decision", "stage", "transport", "upstream", "end_cause", "suppressed", "dropped"} {
+	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped"} {
 		if v, ok := e.Data[key]; ok {
 			out.Metadata[key] = fmt.Sprint(v)
 		}
@@ -808,8 +914,11 @@ func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 // the plane renders the form from it and the schema must match across builds.
 func ServableProtocols() []string {
 	out := Protocols()
-	if icaServable() {
-		return out
+	if !icaServable() {
+		out = slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.ICA) })
 	}
-	return slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.ICA) })
+	if registeredMCPGatewayEngine() == nil {
+		out = slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.MCP) })
+	}
+	return out
 }

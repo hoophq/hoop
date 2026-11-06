@@ -474,10 +474,20 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 		return
 	}
+	// The web app reads the targets to show which traffic the rule protects.
+	targets, err := sidecarbind.LoadAll(models.DB, ctx.GetOrgID(), services.SidecarRuleMask)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar targets of the rules: %v", err)
+		return
+	}
 
 	rules := []openapi.DataMaskingRule{}
 	for _, rule := range ruleList {
-		rules = append(rules, *toOpenApi(&rule))
+		out := toOpenApi(&rule)
+		if bound, ok := targets[rule.Name]; ok {
+			out.SidecarTargets = &bound
+		}
+		rules = append(rules, *out)
 	}
 	c.JSON(http.StatusOK, rules)
 }

@@ -134,15 +134,8 @@ func (s *scanner) peek(off int) byte {
 
 // next returns the following token, or ok=false at end of input.
 func (s *scanner) next() (Token, bool) {
-	for {
-		s.skipSpace()
-		if s.pos >= len(s.src) {
-			return Token{}, false
-		}
-		if s.skipComment() {
-			continue
-		}
-		break
+	if !s.skipNoise() {
+		return Token{}, false
 	}
 
 	c := s.src[s.pos]
@@ -235,6 +228,36 @@ func (s *scanner) next() (Token, bool) {
 		s.pos++
 		return Token{Kind: Punct, Text: string(c)}, true
 	}
+}
+
+// skipNoise consumes the spaces and comments before the next token, and
+// reports whether a token follows. It consumes nothing when the cursor
+// already sits on one.
+func (s *scanner) skipNoise() bool {
+	for {
+		s.skipSpace()
+		if s.pos >= len(s.src) {
+			return false
+		}
+		if !s.skipComment() {
+			return true
+		}
+	}
+}
+
+// tokenSpans scans src as scanWith does and returns where each token sits:
+// out[k] is the byte range of the k-th token scanWith returns under the
+// same rules. A Literal keeps no text, so this is how the analyzer reads
+// the one string whose content names a relation; see analyzer.tableChanges.
+func tokenSpans(src string, rules lexRules) [][2]int {
+	s := &scanner{src: src, rules: rules}
+	var out [][2]int
+	for s.skipNoise() {
+		start := s.pos
+		s.next()
+		out = append(out, [2]int{start, s.pos})
+	}
+	return out
 }
 
 func (s *scanner) skipSpace() {

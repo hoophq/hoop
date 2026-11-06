@@ -19,7 +19,7 @@ Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
 |---|---|---|
 | *(none)* / `md` | 40px | **Default — do not pass a size prop** |
 | `xs` | 24px | Micro affordances in dense chrome |
-| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons, as do "Add New Role" in the Configure Resource header and Done in `TestConnectionModal`. |
 | `lg` | 48px | Prominent/hero actions |
 
 Rules:
@@ -30,6 +30,8 @@ Rules:
 - **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
 - Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
   and align automatically.
+- A filter trigger next to a `Select` takes `<Button variant="field">`: input
+  surface, border and placeholder color. Add `data-filled` once it holds a value.
 
 ---
 
@@ -137,6 +139,14 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 ```
 Props: `href` (string), `text` (string).
 
+### `SetupDocsHint`
+Inline "Learn more about `<topic>` setup in our Docs ↗" line under a setup choice, as the CLJS wizard shows it.
+```jsx
+import SetupDocsHint from '@/components/SetupDocsHint'
+
+<SetupDocsHint topic="HashiCorp Vault" href={docsUrl.setup.configuration.secretsManager} />
+```
+
 ### `MethodCard`
 Selectable card for picking an installation/deployment method (icon + label + description).
 ```jsx
@@ -167,7 +177,7 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
-Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
+The icon sits in a rounded square on every page. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
 ```jsx
 <SelectionCard
   image="/images/anthropic-logo.svg"
@@ -221,7 +231,7 @@ import StepAccordion from '@/components/StepAccordion'
 ```
 
 ### `ProtectedRoute` / `GatewayProtectedRoute`
-Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents landing swap. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents swap: with `experimental.agents` off, every agent path (`modes/agentPaths.js`) lands on Sidecars or Reviews. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
 
 ### `Stepper`
 Horizontal step indicator for a multi-page flow (numbered circles joined by a rule). Controlled by the zero-based `active` step; render the step body below it yourself.
@@ -296,10 +306,13 @@ Where an auth page sends the user next: `/client` after login, `/onboarding/setu
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
-`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+`<ByRuleTraffic kind={RULE_KIND_ANALYZER} fetchRule={aiSessionAnalyzerService.getRule} listPath="/features/ai-session-analyzer" agent={<GatewayAiAnalyzerForm />} sidecar={<SidecarAiAnalyzerForm />} />` — picks the analyzer rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Guardrails and masking have one form each and do not use it. Used in `Router.jsx` only.
 
 ### `RuleTrafficBadge` / `NewRuleButton`
-`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
+`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two (analyzer page only).
+
+### `RuleSupportTag`
+`<RuleSupportTag side="sidecar" />` / `side="agent"` — inline "Sidecar only" / "Agent only" marker for a form option that one engine does not run. Put it in an input `label` (`<Group gap="xs">Label <RuleSupportTag side="sidecar" /></Group>`) or in a `Select` `renderOption`. The reasons live in `utils/ruleSupport.js` (`guardrailAgentBlockers`, `maskingAgentBlockers`).
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
@@ -307,8 +320,34 @@ Global resting border color **and height scale** for every Input-based component
 ### `Paper` (theme-level, no wrapper)
 Global border color for `Paper` — and `Card`, which renders through Paper — via `Paper.extend()` in `src/components/Paper/theme.js` (registered in `src/theme.js`). Same story as `Input`: Mantine declares `--paper-border-color` per color scheme directly on the Paper root, out of reach of `cssVariablesResolver`, so a co-located CSS Module rule overrides it on the element. Only visible on instances using `withBorder`; the value matches the app-wide input resting border. To change it, edit `src/components/Paper/Paper.module.css`.
 
+
+Surfaces by role, set in `Paper.module.css` from the theme tokens. Pick a
+`variant` instead of a color:
+
+| `variant` | Use | Border with `withBorder` |
+|-----------|-----|---------------|
+| `subtle` | a card in a page or modal (insight cards) | soft |
+| `outline` | a framed viewer (live tail, RDP player) | soft |
+| `muted` | a gray strip, a "preview not available" card | — |
+| `strong` | a chip or a notice on a subtle surface | — |
+| `accent`, `accent-strong` | AI features (Figma "AI Data Masking") | — |
+| `info`, `warning` | a tinted note (the sidecar `Callout`) | — |
+
+```jsx
+<Paper withBorder variant="subtle" radius="md" p="sm">…</Paper>
+```
+
+### `Code` variants
+`components/Code/theme.js`: `variant="accent"` marks an identifier such as an
+event name (`accent-outline` adds a border); `variant="terminal"` is a dark
+payload block (`<Code block variant="terminal">`).
+
+### `Divider` (theme-level, no wrapper)
+`components/Divider/theme.js` gives every `Divider` the soft border color
+(Mantine's default is `gray-3`, too dark in this theme). A `color` prop still
+overrides it.
 ### `Pill` (theme-level, no wrapper)
-Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. The managed protection-profile pill is `variant="managed"` (indigo), set in the same theme: its styles are inline, so a page class cannot override them.
 
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
@@ -333,7 +372,7 @@ import Avatar from '@/components/Avatar'
 
 <Avatar.Group>
   <Avatar size={24} color="pink" variant="light"><Sparkles size={14} /></Avatar>
-  <Avatar size={24} bg="gray.0" color="gray" variant="light">+2</Avatar>
+  <Avatar size={24} color="gray" variant="light">+2</Avatar>
 </Avatar.Group>
 ```
 `radius` defaults to `xl`; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
@@ -362,7 +401,7 @@ and `ActionMenu.Divider` are re-exported. The header's user menu is the `target`
 > bundles. Revisit if a third drawer appears.
 
 ### `Modal`
-Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
+Application modal dialog wrapping Mantine `Modal` with centered + radius defaults. Every Mantine modal dims the page at 40%, as the CLJS dialogs do (`components/Modal/theme.js`).
 ```jsx
 import Modal from '@/components/Modal'
 import { useDisclosure } from '@mantine/hooks'
@@ -372,6 +411,28 @@ const [opened, { open, close }] = useDisclosure(false)
   {/* form content */}
 </Modal>
 ```
+
+### `ConfirmDialog`
+Confirmation for a destructive or irreversible action: title, body, Cancel and a confirm button. `danger` paints the confirm red; `loading` keeps it open (Cancel, Escape, outside click, close button).
+```jsx
+import ConfirmDialog from '@/components/ConfirmDialog'
+
+<ConfirmDialog opened={opened} title="Delete role?" confirmLabel="Confirm and delete" danger
+  loading={deleting} onConfirm={handleDelete} onClose={close}>
+  <Text size="sm">This cannot be undone.</Text>
+</ConfirmDialog>
+```
+
+### `TestConnectionModal`
+The "Connectivity Check" modal: agent status and connection status, each updating on its own. Presentational; the caller runs the two probes (`GET /connections/:name`, `GET /connections/:name/test`). Used by Configure Role and `/resources`.
+```jsx
+import TestConnectionModal from '@/components/TestConnectionModal'
+
+<TestConnectionModal opened={test.opened} testing={test.testing} connectionName={test.connectionName}
+  agentStatus={test.agentStatus} connectionStatus={test.connectionStatus}
+  durationMs={test.durationMs} errorMessage={test.errorMessage} onClose={closeTest} />
+```
+`agentStatus`: `checking | online | offline`. `connectionStatus`: `checking | successful | failed`.
 
 ### `Select`
 Single-value select input.
@@ -461,6 +522,8 @@ import SourcedInput from '@/components/SourcedInput'
 <SourcedInput size="sm" {...props} />
 ```
 Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+`tooltip` adds a help icon next to the label that shows the text on hover (the resource setup wizard passes the catalog field description).
+The picker keeps the width of its longest option, so inputs line up. The label reads `--input-label-size` and its gap `--input-label-gap`, so a page that resizes Mantine labels resizes these too.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -595,7 +658,7 @@ import NumberInput from '@/components/NumberInput'
 ```
 
 ### `TagsInput`
-Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit. Mantine splits on `,` and drops repeated tags by default; command arguments turn both off.
 ```jsx
 import TagsInput from '@/components/TagsInput'
 
@@ -603,7 +666,8 @@ import TagsInput from '@/components/TagsInput'
   label="Command Arguments"
   value={args}
   onChange={setArgs}
-  splitChars={[',']}
+  splitChars={[]}
+  allowDuplicates
 />
 ```
 
@@ -645,6 +709,29 @@ Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChang
 
 ---
 
+### `PaginatedSelect`
+Single-value sibling of `PaginatedMultiSelect`: a select over a **paginated, server-searched** option source, with the search box in the dropdown and infinite scroll. Controlled (no fetching). `onChange` receives the whole option; `selectedLabel` names a value that is not on the loaded pages. The CMDB fields of the Jira prompt gate use it.
+```jsx
+import PaginatedSelect from '@/components/PaginatedSelect'
+
+<PaginatedSelect
+  label="Database server"
+  required
+  value={pick?.value ?? null}
+  selectedLabel={pick?.label ?? null}
+  onChange={(option) => setPick(option)}
+  options={rows.map((r) => ({ value: r.id, label: r.name }))}
+  loading={loading}
+  hasMore={hasMore}
+  onLoadMore={loadMore}
+  searchValue={search}
+  onSearchChange={setSearch}
+/>
+```
+Props: `label`, `placeholder`, `searchPlaceholder`, `nothingFound`, `required`, `error`, `disabled`, `value`, `selectedLabel`, `onChange(option)`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`, `comboboxProps`.
+
+---
+
 ### `ConnectionsMultiSelect`
 Resource-role (connection) multi-select with infinite-scroll pagination + server search. Composes `usePaginatedConnections` + `PaginatedMultiSelect` and resolves labels for already-selected ids on demand via `?connection_ids=` (so edit-mode chips show names without loading every connection). This is the React port of CLJS `connections-select` — use it anywhere a feature needs a connection picker.
 ```jsx
@@ -655,7 +742,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
   onChange={(ids) => setField({ connectionIds: ids })}
 />
 ```
-Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`, `disabled`.
 
 ---
 
@@ -774,17 +861,26 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
-> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
-> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
-> protection-profile attributes render as indigo award pills (removable and
-> re-addable like any other — removing one detaches the role from the
-> profile on save), user attributes as plain pills. Deliberately NOT built on
-> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
-> individual selected pills) nor on `components/PaginatedMultiSelect` (its
-> contract is pagination/server-search specific, and it also only renders
-> uniform pills). When the React resource-creation wizard needs the same
-> control, graduate this to `src/components/` and consider extracting a
-> shared PillsInput base with `PaginatedMultiSelect`.
+> **The credential renderers read `useCredentialsStore`**
+> (`sections/credentials/store.js`), not `useConfigureRoleStore`. With no
+> provider it is the Configure Role store. The resource setup wizard wraps each
+> role in `CredentialsStoreProvider` with a store of its own
+> (`pages/Resources/Setup/roleCredentials.js`); `createMode: true` there makes
+> `PredefinedFields` render every field as a new, masked input. The secret
+> actions both stores share are `utils/credentialsSlice.js`.
+
+### `AttributesSelect`
+Role attributes picker (Configure Role, resource setup wizard). Hoop-managed
+protection-profile attributes (`managed: true`) render as indigo award pills,
+removable and re-addable like any other; user attributes as plain pills.
+`onCreate(name)` adds a "Create" option for a search that matches nothing.
+```jsx
+import AttributesSelect from '@/components/AttributesSelect'
+
+<AttributesSelect options={options} value={selected} onChange={setSelected} onCreate={createAttribute} />
+```
+Not built on `MultiSelect` (it cannot render one pill differently) nor on
+`PaginatedMultiSelect` (its contract is server search and paging).
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -831,6 +927,9 @@ credential). Expiry side effects belong to the owning store, not to this hook �
 const { label } = useCountdown(credential.expire_at)
 ```
 
+### `useInfiniteScroll(onLoadMore, enabled = true)`
+Returns a ref for a sentinel at the end of a list; `onLoadMore` runs when it scrolls into view. Pass `enabled = hasMore && !loading`, so a page that loads while the sentinel stays visible asks for the next one. Used by `/resources`.
+
 ### `usePaginatedConnections({ pageSize = 50 })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
 ```jsx
@@ -850,7 +949,7 @@ directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
-useAuthStore.getState().token
+useAuthStore.getState().isAuthenticated
 ```
 
 Non-obvious notes only:
@@ -886,7 +985,8 @@ Non-obvious notes only:
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `usePendingApprovalsStore` — the sidebar's pending approvals count. One call
   to `GET /approvals/count?status=PENDING`; never count the list. Read on
-  navigation and window focus (`layout/Sidebar/usePendingApprovalsCount`,
+  navigation, window focus and `review.created` (with
+  `experimental.review_notifications` on) (`layout/Sidebar/usePendingApprovalsCount`,
   called once in `GatewayLayout` for both sidebars) and after every `decide`;
   never while the sidebar is collapsed. Resets on logout.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
@@ -913,6 +1013,14 @@ Non-obvious notes only:
   revisit cannot open on a record minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
+- `useJiraPromptStore` — the Jira prompt gate (`features/JiraPromptGate`), the
+  React port of the CLJS runtime prompt. A caller runs `load(connectionName)`
+  before it runs something on a resource: `{ needed: false, fields }` means add
+  `fields` to the request now, `{ needed: true }` means open `<JiraPromptGate>`,
+  whose `onSubmit` gets `{ jira_fields }`, and `null` means a newer load replaced
+  this one. CMDB picks go in `jira_fields` too; the gateway reads nothing else.
+  The pure parts (`cascade.js`, `jiraFields.js`) are tested against fixtures the
+  CLJS code writes (`npm --prefix ../webapp run fixtures:jira`). Resets on logout.
 
 ---
 
@@ -924,9 +1032,10 @@ when adding one, follow the pattern in `services/agents.js`.
 
 Non-obvious notes only:
 
-- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
-  URL + logout). Every other service imports it; never call axios directly.
-- `analytics.js` — Segment (`identify()` only today), not a gateway API
+- `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
+  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
+  imports it; never call axios directly.
+- `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
 - `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no

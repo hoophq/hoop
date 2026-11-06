@@ -238,6 +238,9 @@ func TestWantsSidecarLogin(t *testing.T) {
 		{"--login with --no-login", sidecarLoginRun{login: true, noLogin: true}, false, "contradict"},
 		{"--login with a token", sidecarLoginRun{login: true, credential: true}, false, "drop --token"},
 		{"--login with --validate", sidecarLoginRun{login: true, oneShot: true}, false, "does not combine"},
+		{"--free-standalone", sidecarLoginRun{freeStandalone: true}, false, ""},
+		{"--no-login with --free-standalone", sidecarLoginRun{noLogin: true, freeStandalone: true}, false, ""},
+		{"--login with --free-standalone", sidecarLoginRun{login: true, freeStandalone: true}, true, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := wantsSidecarLogin(tt.run)
