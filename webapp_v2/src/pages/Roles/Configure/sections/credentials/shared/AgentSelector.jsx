@@ -10,7 +10,13 @@ import { sortAgents } from '@/pages/Agents/filters'
 // trigger a fetch on mount and read the cached state. Every bespoke
 // renderer ends with this section — keeps the agent picker in a
 // consistent position across the credentials tab.
+// The resource setup wizard picks one agent for every role.
 export default function AgentSelector() {
+  const createMode = useCredentialsStore((s) => s.createMode)
+  return createMode ? null : <AgentPicker />
+}
+
+function AgentPicker() {
   const agents = useAgentStore((s) => s.agents)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
   const agentId = useCredentialsStore((s) => s.drafts.agent_id)

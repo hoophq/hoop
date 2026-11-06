@@ -139,6 +139,14 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 ```
 Props: `href` (string), `text` (string).
 
+### `SetupDocsHint`
+Inline "Learn more about `<topic>` setup in our Docs ↗" line under a setup choice, as the CLJS wizard shows it.
+```jsx
+import SetupDocsHint from '@/components/SetupDocsHint'
+
+<SetupDocsHint topic="HashiCorp Vault" href={docsUrl.setup.configuration.secretsManager} />
+```
+
 ### `MethodCard`
 Selectable card for picking an installation/deployment method (icon + label + description).
 ```jsx
@@ -169,7 +177,7 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
-Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
+The icon sits in a rounded square on every page. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
 ```jsx
 <SelectionCard
   image="/images/anthropic-logo.svg"
@@ -650,7 +658,7 @@ import NumberInput from '@/components/NumberInput'
 ```
 
 ### `TagsInput`
-Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit. Mantine splits on `,` and drops repeated tags by default; command arguments turn both off.
 ```jsx
 import TagsInput from '@/components/TagsInput'
 
@@ -658,7 +666,8 @@ import TagsInput from '@/components/TagsInput'
   label="Command Arguments"
   value={args}
   onChange={setArgs}
-  splitChars={[',']}
+  splitChars={[]}
+  allowDuplicates
 />
 ```
 
