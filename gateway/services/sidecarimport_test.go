@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -256,5 +257,63 @@ func TestSplitReturnsAFailedNameCheck(t *testing.T) {
 	var check ErrImportedRuleNameCheck
 	if !errors.Is(err, boom) || !errors.As(err, &check) || items != nil {
 		t.Fatalf("want the check's error as ErrImportedRuleNameCheck and no items, got %v, %d items", err, len(items))
+	}
+}
+
+// A standalone file with a top-level column rule and an mcp lane loads: the
+// sidecar skips the rule there. The import binds it to the other inheriting
+// lanes only, so each binding passes the config-save check and the served
+// document still loads.
+func TestImportDoesNotBindAColumnMaskRuleToAnMCPLane(t *testing.T) {
+	const columnRule = `{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}`
+	const entityRule = `{"name":"email","entities":["EMAIL_ADDRESS"],"strategy":"redact"}`
+	const lanes = `"listeners":[{"name":"appdb","protocol":"postgres","listen":"127.0.0.1:15432","upstream":"db:5432"},` +
+		`{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://h/mcp"}]`
+	for name, c := range map[string]struct {
+		rules string
+		want  map[string][]string // rule -> listeners
+	}{
+		"columns only": {`[` + columnRule + `]`, map[string][]string{"sc-ssn-column": {"appdb"}}},
+		"columns and entities": {`[` + columnRule + `,` + entityRule + `]`,
+			map[string][]string{"sc-ssn-column": {"appdb"}, "sc-email": {"appdb", "tools"}}},
+	} {
+		file := []byte(`{"mask":{"rules":` + c.rules + `},` + lanes + `}`)
+		if err := daemon.CheckConfigBytes(file); err != nil {
+			t.Fatalf("%s: the standalone file: %v", name, err)
+		}
+		cfg, err := ParseSidecarConfiguration(file)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		stripped, items, err := SplitSidecarConfiguration("sc", cfg, func(SidecarRuleKind, string) (bool, error) { return false, nil })
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := map[string][]string{}
+		var masking []models.BoundRule
+		for _, it := range items {
+			for _, tg := range it.Targets {
+				got[it.Name] = append(got[it.Name], tg.Listener)
+				masking = append(masking, models.BoundRule{RuleName: it.Name, ListenerName: tg.Listener, Spec: it.Spec})
+				lane := stripped.Listeners[slices.IndexFunc(stripped.Listeners, func(l daemon.ListenerConfig) bool { return l.Name == tg.Listener })]
+				if err := validateSpecForLane(it.Kind, it.Name, it.Spec, "sc", lane, false); err != nil {
+					t.Errorf("%s: a later config save would refuse %q on %q: %v", name, it.Name, tg.Listener, err)
+				}
+			}
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: bindings %v, want %v", name, got, c.want)
+		}
+		composed, err := foldSidecarRules(stripped, nil, masking, nil)
+		if err != nil {
+			t.Fatalf("%s: fold: %v", name, err)
+		}
+		served, err := json.Marshal(composed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := daemon.CheckConfigBytes(served); err != nil {
+			t.Errorf("%s: the sidecar refuses the served document: %v", name, err)
+		}
 	}
 }

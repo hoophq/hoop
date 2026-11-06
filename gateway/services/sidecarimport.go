@@ -166,10 +166,12 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 	disabled := func(m *daemon.MaskConfig) bool { return m != nil && m.Enabled != nil && !*m.Enabled }
 
 	var inheriting []string
+	mcp := map[string]bool{}
 	for i := range cfg.Listeners {
 		l := &cfg.Listeners[i]
 		if !owns(*l) {
 			inheriting = append(inheriting, l.Name)
+			mcp[l.Name] = isMCPListener(*l)
 			continue
 		}
 		if disabled(l.Mask) || isEmptyList(l.Mask.Rules) {
@@ -205,12 +207,16 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 		return nil, fmt.Errorf("the top-level mask rules are not a list: %w", err)
 	}
 	for n, e := range entries {
-		if len(inheriting) == 0 {
-			break
-		}
 		targets := make([]ImportedTarget, 0, len(inheriting))
 		for _, lane := range inheriting {
+			// The sidecar skips an inherited column rule on an mcp lane.
+			if mcp[lane] && daemon.MaskRuleNamesColumns(e) {
+				continue
+			}
 			targets = append(targets, ImportedTarget{Listener: lane, Position: n})
+		}
+		if len(targets) == 0 {
+			continue
 		}
 		ruleName, err := name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n))
 		if err != nil {
