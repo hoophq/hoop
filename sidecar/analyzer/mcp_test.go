@@ -62,38 +62,39 @@ func TestMCPBuilderSendsTheToolNameAndArguments(t *testing.T) {
 		t.Fatalf("SQL from a tool call: %q, %v", sql.Text, ok)
 	}
 
-	carrier := mcpCall("execute_sql", `{"query":"UPDATE t SET a = 1"}`)
+	carrier := mcpCall("execute_sql", `{"query":"SELECT 1","note":"DROP TABLE customers"}`)
 	carrier.Metadata[inspect.MetadataMCPSQLStatements] = "1"
+	if c, ok := b.Build(carrier, analyzer.DefaultMaxInputBytes); !ok || !strings.Contains(c.Text, "Tool: execute_sql") || !strings.Contains(c.Text, `"note":"DROP TABLE customers"`) {
+		t.Fatalf("the call of a SQL tool: %q, %v", c.Text, ok)
+	}
 	list := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromClient, Operation: inspect.OpShow,
 		Text: "echo: Echo\n", Metadata: map[string]string{inspect.MetadataMCPMethod: "tools/list"}}
-	for name, st := range map[string]inspect.Statement{"the call that carried SQL": carrier, "a catalog": list} {
-		if c, ok := b.Build(st, analyzer.DefaultMaxInputBytes); ok {
-			t.Errorf("%s was sent: %q", name, c.Text)
-		}
+	if c, ok := b.Build(list, analyzer.DefaultMaxInputBytes); ok {
+		t.Errorf("a catalog was sent: %q", c.Text)
 	}
 }
 
-// A call to a SQL tool is one model call per SQL statement, never one more
-// for the call. A trigger on call or on the tool name selects that SQL.
-func TestAnMCPSQLToolCallIsOneModelCallPerStatement(t *testing.T) {
-	call := mcpCall("execute_sql", `{"query":"UPDATE t SET a = 1"}`)
+// A call to a SQL tool is one model call for the call and one per SQL
+// statement. A trigger on call or on the tool name selects both.
+func TestAnMCPSQLToolCallIsOneModelCallPlusOnePerStatement(t *testing.T) {
+	call := mcpCall("execute_sql", `{"query":"UPDATE t SET a = 1","note":"DROP TABLE customers"}`)
 	call.Metadata[inspect.MetadataMCPSQLStatements] = "1"
 	stmts := []inspect.Statement{call, mcpSQL("execute_sql", "UPDATE t SET a = 1", inspect.OpUpdate, "t")}
 	ops := func(o ...inspect.Operation) []inspect.Operation { return o }
 	for _, tc := range []struct {
-		name    string
-		trigger analyzer.Trigger
-		calls   int
+		name      string
+		trigger   analyzer.Trigger
+		call, sql bool
 	}{
-		{"every statement", analyzer.Trigger{All: true}, 1},
-		{"call", analyzer.Trigger{Operations: ops(inspect.OpCall)}, 1},
-		{"the SQL operation", analyzer.Trigger{Operations: ops(inspect.OpUpdate)}, 1},
-		{"the tool name", analyzer.Trigger{Tables: []string{"EXECUTE_SQL"}}, 1},
-		{"the SQL table", analyzer.Trigger{Tables: []string{"t"}}, 1},
-		{"another operation", analyzer.Trigger{Operations: ops(inspect.OpDelete)}, 0},
-		{"another tool", analyzer.Trigger{Tables: []string{"list_tables"}}, 0},
-		{"excluding the tool", analyzer.Trigger{All: true, Exclude: []analyzer.TriggerItem{{Tables: []string{"execute_sql"}}}}, 0},
-		{"excluding call keeps the SQL", analyzer.Trigger{All: true, Exclude: []analyzer.TriggerItem{{Operations: ops(inspect.OpCall)}}}, 1},
+		{"every statement", analyzer.Trigger{All: true}, true, true},
+		{"call", analyzer.Trigger{Operations: ops(inspect.OpCall)}, true, true},
+		{"the SQL operation", analyzer.Trigger{Operations: ops(inspect.OpUpdate)}, false, true},
+		{"the tool name", analyzer.Trigger{Tables: []string{"EXECUTE_SQL"}}, true, true},
+		{"the SQL table", analyzer.Trigger{Tables: []string{"t"}}, false, true},
+		{"another operation", analyzer.Trigger{Operations: ops(inspect.OpDelete)}, false, false},
+		{"another tool", analyzer.Trigger{Tables: []string{"list_tables"}}, false, false},
+		{"excluding the tool", analyzer.Trigger{All: true, Exclude: []analyzer.TriggerItem{{Tables: []string{"execute_sql"}}}}, false, false},
+		{"excluding call keeps the SQL", analyzer.Trigger{All: true, Exclude: []analyzer.TriggerItem{{Operations: ops(inspect.OpCall)}}}, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &recordingProvider{}
@@ -101,11 +102,20 @@ func TestAnMCPSQLToolCallIsOneModelCallPerStatement(t *testing.T) {
 			for _, st := range stmts {
 				ev.Evaluate(st)
 			}
-			if len(p.prompts) != tc.calls {
-				t.Fatalf("the model was called %d times, want %d: %q", len(p.prompts), tc.calls, p.prompts)
+			var want []string
+			if tc.call {
+				want = append(want, `"note":"DROP TABLE customers"`)
 			}
-			if tc.calls == 1 && !strings.Contains(p.prompts[0], "UPDATE t SET a = 1") {
-				t.Errorf("the call does not carry the SQL: %q", p.prompts[0])
+			if tc.sql {
+				want = append(want, "Operation: update")
+			}
+			if len(p.prompts) != len(want) {
+				t.Fatalf("the model was called %d times, want %d: %q", len(p.prompts), len(want), p.prompts)
+			}
+			for i, w := range want {
+				if !strings.Contains(p.prompts[i], w) {
+					t.Errorf("model call %d does not carry %q: %q", i, w, p.prompts[i])
+				}
 			}
 		})
 	}
@@ -116,8 +126,11 @@ func TestAHoldOnAnMCPToolCallFilesNothing(t *testing.T) {
 	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "r1", Status: "PENDING"}}
 	ev := holdingEvaluator(t, rev, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
 	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
-	if !v.Denied || !strings.Contains(v.Message, "an mcp lane does not hold a tool call for approval yet") || v.Review != nil {
+	if !v.Denied || v.Message != "call refused because an mcp lane cannot hold a call for approval yet" || v.Review != nil {
 		t.Fatalf("verdict %+v", v)
+	}
+	if mode := v.Annotations[analyzer.MetadataReviewMode]; mode != "" {
+		t.Errorf("review_mode %q on a call nothing held", mode)
 	}
 	if sent := rev.statements(); len(sent) != 0 {
 		t.Fatalf("a held tool call was filed: %q", sent)

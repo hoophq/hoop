@@ -530,8 +530,8 @@ func (spannerBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool
 	return grpcBuilder{}.Build(stmt, maxBytes)
 }
 
-// mcpBuilder renders a tools/call as its tool name and arguments. SQL from an
-// mcp_gateway.sql tool renders as SQL and its call declines, as with http.sql.
+// mcpBuilder renders a tools/call as its tool name and arguments, and each SQL
+// statement read out of an mcp_gateway.sql tool's call as SQL.
 type mcpBuilder struct{}
 
 func (mcpBuilder) Protocol() inspect.Protocol { return inspect.MCP }
@@ -541,7 +541,7 @@ func (mcpBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 		return SQLBuilder{Protocol_: inspect.MCP}.Build(stmt, maxBytes)
 	}
 	tool := stmt.Metadata[inspect.MetadataMCPTool]
-	if stmt.Operation != inspect.OpCall || tool == "" || stmt.Metadata[inspect.MetadataMCPSQLStatements] != "" {
+	if stmt.Operation != inspect.OpCall || tool == "" {
 		return Content{}, false
 	}
 	args, ok := strings.CutPrefix(stmt.Text, tool+"\n")

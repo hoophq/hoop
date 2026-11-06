@@ -163,7 +163,7 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 }
 
 // mcpSQLTool names the tool whose call carried stmt, when stmt is SQL an mcp
-// lane read out of its arguments; the call is not sent to the model.
+// lane read out of its arguments.
 func mcpSQLTool(stmt inspect.Statement) string {
 	if _, ok := stmt.Metadata[inspect.MetadataMCPSQLIndex]; !ok {
 		return ""

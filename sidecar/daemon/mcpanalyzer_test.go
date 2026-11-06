@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -17,12 +19,15 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-// toolRiskProvider rates a call to delete_customer high and anything else
-// low, and keeps what it was sent. err set fails every call.
+// toolRiskProvider rates a call to delete_customer or a DROP TABLE high and
+// anything else low, and keeps what it was sent. err set fails every call.
+// With entered set, each call reports there and answers once release closes.
 type toolRiskProvider struct {
 	mu      sync.Mutex
 	prompts []string
 	err     error
+	entered chan struct{}
+	release chan struct{}
 }
 
 func (p *toolRiskProvider) Name() string { return "stub" }
@@ -31,11 +36,18 @@ func (p *toolRiskProvider) Classify(_ context.Context, _, content string) (*anal
 	p.mu.Lock()
 	p.prompts = append(p.prompts, content)
 	p.mu.Unlock()
+	if p.entered != nil {
+		p.entered <- struct{}{}
+		<-p.release
+	}
 	if p.err != nil {
 		return nil, p.err
 	}
-	if strings.Contains(content, "Tool: delete_customer") {
+	switch {
+	case strings.Contains(content, "Tool: delete_customer"):
 		return &analyzer.Result{RiskLevel: analyzer.RiskHigh, Title: "deletes a customer"}, nil
+	case strings.Contains(content, "DROP TABLE"):
+		return &analyzer.Result{RiskLevel: analyzer.RiskHigh, Title: "drops a table"}, nil
 	}
 	return &analyzer.Result{RiskLevel: analyzer.RiskLow, Title: "reads"}, nil
 }
@@ -119,7 +131,7 @@ func TestMCPLaneAnalyzerHoldRefusesTheCall(t *testing.T) {
 	ls, sink := openMCPAnalyzerSession(t, `{"high":"require_approval","approval_rule":"tool-approvers"}`, "", &toolRiskProvider{}, cp, nil)
 	ctx := context.Background()
 	if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Rule != "tools" ||
-		!strings.Contains(v.Message, "an mcp lane does not hold a tool call for approval yet") {
+		v.Message != "call refused because an mcp lane cannot hold a call for approval yet" {
 		t.Fatalf("held call verdict: %+v", v)
 	}
 	if len(*calls) != 0 {
@@ -130,6 +142,15 @@ func TestMCPLaneAnalyzerHoldRefusesTheCall(t *testing.T) {
 	}
 	if r := judged(sink)[0]; r.Allowed || r.Metadata[policy.AnnotationRiskAction] != string(analyzer.ActionRequireReview) {
 		t.Fatalf("held row: %+v", r)
+	}
+
+	cfg, err := LoadConfigBytes([]byte(`{"analyzer":{"provider":"stub","model":"m"},"listeners":[{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","analyzer":{"high":"require_approval"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.lic = licensed(t)
+	if _, err := buildLanes(cfg, nil, &analyzerDeps{cfg: cfg.Analyzer, provider: &toolRiskProvider{}}); err == nil || !strings.Contains(err.Error(), "no control plane") {
+		t.Fatalf("a hold with no plane and no terminal reviewer built: %v", err)
 	}
 }
 
@@ -174,21 +195,85 @@ func TestMCPLaneAnalyzerProviderFailure(t *testing.T) {
 	}
 }
 
-// On a SQL tool the model reads the SQL, once, and not the call around it.
-func TestMCPLaneAnalyzerReadsTheSQLOfASQLTool(t *testing.T) {
+// On a SQL tool the model reads the call, then each SQL statement as SQL.
+// An argument besides the SQL reaches the model with the call.
+func TestMCPLaneAnalyzerReadsTheCallAndTheSQLOfASQLTool(t *testing.T) {
 	p := &toolRiskProvider{}
 	ls, sink := openMCPAnalyzerSession(t, `{"trigger":{"operations":["call"]},"high":"block"}`,
 		`{"sql":{"execute_sql":{"argument":"query","dialect":"googlesql"}}}`, p, nil, nil)
-	if v := ls.ToolCall(context.Background(), "execute_sql", []byte(`{"query":"UPDATE ds.t SET a = 1 WHERE true"}`)); !v.Allowed {
+	ctx := context.Background()
+	if v := ls.ToolCall(ctx, "execute_sql", []byte(`{"query":"UPDATE ds.t SET a = 1 WHERE true"}`)); !v.Allowed {
 		t.Fatalf("verdict %+v", v)
 	}
 	sent := p.sent()
-	if len(sent) != 1 || !strings.Contains(sent[0], "Operation: update") || !strings.Contains(sent[0], "UPDATE ds.t SET a = 1 WHERE true") || strings.Contains(sent[0], "Tool:") {
+	if len(sent) != 2 || sent[0] != "Protocol: mcp\nTool: execute_sql\n\nArguments:\n{\"query\":\"UPDATE ds.t SET a = 1 WHERE true\"}" ||
+		!strings.Contains(sent[1], "Operation: update") || !strings.Contains(sent[1], "UPDATE ds.t SET a = 1 WHERE true") || strings.Contains(sent[1], "Tool:") {
 		t.Fatalf("the model was sent %q", sent)
 	}
-	if rows := judged(sink); len(rows) != 2 || rows[0].Metadata[analyzer.MetadataAIStatus] != analyzer.StatusSkipped ||
-		rows[1].Metadata[analyzer.MetadataAIStatus] != analyzer.StatusOK || rows[1].Metadata[policy.AnnotationRiskLevel] != "low" {
-		t.Fatalf("rows %+v", rows)
+	for i, r := range judged(sink) {
+		if r.Metadata[analyzer.MetadataAIStatus] != analyzer.StatusOK || r.Metadata[policy.AnnotationRiskLevel] != "low" {
+			t.Fatalf("row %d: %+v", i, r)
+		}
+	}
+
+	v := ls.ToolCall(ctx, "execute_sql", []byte(`{"query":"SELECT 1","note":"DROP TABLE customers"}`))
+	if v.Allowed || v.Rule != "tools" || v.Message != "drops a table" {
+		t.Fatalf("the call with a risky argument: %+v", v)
+	}
+	if sent := p.sent()[2:]; len(sent) != 1 || !strings.Contains(sent[0], `"note":"DROP TABLE customers"`) {
+		t.Fatalf("the model was sent %q", sent)
+	}
+}
+
+// Two calls of one session reach the model together, and Close waits for a
+// call in flight before it ends the session.
+func TestMCPLaneAnalyzerCallsOfOneSessionRunTogether(t *testing.T) {
+	p := &toolRiskProvider{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	ls, sink := openMCPAnalyzerSession(t, `{"high":"block"}`, "", p, nil, nil)
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	verdicts := make([]MCPVerdict, 2)
+	for i := range verdicts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			verdicts[i] = ls.ToolCall(ctx, "echo", []byte(`{"n":`+strconv.Itoa(i)+`}`))
+		}()
+	}
+	for i := range verdicts {
+		select {
+		case <-p.entered:
+		case <-time.After(5 * time.Second):
+			close(p.release)
+			t.Fatalf("call %d did not reach the model while the other waited there", i+1)
+		}
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		ls.Close(ctx)
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		close(p.release)
+		t.Fatal("Close returned while two calls were in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(p.release)
+	wg.Wait()
+	<-closed
+	for i, v := range verdicts {
+		if !v.Allowed {
+			t.Errorf("call %d: %+v", i, v)
+		}
+	}
+	if v := ls.ToolCall(ctx, "echo", []byte(`{}`)); v.Allowed || v.Message != "session closed" {
+		t.Fatalf("a call after Close: %+v", v)
+	}
+	events := sink.Events()
+	if len(events) == 0 || events[len(events)-1].Kind != audit.KindSessionEnd || len(judged(sink)) != 2 {
+		t.Fatalf("the trail does not end with the session after both calls: %+v", events)
 	}
 }
 

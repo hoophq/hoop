@@ -3516,7 +3516,9 @@ The model reads the tool name and the arguments JSON, cut to
   `denied by the hoop sidecar (rule <listener>): <message>`. The session
   stays open.
 - A hold (`require_approval`) refuses the call and files no approval
-  request: the lane cannot hold a tool call yet (ENG-967).
+  request: the lane cannot hold a tool call yet (ENG-967). A sidecar with a
+  hold still needs a control plane and an `approval_rule`, or a person
+  running `hoop start sidecar` in a terminal, to start.
 - A provider failure follows `fail_open`, as on the other lanes.
 - The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
   and `ai_status`.
@@ -3563,9 +3565,10 @@ tables of the SQL, and `require_table_match` denies a SQL statement that
 names none. To scope a rule to one tool, use OPA or a `metadata` rule on
 `mcp.tool`. Observe mode records all 1 + N.
 
-The analyzer reads each SQL statement as SQL, as on an `http.sql` lane, and
-not the call. A trigger selects the SQL by its own operation and tables, and
-also by `call` or by the tool name in `tables`.
+The analyzer reads the call, as any other call, then each SQL statement as
+SQL, as on an `http.sql` lane: 1 + N model calls. A trigger selects the SQL by
+its own operation and tables, and also by `call` or by the tool name in
+`tables`.
 
 SQL the lexer cannot read is `operation: unknown`, as on a SQL lane:
 `EXECUTE IMMEDIATE`, a script loop or block, `EXPORT DATA`. `sql.incomplete`
