@@ -695,11 +695,6 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
-			_, _, mc := cfg.resolve(ln.cfg)
-			_, skipped := mcpMask(ln.cfg, mc)
-			for _, rule := range skipped {
-				notes = append(notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, ln.name))
-			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -1521,8 +1516,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
+		var skippedMask []string
 		if isMCPGateway(lc) {
-			mc, _ = mcpMask(lc, mc)
+			mc, skippedMask = mcpMask(lc, mc)
 		}
 		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
 		if err != nil {
@@ -1540,6 +1536,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+		}
+		for _, rule := range skippedMask {
+			ln.notes = append(ln.notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, name))
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see

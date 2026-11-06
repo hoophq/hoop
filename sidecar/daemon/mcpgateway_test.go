@@ -238,7 +238,7 @@ func (p recordingPlugin) BuildMasker(raw []byte) (gate.Masker, error) {
 
 // A mask rule that names columns never fires on an mcp lane. Validate refuses
 // one in the lane's own mask block. An inherited one passes, as on 1.290, but
-// the lane's masker never gets it and -validate notes it.
+// the lane's masker never gets it, and -validate and the startup log note it.
 func TestAnMCPLaneRefusesColumnMaskRules(t *testing.T) {
 	const columnRule = `{"name":"by-column","columns":["email"]}`
 	const entityRule = `{"name":"pii","entities":["EMAIL_ADDRESS"]}`
@@ -283,10 +283,16 @@ func TestAnMCPLaneRefusesColumnMaskRules(t *testing.T) {
 		if !slices.Equal(seen, want) {
 			t.Errorf("%s: maskers built from %q, want %q", name, seen, want)
 		}
-		notes := strings.Join(info[0].Notes, "\n")
+		// Run logs a lane's notes as warnings at startup.
+		lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"EMAIL_ADDRESS"}}, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 		note := `top-level mask rule "by-column" names columns and does not apply to lane "github"`
-		if got := strings.Contains(notes, note); got != (c.note != "") {
-			t.Errorf("%s: notes %q", name, notes)
+		for _, notes := range [][]string{info[0].Notes, lanes[0].notes} {
+			if got := slices.ContainsFunc(notes, func(n string) bool { return strings.Contains(n, note) }); got != (c.note != "") {
+				t.Errorf("%s: notes %q", name, notes)
+			}
 		}
 	}
 }
