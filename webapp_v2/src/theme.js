@@ -69,8 +69,12 @@ export function cssVariablesResolver(theme) {
       '--hoop-tint-pink': 'var(--mantine-color-pink-0)',
       '--hoop-tint-violet': 'var(--mantine-color-violet-0)',
       '--hoop-tint-indigo': 'var(--mantine-color-indigo-0)',
+      // The header of an open settings card (the analyzer's approver card).
+      '--hoop-tint-green': 'var(--mantine-color-green-0)',
       // A border that must stand out: a hovered card, a waiting frame, a form panel.
       '--hoop-border-strong': 'var(--mantine-color-gray-2)',
+      // The outline of a selected option card (a radio card).
+      '--hoop-border-selected': 'var(--mantine-color-indigo-6)',
       // The hover of a strong surface (the header's gray pill).
       '--hoop-surface-strong-hover': 'var(--mantine-color-gray-2)',
       // A faint alpha overlay that keeps its contrast on any fill: Figma Neutral

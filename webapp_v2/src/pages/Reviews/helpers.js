@@ -44,6 +44,17 @@ export const filterFromSearch = (searchParams) =>
 
 export const isSidecarReview = (review) => Boolean(review?.listener_name)
 
+// Set on a review filed for one risk level of an analyzer rule.
+const RISK_LEVEL = {
+  high: { label: 'High risk', color: 'red' },
+  medium: { label: 'Medium risk', color: 'yellow' },
+  low: { label: 'Low risk', color: 'green' },
+}
+export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
+
+// The table's rule cell: the approval rule, else the risk level.
+export const ruleLabel = (review) => review?.access_request_rule_name ?? riskLevel(review)?.label ?? null
+
 // Only the groups that decided. A group still pending carries no reviewer and
 // no date, and the review's own status already says nobody has acted.
 export const decidedGroups = (review) =>

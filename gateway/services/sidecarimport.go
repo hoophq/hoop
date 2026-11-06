@@ -261,7 +261,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		}
 		rule := daemon.LaneAnalyzerConfig{
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
-			LowRisk: base.LowRisk, Prompt: base.Prompt, Message: base.Message,
+			LowRisk: base.LowRisk, Approvers: base.Approvers, Prompt: base.Prompt, Message: base.Message,
 			ApprovalRule: base.ApprovalRule, ReviewMode: base.ReviewMode,
 			MatchIgnore: base.MatchIgnore,
 		}
@@ -284,7 +284,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			Targets: []ImportedTarget{{Listener: l.Name}}})
 
 		base.Trigger = nil
-		base.HighRisk, base.MediumRisk, base.LowRisk = "", "", ""
+		base.HighRisk, base.MediumRisk, base.LowRisk, base.Approvers = "", "", "", nil
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
 		base.MatchIgnore = nil
 		l.Analyzer = &base
