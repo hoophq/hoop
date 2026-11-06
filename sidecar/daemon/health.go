@@ -23,6 +23,73 @@ import (
 // deployment that declares it, not to a document a control plane serves.
 const HealthListenEnv = "HOOP_SIDECAR_HEALTH_LISTEN"
 
+// checkHealthListen refuses a health address that is not host:port, or whose
+// port another listener of cfg also binds: a lane, a lane's ICA slot range,
+// the admin server or the MCP server. Run calls it before anything binds, so
+// the operator reads the conflict instead of a bind error from whichever
+// listener lost the race.
+func checkHealthListen(cfg *Config, addr string) error {
+	if addr == "" {
+		return nil
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("%s %q: want host:port: %w", HealthListenEnv, addr, err)
+	}
+	port, err := net.LookupPort("tcp", p)
+	if err != nil {
+		return fmt.Errorf("%s %q: %q is not a port number", HealthListenEnv, addr, p)
+	}
+	if port == 0 {
+		return nil
+	}
+	clash := func(what string) error {
+		return fmt.Errorf("%s %q: port %d is also %s; pick another port", HealthListenEnv, addr, port, what)
+	}
+	mcpListen := ""
+	if cfg.MCP != nil {
+		mcpListen = cfg.MCP.Listen
+	}
+	for what, other := range map[string]string{
+		"the admin listener (admin.listen)": cfg.Admin.Listen,
+		"the MCP server (mcp.listen)":       mcpListen,
+	} {
+		if n, ok := listenPort(other); ok && n == port {
+			return clash(what)
+		}
+	}
+	for i, l := range cfg.Listeners {
+		if l.Network == "unix" {
+			continue
+		}
+		first, ok := listenPort(l.listenAddress())
+		if !ok {
+			continue
+		}
+		last := first
+		// Slot mode binds first_port through first_port+count-1; Validate
+		// makes listen name first_port.
+		if l.ICA != nil && l.ICA.Slots != nil {
+			first, last = l.ICA.Slots.FirstPort, l.ICA.Slots.FirstPort+l.ICA.Slots.Count-1
+		}
+		if port >= first && port <= last {
+			return clash("bound by " + l.displayName(i))
+		}
+	}
+	return nil
+}
+
+// listenPort resolves the port of a host:port the way net.Listen does: a
+// service name or a zero-padded number names the same port as its decimal.
+func listenPort(addr string) (int, bool) {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, false
+	}
+	n, err := net.LookupPort("tcp", p)
+	return n, err == nil && n != 0
+}
+
 // handleHealth mounts /healthz and /readyz on mux. The admin listener and the
 // health listener share it, so a probe gets the same answer from either.
 func handleHealth(mux *http.ServeMux, endpoints []endpointServer, endpointNames []string) {

@@ -277,7 +277,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
                       <CodeSnippet code={k8sEnv(imageRef, controlPlaneUrl)} />
                       <Note>
                         {
-                          'The container also needs the config file, from a ConfigMap mounted at /etc/hoop-inspect/config.yaml, with at least one entry in listeners. admin.listen is optional; set it on 0.0.0.0 to reach the admin API. '
+                          'The container also needs the config file, from a ConfigMap mounted at /etc/hoop-inspect/config.yaml, with at least one entry in listeners, and admin.listen on 0.0.0.0 when your probes use the admin port. To leave admin off, set HOOP_SIDECAR_HEALTH_LISTEN (for example 0.0.0.0:19001) and point the probes there. '
                         }
                         <DocLink href={docsUrl.sidecar.kubernetesManifest}>Running as Sidecar</DocLink>
                         {' has the full Deployment and ConfigMap.'}

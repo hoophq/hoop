@@ -912,6 +912,10 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
+	healthAddr := strings.TrimSpace(os.Getenv(HealthListenEnv))
+	if err := checkHealthListen(cfg, healthAddr); err != nil {
+		return err
+	}
 	if cfg.MCP != nil && cfg.cp == nil {
 		// checkMCP accepts a plane the file only names, which is right for
 		// -validate. A running process must hold the connection itself.
@@ -1298,7 +1302,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}()
 	}
-	if addr := strings.TrimSpace(os.Getenv(HealthListenEnv)); addr != "" {
+	if addr := healthAddr; addr != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

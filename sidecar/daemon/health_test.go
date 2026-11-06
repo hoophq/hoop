@@ -87,6 +87,48 @@ func TestHealthListenerReturnsBindFailure(t *testing.T) {
 	}
 }
 
+// A health port that another listener of the config also binds is refused
+// before anything binds, naming the other listener. An ICA slot range counts
+// as bound on every port it spans, and ports compare the way net.Listen
+// resolves them.
+func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
+	cfg := &Config{
+		Admin: AdminConfig{Listen: "0.0.0.0:19000"},
+		MCP:   &MCPConfig{Listen: "127.0.0.1:8765"},
+		Listeners: []ListenerConfig{
+			{Name: "appdb", Protocol: "postgres", Listen: "0.0.0.0:15432"},
+			{Name: "desktops", Protocol: "ica", Listen: "0.0.0.0:19001",
+				ICA: &ICAConfig{Slots: &ICASlotsConfig{FirstPort: 19001, Count: 4}}},
+			{Name: "web", Protocol: "http", Listen: "0.0.0.0:http"},
+			{Name: "sock", Protocol: "postgres", Network: "unix", Listen: "/tmp/19006.sock"},
+		},
+	}
+	for _, tc := range []struct {
+		addr, want string
+	}{
+		{"0.0.0.0:19000", "admin listener"},
+		{"0.0.0.0:019000", "admin listener"},
+		{"0.0.0.0:8765", "MCP server"},
+		{"0.0.0.0:15432", "appdb"},
+		{"0.0.0.0:19001", "desktops"},
+		{"0.0.0.0:19003", "desktops"},
+		{"0.0.0.0:19004", "desktops"},
+		{"0.0.0.0:80", "web"},
+		{"19001", "host:port"},
+		{"0.0.0.0:no-such-service", "not a port number"},
+	} {
+		err := checkHealthListen(cfg, tc.addr)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("checkHealthListen(%q) = %v, want an error saying %q", tc.addr, err, tc.want)
+		}
+	}
+	for _, addr := range []string{"", "0.0.0.0:19005", "0.0.0.0:19006", "127.0.0.1:0"} {
+		if err := checkHealthListen(cfg, addr); err != nil {
+			t.Errorf("checkHealthListen(%q) = %v, want nil", addr, err)
+		}
+	}
+}
+
 func freeTCPAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
