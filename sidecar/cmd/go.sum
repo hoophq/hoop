@@ -93,6 +93,8 @@ github.com/hoophq/libhoop-ica v0.8.0 h1:oC8ikk4JQ2JYlAysgLxACio12j/fUWOmUISD1nK6
 github.com/hoophq/libhoop-ica v0.8.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106173506-861b327c6c8d h1:WAkIjRtcsJatcqM3GOGyeb1HDbsM60RWS/PZnAwVpGc=
+github.com/hoophq/mcpproxy v0.1.8-0.20261106173506-861b327c6c8d/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/janpfeifer/go-benchmarks v0.1.1 h1:gLLy07/JrOKSnMWeUxSnjTdhkglgmrNR2IBDnR4kRqw=
 github.com/janpfeifer/go-benchmarks v0.1.1/go.mod h1:5AagXCOUzevvmYFQalcgoa4oWPyH1IkZNckolGWfiSM=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
