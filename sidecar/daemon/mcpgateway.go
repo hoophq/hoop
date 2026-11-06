@@ -88,17 +88,18 @@ func columnMaskRules(raw json.RawMessage) (kept [][]byte, columns []string, ok b
 	return kept, columns, true
 }
 
-// validateMCPMasking refuses a column rule in the lane's own mask block.
-func validateMCPMasking(lc ListenerConfig, name string) []string {
-	if lc.Mask == nil || !lc.Mask.hasRules() {
+// ValidateMCPMasking refuses a rule that names columns in an mcp lane's own
+// mask block. The control plane calls it before it binds a rule to the lane.
+func ValidateMCPMasking(mc MaskConfig, lane string) []string {
+	if !mc.hasRules() {
 		return nil
 	}
-	_, columns, _ := columnMaskRules(lc.Mask.Rules)
+	_, columns, _ := columnMaskRules(mc.Rules)
 	problems := make([]string, 0, len(columns))
 	for _, label := range columns {
 		problems = append(problems, fmt.Sprintf(
 			"%s: %s names columns, which an mcp listener never matches: it masks result strings without their keys. Name entities instead",
-			name, label))
+			lane, label))
 	}
 	return problems
 }

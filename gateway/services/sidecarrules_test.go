@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
@@ -194,6 +195,7 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 func TestValidateSpecForLane(t *testing.T) {
 	ssh := daemon.ListenerConfig{Name: "bastion", Protocol: "ssh"}
 	pg := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}
+	mcp := daemon.ListenerConfig{Name: "tools", Protocol: "mcp"}
 	analyzed := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres",
 		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
 	analyzedHTTP := daemon.ListenerConfig{Name: "api", Protocol: "http",
@@ -259,6 +261,26 @@ func TestValidateSpecForLane(t *testing.T) {
 			kind: SidecarRuleMask,
 			lane: pg,
 			spec: `{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`,
+		},
+		{
+			// An mcp lane masks strings without their keys.
+			name: "a column rule on an mcp lane",
+			kind: SidecarRuleMask,
+			lane: mcp,
+			spec: `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
+			want: "names columns",
+		},
+		{
+			name: "an entity rule on an mcp lane",
+			kind: SidecarRuleMask,
+			lane: mcp,
+			spec: `{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`,
+		},
+		{
+			name: "the same column rule on a postgres lane",
+			kind: SidecarRuleMask,
+			lane: pg,
+			spec: `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
 		},
 		{
 			// The sidecar refuses a lane analyzer block with no provider.
@@ -329,5 +351,34 @@ func TestValidateSpecForLane(t *testing.T) {
 				t.Errorf("refusal does not name %q: %v", tt.want, err)
 			}
 		})
+	}
+}
+
+// The plane folds a bound mask rule into the mcp lane's own mask block. It
+// accepts only what the sidecar loads, so a served document never stops it.
+func TestAMaskRuleBoundToAnMCPListenerLoadsOnTheSidecar(t *testing.T) {
+	lane := daemon.ListenerConfig{Name: "tools", Protocol: "mcp", Listen: "127.0.0.1:18901", Upstream: "https://h/mcp"}
+	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{lane}}
+	for name, spec := range map[string]string{
+		"columns":  `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
+		"entities": `{"rules":[{"name":"ssn","entities":["US_SSN"],"strategy":"redact"}]}`,
+	} {
+		raw := json.RawMessage(spec)
+		if err := ValidateSidecarRuleSpec(SidecarRuleMask, name, raw); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		bindErr := validateSpecForLane(SidecarRuleMask, name, raw, "sc", lane, false)
+		composed, err := foldSidecarRules(cfg, nil, []models.BoundRule{{RuleName: name, ListenerName: "tools", Spec: raw}}, nil)
+		if err != nil {
+			t.Fatalf("%s: fold: %v", name, err)
+		}
+		served, err := json.Marshal(composed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loadErr := daemon.CheckConfigBytes(served)
+		if (bindErr == nil) != (loadErr == nil) {
+			t.Errorf("%s: the plane says %v, the sidecar says %v", name, bindErr, loadErr)
+		}
 	}
 }

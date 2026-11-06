@@ -3393,8 +3393,9 @@ them as protocol. Prompts and upstream error messages are not masked.
 
 - A rule finds values by entity. The redactor hands the lane a string, not
   its key, so a rule that names `columns` never fires. Validate refuses
-  one in the lane's own `mask` block. An inherited one does not apply and
-  `-validate` notes it; inherited entity rules apply. The lane's own mask
+  one in the lane's own `mask` block, and the control plane refuses to bind
+  one to the lane. An inherited one does not apply, and `-validate` and the
+  startup log note it; inherited entity rules apply. The lane's own mask
   rules, or `mask: {rules: []}`, replace inherited ones.
 - Each masked result is one `masked` audit row with the count and the
   entities, never the values.

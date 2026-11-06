@@ -384,7 +384,8 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 				ruleName, where, strings.Join(problems, "; "))
 		}
 	case SidecarRuleMask:
-		if !isSSH {
+		isMCP := strings.EqualFold(lane.Protocol, "mcp")
+		if !isSSH && !isMCP {
 			return nil
 		}
 		var block struct {
@@ -394,8 +395,13 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 			return fmt.Errorf("data masking rule %q: %w", ruleName, err)
 		}
 		// An ssh lane rewrites a byte stream in place, so only a
-		// length-preserving strategy can run there. The daemon owns that list.
-		problems := daemon.ValidateSSHMasking(daemon.MaskConfig{Rules: block.Rules}, where)
+		// length-preserving strategy can run there. An mcp lane masks strings
+		// without their keys, so a column rule never fires. The daemon owns both.
+		validate := daemon.ValidateSSHMasking
+		if isMCP {
+			validate = daemon.ValidateMCPMasking
+		}
+		problems := validate(daemon.MaskConfig{Rules: block.Rules}, where)
 		if len(problems) > 0 {
 			return fmt.Errorf("data masking rule %q: %s", ruleName, strings.Join(problems, "; "))
 		}
