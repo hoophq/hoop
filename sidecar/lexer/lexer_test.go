@@ -2440,22 +2440,21 @@ func TestDialectNamedReadsEveryDialectByItsName(t *testing.T) {
 }
 
 // An mcp lane reads up to 16 MiB of SQL, so crafted script text must cost
-// linear time. Eight times the input costs about 8x when linear and 64x when
-// quadratic; the bound of 24 leaves room for a noisy runner.
+// linear time. 32 times the input costs about 32x when linear and 900x when
+// quadratic; the bound of 160 leaves room for a noisy runner.
 func TestGoogleSQLScriptsAnalyzeInLinearTime(t *testing.T) {
-	cost := func(sql string) time.Duration {
-		best := time.Duration(1 << 62)
-		for range 3 {
-			start := time.Now()
-			lexer.Analyze(sql, lexer.GoogleSQL)
-			best = min(best, time.Since(start))
-		}
-		return best
-	}
 	for _, unit := range []string{"LOOP ", "WHILE x DO ", "lbl: LOOP ", "`lbl`: BEGIN ", "SELECT CASE WHEN a THEN loop ELSE begin END "} {
-		small, large := cost(strings.Repeat(unit, 2000)), cost(strings.Repeat(unit, 16000))
-		if r := float64(large) / float64(max(small, time.Microsecond)); r > 24 {
-			t.Errorf("%q: 8x the input took %.0fx the time (%v, %v)", unit, r, small, large)
+		in := [2]string{strings.Repeat(unit, 2000), strings.Repeat(unit, 64000)}
+		best := [2]time.Duration{1 << 62, 1 << 62}
+		for range 5 {
+			for i, sql := range in {
+				start := time.Now()
+				lexer.Analyze(sql, lexer.GoogleSQL)
+				best[i] = min(best[i], time.Since(start))
+			}
+		}
+		if r := float64(best[1]) / float64(max(best[0], time.Microsecond)); r > 160 {
+			t.Errorf("%q: 32x the input took %.0fx the time (%v, %v)", unit, r, best[0], best[1])
 		}
 	}
 }
