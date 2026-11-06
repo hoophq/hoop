@@ -178,6 +178,7 @@ under `deploy/docker-compose/` binds:
 | `deploymentStrategy` | Default `RollingUpdate` |
 | `resources` | CPU/memory requests and limits |
 | `nodeSelector`, `tolerations`, `affinity` | Pod assignment |
+| `runtimeClassName` | Pod RuntimeClass. Empty by default. `nvidia` for the `-ica-gpu` image on nodes where the NVIDIA runtime is not the containerd default; see `deploy/ica-sidecar/examples/gpu/` |
 | `podAnnotations`, `deploymentAnnotations` | Annotations |
 | `podLabels` | Extra labels on the pod template, not the selector. A key the chart sets itself is refused |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | Service account. `name` with `create: false` points at an existing one (GKE Workload Identity) |
@@ -196,12 +197,14 @@ hoop start sidecar --config my-config.yaml --validate
 
 ## The image
 
-`hoophq/hoopsidecar` publishes two flavours of `Dockerfile.sidecar`:
+`hoophq/hoopsidecar` publishes these flavours of `Dockerfile.sidecar`:
 
 | Tag | Base |
 |---|---|
 | `<version>`, and `latest` | Ubuntu 24.04 LTS + the `hoop` binary |
 | `<version>-distroless` | distroless static + the `hoop` binary |
+| `<version>-ica` | Ubuntu 24.04 LTS + `hoop-inspect` with the Citrix ICA engine, tesseract, ONNX Runtime and the NER model |
+| `<version>-ica-gpu` | The ICA engine on TurboOCR and CUDA NER. Linux amd64 only, and published only for releases where the GPU runtime asset is configured (`deploy/ica-sidecar/GPU.md`). Needs a GPU node pool, `resources.limits.nvidia.com/gpu` and `/readyz` probes: `deploy/ica-sidecar/examples/gpu/` is a complete values file |
 
 The Ubuntu flavour carries no suffix — it is the image, and `latest` points at
 it. It keeps a shell, so the default is the flavour you can `kubectl exec` into.

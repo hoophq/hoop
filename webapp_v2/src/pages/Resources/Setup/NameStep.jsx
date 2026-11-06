@@ -9,6 +9,10 @@ import { useResourceSetupStore } from './store'
 
 const BADGES = { new: { label: 'NEW', color: 'green' }, beta: { label: 'BETA', color: 'indigo' } }
 
+// The CLJS wizard names these by hand: linux-vm has no metadata entry, and the
+// other subtypes differ from their catalog names.
+const TYPE_NAMES = { 'linux-vm': 'Linux VM', ssh: 'SSH', tcp: 'TCP', httpproxy: 'HTTP Proxy' }
+
 function badgeOf(badge) {
   return BADGES[badge] ?? { label: badge.charAt(0).toUpperCase() + badge.slice(1), color: 'gray' }
 }
@@ -31,7 +35,7 @@ export default function NameStep() {
         <Paper withBorder p="md" radius="md" h={110} bg="var(--hoop-surface-raised)">
           <Stack justify="space-between" h="100%">
             <Group justify="space-between">
-              <Image src={iconFor(setup)} alt={setup.subtype} w={24} h={24} />
+              <Image src={iconFor(setup)} alt={setup.subtype} w={24} h={24} fit="contain" />
               <Group gap={4}>
                 {(entry?.badges ?? []).map(badgeOf).map(({ label, color }) => (
                   <Badge key={label} size="xs" variant="filled" color={color}>
@@ -40,7 +44,7 @@ export default function NameStep() {
                 ))}
               </Group>
             </Group>
-            <Text fw={700}>{entry?.name ?? setup.subtype}</Text>
+            <Text fw={700}>{TYPE_NAMES[setup.subtype] ?? entry?.name ?? setup.subtype}</Text>
           </Stack>
         </Paper>
       </StepRow>

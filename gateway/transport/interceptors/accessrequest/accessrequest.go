@@ -70,7 +70,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 		}
 
 		if otrev.Status == models.ReviewStatusApproved {
-			if err := models.UpdateReviewStatus(otrev.OrgID, otrev.ID, models.ReviewStatusProcessing); err != nil {
+			if err := models.MarkReviewProcessing(models.DB, otrev.OrgID, otrev.ID, pctx.UserEmail); err != nil {
 				return false, nil, plugintypes.InternalErr("failed updating the approved request", err)
 			}
 		}

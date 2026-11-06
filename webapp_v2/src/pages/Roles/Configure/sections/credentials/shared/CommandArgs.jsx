@@ -22,7 +22,8 @@ export default function CommandArgs() {
         value={command}
         onChange={(value) => setDraft({ command: value })}
         clearable
-        splitChars={[',']}
+        splitChars={[]}
+        allowDuplicates
       />
       <Text size="xs" c="dimmed">
         {"Example: 'python', '-m', 'http.server', '8000'"}

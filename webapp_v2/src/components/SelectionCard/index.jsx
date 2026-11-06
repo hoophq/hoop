@@ -30,10 +30,9 @@ function SelectionCard({
       <Group justify="space-between" align="center" wrap="nowrap" gap="md">
         <Group gap="md" align="center" wrap="nowrap">
           {(image || Icon) && (
-            // A bordered icon is a pill, like ActionIcon: 100px caps at a circle.
             <ThemeIcon
               size="lg"
-              radius="100px"
+              radius="md"
               variant="light"
               color="gray"
               className={classes.icon}

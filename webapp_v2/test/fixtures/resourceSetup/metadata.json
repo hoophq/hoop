@@ -81,6 +81,75 @@
       }
     },
     {
+      "id": "grafana",
+      "name": "Grafana",
+      "description": "Access your Grafana monitoring and visualization platform securely through Hoop.dev with comprehensive audit trails, session recording, and intelligent traffic monitoring.",
+      "category": "web-applications",
+      "icon-name": "grafana",
+      "tags": [
+        "monitoring",
+        "visualization",
+        "web"
+      ],
+      "overview": {
+        "description": "Access your Grafana dashboards and monitoring interfaces securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Proxy Grafana connections with built-in data masking, session recording, and advanced security guardrails for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "grafana",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target Grafana instance URL",
+            "placeholder": "https://grafana.example.com"
+          }
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/grafana-proxy"
+      }
+    },
+    {
       "id": "httpproxy",
       "name": "HTTP Proxy",
       "badges": null,

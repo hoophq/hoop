@@ -13,7 +13,13 @@
 # repository does not exist on Docker Hub yet), and the per-commit
 # :<sha>-<arch> tags, which are build intermediates.
 #
-# Usage: release-notes.sh <version>
+# The ICA GPU image and bundle are published only when the repository
+# variables ICA_GPU_ASSETS_URL and ICA_GPU_ASSETS_SHA256 are both set
+# (release.yml gates those steps on the pair and fails on a half-set one), so
+# they are listed only when both reach this script's environment. Both
+# workflow call sites pass them; the manual path inherits the shell's.
+#
+# Usage: ICA_GPU_ASSETS_URL=... ICA_GPU_ASSETS_SHA256=... release-notes.sh <version>
 
 set -euo pipefail
 
@@ -23,6 +29,23 @@ VERSION=$1
 # Docker Hub renders a tag page for a filtered listing, so each link lands on
 # the tag it names instead of the repository's front page.
 hub() { echo "https://hub.docker.com/r/hoophq/${1}/tags?name=${2}"; }
+
+# The gated GPU artifacts, each with its own leading newline so that unset
+# variables add nothing — not even a blank line — to the body.
+GPU_IMAGE= GPU_BUNDLE=
+if [[ -n ${ICA_GPU_ASSETS_URL:-} && -n ${ICA_GPU_ASSETS_SHA256:-} ]]; then
+  GPU_IMAGE="
+- [hoophq/hoopsidecar:${VERSION}-ica-gpu]($(hub hoopsidecar "${VERSION}-ica-gpu")) — the ICA engine on TurboOCR and CUDA NER, linux/amd64 only; needs an NVIDIA GPU"
+  GPU_BUNDLE="
+
+### Citrix ICA sidecar on a GPU, without Docker
+
+What the \`-ica-gpu\` image carries, for a Linux amd64 host with an NVIDIA driver:
+\`hoop-ica\`, the TurboOCR and CUDA ONNX Runtime libraries, TensorRT engines, the
+NER model, an installer and example configs. See deploy/ica-sidecar/GPU.md.
+
+- [hoop-ica-gpu-assets-amd64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-gpu-assets_${VERSION}_Linux_amd64.tar.gz)"
+fi
 
 cat - <<EOF
 ## Assets
@@ -63,10 +86,32 @@ For the realtime RDP PII guard.
 - [hoophq/hoop-agent-ocr:${VERSION}]($(hub hoop-agent-ocr "${VERSION}")) · [:latest]($(hub hoop-agent-ocr latest)) — CPU, linux/amd64 + linux/arm64
 - [hoophq/hoop-agent-ocr:${VERSION}-gpu]($(hub hoop-agent-ocr "${VERSION}-gpu")) — CUDA, linux/amd64 only
 
+### Inspection sidecar
+
+The relay, \`hoop start sidecar\`, as its own image; deploy/helm-chart/chart/sidecar
+defaults to \`:latest\`.
+
+- [hoophq/hoopsidecar:${VERSION}]($(hub hoopsidecar "${VERSION}")) · [:latest]($(hub hoopsidecar latest)) — Ubuntu 24.04 plus the binary, linux/amd64 + linux/arm64
+- [hoophq/hoopsidecar:${VERSION}-distroless]($(hub hoopsidecar "${VERSION}-distroless")) — distroless cc plus the binary, no shell
+- [hoophq/hoopsidecar:${VERSION}-alcatraz]($(hub hoopsidecar "${VERSION}-alcatraz")) — the unsuffixed flavour plus the Alcatraz NER model and ONNX Runtime, for a \`pii.ner\` block
+- [hoophq/hoopsidecar:${VERSION}-distroless-alcatraz]($(hub hoopsidecar "${VERSION}-distroless-alcatraz")) — distroless plus the same
+- [hoophq/hoopsidecar:${VERSION}-ica]($(hub hoopsidecar "${VERSION}-ica")) — \`hoop-inspect\` with the Citrix ICA engine, tesseract, ONNX Runtime and the NER model${GPU_IMAGE}
+
+### Control plane
+
+- [hoophq/hoopcontrolplane:${VERSION}]($(hub hoopcontrolplane "${VERSION}")) · [:latest]($(hub hoopcontrolplane latest)) — Ubuntu 24.04 plus the binary with the web UI embedded, linux/amd64 + linux/arm64
+- [hoophq/hoopcontrolplane:${VERSION}-distroless]($(hub hoopcontrolplane "${VERSION}-distroless")) — distroless static plus the binary, no shell
+
 ## Helm Chart
 
 - [hoop-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoop-chart-${VERSION}.tgz)
 - [hoopagent-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoopagent-chart-${VERSION}.tgz)
+- [hoopsidecar-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoopsidecar-chart-${VERSION}.tgz)
+- [hoopcontrolplane-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoopcontrolplane-chart-${VERSION}.tgz)
+- [hoop-ng-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoop-ng-chart-${VERSION}.tgz) — the gateway chart defaulting to hoophq/hoop-ng
+- [hoopagent-ng-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoopagent-ng-chart-${VERSION}.tgz) — the agent chart defaulting to hoophq/hoopdev-ng
+
+The same charts are pushed to \`oci://ghcr.io/hoophq/helm-charts/\`.
 
 ## Bundles
 
@@ -82,5 +127,5 @@ sidecar under systemd; the Linux \`hoop\` CLI of this release serves the same co
 with \`hoop start sidecar\` once the assets are installed.
 
 - [hoop-ica-assets-amd64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-assets_${VERSION}_Linux_amd64.tar.gz)
-- [hoop-ica-assets-arm64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-assets_${VERSION}_Linux_arm64.tar.gz)
+- [hoop-ica-assets-arm64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-assets_${VERSION}_Linux_arm64.tar.gz)${GPU_BUNDLE}
 EOF

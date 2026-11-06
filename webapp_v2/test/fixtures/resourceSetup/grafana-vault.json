@@ -1,0 +1,29 @@
+{
+  "name": "graf",
+  "type": "httpproxy",
+  "subtype": "grafana",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "graf-ro",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:INSECURE": "ZmFsc2U=",
+        "envvar:REMOTE_URL": "X3ZhdWx0a3YyOmh0dHBzOi8vZ3JhZmFuYS5pbnRlcm5hbA==",
+        "envvar:HEADER_Authorization": "X3ZhdWx0a3YyOnNlY3JldC9kYXRhL2dyYWZhbmE6VE9LRU4="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "grafana"
+    }
+  ]
+}
