@@ -64,6 +64,12 @@ type SessionRecord struct {
 	MaskedCount    int `json:"masked_count"`
 	ErrorCount     int `json:"error_count"`
 
+	// EventsDropped counts this session's events a bounded backend no longer
+	// holds, oldest first, while it still holds the session. Non-zero means
+	// the timeline starts after the session did; the counters above still
+	// cover the whole session.
+	EventsDropped int64 `json:"events_dropped,omitempty"`
+
 	// Verdict summarizes the session for a list view: "clean", "denied" when
 	// any statement was refused, "error" when the transport failed.
 	Verdict string `json:"verdict"`
@@ -234,6 +240,11 @@ type Stats struct {
 	ByConnection []LabelCount `json:"by_connection,omitempty"`
 	ByOperation  []LabelCount `json:"by_operation,omitempty"`
 	ByRule       []LabelCount `json:"by_rule,omitempty"`
+
+	// EventsDropped sums SessionRecord.EventsDropped over the matched
+	// sessions. ByOperation and ByRule count retained events only, so
+	// non-zero means they cover less than the totals above.
+	EventsDropped int64 `json:"events_dropped,omitempty"`
 
 	// ByRisk counts AI-analysis verdicts by risk level.
 	ByRisk []LabelCount `json:"by_risk,omitempty"`

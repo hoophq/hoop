@@ -15,7 +15,7 @@ import (
 )
 
 // The migration that adds reviews.via_handoff, stepped to by number.
-const viaHandoffVersion = 148
+const viaHandoffVersion = 149
 
 func TestReviewViaHandoffMigrationRoundTrip(t *testing.T) {
 	if testing.Short() {
@@ -101,7 +101,7 @@ func TestReviewViaHandoffMigrationRoundTrip(t *testing.T) {
 			WHERE table_schema = 'private' AND table_name = 'reviews' AND column_name = 'via_handoff'`).Scan(&columns).Error)
 		assert.Zero(t, columns)
 
-		// The 000147 index comes back as it was, and holds one live review
+		// The 000148 index comes back as it was, and holds one live review
 		// per level and statement.
 		assert.Equal(t, indexBefore, levelIndexDef())
 		assert.Equal(t, "EXPIRED", status("reviews", collidingHandoff),

@@ -20,7 +20,7 @@ const SIZES = {
 }
 
 export const ButtonTheme = Button.extend({
-  classNames: { section: classes.section },
+  classNames: { root: classes.root, section: classes.section },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
     const s = SIZES[props.size]

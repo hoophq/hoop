@@ -98,6 +98,9 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/features/data-masking/new` | React | Done |
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
+| `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
+| `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type |
+| `/resources/configure/:resourceName` | React | Done (ENG-912). The CLJS `:configure-resource` panel stays until ENG-922 |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -149,7 +152,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
-/resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
+/resources/new (types outside REACT_SETUP_SUBTYPES), /resources/:id/add-role
 /resource-catalog
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
@@ -169,8 +172,10 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 (hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
 `/features/runbooks/edit/:connection-id`.
 
-No shadowed bidi entries remain (route + panel both alive but React matching
-first). Every migrated family has had its CLJS pages deleted.
+Shadowed bidi entries (route + panel both alive but React matching first):
+`:resources` and `:configure-resource`, kept until ENG-922. ENG-910 deleted
+the `:configure-role` panel with `resources/configure_role/`; its bidi entry
+stays because those two shadowed panels still name it.
 
 `/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
 and `/features/access-request/*` lost theirs in EVL-184;
@@ -207,7 +212,7 @@ them: `/guardrails` (`:guardrails`), `/guardrails/new` (`:create-guardrail`),
 `/features/ai-session-analyzer` (`:ai-session-analyzer`) and
 `/features/ai-session-analyzer/rules/new`
 (`:create-ai-session-analyzer-rule`). React renders all four, but
-`shared_ui/sidebar/constants.cljs`, the configure-role terminal tab,
+`shared_ui/sidebar/constants.cljs`,
 `features/promotion.cljs` and the activation-journey feature cards (via the
 `:route-create`/`:route-list` keys in `activation_journey/templates.cljs`)
 still `url-for`/`:navigate` them. `events/guardrails.cljs` also stays, trimmed
@@ -222,7 +227,7 @@ sub, which resource setup/configure and the activation journey still consume.
 | Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` (Native Client action still bridges to CLJS) |
 | Modal system | `components/modal.cljs` | ✅ Pattern replaced — `components/Modal` + colocated `useDisclosure` (no global registry by design) |
 | Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
-| Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
+| Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — `components/ConfirmDialog` exists (ENG-911); older pages still build ad-hoc confirmations |
 | Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` |
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ✅ Yes — `features/NativeConnections/` drawer + `stores/useNativeAccessStore`. The draggable card is replaced by the drawer plus an active-session badge on the header button. CLJS stands down via `react-shell?`; the namespaces are deleted in a follow-up once the drawer has baked |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
@@ -273,7 +278,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `window.__hoopReactShellPresent`
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
-- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
+- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576), the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`) and IAM federation for `custom/bigquery` (ENG-910).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
 - Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
@@ -286,7 +291,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Slack & Webhooks integration pages (`/integrations/slack`, `/integrations/webhooks`) — legacy `/plugins/manage/*` route removed from CLJS
 
 ### In Progress / Known Gaps 🔄
-- No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
+- Older pages build ad-hoc confirmations instead of `components/ConfirmDialog`
 - Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
 
 ### Migration order

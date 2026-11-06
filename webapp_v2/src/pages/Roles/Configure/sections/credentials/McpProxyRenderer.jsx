@@ -38,7 +38,7 @@ import {
   staticHeaderFor,
   textSetting,
 } from '@/pages/Roles/Configure/utils/mcpGateway'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { connectionsService } from '@/services/connections'
 import { showSnackbar } from '@/utils/snackbar'
 
@@ -152,14 +152,14 @@ export default function McpProxyRenderer({
   connectionMethod,
   hideRoleInfo,
 }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const setMcpOAuthFlowId = useConfigureRoleStore((s) => s.setMcpOAuthFlowId)
-  const pendingFlowId = useConfigureRoleStore((s) => s.mcpOAuthFlowId)
-  const commandDraft = useConfigureRoleStore((s) => s.drafts.command)
-  const setDraft = useConfigureRoleStore((s) => s.setDraft)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const setMcpOAuthFlowId = useCredentialsStore((s) => s.setMcpOAuthFlowId)
+  const pendingFlowId = useCredentialsStore((s) => s.mcpOAuthFlowId)
+  const commandDraft = useCredentialsStore((s) => s.drafts.command)
+  const setDraft = useCredentialsStore((s) => s.setDraft)
   const commandLine = (commandDraft || []).join(' ')
 
   const [catalog, setCatalog] = useState({ status: 'idle', entries: [] })
@@ -497,7 +497,7 @@ export default function McpProxyRenderer({
           </Text>
         )}
         {entry?.notes && (
-          <Text size="sm" c="yellow.8">
+          <Text size="sm" c="amber">
             {entry.notes}
           </Text>
         )}
@@ -642,8 +642,8 @@ export default function McpProxyRenderer({
                 {authorized ? (
                   <Group justify="space-between" align="center" gap="sm">
                     <Group gap={6} align="center">
-                      <Check size={16} color="var(--mantine-color-green-8)" />
-                      <Text size="sm" fw={500} c="green.8">
+                      <Check size={16} color="var(--mantine-color-green-filled)" />
+                      <Text size="sm" fw={500} c="green">
                         {granted && !pendingFlowId
                           ? 'Authorized — token renewed automatically'
                           : pendingFlowId
@@ -741,7 +741,7 @@ export default function McpProxyRenderer({
             value={approvalTools}
             onChange={(e) => setSetting(ENV.approvalTools, e.currentTarget.value)}
           />
-          <Text size="sm" c="yellow.8">
+          <Text size="sm" c="amber">
             Approval routing is not available yet — matched tools are denied
             until it ships.
           </Text>

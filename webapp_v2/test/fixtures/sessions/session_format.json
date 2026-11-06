@@ -1,0 +1,87 @@
+{
+  "source": "webapp/test/webapp/audit/views/session_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:sessions",
+  "function": "webapp.audit.views.session-format/recording-format",
+  "cases": [
+    {
+      "name": "custom kubernetes without a format is a pty",
+      "session": {
+        "type": "custom",
+        "connection_subtype": "kubernetes"
+      },
+      "expected": "pty"
+    },
+    {
+      "name": "custom rdp without a format is rdp",
+      "session": {
+        "type": "custom",
+        "connection_subtype": "rdp"
+      },
+      "expected": "rdp"
+    },
+    {
+      "name": "application without a subtype is a pty",
+      "session": {
+        "type": "application"
+      },
+      "expected": "pty"
+    },
+    {
+      "name": "application ssh is ssh",
+      "session": {
+        "type": "application",
+        "connection_subtype": "ssh"
+      },
+      "expected": "ssh"
+    },
+    {
+      "name": "application ssh-local is ssh",
+      "session": {
+        "type": "application",
+        "connection_subtype": "ssh-local"
+      },
+      "expected": "ssh"
+    },
+    {
+      "name": "application git is ssh",
+      "session": {
+        "type": "application",
+        "connection_subtype": "git"
+      },
+      "expected": "ssh"
+    },
+    {
+      "name": "application github is ssh",
+      "session": {
+        "type": "application",
+        "connection_subtype": "github"
+      },
+      "expected": "ssh"
+    },
+    {
+      "name": "custom ssh is a pty",
+      "session": {
+        "type": "custom",
+        "connection_subtype": "ssh"
+      },
+      "expected": "pty"
+    },
+    {
+      "name": "a persisted raw format wins over custom kubernetes",
+      "session": {
+        "type": "custom",
+        "connection_subtype": "kubernetes",
+        "recording_format": "raw"
+      },
+      "expected": "raw"
+    },
+    {
+      "name": "a persisted pty format wins over custom",
+      "session": {
+        "type": "custom",
+        "recording_format": "pty"
+      },
+      "expected": "pty"
+    }
+  ]
+}

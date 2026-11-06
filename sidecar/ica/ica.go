@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -39,9 +40,19 @@ func init() { daemon.RegisterICAEngine(Build, HostCheck) }
 // elsewhere (ica.ocr_worker and friends), but the capabilities header is
 // sent before any config arrives from a plane, so the defaults are what
 // decide whether this process offers an ica lane at all. The error names
-// the first missing path.
+// the first missing path. A GPU bundle manifest selects GPU asset discovery
+// instead of requiring Tesseract; Serve still checks actual inference health.
 func HostCheck() error {
 	cfg := ica.DefaultRuntimeConfig()
+	gpuRoot := os.Getenv("HOOP_ICA_GPU_ASSETS")
+	if gpuRoot == "" {
+		gpuRoot = defaultGPUAssets
+	}
+	if _, err := os.Stat(filepath.Join(gpuRoot, "manifest.json")); err == nil {
+		return checkGPUAssets(gpuRoot, filepath.Join(filepath.Dir(gpuRoot), "models/KnightsAnalytics_distilbert-NER"))
+	} else if os.Getenv("HOOP_ICA_GPU_ASSETS") != "" || !os.IsNotExist(err) {
+		return fmt.Errorf("ica: GPU assets manifest: %w", err)
+	}
 	checks := [][2]string{
 		{"ocr worker", cfg.OCRWorker},
 		{"tessdata", cfg.Tessdata + "/eng.traineddata"},
@@ -75,6 +86,13 @@ const defaultMaxSessions = 32
 
 // Build implements daemon.ICABuilder.
 func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) {
+	maxSessions := rt.MaxSessions
+	if maxSessions == 0 {
+		maxSessions = defaultMaxSessions
+	}
+	if rt.DrainTimeoutSec < 0 || rt.DrainTimeoutSec > 3600 || rt.ReadinessHeadroom < 0 || rt.ReadinessHeadroom >= maxSessions || (!rt.ReadinessCapacity && rt.ReadinessHeadroom != 0) {
+		return nil, errors.New("invalid ICA capacity readiness or drain settings")
+	}
 	cfg := resolveRuntimeConfig(rt)
 	if err := ica.ValidateRuntimeConfig(cfg); err != nil {
 		return nil, fmt.Errorf("ica options: %w", err)
@@ -82,6 +100,13 @@ func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) 
 	if err := validateLane(lane); err != nil {
 		return nil, err
 	}
+	if lane.Slots != nil {
+		c := *lane.Slots
+		c.Names = slices.Clone(c.Names)
+		c.UpstreamCIDRs = slices.Clone(c.UpstreamCIDRs)
+		lane.Slots = &c
+	}
+	lane.SourcePrefixes = slices.Clone(lane.SourcePrefixes)
 	return &server{cfg: cfg, rt: rt, lane: lane, notes: notes(cfg, rt, lane)}, nil
 }
 
@@ -93,22 +118,41 @@ func override[T any](dst *T, src *T) {
 	}
 }
 
-// resolveRuntimeConfig lays the operator's paths and overrides over the
-// engine's production profile. The override surface excludes OCRBackend
-// and BitmapDecoder, so the sidecar runs the profile's
-// tesseract/independent pair. Serve opens the FailureDiagnostics writer, so
-// this function leaves it unset.
+// resolveRuntimeConfig applies backend defaults before explicit overrides.
+// BitmapDecoder stays independent. This function never loads native code.
 func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 	cfg := ica.DefaultRuntimeConfig()
+	o := rt.Options
+	override(&cfg.OCRBackend, o.OCRBackend)
+	if cfg.OCRBackend == "turboocr" {
+		cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRScaleFactor = 1, 1, 1
+		cfg.OCRThreadLimit, cfg.OCRFreshReuseFrames = 0, 0
+		cfg.OCRGrayPreparation, cfg.OCRLineFallback = false, false
+		cfg.OCRLineBandScale, cfg.OCRFreshNativeScale = false, false
+		cfg.TurboLibrary = defaultGPUAssets + "/lib/libhoop-gpuframe.so"
+		cfg.TurboDetModel = defaultGPUAssets + "/engines/det.engine"
+		cfg.TurboRecModel = defaultGPUAssets + "/engines/rec.engine"
+		cfg.TurboRecDict = defaultGPUAssets + "/engines/dict.txt"
+	}
 	for _, p := range [...]struct {
 		dst *string
 		src string
-	}{{&cfg.OCRWorker, rt.OCRWorker}, {&cfg.Tessdata, rt.Tessdata}, {&cfg.NERModel, rt.NERModel}, {&cfg.NERORTLibrary, rt.NERORTLibrary}} {
+	}{{&cfg.TurboLibrary, rt.OCRTurboLibrary}, {&cfg.TurboDetModel, rt.OCRTurboDetModel},
+		{&cfg.TurboRecModel, rt.OCRTurboRecModel}, {&cfg.TurboRecDict, rt.OCRTurboRecDict}, {&cfg.TurboClsModel, rt.OCRTurboClsModel},
+		{&cfg.OCRWorker, rt.OCRWorker}, {&cfg.Tessdata, rt.Tessdata}, {&cfg.NERModel, rt.NERModel}, {&cfg.NERORTLibrary, rt.NERORTLibrary}} {
 		if p.src != "" {
 			*p.dst = p.src
 		}
 	}
-	o := rt.Options
+	override(&cfg.TurboDevice, o.OCRTurboDevice)
+	override(&cfg.TurboFramebufferBytes, o.OCRTurboFramebufferBytes)
+	override(&cfg.TurboFullScreen, o.OCRTurboFullScreen)
+	override(&cfg.TurboRegionalCache, o.OCRTurboRegionalCache)
+	override(&cfg.NERAccelerator, o.NERAccelerator)
+	override(&cfg.NERGPUDevice, o.NERGPUDevice)
+	if len(o.NEREntities) > 0 {
+		cfg.NEREntities = slices.Clone(o.NEREntities)
+	}
 	override(&cfg.OCRWorkers, o.OCRWorkers)
 	override(&cfg.OCRTiles, o.OCRTiles)
 	override(&cfg.OCRThreadLimit, o.OCRThreadLimit)
@@ -127,6 +171,10 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 	override(&cfg.NERThreads, o.NERThreads)
 	override(&cfg.NERParallel, o.NERParallel)
 	override(&cfg.PIIThreshold, o.PIIThreshold)
+	override(&cfg.PIIMatchesOnly, o.PIIMatchesOnly)
+	if cfg.PIIMatchesOnly {
+		cfg.OCRFreshReuseFrames = 0
+	}
 	if len(o.PIIEntities) > 0 {
 		cfg.PIIEntities = slices.Clone(o.PIIEntities)
 	}
@@ -146,6 +194,13 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 func validateLane(lane daemon.ICALane) error {
 	if strings.TrimSpace(lane.TenantID) == "" {
 		return errors.New("ica.tenant_id is required")
+	}
+	if lane.Slots != nil {
+		if lane.Transparent || lane.Upstream != "" || lane.EDT || lane.Network == "unix" || len(lane.SourcePrefixes) == 0 {
+			return errors.New("ica slots need TCP, Gateway sources and no other routing mode")
+		}
+		_, e := slotTable(lane)
+		return e
 	}
 	if lane.EDT {
 		if err := validateEDTListen(lane); err != nil {
@@ -253,15 +308,23 @@ var anySource = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustPar
 // them without an engine, for the control plane.
 func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []string {
 	out := []string{
-		fmt.Sprintf("ica: ocr tesseract, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
-			cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRThreadLimit, cfg.OCRTimeout, cfg.OCRMinConfidence),
+		fmt.Sprintf("ica: ocr %s, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
+			cfg.OCRBackend, cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRThreadLimit, cfg.OCRTimeout, cfg.OCRMinConfidence),
 		fmt.Sprintf("ica: ner backend %s (onnx runtime compiled in: %t), %d parallel, %d threads",
 			cfg.NERBackend, ica.ORTCompiled, cfg.NERParallel, cfg.NERThreads),
 		fmt.Sprintf("ica: pii threshold %.2f, entities %s", cfg.PIIThreshold, strings.Join(cfg.PIIEntities, ",")),
+		fmt.Sprintf("ica: match-only masking %t; CPU match-only uses fresh full-screen OCR without retained uncertainty covers", cfg.PIIMatchesOnly),
 		fmt.Sprintf("ica: video batch %t, output pipeline %t, adaptive coalescing %t, presentation v2 %t, screen copy %t, latest frame %t",
 			cfg.VideoBatch, cfg.OutputPipeline, cfg.AdaptiveCoalescing, cfg.PresentationV2, cfg.PresentationScreenCopy, cfg.OutputLatestFrame),
 		fmt.Sprintf("ica: ocr worker %s, tessdata %s, ner model %s, ort library %s",
 			cfg.OCRWorker, cfg.Tessdata, cfg.NERModel, cfg.NERORTLibrary),
+	}
+	out = append(out, fmt.Sprintf("ica: ner accelerator %s, device %d, entities %s",
+		cfg.NERAccelerator, cfg.NERGPUDevice, strings.Join(cfg.NEREntities, ",")))
+	if cfg.OCRBackend == "turboocr" {
+		out = append(out, fmt.Sprintf("ica: turboocr device %d, full screen %t, regional cache %t, framebuffer bytes %d, library %s, det %s, rec %s, dict %s, cls %s",
+			cfg.TurboDevice, cfg.TurboFullScreen, cfg.TurboRegionalCache, cfg.TurboFramebufferBytes,
+			cfg.TurboLibrary, cfg.TurboDetModel, cfg.TurboRecModel, cfg.TurboRecDict, cfg.TurboClsModel))
 	}
 	if lane.Transparent && runtime.GOOS != "linux" {
 		out = append(out, "ica: this host is not Linux and cannot serve CIDR mode; -validate passes, Serve will not")
@@ -428,12 +491,15 @@ type server struct {
 	// sessions the pipeline blocked. The engine's Stats count neither.
 	denied atomic.Int64
 
-	mu      sync.Mutex
-	closed  bool
-	shared  *sharedRuntime
-	manager *ica.Manager
-	tcp     net.Listener
-	edt     net.Listener // nil unless lane.EDT
+	mu            sync.Mutex
+	closed        bool
+	closeDone     chan struct{}
+	closeErr      error
+	sessionCancel context.CancelFunc
+	shared        *sharedRuntime
+	manager       *ica.Manager
+	tcp           net.Listener
+	edt           net.Listener // nil unless lane.EDT
 }
 
 // Serve loads the runtime (which takes minutes), resolves the destination
@@ -457,8 +523,15 @@ func (s *server) Serve(ctx context.Context) error {
 		s.logReleaseError(releaseRuntime(shared))
 		return nil
 	}
-	manager, tcp, edt, tc, summary, err := s.start(ctx, shared)
+	// The manager derives every session's lifetime from the ctx it gets, so
+	// the daemon's shutdown ctx must not reach it: cancelling it on SIGTERM
+	// would drop admitted desktops before Close's bounded drain runs. Startup
+	// work (the upstream DNS lookup) still takes the daemon ctx, so a shutdown
+	// that lands mid-start is not stuck behind the resolver.
+	sessionCtx, sessionCancel := context.WithCancel(context.WithoutCancel(ctx))
+	manager, tcp, edt, tc, summary, err := s.start(ctx, sessionCtx, shared)
 	if err != nil {
+		sessionCancel()
 		err = errors.Join(err, releaseRuntime(shared))
 		if ctx.Err() != nil {
 			s.logReleaseError(err)
@@ -470,17 +543,32 @@ func (s *server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
+		sessionCancel()
 		s.logReleaseError(errors.Join(tcp.Close(), closeListener(edt), manager.Close(), releaseRuntime(shared)))
 		return nil
 	}
 	s.shared, s.manager, s.tcp, s.edt = shared, manager, tcp, edt
+	s.sessionCancel = sessionCancel
 	s.mu.Unlock()
 
 	if s.lane.Log != nil {
 		s.lane.Log.Info("ica lane ready", "listen", tcp.Addr().String(), "mode", s.mode(), "edt", edt != nil,
 			"policy", summary, "tenant", s.lane.TenantID, "max_sessions", s.maxSessions())
 	}
-	return serveBoth(manager, tcp, edt, tc)
+	serveDone := make(chan struct{})
+	defer close(serveDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.logReleaseError(s.Close())
+		case <-serveDone:
+		}
+	}()
+	err = serveBoth(manager, tcp, edt, tc)
+	if ctx.Err() != nil {
+		err = errors.Join(err, s.Close())
+	}
+	return err
 }
 
 // serveBoth runs the TCP accept loop and, with EDT on, the UDP one, and
@@ -540,6 +628,9 @@ func (s *server) isClosed() bool {
 }
 
 func (s *server) mode() string {
+	if s.lane.Slots != nil {
+		return "slots"
+	}
 	if s.lane.Transparent {
 		return "cidr"
 	}
@@ -548,26 +639,39 @@ func (s *server) mode() string {
 
 // start builds the manager and the listeners for one Serve. It builds the
 // manager first, because a bound socket with no manager behind it would
-// accept connections and drop them.
-func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, net.Listener, ica.TransparentConfig, string, error) {
+// accept connections and drop them. startCtx bounds the one-shot startup work;
+// sessionCtx is what the manager and the listeners live under.
+func (s *server) start(startCtx, sessionCtx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, net.Listener, ica.TransparentConfig, string, error) {
 	tc := ica.TransparentConfig{TenantID: s.lane.TenantID, Width: s.lane.Width, Height: s.lane.Height,
 		ThinwireChannel: s.lane.ThinwireChannel}
 	var (
 		policy  ica.NetworkPolicy
 		summary string
 	)
-	if s.lane.Transparent {
+	if s.lane.Slots != nil {
+		table, e := slotTable(s.lane)
+		if e != nil {
+			return nil, nil, nil, tc, "", e
+		}
+		policy = ica.NetworkPolicy{Prefixes: tablePrefixes(s.lane.Slots.UpstreamCIDRs), Ports: map[uint16]struct{}{uint16(s.lane.Slots.UpstreamPort): {}}}
+		tc.Mode = ica.ModeSlots
+		tc.SourcePrefixes = s.lane.SourcePrefixes
+		tc.ResolveSlot = table.Resolve
+		summary = fmt.Sprintf("%d slots; DNS per connection", table.Count())
+	} else if s.lane.Transparent {
 		policy = cidrPolicy(s.lane)
+		tc.Mode = ica.ModeTPROXY
 		tc.SourcePrefixes = s.lane.SourcePrefixes
 		tc.ResolveDestination = ica.OriginalDestination
 		summary = fmt.Sprintf("%v ports %v", s.lane.UpstreamPrefixes, s.lane.UpstreamPorts)
 	} else {
-		addr, port, err := resolveUpstream(ctx, s.lane.Upstream)
+		addr, port, err := resolveUpstream(startCtx, s.lane.Upstream)
 		if err != nil {
 			return nil, nil, nil, tc, "", err
 		}
 		var fixed string
 		policy, fixed = singlePolicy(addr, port)
+		tc.Mode = ica.ModeFixedUpstream
 		tc.SourcePrefixes = s.lane.SourcePrefixes
 		if len(tc.SourcePrefixes) == 0 {
 			tc.SourcePrefixes = anySource
@@ -576,7 +680,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 		summary = fixed
 	}
 
-	manager, err := ica.NewManager(ctx, ica.ManagerConfig{
+	manager, err := ica.NewManager(sessionCtx, ica.ManagerConfig{
 		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(), SessionLimit: shared.limit,
 		ConnectTimeout:        time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
 		EnableExperimentalEDT: s.lane.EDT, EDTRetention: time.Duration(s.rt.EDTRetentionSec) * time.Second,
@@ -586,13 +690,13 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	if err != nil {
 		return nil, nil, nil, tc, "", fmt.Errorf("ica manager: %w", err)
 	}
-	tcp, err := s.listen(ctx)
+	tcp, err := s.listen(sessionCtx)
 	if err != nil {
 		return nil, nil, nil, tc, "", errors.Join(err, manager.Close())
 	}
 	var edt net.Listener
 	if s.lane.EDT {
-		if edt, err = s.listenEDT(ctx); err != nil {
+		if edt, err = s.listenEDT(sessionCtx); err != nil {
 			return nil, nil, nil, tc, "", errors.Join(fmt.Errorf("edt: %w", err), tcp.Close(), manager.Close())
 		}
 	}
@@ -603,6 +707,17 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 // accepted connection keeps its original destination; a plain socket in
 // single mode, where the destination is fixed.
 func (s *server) listen(ctx context.Context) (net.Listener, error) {
+	if s.lane.Slots != nil {
+		table, e := slotTable(s.lane)
+		if e != nil {
+			return nil, e
+		}
+		host, _, e := net.SplitHostPort(s.lane.Listen)
+		if e != nil {
+			return nil, e
+		}
+		return ica.ListenSlots(ctx, host, table)
+	}
 	if s.lane.Transparent {
 		return ica.Listen(ctx, s.lane.Listen)
 	}
@@ -656,25 +771,42 @@ func (s *server) observe(e ica.Event) {
 // stops the manager and drops the lane's hold on the shared runtime. Close
 // is idempotent and safe before Serve or during Serve's load: Serve checks
 // the closed flag before it installs what it built.
-func (s *server) Close() error {
+func (s *server) Close() (result error) {
 	s.mu.Lock()
 	if s.closed {
+		done := s.closeDone
 		s.mu.Unlock()
-		return nil
+		if done != nil {
+			<-done
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.closeErr
 	}
 	s.closed = true
-	shared, manager, tcp, edt := s.shared, s.manager, s.tcp, s.edt
+	s.closeDone = make(chan struct{})
+	shared, manager, tcp, edt, cancel := s.shared, s.manager, s.tcp, s.edt, s.sessionCancel
 	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.closeErr = result; close(s.closeDone); s.mu.Unlock() }()
 	if manager == nil {
 		return nil
 	}
-	err := errors.Join(closeListener(tcp), closeListener(edt))
-	deadline := time.Now().Add(drainTimeout)
-	for manager.Stats().Active > 0 && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	manager.BeginDrain()
+	result = errors.Join(closeListener(tcp), closeListener(edt))
+	timeout := drainTimeout
+	if s.rt.DrainTimeoutSec > 0 {
+		timeout = time.Duration(s.rt.DrainTimeoutSec) * time.Second
 	}
-	err = errors.Join(err, manager.Close(), releaseRuntime(shared))
-	return err
+	ctx, stop := context.WithTimeout(context.Background(), timeout)
+	if err := manager.Drain(ctx); err != nil && s.lane.Log != nil {
+		s.lane.Log.Warn("ica drain deadline reached", "error", err)
+	}
+	stop()
+	result = errors.Join(result, manager.Close())
+	if cancel != nil {
+		cancel()
+	}
+	return errors.Join(result, releaseRuntime(shared))
 }
 
 func (s *server) Addr() net.Addr {
@@ -705,5 +837,32 @@ func (s *server) Notes() []string { return slices.Clone(s.notes) }
 func (s *server) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.manager != nil && s.manager.Ready()
+	return !s.closed && s.manager != nil && !s.manager.Draining() && s.manager.Ready() && (!s.rt.ReadinessCapacity || !s.manager.Saturated(s.rt.ReadinessHeadroom))
+}
+
+// GPU bundles have a fixed relative layout shared by Docker and native installs.
+const defaultGPUAssets = "/opt/libhoop-ica/current/gpu"
+
+func checkGPUAssets(root, model string) error {
+	if !ica.ORTCompiled {
+		return errors.New("ica: GPU assets require an ORT-tagged build")
+	}
+	for _, path := range []string{
+		filepath.Join(root, "manifest.json"),
+		filepath.Join(root, "lib/libhoop-gpuframe.so"),
+		filepath.Join(root, "lib/libturboocr-device.so"),
+		filepath.Join(root, "engines/det.engine"),
+		filepath.Join(root, "engines/rec.engine"),
+		filepath.Join(root, "engines/dict.txt"),
+		filepath.Join(root, "ort/lib/libonnxruntime.so"),
+		filepath.Join(root, "ort/lib/libonnxruntime_providers_cuda.so"),
+		filepath.Join(root, "ort/lib/libonnxruntime_providers_shared.so"),
+		filepath.Join(model, "config.json"),
+	} {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("ica: missing GPU asset %s; install the matching ica-gpu assets bundle", path)
+		}
+	}
+	return nil
 }

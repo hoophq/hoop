@@ -110,6 +110,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		execDesc = "db-driver=" + driver
 	} else {
 		args := append(connParams.CmdList, connParams.ClientArgs...)
+		args = mongoExecArgs(connParams, args)
 		cmd, err = libhoop.NewAdHocExec(connParams.EnvVars, args, pkt.Payload, stdoutw, stderrw, opts)
 		execDesc = fmt.Sprintf("%v", args)
 	}

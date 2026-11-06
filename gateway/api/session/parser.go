@@ -191,6 +191,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		ListenerName:          r.ListenerName,
 		RiskLevel:             r.RiskLevel,
 		ViaHandoff:            r.ViaHandoff,
+		ExecutedBy:            r.ExecutedBy,
 	}
 }
 

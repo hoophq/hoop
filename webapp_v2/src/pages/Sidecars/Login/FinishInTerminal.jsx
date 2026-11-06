@@ -48,7 +48,7 @@ export default function FinishInTerminal({ sidecar }) {
   }, [running, refresh])
 
   return (
-    <Paper bg="gray.0" radius="xl" p="lg">
+    <Paper variant="muted" radius="xl" p="lg">
       <Stack gap="md">
         <Group gap="sm" wrap="nowrap">
           <ThemeIcon size={32} radius="xl" color="green" variant="light">

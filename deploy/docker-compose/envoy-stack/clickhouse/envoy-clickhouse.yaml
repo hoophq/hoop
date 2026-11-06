@@ -5,6 +5,7 @@
 #   :8443  HTTPS -> ext_authz(OPA) -> hoop-inspect (http codec)     -> httpbin
 #   :5432  TCP   -> hoop-inspect (postgres codec)                   -> appdb
 #   :8446  HTTPS -> ext_authz(OPA) -> hoop-inspect (http codec)     -> clickhouse :8123
+#   :8448  HTTPS -> ext_authz(OPA) -> hoop-inspect (http, no mask)  -> clickhouse :8123
 #   :9000  TCP   -> hoop-inspect (clickhouse native codec)          -> clickhouse :9000
 #   :9004  TCP   -> hoop-inspect (mysql codec)                      -> clickhouse :9004
 #   :9005  TCP   -> hoop-inspect (postgres codec)                   -> clickhouse :9005
@@ -151,6 +152,64 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
+    # ---------------------------------------------------------------- L7 lane
+    # :8446 again, for large results: the lane behind it masks nothing, and
+    # the route has no total timeout. A route timeout bounds the WHOLE
+    # response, so :8446's 300s cuts any result that takes longer to send.
+    # idle_timeout still ends a stream that stops moving. OPA maps 8448 to
+    # "clickhouse" too. stream-clickhouse.sh drives it.
+    - name: clickhouse_stream_https_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8448 }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: /etc/envoy/certs/server.crt }
+                    private_key: { filename: /etc/envoy/certs/server.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_clickhouse_stream_https
+                codec_type: AUTO
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] ch-stream %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% user=%REQ(X-HOOP-USER)% -> %RESPONSE_CODE% flags=%RESPONSE_FLAGS% bytes_out=%BYTES_SENT% upstream=%UPSTREAM_CLUSTER% %DURATION%ms\n"
+                route_config:
+                  name: clickhouse_stream_route
+                  virtual_hosts:
+                    - name: inspect
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: hoop_inspect_ch_http_stream
+                            timeout: 0s
+                            idle_timeout: 60s
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      with_request_body:
+                        max_request_bytes: 8192
+                        allow_partial_message: true
+                        pack_as_bytes: true
+                      grpc_service:
+                        envoy_grpc: { cluster_name: opa }
+                        timeout: 2s
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
     # ---------------------------------------------------------------- L4 lane
     # Raw native ClickHouse TCP. The sidecar clamps the negotiated revision,
     # classifies Query packets, bounds LZ4 inflation, and rebuilds result
@@ -263,6 +322,17 @@ static_resources:
               - endpoint:
                   address:
                     socket_address: { address: hoop-inspect, port_value: 18123 }
+
+    - name: hoop_inspect_ch_http_stream
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_ch_http_stream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 18124 }
 
     - name: hoop_inspect_ch_native
       type: STRICT_DNS

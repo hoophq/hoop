@@ -1,73 +1,24 @@
 import { useState } from 'react'
-import { Stack, Title, Text, Anchor } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, TriangleAlert, ExternalLink } from 'lucide-react'
+import { Stack, Text } from '@mantine/core'
+import { TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
-import SelectionCard from '@/components/SelectionCard'
-import Select from '@/components/Select'
 import {
   CONNECTION_METHODS,
   supportsAwsIam,
+  supportsIamFederation,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionInfo } from '@/pages/Roles/Configure/utils/connectionMethod'
-import { SOURCES, SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
+import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import { pickRendererRule } from '@/pages/Roles/Configure/sections/credentials'
 import { formatTimestamp } from '@/pages/Roles/Configure/components/SecretField/util'
-
-const SECRETS_PROVIDERS = [
-  SOURCES.VAULT_KV1,
-  SOURCES.VAULT_KV2,
-  SOURCES.AWS_SECRETS_MANAGER,
-]
-
-const METHOD_DEFINITIONS = [
-  {
-    id: CONNECTION_METHODS.MANUAL,
-    title: 'Manual Input',
-    description:
-      'Enter credentials directly, including host, user, password, and other connection details.',
-    icon: FileText,
-  },
-  {
-    id: CONNECTION_METHODS.SECRETS_MANAGER,
-    title: 'Secrets Manager',
-    description:
-      'Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials.',
-    icon: Cloud,
-  },
-  {
-    id: CONNECTION_METHODS.AWS_IAM,
-    title: 'AWS IAM Role',
-    description:
-      'Use an IAM Role that can be assumed to authenticate and access AWS resources.',
-    icon: ShieldCheck,
-  },
-]
-
-function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) {
-  const visibleMethods = METHOD_DEFINITIONS.filter(
-    (m) => m.id !== CONNECTION_METHODS.AWS_IAM || awsIamAvailable,
-  )
-  return (
-    <Stack gap="md">
-      <Title order={4}>Connection method</Title>
-      <Stack gap="sm">
-        {visibleMethods.map(({ id, title, description, icon }) => (
-          <SelectionCard
-            key={id}
-            icon={icon}
-            title={title}
-            description={description}
-            selected={selectedMethod === id}
-            onClick={() => onSelect(id)}
-          />
-        ))}
-      </Stack>
-    </Stack>
-  )
-}
+import FederationSection from '@/pages/Roles/Configure/sections/FederationSection'
+import {
+  ConnectionMethodSection,
+  SecretsManagerProviderSection,
+} from '@/pages/Roles/Configure/components/ConnectionMethod'
 
 function CredentialsError({ title, message }) {
   return (
@@ -138,35 +89,25 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
   )
 }
 
-function SecretsManagerProviderSection({ provider, onProviderChange }) {
-  return (
-    <Stack gap="xs">
-      <Select
-        label="Secrets manager provider"
-        data={SECRETS_PROVIDERS.map((p) => ({ value: p, label: SOURCE_LABELS[p] }))}
-        value={provider}
-        onChange={(v) => v && onProviderChange(v)}
-        allowDeselect={false}
-      />
-      <Anchor
-        size="sm"
-        href="https://hoop.dev/docs/setup/configuration/secrets-manager"
-        target="_blank"
-        rel="noopener noreferrer"
-        display="inline-flex"
-      >
-        <ExternalLink size={12} />
-        <Text component="span" ml={4}>Learn more about secrets manager setup</Text>
-      </Anchor>
-    </Stack>
-  )
+export default function CredentialsTab({ connection }) {
+  const federationStatus = useConfigureRoleStore((s) => s.federation.status)
+  const federationAvailable = supportsIamFederation(connection.subtype)
+  if (federationAvailable && (federationStatus === 'idle' || federationStatus === 'loading')) {
+    return <PageLoader h={200} />
+  }
+  return <CredentialsEditor connection={connection} federationAvailable={federationAvailable} />
 }
 
-export default function CredentialsTab({ connection }) {
+function CredentialsEditor({ connection, federationAvailable }) {
   // Derive method + provider from existing values so the top-level
   // controls reflect what's actually stored, not a hardcoded default.
   const derived = deriveConnectionInfo(connection.secret)
-  const [selectedMethod, setSelectedMethodState] = useState(derived.method)
+  const federationConfigured = useConfigureRoleStore((s) => Boolean(s.federation.config))
+  const federationError = useConfigureRoleStore((s) => s.federation.error)
+  const selectFederation = useConfigureRoleStore((s) => s.selectFederation)
+  const [selectedMethod, setSelectedMethodState] = useState(
+    () => deriveConnectionInfo(connection.secret, { federated: federationConfigured }).method,
+  )
   const [secretsProvider, setSecretsProviderState] = useState(
     derived.provider || SOURCES.AWS_SECRETS_MANAGER,
   )
@@ -187,6 +128,7 @@ export default function CredentialsTab({ connection }) {
     connection.type === 'application' && draftSubtype === 'ssh-local'
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
+  const isFederation = selectedMethod === CONNECTION_METHODS.IAM_FEDERATION
   const isDerivedMethod = selectedMethod === derived.method
 
   // Method switch wipes existing fields and stages deletes for any
@@ -194,6 +136,7 @@ export default function CredentialsTab({ connection }) {
   const setSelectedMethod = (next) => {
     if (next === selectedMethod) return
     switchConnectionMethod(next)
+    selectFederation(next === CONNECTION_METHODS.IAM_FEDERATION)
     setSelectedMethodState(next)
   }
 
@@ -217,11 +160,18 @@ export default function CredentialsTab({ connection }) {
 
   return (
     <Stack gap="xl" maw={720}>
+      {federationError && (
+        <CredentialsError
+          title="Could not load the IAM federation of this role."
+          message={federationError}
+        />
+      )}
       {!isLocalSsh && (
         <ConnectionMethodSection
           selectedMethod={selectedMethod}
           onSelect={setSelectedMethod}
           awsIamAvailable={awsIamAvailable}
+          federationAvailable={federationAvailable}
         />
       )}
       {!isLocalSsh && isSecretsManager && (
@@ -230,13 +180,17 @@ export default function CredentialsTab({ connection }) {
           onProviderChange={setSecretsProvider}
         />
       )}
-      <CredentialsBody
-        connection={connection}
-        availableSources={availableSources}
-        forceNewState={forceNewState}
-        connectionMethod={selectedMethod}
-        hideRoleInfo={hideRoleInfo}
-      />
+      {isFederation ? (
+        <FederationSection />
+      ) : (
+        <CredentialsBody
+          connection={connection}
+          availableSources={availableSources}
+          forceNewState={forceNewState}
+          connectionMethod={selectedMethod}
+          hideRoleInfo={hideRoleInfo}
+        />
+      )}
     </Stack>
   )
 }

@@ -79,8 +79,9 @@ const (
 // client problem (refuse the request) from a Google problem (the token may be
 // fine; the check could not run).
 var (
-	// ErrNoToken: the request carried no credential at all.
-	ErrNoToken = errors.New("google: no bearer token")
+	// ErrNoToken: the request carried no credential at all. The text is the
+	// 403 body every lane answers for a missing credential (token.ErrNoToken).
+	ErrNoToken = errors.New("the request carried no credential")
 	// ErrInvalidToken: the credential is malformed, or Google says the token
 	// is not valid, or it has expired, or it names nobody.
 	ErrInvalidToken = errors.New("google: invalid token")

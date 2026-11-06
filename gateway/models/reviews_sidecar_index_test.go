@@ -44,7 +44,7 @@ func sqlLiteral(v any) string {
 // imply (IS NOT DISTINCT FROM, a bound status) leaves a seq scan of every
 // review, on each filing. enable_seqscan off makes the check independent of
 // the row count: the planner takes the index whenever it can. A level key
-// uses the 000148 index, which keys on via_handoff: the flag is an index
+// uses the 000149 index, which keys on via_handoff: the flag is an index
 // condition, not a filter. Over an empty table the sidecar_id index ties on
 // cost with that six-column index, so the check drops it in a transaction it
 // rolls back.

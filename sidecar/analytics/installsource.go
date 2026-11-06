@@ -17,6 +17,9 @@ const (
 	InstallSourceManagedAgentsKubernetes = "managed-agents-kubernetes" // deploy/managed-agents/kubernetes
 	InstallSourceOpenAIAgentsHTTP        = "openai-agents-http"        // deploy/openai-agents/http
 	InstallSourceOpenAIAgentsKubernetes  = "openai-agents-kubernetes"  // deploy/openai-agents/kubernetes
+	InstallSourceAgentCoreHTTP           = "agentcore-http"            // deploy/agentcore/http
+	InstallSourceAgentCoreKubernetes     = "agentcore-kubernetes"      // deploy/agentcore/kubernetes
+	InstallSourceAgentCorePostgres       = "agentcore-postgres"        // deploy/agentcore/postgres
 	InstallSourceOther                   = "other"                     // set, but not a value this build knows
 )
 
@@ -30,7 +33,8 @@ func InstallSource() string {
 	case "":
 		return ""
 	case InstallSourceManagedAgentsHTTP, InstallSourceManagedAgentsKubernetes,
-		InstallSourceOpenAIAgentsHTTP, InstallSourceOpenAIAgentsKubernetes:
+		InstallSourceOpenAIAgentsHTTP, InstallSourceOpenAIAgentsKubernetes,
+		InstallSourceAgentCoreHTTP, InstallSourceAgentCoreKubernetes, InstallSourceAgentCorePostgres:
 		return v
 	}
 	return InstallSourceOther

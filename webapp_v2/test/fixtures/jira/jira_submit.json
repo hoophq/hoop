@@ -1,0 +1,794 @@
+{
+  "source": "webapp/test/webapp/jira_templates/jira_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:jira",
+  "function": "webapp.jira-templates.form-data/submit-data",
+  "timezone": "America/Sao_Paulo",
+  "cases": [
+    {
+      "name": "text prompt",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "text",
+          "required": true,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": "rollback after the deploy"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10001": "rollback after the deploy"
+        }
+      }
+    },
+    {
+      "name": "prompt with no field type is a text prompt",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "",
+          "required": false,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": "free text"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10001": "free text"
+        }
+      }
+    },
+    {
+      "name": "text prompt cleared after typing is sent empty",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "text",
+          "required": false,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": "draft"
+        },
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": ""
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10001": ""
+        }
+      }
+    },
+    {
+      "name": "select prompt",
+      "prompts": [
+        {
+          "label": "Label of customfield_10002",
+          "jira_field": "customfield_10002",
+          "field_type": "select",
+          "required": true,
+          "description": "",
+          "field_options": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10002",
+          "value": "high"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10002": "high"
+        }
+      }
+    },
+    {
+      "name": "datetime-local prompt is sent as an ISO instant",
+      "prompts": [
+        {
+          "label": "Label of customfield_10003",
+          "jira_field": "customfield_10003",
+          "field_type": "datetime-local",
+          "required": true,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10003",
+          "value": "2026-10-28T14:30"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10003": "2026-10-28T17:30:00.000Z"
+        }
+      }
+    },
+    {
+      "name": "datetime-local prompt cleared after typing is sent empty",
+      "prompts": [
+        {
+          "label": "Label of customfield_10003",
+          "jira_field": "customfield_10003",
+          "field_type": "datetime-local",
+          "required": false,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10003",
+          "value": "2026-10-28T14:30"
+        },
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10003",
+          "value": ""
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10003": ""
+        }
+      }
+    },
+    {
+      "name": "unanswered optional prompts send an empty map",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "text",
+          "required": false,
+          "description": ""
+        },
+        {
+          "label": "Label of customfield_10002",
+          "jira_field": "customfield_10002",
+          "field_type": "select",
+          "required": false,
+          "description": "",
+          "field_options": [
+            "a"
+          ]
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [],
+      "expected": {
+        "jira_fields": {}
+      }
+    },
+    {
+      "name": "every prompt type together",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "text",
+          "required": true,
+          "description": ""
+        },
+        {
+          "label": "Label of customfield_10002",
+          "jira_field": "customfield_10002",
+          "field_type": "select",
+          "required": false,
+          "description": "",
+          "field_options": [
+            "low",
+            "high"
+          ]
+        },
+        {
+          "label": "Label of customfield_10003",
+          "jira_field": "customfield_10003",
+          "field_type": "datetime-local",
+          "required": false,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10002",
+          "value": "low"
+        },
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": "hotfix"
+        },
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10003",
+          "value": "2026-01-05T09:00"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_10002": "low",
+          "customfield_10001": "hotfix",
+          "customfield_10003": "2026-01-05T12:00:00.000Z"
+        }
+      }
+    },
+    {
+      "name": "CMDB preset found in the values is sent as its object id",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": true,
+          "description": "",
+          "value": "db-prod-02",
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [],
+      "expected": {
+        "jira_fields": {
+          "customfield_30001": "ari:server:2"
+        }
+      }
+    },
+    {
+      "name": "CMDB preset missing from the values is not sent",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": true,
+          "description": "",
+          "value": "db-prod-99",
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [],
+      "expected": {
+        "jira_fields": {}
+      }
+    },
+    {
+      "name": "CMDB row without a preset and no pick is not sent",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": null,
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [],
+      "expected": {
+        "jira_fields": {}
+      }
+    },
+    {
+      "name": "CMDB pick replaces the preset",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "db-prod-01",
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_30001",
+          "value": "ari:server:2"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_30001": "ari:server:2"
+        }
+      }
+    },
+    {
+      "name": "CMDB pick on a row whose preset is missing",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": true,
+          "description": "",
+          "value": "db-prod-99",
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_30001",
+          "value": "ari:server:1"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_30001": "ari:server:1"
+        }
+      }
+    },
+    {
+      "name": "CMDB picks and prompts in one body",
+      "prompts": [
+        {
+          "label": "Label of customfield_10001",
+          "jira_field": "customfield_10001",
+          "field_type": "text",
+          "required": true,
+          "description": ""
+        }
+      ],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_30001",
+          "jira_field": "customfield_30001",
+          "jira_object_type": "21",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "db-prod-01",
+          "jira_values": [
+            {
+              "id": "ari:server:1",
+              "name": "db-prod-01"
+            },
+            {
+              "id": "ari:server:2",
+              "name": "db-prod-02"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "prompt",
+          "jira_field": "customfield_10001",
+          "value": "reason"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_30001": "ari:server:1",
+          "customfield_10001": "reason"
+        }
+      }
+    },
+    {
+      "name": "a pick drops the picks of the rows that depend on it, transitively",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_20001",
+          "jira_field": "customfield_20001",
+          "jira_object_type": "11",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "Payments",
+          "jira_values": [
+            {
+              "id": "ari:product:1",
+              "name": "Payments"
+            },
+            {
+              "id": "ari:product:2",
+              "name": "Ledger"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20002",
+          "jira_field": "customfield_20002",
+          "jira_object_type": "12",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "API",
+          "jira_values": [
+            {
+              "id": "ari:component:1",
+              "name": "API"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20003",
+          "jira_field": "customfield_20003",
+          "jira_object_type": "13",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "v1",
+          "jira_values": [
+            {
+              "id": "ari:version:1",
+              "name": "v1"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_20002",
+          "object_schema_id": "7",
+          "object_filter_query": "objectType = \"Component\"",
+          "issue_scope_filter_query": "Product = ${customfield_20001.label}"
+        },
+        {
+          "jira_field": "customfield_20003",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Component = ${customfield_20002}"
+        }
+      ],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_20001",
+          "value": "ari:product:2"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_20001": "ari:product:2"
+        }
+      }
+    },
+    {
+      "name": "a pick on the middle row keeps the row above",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_20001",
+          "jira_field": "customfield_20001",
+          "jira_object_type": "11",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "Payments",
+          "jira_values": [
+            {
+              "id": "ari:product:1",
+              "name": "Payments"
+            },
+            {
+              "id": "ari:product:2",
+              "name": "Ledger"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20002",
+          "jira_field": "customfield_20002",
+          "jira_object_type": "12",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "API",
+          "jira_values": [
+            {
+              "id": "ari:component:1",
+              "name": "API"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20003",
+          "jira_field": "customfield_20003",
+          "jira_object_type": "13",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "v1",
+          "jira_values": [
+            {
+              "id": "ari:version:1",
+              "name": "v1"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_20002",
+          "object_schema_id": "7",
+          "object_filter_query": "objectType = \"Component\"",
+          "issue_scope_filter_query": "Product = ${customfield_20001.label}"
+        },
+        {
+          "jira_field": "customfield_20003",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Component = ${customfield_20002}"
+        }
+      ],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_20002",
+          "value": "ari:component:1"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_20001": "ari:product:1",
+          "customfield_20002": "ari:component:1"
+        }
+      }
+    },
+    {
+      "name": "a pick on a row nothing depends on drops nothing",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_20001",
+          "jira_field": "customfield_20001",
+          "jira_object_type": "11",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "Payments",
+          "jira_values": [
+            {
+              "id": "ari:product:1",
+              "name": "Payments"
+            },
+            {
+              "id": "ari:product:2",
+              "name": "Ledger"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20002",
+          "jira_field": "customfield_20002",
+          "jira_object_type": "12",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "API",
+          "jira_values": [
+            {
+              "id": "ari:component:1",
+              "name": "API"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20003",
+          "jira_field": "customfield_20003",
+          "jira_object_type": "13",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "v1",
+          "jira_values": [
+            {
+              "id": "ari:version:1",
+              "name": "v1"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_20002",
+          "object_schema_id": "7",
+          "object_filter_query": "objectType = \"Component\"",
+          "issue_scope_filter_query": "Product = ${customfield_20001.label}"
+        },
+        {
+          "jira_field": "customfield_20003",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Component = ${customfield_20002}"
+        }
+      ],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_20003",
+          "value": "ari:version:1"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_20001": "ari:product:1",
+          "customfield_20002": "ari:component:1",
+          "customfield_20003": "ari:version:1"
+        }
+      }
+    },
+    {
+      "name": "without field configs a pick drops nothing",
+      "prompts": [],
+      "cmdb_items": [
+        {
+          "label": "Label of customfield_20001",
+          "jira_field": "customfield_20001",
+          "jira_object_type": "11",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "Payments",
+          "jira_values": [
+            {
+              "id": "ari:product:1",
+              "name": "Payments"
+            },
+            {
+              "id": "ari:product:2",
+              "name": "Ledger"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20002",
+          "jira_field": "customfield_20002",
+          "jira_object_type": "12",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "API",
+          "jira_values": [
+            {
+              "id": "ari:component:1",
+              "name": "API"
+            }
+          ]
+        },
+        {
+          "label": "Label of customfield_20003",
+          "jira_field": "customfield_20003",
+          "jira_object_type": "13",
+          "jira_object_schema_id": "7",
+          "required": false,
+          "description": "",
+          "value": "v1",
+          "jira_values": [
+            {
+              "id": "ari:version:1",
+              "name": "v1"
+            }
+          ]
+        }
+      ],
+      "fieldconfigs": [],
+      "events": [
+        {
+          "kind": "cmdb",
+          "jira_field": "customfield_20001",
+          "value": "ari:product:2"
+        }
+      ],
+      "expected": {
+        "jira_fields": {
+          "customfield_20001": "ari:product:2",
+          "customfield_20002": "ari:component:1",
+          "customfield_20003": "ari:version:1"
+        }
+      }
+    }
+  ]
+}

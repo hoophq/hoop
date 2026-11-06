@@ -7,21 +7,22 @@ import AppHeader from './Header/GatewayHeader';
 import LicenseBanner from './LicenseBanner';
 import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
+import SessionDetailsHost from '@/features/SessionDetails';
 import ApprovalNotifications from '@/features/ApprovalNotifications';
 
 const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
-const SIDEBAR_BG = 'var(--mantine-color-gray-0)';
-const SIDEBAR_BORDER = 'var(--mantine-color-gray-2)';
+const SIDEBAR_BG = 'var(--hoop-surface-muted)';
+const SIDEBAR_BORDER = 'var(--hoop-border-subtle)';
 // Sampled from the Figma render: the header sits on the body colour (#fcfcfd),
-// a shade lighter than the sidebar (gray-0 #f0f0f3).
+// a shade lighter than the sidebar (the muted surface, #f0f0f3).
 const HEADER_BG = 'var(--mantine-color-body)';
 // The rule matches the web terminal's toolbar, which butts straight up against
 // it. A darker rule made a visible seam between two greys; at the same tone the
 // boundary is the tonal step alone — which is what the Figma terminal frame
 // shows (header #fcfcfd meeting the toolbar #e5e5e5, no rule between them).
-const HEADER_BORDER = 'var(--mantine-color-gray-1)';
+const HEADER_BORDER = 'var(--hoop-border-subtle)';
 
 // AppShell paints its own slots from CSS variables at a specificity a CSS Module
 // cannot reach, so `styles` is the sanctioned escape hatch for shell slots (see
@@ -118,6 +119,7 @@ function GatewayLayout({ children }) {
       {/* Mounted here, outside AppShell, so it is available on React routes and
           on the ClojureApp catch-all alike. */}
       <NativeConnectionsDrawer />
+      <SessionDetailsHost />
       <ApprovalNotifications />
     </>
   );

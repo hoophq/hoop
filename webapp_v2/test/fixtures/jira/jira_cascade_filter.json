@@ -1,0 +1,278 @@
+{
+  "source": "webapp/test/webapp/jira_templates/jira_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:jira",
+  "function": "webapp.jira-templates.cascade/filter-for",
+  "timezone": "America/Sao_Paulo",
+  "cases": [
+    {
+      "name": "a field without a configuration keeps the object type scope",
+      "item": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [],
+      "expected": null
+    },
+    {
+      "name": "a configuration with no filter keeps the object type scope",
+      "item": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_1",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": ""
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "the object filter alone",
+      "item": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_1",
+          "object_schema_id": "7",
+          "object_filter_query": "objectType = \"Server\"",
+          "issue_scope_filter_query": ""
+        }
+      ],
+      "expected": {
+        "aql": "objectType = \"Server\"",
+        "object_schema_id": "7"
+      }
+    },
+    {
+      "name": "an issue scope waits while the row it names has no selection",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "objectType = \"Component\"",
+          "issue_scope_filter_query": "Product = ${customfield_1.label}"
+        }
+      ],
+      "expected": "pending"
+    },
+    {
+      "name": "an issue scope names a row the template does not have",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Product = ${customfield_9}"
+        }
+      ],
+      "expected": "pending"
+    },
+    {
+      "name": "both filters AND-composed, the label from the selected name",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [],
+          "value": "ari:product:2",
+          "selected-name": "Ledger"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "8",
+          "object_filter_query": "objectType = \"Component\"",
+          "issue_scope_filter_query": "Product = ${customfield_1.label}"
+        }
+      ],
+      "expected": {
+        "aql": "(objectType = \"Component\") AND (Product = \"Ledger\")",
+        "object_schema_id": "8"
+      }
+    },
+    {
+      "name": "the label from the loaded values when no name was kept",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [
+            {
+              "id": "ari:product:1",
+              "name": "Payments"
+            },
+            {
+              "id": "ari:product:2",
+              "name": "Ledger"
+            }
+          ],
+          "value": "ari:product:1"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Product = ${customfield_1}"
+        }
+      ],
+      "expected": {
+        "aql": "Product = \"Payments\"",
+        "object_schema_id": "7"
+      }
+    },
+    {
+      "name": "the label is the raw preset name before any pick",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [],
+          "value": "Payments"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Product = ${customfield_1.label}"
+        }
+      ],
+      "expected": {
+        "aql": "Product = \"Payments\"",
+        "object_schema_id": "7"
+      }
+    },
+    {
+      "name": "another suffix substitutes the raw value",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [],
+          "value": "ari:product:2",
+          "selected-name": "Ledger"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Product.id = ${customfield_1.id}"
+        }
+      ],
+      "expected": {
+        "aql": "Product.id = \"ari:product:2\"",
+        "object_schema_id": "7"
+      }
+    },
+    {
+      "name": "quotes and backslashes in a name are escaped",
+      "item": "customfield_2",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [],
+          "value": "x",
+          "selected-name": "a\"b\\"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Name = ${customfield_1.label}"
+        }
+      ],
+      "expected": {
+        "aql": "Name = \"a\\\"b\\\\\"",
+        "object_schema_id": "7"
+      }
+    },
+    {
+      "name": "one unresolved placeholder of two waits",
+      "item": "customfield_3",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": [],
+          "value": "Payments"
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_3",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_3",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "A = ${customfield_1} AND B = ${customfield_2}"
+        }
+      ],
+      "expected": "pending"
+    }
+  ]
+}

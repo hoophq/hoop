@@ -1,11 +1,10 @@
-/* The terminal is intentionally dark in both color schemes, so colors come
-   from the fixed dark end of the Mantine palette rather than scheme-aware
-   aliases. rgba(...) values are hover/expanded overlays. */
+/* The terminal is dark in both color schemes. Its colors are the theme's
+   terminal tokens (--hoop-terminal-*), not scheme-aware aliases. */
 
 .terminal {
-  background-color: var(--mantine-color-dark-9);
+  background-color: var(--hoop-terminal-bg);
   border-radius: var(--mantine-radius-md);
-  border: 1px solid var(--mantine-color-dark-5);
+  border: 1px solid var(--hoop-terminal-border);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-xs);
   line-height: 1.7;
@@ -16,7 +15,7 @@
 }
 
 .placeholder {
-  color: var(--mantine-color-dark-2);
+  color: var(--hoop-terminal-muted);
   padding: var(--mantine-spacing-md);
 }
 
@@ -36,12 +35,12 @@
 
 .row:hover,
 .row:focus-visible {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--hoop-terminal-hover);
   outline: none;
 }
 
 .time {
-  color: var(--mantine-color-dark-2);
+  color: var(--hoop-terminal-muted);
   flex-shrink: 0;
 }
 
@@ -53,36 +52,36 @@
 
 .levelDebug {
   composes: level;
-  color: var(--mantine-color-dark-2);
+  color: var(--hoop-terminal-muted);
 }
 
 .levelInfo {
   composes: level;
-  color: var(--mantine-color-green-5);
+  color: var(--hoop-terminal-green);
 }
 
 .levelWarn {
   composes: level;
-  color: var(--mantine-color-yellow-6);
+  color: var(--hoop-terminal-yellow);
 }
 
 .levelError {
   composes: level;
-  color: var(--mantine-color-red-5);
+  color: var(--hoop-terminal-red);
 }
 
 .sourceGateway {
-  color: var(--mantine-color-violet-4);
+  color: var(--hoop-terminal-violet);
   flex-shrink: 0;
 }
 
 .sourceAgent {
-  color: var(--mantine-color-cyan-4);
+  color: var(--hoop-terminal-cyan);
   flex-shrink: 0;
 }
 
 .message {
-  color: var(--mantine-color-gray-1);
+  color: var(--hoop-terminal-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -90,32 +89,32 @@
 }
 
 .fieldsHint {
-  color: var(--mantine-color-dark-2);
+  color: var(--hoop-terminal-muted);
   flex-shrink: 0;
 }
 
 .details {
   margin: 0 var(--mantine-spacing-md) var(--mantine-spacing-xs) var(--mantine-spacing-md);
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  background-color: rgba(255, 255, 255, 0.03);
-  border-left: 2px solid var(--mantine-color-dark-4);
-  color: var(--mantine-color-dark-2);
+  background-color: var(--hoop-terminal-quote);
+  border-left: 2px solid var(--hoop-terminal-rule);
+  color: var(--hoop-terminal-muted);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .detailsLabel {
-  color: var(--mantine-color-dark-2);
+  color: var(--hoop-terminal-muted);
   display: inline-block;
   width: 10ch;
 }
 
 .detailsValue {
-  color: var(--mantine-color-gray-3);
+  color: var(--hoop-terminal-soft);
 }
 
 .detailsFields {
-  color: var(--mantine-color-gray-3);
+  color: var(--hoop-terminal-soft);
   margin: var(--mantine-spacing-xs) 0 0 0;
   font: inherit;
 }

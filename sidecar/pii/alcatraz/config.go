@@ -30,11 +30,20 @@ type piiSection struct {
 	// Entities is optional, and an empty one selects every supported type.
 	// The zero piiSection therefore describes the permissive detector,
 	// which is what an absent section builds.
-	Entities  []string `json:"entities,omitempty"`
-	Ignored   []string `json:"ignored,omitempty"`
-	Threshold float64  `json:"threshold,omitempty"`
-	AllowList []string `json:"allow_list,omitempty"`
-	Language  string   `json:"language,omitempty"`
+	Entities  []string    `json:"entities,omitempty"`
+	Ignored   []string    `json:"ignored,omitempty"`
+	Threshold float64     `json:"threshold,omitempty"`
+	AllowList []string    `json:"allow_list,omitempty"`
+	Language  string      `json:"language,omitempty"`
+	NER       *nerSection `json:"ner,omitempty"`
+}
+
+// nerSection is the "ner" key of the pii section; see NER for each field.
+type nerSection struct {
+	ModelsDir  string `json:"models_dir,omitempty"`
+	Backend    string `json:"backend,omitempty"`
+	ORTLibrary string `json:"ort_library,omitempty"`
+	Threads    int    `json:"threads,omitempty"`
 }
 
 // PluginFromConfig builds the detector described by a sidecar config's "pii"
@@ -62,13 +71,22 @@ func PluginFromConfig(raw json.RawMessage) (Plugin, error) {
 			return nil, fmt.Errorf("pii section: %w", err)
 		}
 	}
-	det, err := NewDetector(Options{
+	o := Options{
 		Entities:  s.Entities,
 		Ignored:   s.Ignored,
 		Threshold: s.Threshold,
 		AllowList: s.AllowList,
 		Language:  s.Language,
-	})
+	}
+	if s.NER != nil {
+		o.NER = &NER{
+			ModelsDir:  s.NER.ModelsDir,
+			Backend:    s.NER.Backend,
+			ORTLibrary: s.NER.ORTLibrary,
+			Threads:    s.NER.Threads,
+		}
+	}
+	det, err := NewDetector(o)
 	if err != nil {
 		return nil, fmt.Errorf("pii section: %w", err)
 	}

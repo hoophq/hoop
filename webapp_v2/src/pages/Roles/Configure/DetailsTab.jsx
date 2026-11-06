@@ -3,7 +3,7 @@ import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
 import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
-import AttributesSelect from '@/pages/Roles/Configure/sections/AttributesSelect'
+import AttributesSelect from '@/components/AttributesSelect'
 import TagsEditor from '@/components/TagsEditor'
 
 // Display labels for attribute names strip the `hoop.dev/<category>.`
@@ -54,6 +54,7 @@ export default function DetailsTab({ connection }) {
           </Text>
         </Stack>
         <AttributesSelect
+          aria-label="Attributes"
           placeholder="Select attributes"
           options={attributeOptions}
           value={drafts.attributes}

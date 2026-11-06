@@ -27,7 +27,7 @@ function ProtocolAvatar({ protocol, getIcon, ...others }) {
   // grpc and spanner are not hoop connection types and have no icon of their
   // own; the fallback would show something unrelated, so they show letters.
   return (
-    <Avatar size={AVATAR_SIZE} bg="gray.1" color="gray" variant="light" aria-label={info.label} {...others}>
+    <Avatar size={AVATAR_SIZE} color="gray" variant="light" aria-label={info.label} {...others}>
       {info.subtype ? (
         <Image src={getIcon({ subtype: info.subtype })} alt="" w={ICON_SIZE} h={ICON_SIZE} fit="contain" />
       ) : (
@@ -49,14 +49,14 @@ function Listeners({ sidecar, getIcon }) {
 
   if (usesConfigFile(sidecar)) {
     return (
-      <Text size="xs" fw={500} c="gray.5">
+      <Text size="xs" fw={500} c="var(--hoop-text-faint)">
         In its config file
       </Text>
     )
   }
   if (listeners.length === 0) {
     return (
-      <Text size="xs" fw={500} c="gray.5">
+      <Text size="xs" fw={500} c="var(--hoop-text-faint)">
         Not configured
       </Text>
     )
@@ -95,7 +95,7 @@ function Listeners({ sidecar, getIcon }) {
       ))}
       {hidden > 0 && (
         <Tooltip label={listeners.slice(LANES_SHOWN).map((l, i) => listenerLabel(l, LANES_SHOWN + i)).join(', ')}>
-          <Avatar size={AVATAR_SIZE} bg="gray.0" color="gray" variant="light" fw={700}>
+          <Avatar size={AVATAR_SIZE} color="gray" variant="light" fw={700}>
             {`+${hidden}`}
           </Avatar>
         </Tooltip>
@@ -144,13 +144,13 @@ export default function SidecarsTable({ sidecars }) {
               </Table.Td>
               <Table.Td miw={150}>
                 {usesConfigFile(sidecar) ? (
-                  <Text size="xs" fw={500} c="gray.5">
+                  <Text size="xs" fw={500} c="var(--hoop-text-faint)">
                     Not delivered
                   </Text>
                 ) : features.length > 0 ? (
                   <FeaturePills compact features={features} />
                 ) : (
-                  <Text size="xs" fw={500} c="gray.5">
+                  <Text size="xs" fw={500} c="var(--hoop-text-faint)">
                     No policies configured
                   </Text>
                 )}

@@ -344,6 +344,146 @@ select t.* from table_privileges t`
 	}
 }
 
+// A rule that fences reads of salaries refuses every select of it, whatever
+// its columns are called and wherever it stands in a FROM list. A column or
+// alias spelling update, into or another relation introducer took the FROM
+// after it for the relation, and an aliased item ended the FROM list, so the
+// select passed while `SELECT s.amount FROM salaries s` was refused (ENG-859).
+func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
+	fence, err := policy.NewRules([]policy.Rule{{
+		Name: "salaries-is-hidden", Type: policy.MatchTable, Tables: []string{"salaries"},
+		Access: string(inspect.AccessRead), Message: "salaries is hidden",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	for _, sql := range []string{
+		`SELECT s.amount FROM salaries s`,
+		`SELECT s.update FROM salaries s`,
+		`SELECT s.into FROM salaries s`,
+		`SELECT s.update FROM (SELECT amount AS update FROM salaries) s`,
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT amount AS update FROM salaries`,
+		`SELECT update FROM salaries`,
+		`SELECT * FROM t update JOIN salaries ON true`,
+		`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`,
+		`SELECT x.update FROM (VALUES (1)) x(update), salaries`,
+		`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`,
+		`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`,
+		`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s, salaries`,
+		// A FROM list continues past an aliased item, a subquery and a
+		// function call.
+		`SELECT * FROM t x, salaries`,
+		`SELECT * FROM (SELECT 1) x, salaries`,
+		`SELECT * FROM generate_series(1, 2) g, salaries`,
+		// Spark does not reserve AS: here it is a column, and FROM is real.
+		`SELECT as FROM salaries`,
+	} {
+		t.Run(sql, func(t *testing.T) {
+			denied := false
+			for _, s := range inspectOne(t, sql) {
+				denied = denied || fence.Evaluate(s).Denied
+			}
+			if !denied {
+				t.Errorf("postgres wire path: a read fence on salaries passed %s", sql)
+			}
+			for _, d := range []lexer.Dialect{lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+				lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+				a := inspect.AnalyzeSQLIn(sql, d)
+				stmt := inspect.Statement{
+					Direction: inspect.FromClient, Text: sql,
+					Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+				}
+				if !fence.Evaluate(stmt).Denied {
+					t.Errorf("%s: a read fence on salaries passed, relations = %v", d, a.Relations)
+				}
+			}
+		})
+	}
+}
+
+// A read-only lane is one operation rule naming every write, the rule the
+// GCP Marketplace read-only preset and the agents-cli template ship. These
+// statements got past it and changed the database (ENG-803): the EXPLAIN
+// forms ran their DELETE and were audited as an allowed select, and
+// SELECT ... INTO created its table the same way, in parentheses as an
+// allowed unknown. ANALYSE ran, while the rule refuses ANALYZE as other.
+//
+// The plans stay allowed. EXPLAIN without ANALYZE, or with ANALYZE false,
+// runs nothing, and a quoted FORMAT value is not the ANALYZE option.
+func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
+	readOnly := rulesFor(t, "read-only",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpCreate,
+		inspect.OpDrop, inspect.OpAlter, inspect.OpTruncate, inspect.OpGrant,
+		inspect.OpRevoke, inspect.OpCall, inspect.OpOther)
+
+	for _, tc := range []struct {
+		name, sql  string
+		wantDenied bool
+		wantOp     inspect.Operation
+	}{
+		{"EXPLAIN ANALYSE, the British spelling, is refused as the delete it runs",
+			`EXPLAIN ANALYSE DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"EXPLAIN (ANALYSE) is refused as the delete it runs",
+			`EXPLAIN (ANALYSE) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option is refused as the delete it runs",
+			`EXPLAIN ("analyze") DELETE FROM customers WHERE id = 3`, true, inspect.OpDelete},
+		{"a quoted analyze option after another option is refused as the delete it runs",
+			`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers WHERE id = 4`, true, inspect.OpDelete},
+		{"SELECT INTO is refused as the create it is",
+			`SELECT * INTO customers_copy FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO TEMP is refused as the create it is",
+			`SELECT * INTO TEMP t1 FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO in parentheses is refused as the create it is",
+			`(SELECT * INTO t6 FROM customers)`, true, inspect.OpCreate},
+		{"SELECT INTO in two pairs of parentheses is refused as the create it is",
+			`((SELECT * INTO t30 FROM customers))`, true, inspect.OpCreate},
+		{"ANALYSE, the British spelling, is refused as ANALYZE is",
+			`ANALYSE customers`, true, inspect.OpOther},
+		{"a second ANALYZE turned off does not hide the first",
+			`EXPLAIN (ANALYZE, ANALYZE false) DELETE FROM customers`, true, inspect.OpDelete},
+		{"ANALYZE 0x1, a hexadecimal 1, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0x1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"ANALYZE 0_1, a 1 with a separator, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0_1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option with an octal 1 is refused as the delete it runs",
+			`EXPLAIN ("analyze" 0o1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+
+		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
+		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
+		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
+		{"EXPLAIN with ANALYZE turned off passes", `EXPLAIN (ANALYZE false) DELETE FROM customers`, false, ""},
+		{"a quoted analyze option turned off passes", `EXPLAIN ("analyze" off) DELETE FROM customers`, false, ""},
+		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
+		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
+		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},
+		// A privilege table names its columns after the statements, and a
+		// CASE branch in parentheses reads them. They are expressions.
+		{"a parenthesized column called update in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN true ELSE (update) END AS can_update FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized column called delete in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN (delete) ELSE false END AS can_delete FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized expression of columns called insert and update passes",
+			`SELECT CASE WHEN owner THEN true ELSE (insert OR update) END FROM privs`, false, inspect.OpSelect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmts := inspectOne(t, tc.sql)
+			if len(stmts) == 0 {
+				t.Fatalf("no statements for %q", tc.sql)
+			}
+			for _, s := range stmts {
+				if denied := readOnly.Evaluate(s).Denied; denied != tc.wantDenied {
+					t.Errorf("denied = %v, want %v: operation %q, effects %v, relations %v",
+						denied, tc.wantDenied, s.Operation, s.Effects, s.Relations)
+				}
+				if tc.wantOp != "" && s.Operation != tc.wantOp {
+					t.Errorf("Operation = %q, want %q", s.Operation, tc.wantOp)
+				}
+			}
+		})
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...inspect.Operation) *policy.Rules {
 	t.Helper()
@@ -620,6 +760,9 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"dynamic SQL only released Spark reads is refused as unreadable", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", unreadable, true},
 		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
 		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
+		{"table_changes is refused by a rule fencing reads of its table", "SELECT * FROM table_changes('t', 1)", fenceReadT, true},
+		{"a qualified table_changes is refused by a rule fencing reads of its table", "SELECT * FROM system.builtin.table_changes('t', 1)", fenceReadT, true},
+		{"table_changes over an expression is refused as unreadable", "SELECT * FROM table_changes(concat('t', ''), 1)", unreadable, true},
 		{"a column aliased overwrite is refused by a rule fencing reads of its table", "SELECT id overwrite FROM t", fenceReadT, true},
 		{"EXPLAIN INSERT OVERWRITE is refused by a rule fencing reads of its table", "EXPLAIN INSERT OVERWRITE t SELECT 1", fenceReadT, true},
 		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},

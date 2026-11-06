@@ -11,6 +11,7 @@ details: `README.md`.
 - Development (Vite only): `npm run dev`
 - Build: `npm run build`
 - Lint: `npm run lint`
+- Test: `npm test` (vitest; the session fixtures in `test/fixtures/sessions` come from `npm --prefix ../webapp run fixtures:sessions`)
 - Preview production: `npm run preview`
 
 ## Project Structure
@@ -48,18 +49,22 @@ One product: the gateway. `hoop start control-plane` runs the same gateway and U
   Layout + PageLayout), `Guard` a React route without the shell. `Home`, `Onboarding` and
   `CatchAll` are the ClojureScript leaves `/`, `/onboarding/*` and `/*`. Only `Router.jsx`
   reads them.
-- **Agent and sidecar rule forms are siblings.** Guardrail, masking and analyzer forms
-  come as `Gateway*Form` (agent traffic) and `Sidecar*Form` (sidecar traffic), picked
-  per rule with `<ByRuleTraffic>` in `Router.jsx`.
+- **Guardrail and masking rules have one form each.** `pages/Guardrails/Create/GuardrailForm.jsx`
+  and `pages/Features/DataMasking/Create/DataMaskingForm.jsx` write both halves of a rule (the
+  agent fields and `sidecar_spec`); an option one engine does not run carries a
+  `RuleSupportTag` (`utils/ruleSupport.js`). Only the analyzer keeps `Gateway*Form` /
+  `Sidecar*Form` siblings, picked per rule with `<ByRuleTraffic>` in `Router.jsx`.
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
-  flag). Off, `GatewayProtectedRoute` turns `/`, `/client` and the agent onboarding into
-  the landing by role (`pages/Home`) on every route change, and the CLJS app does not
-  move the URL while it is parked (`routes/navigate!`).
+  flag). Off, `GatewayProtectedRoute` turns `/`, the agent onboarding and every path a
+  nav or palette entry flags with `AGENTS_FLAG` (`modes/agentPaths.js`), sub-paths
+  included, into the landing by role (`pages/Home`) on every route change, and the CLJS
+  app does not move the URL while it is parked (`routes/navigate!`). Flag a new agent
+  page in `gatewayNav.js` and its URL closes too.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`). `GatewayProtectedRoute` adds the
-  agents landing swap.
+  agents swap.
 - **Roles.** `/userinfo` reports `role`. A role is a reserved group name; `standard` is
   the absence of one and is never stored as a group. The group names come from
   `/serverinfo` (`admin_role_name`, `approver_role_name`), never a literal. Gate a route
@@ -158,7 +163,7 @@ and avoids the cycle a call from `useAuthStore` would create. Live examples:
 | Where it lives | What it is | Examples |
 |---|---|---|
 | `pages/[Page]/<X>.jsx` | A tab body or top-level slice of the page | `CredentialsTab.jsx`, `DetailsTab.jsx`, `ConfigureHeader.jsx` |
-| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `TestConnectionModal.jsx`, `MetadataFieldsInput.jsx` |
+| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `SidecarMirrorView.jsx`, `MetadataFieldsInput.jsx` |
 | `pages/[Page]/components/` | Reusable within the page (≥2 consumers) | `SecretField/`, `ToggleSection.jsx`, `ReviewSection.jsx` |
 | `src/components/` | Reusable across the whole app | `Button`, `TextInput`, `Table` |
 
@@ -230,8 +235,9 @@ useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
   (`gateway/liveevents`) and `LIVE_EVENTS`.
 - A page that must not miss an event keeps a slow poll: the stream is
   best effort (one replica, no replay, reconnects after 3-8s).
-- Users: the sidecar setup wizard (`pages/Sidecars/Setup`) and approval
-  notifications (`features/ApprovalNotifications`).
+- Users: the sidecar setup wizard (`pages/Sidecars/Setup`), approval
+  notifications (`features/ApprovalNotifications`) and the sidebar pending
+  approvals count (`layout/Sidebar/usePendingApprovalsCount`).
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 
@@ -266,14 +272,15 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - Supports **local auth** (email/password) and **IDP/OAuth** providers
 - Token stored in localStorage as `jwt-token` (not just `token`)
 - Token can come from cookies (`hoop_access_token`) or query params (`?token=xxx`)
-- **No refresh token** - on 401, redirects to login
+- **The gateway renews the token** in the `X-New-Access-Token` response header; `api.js` and the SSE clients store it, as CLJS does. Send `useAuthStore.getState().getToken()`, never the store's `token` (the sign-in's, kept to detect an account change)
+- On 401, redirects to login
 - Saves current URL before redirect for post-auth navigation
 
 ### Key Files
 - `stores/useAuthStore.js` - Token management, cookie/query param handling
 - `services/auth.js` - Login/logout API calls
 - `services/api.js` - Axios interceptor for auth header and 401 handling
-- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents landing swap
+- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents swap
 - `pages/Auth/Login/` - Login page (detects auth method from gateway)
 - `pages/Auth/Register/` - Local auth signup form
 - `pages/Auth/Signup/` - IDP org setup (post-OAuth)
@@ -315,7 +322,7 @@ window.hoopDispatch(['modal->open', 'some-modal'])
 
 **1. Mantine style props** — always first. Cover the vast majority of cases.
 ```jsx
-<Box mih="100%" p="md" maw={400} w="90%" h="100vh" bg="gray.0" />
+<Box mih="100%" p="md" maw={400} w="90%" h="100vh" />
 <Text c="dimmed" fz="sm" fw={600} ta="center" />
 <Stack gap="lg" align="center" />
 ```
@@ -411,6 +418,15 @@ Available Mantine CSS variables (set by the theme in `src/theme.js`):
 var(--mantine-spacing-xsAlt | smAlt | mdAlt | lgAlt | xlAlt | xxlAlt | xxxlAlt)
 var(--mantine-spacing-xs | sm | md | lg | xl)
 
+/* Colors come from the theme. A surface is a component (Paper variant,
+   Divider, Alert, CodeSnippet) whose theme sets its color; a CSS Module names
+   no color unless it draws a one-off effect. Where no component fits, use the
+   role tokens below, never gray-N (the gray scale starts at Radix step 3;
+   CLJS_PATTERNS.md has the mapping). */
+var(--hoop-surface-subtle | muted | strong | raised)
+var(--hoop-border-subtle | divider)
+var(--hoop-terminal-bg | text)
+
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
 
@@ -420,11 +436,15 @@ var(--mantine-line-height-xs | sm | md | lg | xl)
 /* Border radius — xs=4.5px sm=6px md=9px lg=12px xl=18px */
 var(--mantine-radius-xs | sm | md | lg | xl)
 
-/* Colors — e.g. indigo, gray, green, amber, red, sky */
-var(--mantine-color-{name}-{0-9})
-var(--mantine-color-{name}-filled)       /* primary shade, solid bg */
+/* Semantic colors, never a shade number: outside src/components and
+   src/theme.js, test/themeColors.test.js fails on --mantine-color-{name}-{0-9}
+   (also built: `${name}.6`), a hex or an rgb(). A one-off effect says
+   `theme-exception: <why>` in its comment. */
+var(--mantine-color-{name}-filled)       /* solid fill */
 var(--mantine-color-{name}-light)        /* light variant bg */
 var(--mantine-color-{name}-light-color)  /* light variant text */
+var(--mantine-primary-color-filled | light | light-color)
+var(--mantine-color-text | dimmed | body)
 ```
 
 ```css
@@ -432,14 +452,14 @@ var(--mantine-color-{name}-light-color)  /* light variant text */
 .label { font-size: 12px; margin-bottom: 8px; color: #3e63dd; }
 
 /* ✅ Correct — always reference the theme */
-.label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-indigo-8); }
+.label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-dimmed); }
 ```
 
 ## Text color — use Mantine tokens, not raw names
 
 - For secondary text use `c="dimmed"`. The `--mantine-color-dimmed` variable is set in `theme.js` `cssVariablesResolver()` to Radix slate11 (`#60646c`, ~5.7:1 on white — passes WCAG AA). Body text is `--mantine-color-text` = slate12 (`#1c2024`).
 - Never use raw names like `c="dark"` or `c="light"` — those palettes are not defined in `theme.js` and silently fall back to Mantine defaults. For near-black text simply omit the prop to inherit `var(--mantine-color-text)`; `gray.9` is `#4d4d60` (a mid slate), not near-black.
-- On dark navy surfaces (`--brand-navy`), never color text with the gray scale — it is calibrated for light backgrounds. Use white color-mix tones instead (see `EnterpriseBanner.module.css`, `pages/Auth/Setup/Setup.module.css`).
+- On dark navy surfaces (`--brand-navy`), never color text with the gray scale — it is calibrated for light backgrounds. Use the `--hoop-on-navy-*` tokens (`theme.js`); `EnterpriseBanner` and `SelectionCard` keep their own tones inside `src/components`.
 - When adding a new palette or changing `primaryColor`, re-verify `c="dimmed"` contrast in DevTools.
 
 ## CSS Layers — do not disable
@@ -467,7 +487,7 @@ Debug checklist:
 1. Is the CSS Module imported in the JSX? (Vite only bundles it if there's `import classes from './X.module.css'`.)
 2. Are classes applied via `classNames={{ slot: classes.foo }}`, not `className`? Internal slots of Mantine components ignore `className`.
 3. Is the slot name correct? Check the "Styles API" section of the Mantine component's docs.
-4. Does the CSS Module use only `var(--mantine-*)` values? Hardcoded hex/px are forbidden by the styling hierarchy — the only sanctioned literals are Figma alpha-overlay tints that have no Mantine variable (e.g. `rgba(0, 0, 51, 0.06)` Neutral Alpha and `rgba(0, 0, 0, 0.05)` Black Alpha, used by `Pill/theme.js` and `Sidebar.module.css` hover/active states), and rgba-white contrast painting on the dark `--brand-navy` surfaces (`SelectionCard`).
+4. Does the CSS Module name a color? It must not: colors come from the component's theme or the role tokens in `theme.js` (the sidebar's Figma alpha overlays are `--hoop-nav-*`, white tones on the brand navy are `--hoop-on-navy-*`). `test/themeColors.test.js` fails on a shade or a literal outside `src/components` and `src/theme.js`.
 5. If it still doesn't apply and `layers.css` is imported, inspect the rule in DevTools and confirm it's inside `@layer mantine` — if not, the `styles.layer.css` import was broken.
 
 ## Reference Implementation

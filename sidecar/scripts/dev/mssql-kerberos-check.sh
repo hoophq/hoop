@@ -132,6 +132,37 @@ else
     bad "masking happened but the audit trail recorded none"
 fi
 
+# ------------------------------------------------- 3b'. Stored procedures
+c_step "3b'. Stored procedures are judged by name and masked by result"
+# A procedure's body is in the catalog, so the operation rule sees
+# `unknown`; the procedure rule names it, from a batch or an RPC call.
+OUT="$(relay_sql -Q "EXEC dbo.get_secrets")"
+if grep -q "this procedure is not callable through mssqldb" <<<"$OUT"; then
+    ok "EXEC dbo.get_secrets refused by the procedure rule"
+else
+    bad "EXEC dbo.get_secrets was not refused"
+    note "$(head -3 <<<"$OUT")"
+fi
+
+PROC="$(relay_sql -h-1 -W -Q "SET NOCOUNT ON; EXEC dbo.get_customers")"
+if grep -q "REDACTED:EMAIL_ADDRESS" <<<"$PROC" && ! grep -qE 'ada@example\.com|grace@example\.com' <<<"$PROC"; then
+    ok "a procedure's result set is masked like a query's"
+else
+    bad "EXEC dbo.get_customers returned unmasked rows"
+    note "$(head -3 <<<"$PROC")"
+fi
+
+# An OUTPUT parameter comes back as RETURNVALUE. Unmeasured, it once stopped
+# masking for the rest of the connection; the SELECT after it proves it did
+# not.
+OUTP="$(relay_sql -h-1 -W -Q "SET NOCOUNT ON; DECLARE @n INT; EXEC dbo.count_customers @n OUTPUT; SELECT email FROM customers")"
+if grep -q "REDACTED:EMAIL_ADDRESS" <<<"$OUTP" && ! grep -qE 'ada@example\.com|grace@example\.com' <<<"$OUTP"; then
+    ok "masking survives an OUTPUT parameter on the same connection"
+else
+    bad "a query after an OUTPUT parameter left unmasked"
+    note "$(head -3 <<<"$OUTP")"
+fi
+
 # ------------------------------------------------- 3c. Envoy terminates TLS
 c_step "3c. Envoy terminates TLS on all three lanes"
 
@@ -182,6 +213,19 @@ if grep -q '"rule":"no-destructive-tsql"' <<<"$RELAY_LOG"; then
     ok "the denial is in the audit stream, keyed to the rule that fired"
 else
     bad "no audit event naming no-destructive-tsql"
+fi
+if grep -q '"rule":"no-secret-procs"' <<<"$RELAY_LOG"; then
+    ok "the procedure refusal is in the audit stream, keyed to its rule"
+else
+    bad "no audit event naming no-secret-procs"
+fi
+# Envoy hands the relay the LOGIN7 in the clear, so the SQL login names the
+# session. The Kerberos session in step 5 stays anonymous: the name is in
+# the ticket.
+if grep -q '"principal":"appuser"' <<<"$RELAY_LOG"; then
+    ok "the SQL-authenticated session is named for its login"
+else
+    bad "no audit row carries principal appuser"
 fi
 
 # ------------------------------------------------------------- 5. Kerberos

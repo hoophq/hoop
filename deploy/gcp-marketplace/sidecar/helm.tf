@@ -25,6 +25,7 @@ module "values" {
   protocol            = var.protocol
   upstream            = var.upstream
   service_port        = var.service_port
+  guardrail_preset    = var.guardrail_preset
   config_document     = var.config_document
   existing_config_map = var.existing_config_map
   control_plane_url   = var.control_plane_url

@@ -11,7 +11,7 @@ import {
   Flex,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, CircleDashed, Tags } from 'lucide-react'
 import { useAgentStore } from '@/stores/useAgentStore'
@@ -25,6 +25,8 @@ import TagBadge from '@/components/Badge'
 import Tooltip from '@/components/Tooltip'
 import { showSnackbar } from '@/utils/snackbar'
 import { labelForTag, AGENT_TAG_RULES } from '@/utils/tags'
+import { DEFAULT_FILTERS, agentVersions, applyAgentFilters } from '@/pages/Agents/filters'
+import FiltersBar from '@/pages/Agents/sections/FiltersBar'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
@@ -183,6 +185,10 @@ function Agents() {
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [tagsAgent, setTagsAgent] = useState(null)
   const [tagsSession, setTagsSession] = useState(0)
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+
+  const versions = useMemo(() => agentVersions(agents), [agents])
+  const visibleAgents = useMemo(() => applyAgentFilters(agents, filters), [agents, filters])
 
   const isAdmin = user?.is_admin
   const showLoader = loading
@@ -260,18 +266,29 @@ function Agents() {
             }
           />
         ) : (
-          <Card padding={0} withBorder>
-            {agents.map((agent, i) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                isAdmin={isAdmin}
-                isLast={i === agents.length - 1}
-                onDelete={handleDeleteClick}
-                onEditTags={handleEditTagsClick}
+          <Stack gap="md">
+            <FiltersBar filters={filters} versions={versions} onChange={setFilters} />
+            {visibleAgents.length === 0 ? (
+              <EmptyState
+                compact
+                title="No agents match your filters"
+                description="Try clearing the filters above."
               />
-            ))}
-          </Card>
+            ) : (
+              <Card padding={0} withBorder>
+                {visibleAgents.map((agent, i) => (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    isAdmin={isAdmin}
+                    isLast={i === visibleAgents.length - 1}
+                    onDelete={handleDeleteClick}
+                    onEditTags={handleEditTagsClick}
+                  />
+                ))}
+              </Card>
+            )}
+          </Stack>
         )}
       </Stack>
     </>

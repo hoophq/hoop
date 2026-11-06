@@ -19,6 +19,11 @@ func TestInstallSourceIsFixedVocabulary(t *testing.T) {
 		{" OpenAI-Agents-HTTP\n", InstallSourceOpenAIAgentsHTTP},
 		{"openai-agents-kubernetes", InstallSourceOpenAIAgentsKubernetes},
 		{"openai-agents", InstallSourceOther},
+		{"agentcore-http", InstallSourceAgentCoreHTTP},
+		{" AgentCore-HTTP\n", InstallSourceAgentCoreHTTP},
+		{"agentcore-kubernetes", InstallSourceAgentCoreKubernetes},
+		{"agentcore-postgres", InstallSourceAgentCorePostgres},
+		{"agentcore", InstallSourceOther},
 		{"acme-prod", InstallSourceOther},
 		{"other", InstallSourceOther},
 	} {

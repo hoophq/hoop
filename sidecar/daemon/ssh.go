@@ -919,5 +919,5 @@ func sshLaneNotes(sc *SSHConfig) []string {
 // life. Swapping a masker into a server built without it would show an
 // operator masking that is not happening.
 func isEndpointLane(lc ListenerConfig) bool {
-	return isGRPCTransport(lc) || isSSH(lc) || isICA(lc)
+	return isGRPCTransport(lc) || isSSH(lc) || isICA(lc) || isMCPGateway(lc)
 }

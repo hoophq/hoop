@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,7 +58,7 @@ func seed(t *testing.T, s store.Store, id session.ID, principal, conn string, de
 }
 
 func TestSessionCountersAreDenormalized(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "sess-1", "alice", "appdb", true)
 
 	rec, err := s.Session(ctx(), "sess-1")
@@ -87,7 +88,7 @@ func TestSessionCountersAreDenormalized(t *testing.T) {
 // A sink attached mid-session sees no session_start. Dropping those events
 // would lose the statements that matter most.
 func TestEventWithoutSessionStartStillCreatesASession(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	err := s.Write(ctx(), audit.Event{
 		Kind: audit.KindStatement, Timestamp: time.Now().UTC(), SessionID: "orphan",
 		Principal: "bob", Protocol: inspect.HTTP, Connection: "db",
@@ -107,7 +108,7 @@ func TestEventWithoutSessionStartStillCreatesASession(t *testing.T) {
 }
 
 func TestSessionNotFound(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	_, err := s.Session(ctx(), "nope")
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
@@ -115,7 +116,7 @@ func TestSessionNotFound(t *testing.T) {
 }
 
 func TestSessionFiltersNarrow(t *testing.T) {
-	s := store.NewMemoryStore(50)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 50})
 	seed(t, s, "a", "alice", "appdb", true)
 	seed(t, s, "b", "bob", "appdb", false)
 	seed(t, s, "c", "alice", "api", false)
@@ -152,7 +153,7 @@ func TestSessionFiltersNarrow(t *testing.T) {
 // arrive. OFFSET paging fails here: an insert shifts the window, so a row is
 // skipped or repeated.
 func TestKeysetPagingIsStableUnderConcurrentInserts(t *testing.T) {
-	s := store.NewMemoryStore(500)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 500})
 	for i := range 20 {
 		seed(t, s, session.ID(string(rune('a'+i))), "alice", "appdb", false)
 	}
@@ -188,7 +189,7 @@ func TestKeysetPagingIsStableUnderConcurrentInserts(t *testing.T) {
 }
 
 func TestMalformedCursorIsRejected(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "a", "alice", "appdb", false)
 
 	if _, err := s.Sessions(ctx(), store.SessionFilter{Cursor: "!!!not-base64!!!"}); err == nil {
@@ -200,7 +201,7 @@ func TestMalformedCursorIsRejected(t *testing.T) {
 }
 
 func TestEventsAreOldestFirstWithinASession(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "a", "alice", "appdb", true)
 
 	page, err := s.Events(ctx(), store.EventFilter{SessionID: "a"})
@@ -224,7 +225,7 @@ func TestEventsAreOldestFirstWithinASession(t *testing.T) {
 }
 
 func TestEventFilters(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "a", "alice", "appdb", true)
 
 	denied, _ := s.Events(ctx(), store.EventFilter{DeniedOnly: true})
@@ -246,7 +247,7 @@ func TestEventFilters(t *testing.T) {
 }
 
 func TestStatsAggregates(t *testing.T) {
-	s := store.NewMemoryStore(50)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 50})
 	seed(t, s, "a", "alice", "appdb", true)
 	seed(t, s, "b", "alice", "appdb", false)
 	seed(t, s, "c", "bob", "api", false)
@@ -276,7 +277,7 @@ func TestStatsAggregates(t *testing.T) {
 }
 
 func TestStatsBreakdownTruncatedToTopN(t *testing.T) {
-	s := store.NewMemoryStore(2000)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 2000})
 	for i := range store.TopN + 15 {
 		id := session.ID("s" + strings.Repeat("x", i%5) + string(rune('A'+i)))
 		seed(t, s, id, "user"+string(rune('A'+i)), "conn", false)
@@ -290,7 +291,7 @@ func TestStatsBreakdownTruncatedToTopN(t *testing.T) {
 // Highest risk wins. An average lets one dangerous statement hide behind
 // fifty harmless ones.
 func TestRiskLevelTakesTheMaximum(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	for _, level := range []string{"low", "high", "medium"} {
 		s.Write(ctx(), audit.Event{
 			Kind: audit.KindStatement, Timestamp: time.Now().UTC(), SessionID: "r",
@@ -310,7 +311,7 @@ func TestRiskLevelTakesTheMaximum(t *testing.T) {
 // statement, and the first statement would otherwise stamp its own on the
 // whole session.
 func TestSessionMetadataComesFromTheSessionRecords(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	trace := map[string]string{"postgres.option.claude.session.id": "xyz"}
 	s.Write(ctx(), audit.Event{Kind: audit.KindSessionStart, Timestamp: time.Now().UTC(),
 		SessionID: "m", Principal: "anonymous"})
@@ -332,7 +333,7 @@ func TestSessionMetadataComesFromTheSessionRecords(t *testing.T) {
 // Eviction must drop a whole session, never half its timeline, or the detail
 // view renders a truncated session as a whole one.
 func TestEvictionDropsWholeSessions(t *testing.T) {
-	s := store.NewMemoryStore(2)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 2})
 	seed(t, s, "old", "alice", "appdb", false)
 	seed(t, s, "mid", "bob", "appdb", false)
 	seed(t, s, "new", "carol", "appdb", false)
@@ -353,8 +354,104 @@ func TestEvictionDropsWholeSessions(t *testing.T) {
 	}
 }
 
+func bigStatement(id session.ID, n int) audit.Event {
+	return audit.Event{
+		Kind: audit.KindStatement, Timestamp: time.Now().UTC(), SessionID: id,
+		Principal: "alice", Operation: inspect.OpSelect, Allowed: true,
+		Statement: fmt.Sprintf("SELECT %d -- %s", n, strings.Repeat("x", 1000)),
+	}
+}
+
+// Past the byte budget the oldest events go, from whichever session holds
+// them, and that session says its timeline is incomplete. Its counters do
+// not move: they describe the session, not the retained window.
+func TestTheByteBudgetDropsTheOldestEventsAndMarksTheirSession(t *testing.T) {
+	s := store.NewMemoryStore(store.MemoryOptions{MaxBytes: 16 << 10})
+	for i := range 10 {
+		_ = s.Write(ctx(), bigStatement("old", i))
+	}
+	for i := range 30 {
+		_ = s.Write(ctx(), bigStatement("new", i))
+	}
+
+	old, err := s.Session(ctx(), "old")
+	if err != nil {
+		t.Fatalf("a session that lost its events was evicted: %v", err)
+	}
+	if old.EventsDropped != 10 || old.StatementCount != 10 {
+		t.Errorf("old: dropped %d, statements %d; want 10 and 10", old.EventsDropped, old.StatementCount)
+	}
+	if page, _ := s.Events(ctx(), store.EventFilter{SessionID: "old"}); page.Total != 0 {
+		t.Errorf("old still shows %d events", page.Total)
+	}
+
+	cur, _ := s.Session(ctx(), "new")
+	page, _ := s.Events(ctx(), store.EventFilter{SessionID: "new", Limit: store.MaxLimit})
+	if cur.EventsDropped+page.Total != 30 || page.Total == 0 {
+		t.Errorf("new: dropped %d + retained %d, want 30 with some retained", cur.EventsDropped, page.Total)
+	}
+	// What is retained is the newest, in order.
+	if last := page.Events[len(page.Events)-1].Statement; !strings.HasPrefix(last, "SELECT 29 ") {
+		t.Errorf("the newest retained event is %.12q, want SELECT 29", last)
+	}
+	if first := page.Events[0].Statement; first != bigStatement("new", int(cur.EventsDropped)).Statement {
+		t.Errorf("the oldest retained event is %.12q, want SELECT %d", first, cur.EventsDropped)
+	}
+}
+
+// One event larger than the whole budget is still kept: an empty store
+// would answer every query as if the sidecar saw nothing.
+func TestTheNewestEventSurvivesABudgetItExceeds(t *testing.T) {
+	s := store.NewMemoryStore(store.MemoryOptions{MaxBytes: 1})
+	_ = s.Write(ctx(), bigStatement("a", 1))
+	_ = s.Write(ctx(), bigStatement("a", 2))
+
+	page, _ := s.Events(ctx(), store.EventFilter{})
+	if page.Total != 1 || !strings.HasPrefix(page.Events[0].Statement, "SELECT 2 ") {
+		t.Errorf("retained %d events, want only the newest", page.Total)
+	}
+}
+
+// The API must not serve what the JSONL file redacted or cut.
+func TestTheStoreAppliesTheSinkOptions(t *testing.T) {
+	redacted := store.NewMemoryStore(store.MemoryOptions{Sink: audit.SinkOptions{RedactStatements: true}})
+	_ = redacted.Write(ctx(), bigStatement("a", 1))
+	page, _ := redacted.Events(ctx(), store.EventFilter{})
+	if got := page.Events[0].Statement; !strings.HasPrefix(got, "sha256:") {
+		t.Errorf("a redacting store kept %.20q", got)
+	}
+
+	capped := store.NewMemoryStore(store.MemoryOptions{Sink: audit.SinkOptions{MaxStatementBytes: 16}})
+	_ = capped.Write(ctx(), bigStatement("a", 1))
+	page, _ = capped.Events(ctx(), store.EventFilter{})
+	if got := page.Events[0].Statement; len(got) > 64 || !strings.HasSuffix(got, "[truncated]") {
+		t.Errorf("a 16-byte cap kept %d bytes: %.40q", len(got), got)
+	}
+}
+
+// The totals count every event of a session; the breakdowns count what is
+// retained. When the budget dropped some, Stats must say so, or a dashboard
+// shows a denial with no rule behind it as the whole story.
+func TestStatsReportTheEventsTheBudgetDropped(t *testing.T) {
+	s := store.NewMemoryStore(store.MemoryOptions{MaxBytes: 1})
+	_ = s.Write(ctx(), audit.Event{Kind: audit.KindViolation, SessionID: "a", Principal: "alice",
+		Operation: inspect.OpDrop, Rule: "no-destructive", Statement: "DROP TABLE customers"})
+	_ = s.Write(ctx(), audit.Event{Kind: audit.KindSessionEnd, SessionID: "a", Principal: "alice"})
+
+	st, err := s.Stats(ctx(), store.SessionFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Denied != 1 || st.EventsDropped != 1 {
+		t.Errorf("Denied = %d, EventsDropped = %d; want 1 and 1", st.Denied, st.EventsDropped)
+	}
+	if len(st.ByRule) != 0 {
+		t.Errorf("ByRule = %v, want only retained events", st.ByRule)
+	}
+}
+
 func TestConcurrentWritesLoseNothing(t *testing.T) {
-	s := store.NewMemoryStore(1000)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 1000})
 	const writers, each = 8, 50
 
 	var wg sync.WaitGroup
@@ -384,7 +481,7 @@ func TestConcurrentWritesLoseNothing(t *testing.T) {
 }
 
 func TestContextCancellationIsHonored(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "a", "alice", "appdb", false)
 
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -430,7 +527,7 @@ func TestClassifyVerdictPrecedence(t *testing.T) {
 
 func newAPI(t *testing.T) (*store.MemoryStore, http.Handler) {
 	t.Helper()
-	s := store.NewMemoryStore(100)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 100})
 	seed(t, s, "a", "alice", "appdb", true)
 	seed(t, s, "b", "bob", "api", false)
 	return s, store.NewAPI(s).Routes()
@@ -546,7 +643,7 @@ func TestAPIStats(t *testing.T) {
 // Audit data is full of SQL. Escaping > into \u003e makes it unreadable in a
 // terminal and unsearchable in devtools.
 func TestAPIDoesNotEscapeHTMLInStatements(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	s.Write(ctx(), audit.Event{
 		Kind: audit.KindStatement, Timestamp: time.Now().UTC(), SessionID: "x",
 		Principal: "alice", Operation: inspect.OpSelect,
@@ -565,7 +662,7 @@ func TestAPIDoesNotEscapeHTMLInStatements(t *testing.T) {
 }
 
 func TestAPIBasePathStripping(t *testing.T) {
-	s := store.NewMemoryStore(10)
+	s := store.NewMemoryStore(store.MemoryOptions{MaxSessions: 10})
 	seed(t, s, "a", "alice", "appdb", false)
 
 	api := store.NewAPI(s)

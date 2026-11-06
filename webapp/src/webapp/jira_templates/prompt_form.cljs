@@ -4,7 +4,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
-   [webapp.jira-templates.cascade :as cascade]
+   [webapp.jira-templates.form-data :as form-data-fns]
    [webapp.components.paginated-searchbox :as paginated-searchbox]))
 
 (defn- create-cmdb-select-options [jira-values]
@@ -13,26 +13,6 @@
            :label name
            :description type})
         jira-values))
-
-(defn- get-value-id [jira_values value]
-  (when-let [value-match (first (filter #(= (:name %) value) jira_values))]
-    {"value" (:id value-match) "label" (:name value-match)}))
-
-(defn- init-form-data [cmdb-items]
-  (reduce (fn [acc {:keys [jira_field jira_values value]}]
-            (if-let [id (get-value-id jira_values value)]
-              (assoc-in acc [:jira_fields jira_field] id)
-              acc))
-          {}
-          cmdb-items))
-
-(defn- process-datetime-field [prompts field-key field-value]
-  (let [prompt (first (filter #(= (:jira_field %) field-key) prompts))]
-    (if (and (= (:field_type prompt) "datetime-local")
-             (not (empty? field-value)))
-      (-> (js/Date. field-value)
-          .toISOString)
-      field-value)))
 
 (defn- render-field [{:keys [label required jira_field field_type field_options form-data on-change]}]
   (case field_type
@@ -86,19 +66,13 @@
                                        template-id cmdb-item page @search-term]))
        :on-select (fn [value]
                     (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value])
-                    (swap! form-data assoc-in [:jira_fields (:jira_field cmdb-item)] value)
-                    ;; Rows the Assets schema filters by this selection are
-                    ;; cleared and refetched (db side handled by
-                    ;; update-cmdb-value); drop their stale picks from the
-                    ;; local form state too.
-                    (doseq [dep (cascade/all-dependents cmdb-item all-items fieldconfigs)]
-                      (swap! form-data update :jira_fields dissoc (:jira_field dep))))}]]))
+                    (swap! form-data form-data-fns/select-cmdb cmdb-item all-items fieldconfigs value))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
   (let [cmdb-items (rf/subscribe [:jira-templates->submit-template-cmdb-items])
         fieldconfigs (rf/subscribe [:jira-templates->cmdb-fieldconfigs])
         template-id (rf/subscribe [:jira-templates->submit-template-id])
-        form-data (r/atom (init-form-data @cmdb-items))]
+        form-data (r/atom (form-data-fns/init-form-data @cmdb-items))]
     (fn []
       [:> Box {:class "p-6"}
        [:> Text {:as "h3" :size "5" :weight "bold" :mb "4"}
@@ -108,18 +82,7 @@
 
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
-                            (let [processed-data
-                                  (update @form-data :jira_fields
-                                          (fn [fields]
-                                            (reduce-kv
-                                             (fn [m k v]
-                                               (assoc m k
-                                                      (cond
-                                                        (map? v) (get v "value")
-                                                        :else (process-datetime-field prompts k v))))
-                                             {}
-                                             fields)))]
-                              (on-submit processed-data)))}
+                            (on-submit (form-data-fns/submit-data prompts @form-data)))}
 
         [:> Flex {:direction "column" :gap "4"}
          (when (seq prompts)

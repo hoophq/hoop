@@ -1684,6 +1684,9 @@ type SessionReview struct {
 	// The hand-off agent of an ai-handoff level selected the hold that filed this approval request.
 	// Only GET /sessions/{session_id} returns it
 	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
+	// The email of the user who ran the approved request. Absent before it runs, and on older requests.
+	// Only GET /sessions/{session_id} returns it
+	ExecutedBy *string `json:"executed_by,omitempty" readonly:"true" example:"alice@example.com"`
 }
 
 type ReviewCount struct {

@@ -1,0 +1,28 @@
+.list {
+  display: flex;
+  gap: var(--mantine-spacing-lg);
+}
+
+.tab {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--mantine-h2-font-size);
+  font-weight: 700;
+  line-height: var(--mantine-h2-line-height);
+  color: var(--hoop-text-faint);
+}
+
+.tab:hover {
+  color: var(--mantine-color-dimmed);
+}
+
+.tab[data-active] {
+  color: var(--mantine-color-text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}

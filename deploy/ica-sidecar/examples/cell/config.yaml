@@ -1,0 +1,65 @@
+# CPU cell example for libhoop-ica v0.8.0+ (the ICA-enabled sidecar build).
+# Workspace -> Gateway -> per-VDA ILB frontend -> any Ready pod in this cell
+#           -> that VDA's real address. No TPROXY or NET_ADMIN capability.
+# EDIT the Gateway SNIP, VDA names, destination CIDRs and frontend CIDR.
+log_level: info
+
+admin:
+  # Kubernetes probes need the pod address. Restrict this unauthenticated port
+  # with NetworkPolicy; never publish it through the session load balancer.
+  listen: 0.0.0.0:19000
+
+audit:
+  file: '-'
+  fail_open: false
+
+ica:
+  # Shared across this process's slots; 32 is a configured bound, not a
+  # measured capacity. At 30 sessions readiness is false, hard admission at 32.
+  max_sessions: 32
+  readiness_capacity: true
+  readiness_headroom: 2
+  # Use terminationGracePeriodSeconds > 60 (for example 120) in Kubernetes.
+  drain_timeout_sec: 60
+  connect_timeout_sec: 10
+  # Uses the ICA image/bundle's default worker, tessdata, NER model and ORT
+  # library paths. Override the runtime paths if the assets live elsewhere.
+  options:
+    ner_backend: ort
+    ner_parallel: 4
+    ner_threads: 2
+    ocr_workers: 8
+    ocr_tiles: 8
+    ocr_thread_limit: 1
+    ocr_timeout_sec: 10
+    ocr_min_confidence: 0.8
+    # This example uses the lab's match-only policy: unreadable OCR alone
+    # does not mask. OCR misses can remain visible; choose this deliberately.
+    pii_matches_only: true
+    pii_entities: [HEALTHCARE_IDENTIFIERS]
+    pii_threshold: 0.5
+    ocr_fresh_reuse_frames: 0
+    video_batch: true
+    output_pipeline: true
+    adaptive_coalescing: true
+    presentation_v2: true
+    presentation_screen_copy: true
+    output_latest_frame: true
+
+listeners:
+  - name: cell-a-slots
+    protocol: ica
+    listen: 0.0.0.0:21001
+    ica:
+      tenant_id: citrix-cell-a
+      source_cidrs: [10.20.1.10/32]  # Gateway SNIP, preserved by the ILB
+      slots:
+        first_port: 21001
+        count: 2
+        # Order is the routing table: 21001 -> first name, 21002 -> second.
+        # These are example names; pod DNS must resolve them to real VDA IPs.
+        names: [vda-a001.lab.example, vda-a002.lab.example]
+        upstream_port: 2598
+        # Reject DNS answers pointing back into the cell's frontend range.
+        frontend_cidr: 10.240.16.0/22
+        upstream_cidrs: [10.77.0.0/24]

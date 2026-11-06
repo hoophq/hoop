@@ -66,6 +66,9 @@ const (
 	// module, and Protocol is a string type, so the value has the same type
 	// in every module without a libhoop definition.
 	ICA Protocol = "ica"
+	// MCP has no codec: the lane embeds mcpproxy, which terminates MCP and
+	// hands each tool call to the daemon as a statement.
+	MCP Protocol = "mcp"
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer
@@ -140,6 +143,11 @@ const (
 // the relay does not hold. MSSQL's routing ENVCHANGE is the case that
 // motivated it. A caller MUST close the connection rather than forward.
 var ErrStreamUnsafe = codectypes.ErrStreamUnsafe
+
+// ErrResponseStarted rides beside ErrStreamUnsafe when the refused response
+// already reached the client in part: the caller cuts it without writing a
+// reply of its own.
+var ErrResponseStarted = codectypes.ErrResponseStarted
 
 // Operations lists every operation a codec can report. A config naming one
 // outside it is a typo that never matches, so it is refused rather than

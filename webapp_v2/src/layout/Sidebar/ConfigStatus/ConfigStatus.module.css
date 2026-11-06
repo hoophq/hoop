@@ -2,7 +2,7 @@
 
 .card {
   background-color: var(--mantine-color-body);
-  border: 1px solid var(--mantine-color-gray-2);
+  border: 1px solid var(--hoop-border-subtle);
   border-radius: var(--mantine-radius-lg);
   padding: var(--mantine-spacing-smAlt);
 }
@@ -82,7 +82,7 @@
 }
 
 .stepTitle[data-done] {
-  color: var(--mantine-color-gray-5);
+  color: var(--hoop-text-faint);
   text-decoration: line-through;
 }
 
@@ -108,7 +108,7 @@
 }
 
 .subItem[data-done] .subItemIcon {
-  color: var(--mantine-color-green-8);
+  color: var(--mantine-color-green-light-color);
 }
 
 .subItemLabel {
@@ -125,7 +125,7 @@
 }
 
 .subItem[data-done] .subItemLabel {
-  color: var(--mantine-color-gray-5);
+  color: var(--hoop-text-faint);
   text-decoration: line-through;
 }
 
@@ -135,6 +135,6 @@
 }
 
 .divider {
-  border-top: 1px solid var(--mantine-color-gray-1);
+  border-top: 1px solid var(--hoop-border-subtle);
   width: 100%;
 }
