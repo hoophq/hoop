@@ -57,6 +57,18 @@ const ROLE_FORMS = {
   httpproxy: 'httpproxy',
   grafana: 'httpproxy',
   kibana: 'httpproxy',
+  'claude-code': 'claude-code',
+  mcp: 'mcp',
+  mcpproxy: 'mcpproxy',
+}
+
+const MCP_GATEWAY_FLAG = 'experimental.mcp_gateway'
+
+// The CLJS catalog shows mcpproxy only with the MCP Gateway flag, and mcp only
+// without it.
+export function hiddenByFlags(catalogId, featureFlags = {}) {
+  const gateway = Boolean(featureFlags[MCP_GATEWAY_FLAG])
+  return (catalogId === 'mcpproxy' && !gateway) || (catalogId === 'mcp' && gateway)
 }
 
 export const REACT_SETUP_SUBTYPES = new Set([
@@ -65,7 +77,7 @@ export const REACT_SETUP_SUBTYPES = new Set([
   ...Object.keys(ROLE_FORMS),
 ])
 
-// 'ssh', 'linux-vm', 'httpproxy', or 'metadata' for the metadata-driven form.
+// One of the ROLE_FORMS values, or 'metadata' for the metadata-driven form.
 export function roleFormFor(subtype) {
   return ROLE_FORMS[subtype] ?? 'metadata'
 }

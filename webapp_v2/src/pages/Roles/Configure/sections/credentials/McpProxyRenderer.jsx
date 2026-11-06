@@ -29,6 +29,7 @@ import {
   authModesFor,
   boolSetting,
   credentialHeaderKey,
+  defaultAuthMode,
   deriveAuthMode,
   headerKeyFor,
   headerKeys,
@@ -55,10 +56,13 @@ import { showSnackbar } from '@/utils/snackbar'
 // Save on a stdio connection that legitimately has none.
 //
 // Field parity is with the CLJS create wizard (webapp/src/webapp/resources/
-// setup/roles_step.cljs::mcpproxy-role-form), which still owns creation. The
-// hard part of the edit direction is that three pieces of that form's state
-// are deliberately never saved — see utils/mcpGateway.js, which derives them
-// back from what the connection does carry.
+// setup/roles_step.cljs::mcpproxy-role-form). In create mode (the resource
+// wizard) the picked server, auth mode and header are form state; in edit mode
+// utils/mcpGateway.js derives them back from what the connection carries.
+
+// OAuth redemption writes this key in create mode, as the CLJS wizard does.
+const OAUTH_HEADER_KEY = 'envvar:HEADER_AUTHORIZATION'
+const CUSTOM_SERVER = 'custom'
 
 const URL_FIELD = [
   {
@@ -152,6 +156,7 @@ export default function McpProxyRenderer({
   connectionMethod,
   hideRoleInfo,
 }) {
+  const createMode = useCredentialsStore((s) => Boolean(s.createMode))
   const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
   const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
@@ -163,6 +168,7 @@ export default function McpProxyRenderer({
   const commandLine = (commandDraft || []).join(' ')
 
   const [catalog, setCatalog] = useState({ status: 'idle', entries: [] })
+  const [server, setServer] = useState(null)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [busy, setBusy] = useState(false)
@@ -215,8 +221,11 @@ export default function McpProxyRenderer({
   const remoteUrl = readSetting(ENV.remoteUrl)
 
   const entry = useMemo(
-    () => matchCatalogEntry(catalog.entries, remoteUrl),
-    [catalog.entries, remoteUrl],
+    () =>
+      createMode
+        ? catalog.entries.find((e) => e.name === server) || null
+        : matchCatalogEntry(catalog.entries, remoteUrl),
+    [createMode, catalog.entries, server, remoteUrl],
   )
 
   // A staged HEADER_* write means the user is mid-edit on the credential; use
@@ -231,21 +240,32 @@ export default function McpProxyRenderer({
   )
   const persistedCredentialKey = credentialHeaderKey(secret)
   const catalogHeaderKey = entry ? headerKeyFor(staticHeaderFor(entry)) : null
-  const credentialKey =
-    stagedCredentialKey ||
-    persistedCredentialKey ||
-    catalogHeaderKey ||
-    AUTHORIZATION_KEY
-  const credentialHeaderName = headerNameOf(credentialKey)
 
   const granted = Boolean(connection.mcp_oauth_granted)
-  const storedAuthMode = deriveAuthMode({ secret, granted, entry })
+  const storedAuthMode = createMode
+    ? defaultAuthMode(entry)
+    : deriveAuthMode({ secret, granted, entry })
   const [authModeOverride, setAuthModeOverride] = useState(null)
   const authOptions = authModesFor(entry)
   const authMode =
     authModeOverride && authOptions.some((o) => o.value === authModeOverride)
       ? authModeOverride
       : storedAuthMode
+
+  const oauthKey = createMode ? OAUTH_HEADER_KEY : AUTHORIZATION_KEY
+  const credentialKey = createMode
+    ? authMode === 'oauth'
+      ? OAUTH_HEADER_KEY
+      : headerKeyFor(staticHeaderFor(entry))
+    : stagedCredentialKey || persistedCredentialKey || catalogHeaderKey || AUTHORIZATION_KEY
+  const credentialHeaderName = headerNameOf(credentialKey)
+
+  // Extra header rows stay staged under placeholder keys, so only the
+  // credential the auth widget collected matches here.
+  const forgetCredential = () =>
+    Object.keys(stagedSecrets)
+      .filter((k) => k.startsWith(HEADER_PREFIX) && !PLACEHOLDER_KEY_RE.test(k))
+      .forEach((k) => cancelSecretChange(k))
 
   // A completed login this session, or a grant the gateway already holds.
   // Both mean the credential renews itself; a pasted token never does.
@@ -289,6 +309,7 @@ export default function McpProxyRenderer({
         .filter((k) => k.startsWith(HEADER_PREFIX))
         .forEach(forget)
     } else {
+      if (createMode) setDraft({ command: [] })
       forget(`envvar:COMMAND`)
       Object.keys(secret)
         .filter((k) => k.startsWith(MCPENV_PREFIX))
@@ -314,6 +335,13 @@ export default function McpProxyRenderer({
   const changeAuthMode = (next) => {
     if (!next || next === authMode) return
     setAuthModeOverride(next)
+    if (createMode) {
+      setMcpOAuthFlowId(null)
+      setAuthError(null)
+      forgetCredential()
+      setSetting(ENV.auth, authEnvValue(next))
+      return
+    }
     if (next === 'oauth') return
     setMcpOAuthFlowId(null)
     headerKeys(secret).forEach(forget)
@@ -326,8 +354,9 @@ export default function McpProxyRenderer({
   // MCP_AUTH must agree with the widget the admin is looking at, and a
   // connection saved before the setting existed has none at all. Written from
   // an effect rather than during render so the store is never mutated mid-render.
+  // The CLJS wizard also writes it for a stdio role.
   const currentAuthEnv = readSetting(ENV.auth).trim()
-  const wantedAuthEnv = stdio ? null : authEnvValue(authMode)
+  const wantedAuthEnv = stdio && !createMode ? null : authEnvValue(authMode)
   useEffect(() => {
     if (wantedAuthEnv && currentAuthEnv !== wantedAuthEnv) {
       setSetting(ENV.auth, wantedAuthEnv)
@@ -364,7 +393,7 @@ export default function McpProxyRenderer({
       // gateway adopt this login into a grant it can renew from the refresh
       // token (services.AdoptMCPOAuthGrant). Saving only the header leaves a
       // credential that dies at the provider's TTL.
-      replaceSecret(AUTHORIZATION_KEY, encodeSecretValue(data.authorization_header))
+      replaceSecret(oauthKey, encodeSecretValue(data.authorization_header))
       setMcpOAuthFlowId(flowId)
       setBusy(false)
       setAuthError(null)
@@ -442,11 +471,33 @@ export default function McpProxyRenderer({
 
   const clearAuthorization = () => {
     setMcpOAuthFlowId(null)
+    setAuthError(null)
+    if (createMode) {
+      forgetCredential()
+      return
+    }
     headerKeys(secret).forEach(forget)
     Object.keys(stagedSecrets)
       .filter((k) => k.startsWith(HEADER_PREFIX))
       .forEach(forget)
+  }
+
+  // A credential collected for the previous server authenticates to nobody
+  // here. A catalog server brings its endpoint and transport; custom keeps
+  // what the admin typed.
+  const pickServer = (name) => {
+    if (!name || name === server) return
+    const picked = catalog.entries.find((e) => e.name === name) || null
+    setServer(name)
+    setMcpOAuthFlowId(null)
     setAuthError(null)
+    forgetCredential()
+    if (picked) {
+      changeTransport(picked.transport || transport)
+      setSetting(ENV.remoteUrl, picked.url)
+    }
+    // Kept when the new server accepts it, as coerce-auth-mode does.
+    setAuthModeOverride(authMode)
   }
 
   // ---- render ----------------------------------------------------------
@@ -485,12 +536,31 @@ export default function McpProxyRenderer({
   return (
     <Stack gap="xl">
       <Stack gap="md">
-        <Title order={4}>MCP Server</Title>
-        <Text size="sm" c="dimmed">
-          {catalog.status === 'ready' && entry
-            ? `Recognized as the catalog server "${serverLabel}".`
-            : 'Configured as a custom or self-hosted server.'}
-        </Text>
+        {!createMode && <Title order={4}>MCP Server</Title>}
+        {createMode ? (
+          <Select
+            label="MCP Server"
+            placeholder={
+              catalog.status === 'loading'
+                ? 'Loading servers…'
+                : 'Select a server or configure your own'
+            }
+            data={[
+              ...catalog.entries.map((e) => ({ value: e.name, label: e.name })),
+              { value: CUSTOM_SERVER, label: 'Custom / self-hosted' },
+            ]}
+            value={server}
+            onChange={pickServer}
+            allowDeselect={false}
+            searchable
+          />
+        ) : (
+          <Text size="sm" c="dimmed">
+            {catalog.status === 'ready' && entry
+              ? `Recognized as the catalog server "${serverLabel}".`
+              : 'Configured as a custom or self-hosted server.'}
+          </Text>
+        )}
         {entry?.description && (
           <Text size="sm" c="dimmed">
             {entry.description}
@@ -499,6 +569,11 @@ export default function McpProxyRenderer({
         {entry?.notes && (
           <Text size="sm" c="amber">
             {entry.notes}
+          </Text>
+        )}
+        {createMode && catalog.status === 'error' && (
+          <Text size="sm" c="dimmed">
+            Server catalog unavailable — configure the endpoint manually below.
           </Text>
         )}
 
@@ -621,7 +696,7 @@ export default function McpProxyRenderer({
                       key: credentialHeaderName,
                       envKey: credentialKey,
                       label: `${credentialHeaderName} value`,
-                      required: authModeOverride === 'static',
+                      required: createMode || authModeOverride === 'static',
                       type: 'password',
                       placeholder: 'Paste the API key or token issued by the provider',
                     },

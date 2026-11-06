@@ -152,6 +152,7 @@ export default function ClaudeCodeRenderer({
   const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const createMode = useCredentialsStore((s) => Boolean(s.createMode))
 
   useLegacyApiKeyMigration(connection, initialProvider)
 
@@ -167,7 +168,8 @@ export default function ClaudeCodeRenderer({
     setProvider(next)
     PROVIDER_SCOPED_KEYS.forEach((key) => cancelSecretChange(key))
     const secrets = connection?.secret || {}
-    if (next === initialProvider) {
+    // The wizard has nothing persisted: back on Anthropic it needs its URL again.
+    if (next === initialProvider && !createMode) {
       // Back to the persisted provider: re-stage the legacy value move
       // the blanket cancel above just dropped (the legacy key's delete
       // lives outside PROVIDER_SCOPED_KEYS and survives).
