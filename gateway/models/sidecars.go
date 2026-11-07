@@ -661,13 +661,8 @@ func SidecarNameIsDeleted(db *gorm.DB, orgID, name string) (bool, error) {
 // which the plane did serve, ends it whatever the sidecar reports: the
 // sidecar never received the document it names and holds nothing about it.
 //
-// heartbeatSeconds is the interval the plane told this sidecar to handshake
-// at (HeartbeatSecondsHeader); zero records NULL, the sidecar's own default.
-// The mirror sweeper and the session reaper read it back, so a sidecar told
-// to call less often is not read as silent after three or five minutes.
-//
 // firstCheckIn reports a sidecar that had never handshaken before.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string, heartbeatSeconds int) (firstCheckIn bool, err error) {
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) (firstCheckIn bool, err error) {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
@@ -687,13 +682,12 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 		served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
 			THEN NOW() ELSE served_revision_at END,
 		served_revision = NULLIF(@served, ''),
-		capabilities = @capabilities,
-		heartbeat_seconds = NULLIF(@heartbeat, 0)
+		capabilities = @capabilities
 	WHERE id = @id
 	RETURNING (SELECT b.last_seen_at IS NULL FROM before b)`, map[string]any{
 		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
 		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
-		"not_served": SidecarOutcomeNotServed, "heartbeat": heartbeatSeconds,
+		"not_served": SidecarOutcomeNotServed,
 	}).Scan(&firstCheckIn).Error
 	return firstCheckIn, err
 }

@@ -269,16 +269,10 @@ func deleteOrphanResource(tx *gorm.DB, orgID, name string) error {
 	return nil
 }
 
-// SidecarHeartbeatDefaultSeconds is the interval a sidecar handshakes at when
-// the plane has not told it another (heartbeatEvery, sidecar/daemon), and
-// what a NULL sidecars.heartbeat_seconds reads as.
-const SidecarHeartbeatDefaultSeconds = 60
-
-// SidecarMirrorOfflineAfterBeats is how many missed handshakes set a
-// sidecar's mirrors offline. Three, with 20% jitter on each.
-// SidecarMirrorOfflineAfter is that at the default interval.
-const SidecarMirrorOfflineAfterBeats = 3
-const SidecarMirrorOfflineAfter = SidecarMirrorOfflineAfterBeats * SidecarHeartbeatDefaultSeconds * time.Second
+// SidecarMirrorOfflineAfter is how long a mirror stays online after its
+// sidecar's last handshake. A sidecar handshakes every minute, with 20%
+// jitter (heartbeatEvery, sidecar/daemon), so this is three missed polls.
+const SidecarMirrorOfflineAfter = 3 * time.Minute
 
 // MarkSidecarConnectionsOnline sets every mirror of one sidecar online. The
 // handshake calls it after it records last_seen_at;
@@ -294,8 +288,7 @@ func MarkSidecarConnectionsOnline(db *gorm.DB, orgID, sidecarID string) error {
 }
 
 // MarkStaleSidecarConnectionsOffline sets offline, in every org, each online
-// mirror whose sidecar has missed SidecarMirrorOfflineAfterBeats handshakes
-// at the interval it was served (heartbeat_seconds, the default when NULL).
+// mirror whose sidecar has not handshaked within SidecarMirrorOfflineAfter.
 // It returns how many it changed.
 //
 // The stale sidecars are locked before their mirrors, in the order the config
@@ -307,11 +300,11 @@ func MarkStaleSidecarConnectionsOffline(ctx context.Context, db *gorm.DB) (int64
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var stale []string
 		err := tx.Raw(`SELECT s.id FROM private.sidecars s
-			WHERE (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - make_interval(secs => ? * COALESCE(s.heartbeat_seconds, ?)))
+			WHERE (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - make_interval(secs => ?))
 			  AND EXISTS (SELECT 1 FROM private.connections c WHERE c.sidecar_id = s.id AND c.status = ?)
 			ORDER BY s.id
 			FOR UPDATE OF s`,
-			SidecarMirrorOfflineAfterBeats, SidecarHeartbeatDefaultSeconds, ConnectionStatusOnline).Scan(&stale).Error
+			SidecarMirrorOfflineAfter.Seconds(), ConnectionStatusOnline).Scan(&stale).Error
 		if err != nil {
 			return fmt.Errorf("failed locking stale sidecars, reason=%v", err)
 		}

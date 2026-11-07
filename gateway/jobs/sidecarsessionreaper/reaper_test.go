@@ -192,8 +192,8 @@ func TestReapSkipsASessionRevivedSinceItWasListed(t *testing.T) {
 	setLastSeen(t, sc, time.Now().Add(-time.Hour))
 	now := time.Now().UTC()
 	st := models.SidecarSessionStaleness{
-		Now:         now,
-		EventBefore: now.Add(-services.SidecarSessionIdleAfter),
+		SidecarSeenBefore: now.Add(-services.SidecarUnseenAfter),
+		EventBefore:       now.Add(-services.SidecarSessionIdleAfter),
 	}
 	stale, err := models.ListStaleSidecarSessions(context.Background(), models.DB, st, 10)
 	require.NoError(t, err)

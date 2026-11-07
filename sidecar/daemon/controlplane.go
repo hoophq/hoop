@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -94,19 +93,6 @@ const (
 	// Exported because the gateway sets what this reads.
 	SessionEventsHeader = "hoop-sidecar-session-events"
 
-	// HeartbeatSecondsHeader is how a plane sets this sidecar's heartbeat
-	// interval, in whole seconds, heartbeatMin to heartbeatMax inclusive.
-	// A large fleet on the minute default is a steady load the plane sizes
-	// by itself; a value it does not serve, or one outside the range, keeps
-	// the interval in force, so a sidecar never stops heartbeating over a
-	// bad header. Read on every answer, the boot one included, and applied
-	// to the next wait.
-	//
-	// Exported because the gateway sets what this reads.
-	HeartbeatSecondsHeader = "hoop-sidecar-heartbeat-seconds"
-	heartbeatMin           = 30 * time.Second
-	heartbeatMax           = time.Hour
-
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
 	// anything near this is a misdirected URL, not a big deployment.
@@ -152,10 +138,9 @@ type controlPlane struct {
 	// Run can say so once. Empty when no local source held a document.
 	ignoredLicense string
 
-	// every is the heartbeat interval in force. Zero means heartbeatEvery;
-	// the boot answer's HeartbeatSecondsHeader sets it, a test sets it so a
-	// case about what a heartbeat does is not also a case about waiting a
-	// minute, and the heartbeat moves it when a later answer says so.
+	// every overrides the heartbeat interval. Zero means heartbeatEvery,
+	// which is what every deployment runs; a test sets it so a case about
+	// what a heartbeat does is not also a case about waiting a minute.
 	every time.Duration
 	// revision is the ConfigRevisionHeader of the document this process is
 	// RUNNING, and outcome what handling it concluded. They are reported on
@@ -193,15 +178,6 @@ type controlPlane struct {
 	// events is the sink that sends audit events to the plane. Run sets it
 	// before the heartbeat starts; nil in a process without one.
 	events *sessionEventSink
-}
-
-// interval is the heartbeat wait in force: every, or heartbeatEvery when
-// nothing set it.
-func (cp *controlPlane) interval() time.Duration {
-	if cp.every == 0 {
-		return heartbeatEvery
-	}
-	return cp.every
 }
 
 // WithControlPlaneToken supplies the sidecar token from the command line,
@@ -421,7 +397,7 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, cred: cred,
 		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
 		revision: answer.revision, outcome: reloadApplied.String(),
-		sessionEvents: answer.sessionEvents, every: answer.heartbeatEvery}
+		sessionEvents: answer.sessionEvents}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -463,28 +439,6 @@ type handshakeAnswer struct {
 	// sessionEvents reports SessionEventsHeader: the plane takes audit
 	// events from this sidecar.
 	sessionEvents bool
-	// heartbeatEvery is HeartbeatSecondsHeader as a duration; zero when
-	// the plane served none, or one parseHeartbeatSeconds refused.
-	heartbeatEvery time.Duration
-}
-
-// parseHeartbeatSeconds reads HeartbeatSecondsHeader. Zero for anything
-// but an integer in [heartbeatMin, heartbeatMax]: the caller keeps the
-// interval in force, since a plane that mis-serves the header must not
-// stop or storm the heartbeat.
-func parseHeartbeatSeconds(v string) time.Duration {
-	if v == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0
-	}
-	d := time.Duration(n) * time.Second
-	if d < heartbeatMin || d > heartbeatMax {
-		return 0
-	}
-	return d
 }
 
 // fetchControlPlaneConfig runs one handshake: it presents the credential,
@@ -542,11 +496,10 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 				baseURL, maxControlPlaneConfig)
 		}
 		return handshakeAnswer{
-			raw:            raw,
-			managed:        resp.Header.Get(LicenseManagedHeader) == "true",
-			revision:       resp.Header.Get(ConfigRevisionHeader),
-			sessionEvents:  resp.Header.Get(SessionEventsHeader) == "true",
-			heartbeatEvery: parseHeartbeatSeconds(resp.Header.Get(HeartbeatSecondsHeader)),
+			raw:           raw,
+			managed:       resp.Header.Get(LicenseManagedHeader) == "true",
+			revision:      resp.Header.Get(ConfigRevisionHeader),
+			sessionEvents: resp.Header.Get(SessionEventsHeader) == "true",
 		}, nil
 	case http.StatusUnauthorized:
 		if header == SidecarIdentityHeader {
@@ -828,7 +781,10 @@ func runningFileReport(rl *reloader) json.RawMessage {
 // process cannot change, and retries a document whose failure can clear
 // without another edit (ADR-0014).
 func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *reloader) {
-	every := cp.interval()
+	every := cp.every
+	if every == 0 {
+		every = heartbeatEvery
+	}
 	t := time.NewTimer(jittered(every))
 	defer t.Stop()
 	for {
@@ -866,14 +822,6 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		// queue is for.
 		if cp.events != nil {
 			cp.events.setEnabled(answer.sessionEvents)
-		}
-		// The plane sizes its own load: a served interval replaces the
-		// wait already armed above, so it holds from this answer on.
-		if answer.heartbeatEvery > 0 && answer.heartbeatEvery != every {
-			every = answer.heartbeatEvery
-			cp.every = every
-			log.Info("control plane set the heartbeat interval", "every", every)
-			t.Reset(jittered(every))
 		}
 		outcome := rl.handleAnswer(log, answer.raw, answer.managed)
 		cp.outcome = outcome.String()

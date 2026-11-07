@@ -171,16 +171,10 @@ type StaleSidecarSession struct {
 	OrgID string `gorm:"column:org_id"`
 }
 
-// SidecarUnseenAfterBeats is how many missed handshakes end a sidecar's open
-// sessions: it stopped, and its session_end with it. Counted at the interval
-// the sidecar was served (heartbeat_seconds, the default when NULL).
-const SidecarUnseenAfterBeats = 5
-
 // SidecarSessionStaleness is when an open sidecar session counts as dead.
 type SidecarSessionStaleness struct {
-	// Now is the instant the sidecar's silence is measured from: its sidecar
-	// has missed SidecarUnseenAfterBeats handshakes before it, or is gone.
-	Now time.Time
+	// SidecarSeenBefore: its sidecar has not heartbeat since, or is gone.
+	SidecarSeenBefore time.Time
 	// EventBefore: it received no event since, while its sidecar runs on.
 	EventBefore time.Time
 }
@@ -192,14 +186,12 @@ const staleSidecarSession = `s.origin = @origin AND s.status = 'open' AND (
 	NOT EXISTS (
 		SELECT 1 FROM private.sidecars sc
 		WHERE sc.org_id = s.org_id AND sc.id::text = s.metadata->'sidecar'->>'id'
-			AND COALESCE(sc.last_seen_at, s.created_at AT TIME ZONE 'UTC')
-				>= CAST(@now AS timestamptz) - make_interval(secs => @beats * COALESCE(sc.heartbeat_seconds, @default_secs)))
+			AND COALESCE(sc.last_seen_at, s.created_at AT TIME ZONE 'UTC') >= @seen)
 	OR COALESCE((s.metadata->'sidecar'->>'last_event_at')::timestamptz,
 		s.created_at AT TIME ZONE 'UTC') < @event)`
 
 func (st SidecarSessionStaleness) args() map[string]any {
-	return map[string]any{"origin": proto.SessionOriginSidecar, "now": st.Now, "event": st.EventBefore,
-		"beats": SidecarUnseenAfterBeats, "default_secs": SidecarHeartbeatDefaultSeconds}
+	return map[string]any{"origin": proto.SessionOriginSidecar, "seen": st.SidecarSeenBefore, "event": st.EventBefore}
 }
 
 // ListStaleSidecarSessions returns up to limit open sidecar sessions st

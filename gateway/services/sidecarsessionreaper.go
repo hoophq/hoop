@@ -12,11 +12,9 @@ import (
 )
 
 const (
-	// SidecarUnseenAfter is how long a sidecar at the default interval is
-	// silent before its sessions end: models.SidecarUnseenAfterBeats missed
-	// heartbeats. The reaper's grace after a start, and the threshold the
-	// query applies to a sidecar the plane never told another interval.
-	SidecarUnseenAfter = models.SidecarUnseenAfterBeats * models.SidecarHeartbeatDefaultSeconds * time.Second
+	// SidecarUnseenAfter ends the sessions of a sidecar that missed five
+	// heartbeats (one a minute): it stopped, and its session_end with it.
+	SidecarUnseenAfter = 5 * time.Minute
 
 	// SidecarSessionIdleAfter ends a session a restart or a full queue lost
 	// the session_end of. Long on purpose: an open psql idles for hours.
@@ -30,8 +28,8 @@ const (
 // take, and fires their close hooks. A reaped session still takes events.
 func ReapSidecarSessions(ctx context.Context, db *gorm.DB, now time.Time) (int, error) {
 	st := models.SidecarSessionStaleness{
-		Now:         now,
-		EventBefore: now.Add(-SidecarSessionIdleAfter),
+		SidecarSeenBefore: now.Add(-SidecarUnseenAfter),
+		EventBefore:       now.Add(-SidecarSessionIdleAfter),
 	}
 	stale, err := models.ListStaleSidecarSessions(ctx, db, st, sidecarReapBatchSize)
 	if err != nil {

@@ -35,7 +35,7 @@ func TestSidecarMirrorStatusFollowsTheLastCheckIn(t *testing.T) {
 		t.Fatalf("a new mirror is offline, got %q", got)
 	}
 
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil, 0); err != nil {
+	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := models.MarkSidecarConnectionsOnline(models.DB, testOrgID, pay.ID); err != nil {
@@ -69,7 +69,7 @@ func TestSidecarMirrorStatusFollowsTheLastCheckIn(t *testing.T) {
 		t.Fatalf("a connection with no sidecar keeps its status, got %q", got)
 	}
 
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil, 0); err != nil {
+	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := models.MarkSidecarConnectionsOnline(models.DB, testOrgID, pay.ID); err != nil {
@@ -77,40 +77,5 @@ func TestSidecarMirrorStatusFollowsTheLastCheckIn(t *testing.T) {
 	}
 	if got := mirrorStatus(t, pay.ID); got != models.ConnectionStatusOnline {
 		t.Fatalf("a sidecar that checks in again brings its mirrors back online, got %q", got)
-	}
-}
-
-// A sidecar told to handshake every six minutes is silent for eighteen
-// before its mirrors go offline, not three: the threshold counts missed
-// handshakes at the interval the plane served and recorded.
-func TestSidecarMirrorStatusCountsMissesAtTheServedInterval(t *testing.T) {
-	startTestDB(t)
-	ctx := context.Background()
-	pay := seedSidecar(t, "pay")
-	if err := syncMirrors(t, pay, daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil, 360); err != nil {
-		t.Fatal(err)
-	}
-	if err := models.MarkSidecarConnectionsOnline(models.DB, testOrgID, pay.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	execSQL(t, `UPDATE private.sidecars SET last_seen_at = NOW() - interval '17 minutes' WHERE id = ?`, pay.ID)
-	if n, err := models.MarkStaleSidecarConnectionsOffline(ctx, models.DB); err != nil || n != 0 {
-		t.Fatalf("17 minutes is under three six-minute beats, changed %d, err %v", n, err)
-	}
-	execSQL(t, `UPDATE private.sidecars SET last_seen_at = NOW() - interval '19 minutes' WHERE id = ?`, pay.ID)
-	if n, err := models.MarkStaleSidecarConnectionsOffline(ctx, models.DB); err != nil || n != 1 {
-		t.Fatalf("19 minutes is past three six-minute beats, changed %d, err %v", n, err)
-	}
-
-	// A handshake that serves no interval records NULL: back to the default.
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil, 0); err != nil {
-		t.Fatal(err)
-	}
-	if got := queryString(t, `SELECT COALESCE(heartbeat_seconds::text, 'null') FROM private.sidecars WHERE id = ?`, pay.ID); got != "null" {
-		t.Fatalf("heartbeat_seconds = %s, want null", got)
 	}
 }

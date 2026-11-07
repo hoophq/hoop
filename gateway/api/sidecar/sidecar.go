@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -58,9 +56,9 @@ func configRevision(body []byte) string {
 //
 // It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
 // them offline when the handshakes stop.
-func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string, heartbeatSeconds int) {
+func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
 	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
-		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities, heartbeatSeconds)
+		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 		return
@@ -686,17 +684,6 @@ func Handshake(c *gin.Context) {
 	// nothing re-reads it on this path. Every statement here runs once a
 	// minute per sidecar, and the fleet's size is the database's load.
 	licenseData := orgLicense(c)
-	// The interval rides on the answer and is recorded with the handshake,
-	// so the sweeper and the reaper measure this sidecar's silence at the
-	// rate it was told. Only to a build that reports honoring the header:
-	// one that ignores it keeps the minute, and recording a longer
-	// interval for it would read it as alive for three times as long
-	// after it is gone. Fails closed: no capability, no header, NULL.
-	heartbeatSeconds := 0
-	if slices.Contains(capabilities, daemon.CapabilityHeartbeatInterval) {
-		heartbeatSeconds = services.SidecarHeartbeatSeconds(models.DB, sidecar.OrgID)
-		c.Header(daemon.HeartbeatSecondsHeader, strconv.Itoa(heartbeatSeconds))
-	}
 	if usesConfigFile(sidecar.Configuration) {
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
@@ -704,7 +691,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar, req, "", capabilities, heartbeatSeconds)
+		recordHandshake(sidecar, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
 		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
@@ -734,7 +721,7 @@ func Handshake(c *gin.Context) {
 		answerServeError(c, err)
 		return
 	}
-	recordHandshake(sidecar, req, served.revision, capabilities, heartbeatSeconds)
+	recordHandshake(sidecar, req, served.revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, served.revision)
 	offerSessionEvents(c, sidecar)
