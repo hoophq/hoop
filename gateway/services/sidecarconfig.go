@@ -35,6 +35,14 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 	return composeSidecarConfiguration(db, sc, "", "")
 }
 
+// ComposeSidecarConfigurationFrom is ComposeSidecarConfiguration over bound
+// rules the caller already read, for the handshake: it reads them once, to
+// decide whether the document it served last time still stands, and folds
+// them only when it does not.
+func ComposeSidecarConfigurationFrom(sc *models.Sidecar, bound models.SidecarBoundRules) (daemon.Config, error) {
+	return foldSidecarRules(daemon.Config(sc.Configuration), bound.Guardrails, bound.Masking, bound.Analyzers)
+}
+
 // ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,
 // as opposed to one the rules make impossible.
 //

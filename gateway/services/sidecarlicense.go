@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"sync"
@@ -58,6 +59,17 @@ func loadSidecarLicense(licenseData []byte) license.Status {
 		sidecarLicenses.Store(key, s)
 	}
 	return s
+}
+
+// SidecarLicenseState is the organization license's verdict now, as the
+// sidecar's caps read it: the one clock-dependent input to the document the
+// handshake serves, so a cached document is keyed on it and a license that
+// lapses is re-checked on the next handshake.
+func SidecarLicenseState(licenseData []byte) license.State {
+	if len(bytes.TrimSpace(licenseData)) == 0 {
+		return license.Status{}.State()
+	}
+	return loadSidecarLicense(licenseData).State()
 }
 
 // isEnterpriseLicense reports whether the document is a verified Enterprise

@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +29,7 @@ import (
 
 // licenseIsNotASidecarKey refuses a license authored per sidecar. One
 // organization runs under one license, stored on the organization row and
-// served to every sidecar by withOrgLicense; a copy in this document would
+// served to every sidecar by serveDocument; a copy in this document would
 // be a second answer to the same question, stale the day the org's license
 // is renewed. Refusing beats accepting and ignoring: an admin who pastes a
 // license here has to learn that it did nothing.
@@ -43,15 +45,8 @@ const licenseIsNotASidecarKey = `the "license" key does not belong in a sidecar 
 // plane compares it to itself; nothing parses it. Truncated to 32 hex
 // characters because the column is VARCHAR(64) and this is an equality key,
 // not a signature.
-func configRevision(served daemon.Config) string {
-	doc, err := json.Marshal(served)
-	if err != nil {
-		// A document that cannot be marshaled is about to fail the response
-		// write anyway. An empty revision reads as "unknown" downstream,
-		// which is the honest answer and never as "converged".
-		return ""
-	}
-	sum := sha256.Sum256(doc)
+func configRevision(body []byte) string {
+	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:16])
 }
 
@@ -62,9 +57,9 @@ func configRevision(served daemon.Config) string {
 //
 // It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
 // them offline when the handshakes stop.
-func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
+func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string, heartbeatSeconds int) {
 	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
-		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
+		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities, heartbeatSeconds)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 		return
@@ -687,9 +682,14 @@ func Handshake(c *gin.Context) {
 		}
 	}
 	// The middleware loaded the organization's license into the context;
-	// nothing re-reads it on this path. Eight sequential statements per
-	// handshake, times one a minute per sidecar, is the database's load.
+	// nothing re-reads it on this path. Every statement here runs once a
+	// minute per sidecar, and the fleet's size is the database's load.
 	licenseData := orgLicense(c)
+	// The interval rides on every answer and is recorded with the
+	// handshake, so the sweeper and the reaper measure this sidecar's
+	// silence at the rate it was told.
+	heartbeatSeconds := services.SidecarHeartbeatSeconds(models.DB, sidecar.OrgID)
+	c.Header(daemon.HeartbeatSecondsHeader, strconv.Itoa(heartbeatSeconds))
 	if usesConfigFile(sidecar.Configuration) {
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
@@ -697,7 +697,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar, req, "", capabilities)
+		recordHandshake(sidecar, req, "", capabilities, heartbeatSeconds)
 		c.Header(licenseManagedHeader, "true")
 		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
@@ -712,7 +712,7 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the web app"})
 		return
 	}
-	served, err := withOrgLicense(sidecar, licenseData, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
+	served, err := serveDocument(sidecar, licenseData, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
 		// Recorded even on refusal, with the reason: a later write knows
 		// this build is too old instead of reading it as never seen, and
@@ -727,13 +727,17 @@ func Handshake(c *gin.Context) {
 		answerServeError(c, err)
 		return
 	}
-	revision := configRevision(served)
-	recordHandshake(sidecar, req, revision, capabilities)
+	recordHandshake(sidecar, req, served.revision, capabilities, heartbeatSeconds)
 	c.Header(licenseManagedHeader, "true")
-	c.Header(daemon.ConfigRevisionHeader, revision)
+	c.Header(daemon.ConfigRevisionHeader, served.revision)
 	offerSessionEvents(c, sidecar)
-	c.JSON(http.StatusOK, served)
+	c.Data(http.StatusOK, jsonContentType, served.body)
 }
+
+// jsonContentType is what gin's c.JSON writes; the served document is written
+// as bytes under the same type, so a sidecar sees no difference between a
+// composed answer and a cached one.
+const jsonContentType = "application/json; charset=utf-8"
 
 // offerSessionEvents answers SessionEventsHeader while the org flag is on; the
 // sidecar follows it on every heartbeat.
@@ -754,8 +758,9 @@ func orgLicense(c *gin.Context) json.RawMessage {
 	return *ctx.OrgLicenseData
 }
 
-// withOrgLicense answers the config a sidecar must serve, carrying the
-// organization's license.
+// serveDocument answers the config a sidecar must serve, carrying the
+// organization's license: the document served last time while its inputs
+// stand, composed again when any changed (servedDocuments).
 //
 // The license is NOT stored per sidecar. It lives in one place, the
 // organization row, and is written into the served document here, on the way
@@ -776,15 +781,30 @@ func orgLicense(c *gin.Context) json.RawMessage {
 // capabilities is what the requesting sidecar reported. A document it cannot
 // decode is refused rather than served: a strict decode would refuse the whole
 // of it, at startup or on reload.
-func withOrgLicense(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Handshake) (daemon.Config, error) {
+func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Handshake) (servedDocument, error) {
+	orgID, err := uuid.Parse(sc.OrgID)
+	if err != nil {
+		return servedDocument{}, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+	}
 	// The rules an admin bound to this sidecar are folded in here, on the way
 	// out, and never stored: the row keeps what an admin authored and the
 	// answer is derived on every handshake. Composition touches only the
 	// sections the sidecar hot-reloads, so a rule edit reaches a running
 	// process without restarting it.
-	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	bound, err := models.ListBoundRulesForSidecar(models.DB, orgID, sc.ID)
 	if err != nil {
-		return daemon.Config(sc.Configuration), err
+		return servedDocument{}, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", services.ErrSidecarRulesUnavailable, err)
+	}
+	// Everything below is a pure function of what was just loaded, so the
+	// answer served last time stands while its inputs do. The license's
+	// verdict is read now: a lapse is a new input.
+	fingerprint := servedFingerprint(sc, bound, licenseData, services.SidecarLicenseState(licenseData), hs)
+	if doc, ok := cachedServed(sc, fingerprint); ok {
+		return doc, nil
+	}
+	composed, err := services.ComposeSidecarConfigurationFrom(sc, bound)
+	if err != nil {
+		return servedDocument{}, err
 	}
 	// The free tier caps rules PER PROCESS, and it counts what the served
 	// document authors -- so bound rules push the count up even though the
@@ -800,12 +820,18 @@ func withOrgLicense(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.H
 	// Answering the handshake with an error instead is the one failure the
 	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
-		return daemon.Config(sc.Configuration), err
+		return servedDocument{}, err
 	}
 	if err := daemon.CheckServable(composed, hs); err != nil {
-		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
+		return servedDocument{}, services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
-	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
+	body, err := json.Marshal(servedConfig(models.SidecarConfiguration(composed), licenseData))
+	if err != nil {
+		return servedDocument{}, fmt.Errorf("failed encoding the sidecar configuration: %w", err)
+	}
+	doc := servedDocument{body: body, revision: configRevision(body)}
+	rememberServed(sc, fingerprint, doc)
+	return doc, nil
 }
 
 // servedConfig is the document itself: the stored configuration with the
@@ -1027,13 +1053,13 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar, licenseData, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
+	served, err := serveDocument(sidecar, licenseData, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
 	if err != nil {
 		answerServeError(c, err)
 		return
 	}
 	c.Header(licenseManagedHeader, "true")
-	c.JSON(http.StatusOK, served)
+	c.Data(http.StatusOK, jsonContentType, served.body)
 }
 
 // answerServeError answers a document the plane will not serve. A missing

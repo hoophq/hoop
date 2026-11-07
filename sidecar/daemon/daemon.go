@@ -1194,7 +1194,7 @@ func Run(cfg *Config, det Plugin) error {
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
-			"poll", heartbeatEvery.String())
+			"poll", cfg.cp.interval().String())
 		if cfg.cp.diskMode {
 			log.Info("the control plane delegates the configuration to the local file",
 				"listeners", len(cfg.Listeners))
