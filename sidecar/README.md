@@ -268,7 +268,9 @@ First wins, not first valid, same as the license sources: an env var holding
 garbage is an error, never a reason to fall through to the file. A token and
 an identity type both set is an error naming both, a credential with no URL
 is an error, and a URL with no credential is an error naming the token and
-the identity type.
+the identity type — for `hoop-inspect`, and for `hoop start sidecar
+--no-login`. A plain `hoop start sidecar` logs in instead; see "Logging in
+instead of a token" below.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
