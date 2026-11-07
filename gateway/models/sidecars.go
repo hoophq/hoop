@@ -171,18 +171,28 @@ const sidecarBindAttempts = 3
 //   - Not bound, made with a token: ErrSidecarHasToken, unless
 //     adoptTokenSidecar. Then it is bound and its token keeps working.
 //   - Not bound, no token (an admin cleared the binding): bound.
-//   - No sidecar with that name: created with no token and bound, unless
-//     the name is in sidecar_deleted_names: ErrSidecarNameDeleted, and
-//     nothing is created.
+//   - No sidecar with that name: admit runs, and a refusal is returned as
+//     is with nothing created; then the row is created with no token and
+//     bound, unless the name is in sidecar_deleted_names:
+//     ErrSidecarNameDeleted, and nothing is created.
+//
+// admit is the caller's check for a row that does not exist yet (the
+// organization's seats). It runs on that branch only, so a heartbeat of an
+// existing sidecar reads its row once. Nil admits.
 //
 // The bind is an UPDATE that requires identity_subject IS NULL, so of two
 // identities that race for one row exactly one binds it, and the other reads
 // the row again and is refused. The insert is ON CONFLICT DO NOTHING followed
 // by a SELECT, so concurrent first boots create one row.
-func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, adoptTokenSidecar bool) (*Sidecar, error) {
+func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, adoptTokenSidecar bool, admit func() error) (*Sidecar, error) {
 	for range sidecarBindAttempts {
 		sc, err := getSidecarForIdentity(db, orgID, name)
 		if errors.Is(err, ErrNotFound) {
+			if admit != nil {
+				if err := admit(); err != nil {
+					return nil, err
+				}
+			}
 			sc, err = createSidecarForIdentity(db, orgID, name, issuer, subject, createdBy)
 		}
 		if err != nil {

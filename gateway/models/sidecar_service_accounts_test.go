@@ -48,7 +48,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false)
+				sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false, nil)
 				errs[i] = err
 				if sc != nil {
 					ids[i] = sc.ID
@@ -90,18 +90,18 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		again, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false)
+		again, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false, nil)
 		if err != nil || again.ID != before.ID {
 			t.Fatalf("a restart must reach the same row: sidecar=%v err=%v", again, err)
 		}
 		const other = "system:serviceaccount:ws-1-new:hoop-sidecar"
 		for _, adopt := range []bool{false, true} {
-			_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, other, "service-account:"+other, adopt)
+			_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, other, "service-account:"+other, adopt, nil)
 			if !errors.Is(err, models.ErrSidecarBoundToAnotherIdentity) {
 				t.Fatalf("adopt=%v: want ErrSidecarBoundToAnotherIdentity, got %v", adopt, err)
 			}
 		}
-		_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", "https://other-issuer.example.com", sub, "service-account:"+sub, false)
+		_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", "https://other-issuer.example.com", sub, "service-account:"+sub, false, nil)
 		if !errors.Is(err, models.ErrSidecarBoundToAnotherIdentity) {
 			t.Fatalf("the same subject from another issuer: want ErrSidecarBoundToAnotherIdentity, got %v", err)
 		}
@@ -120,10 +120,10 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 		if err := models.CreateSidecar(models.DB, made); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, false); !errors.Is(err, models.ErrSidecarHasToken) {
+		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, false, nil); !errors.Is(err, models.ErrSidecarHasToken) {
 			t.Fatalf("not adopted: want ErrSidecarHasToken, got %v", err)
 		}
-		sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, true)
+		sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, true, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,7 +135,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 			t.Fatalf("the token must keep working: sidecar=%v err=%v", byToken, err)
 		}
 		// Bound now: the identity reaches it with no adopt flag.
-		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, false); err != nil {
+		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, sub, "service-account:"+sub, false, nil); err != nil {
 			t.Fatalf("the bound identity was refused: %v", err)
 		}
 	})
@@ -152,7 +152,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, errs[i] = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "contested", identityIssuer, s, "service-account:"+s, true)
+				_, errs[i] = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "contested", identityIssuer, s, "service-account:"+s, true, nil)
 			}()
 		}
 		wg.Wait()
@@ -181,7 +181,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 
 	t.Run("a long subject fits created_by", func(t *testing.T) {
 		long := "system:serviceaccount:ws-1:" + strings.Repeat("a", 300)
-		sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "long-subject", identityIssuer, long, "service-account:"+long, false)
+		sc, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "long-subject", identityIssuer, long, "service-account:"+long, false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,7 +201,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 		if err := models.InsertSidecarDeletedName(models.DB, testOrgID, deleted.Name, "admin@hoop.dev"); err != nil {
 			t.Fatal(err)
 		}
-		_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false)
+		_, err = models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false, nil)
 		if !errors.Is(err, models.ErrSidecarNameDeleted) {
 			t.Fatalf("want ErrSidecarNameDeleted, got %v", err)
 		}
@@ -219,7 +219,7 @@ func TestGetOrCreateSidecarForIdentity(t *testing.T) {
 		if err := models.DeleteSidecarDeletedName(models.DB, testOrgID, "gke-eu-ws-1"); !errors.Is(err, models.ErrNotFound) {
 			t.Fatalf("clearing twice: want ErrNotFound, got %v", err)
 		}
-		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false); err != nil {
+		if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "gke-eu-ws-1", identityIssuer, sub, "service-account:"+sub, false, nil); err != nil {
 			t.Fatalf("a cleared name must be created again: %v", err)
 		}
 	})
@@ -341,14 +341,14 @@ func TestSidecarServiceAccountMigrationRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Adopted: bound to an identity, and still a token sidecar.
-	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, "sub-0", "service-account:sub-0", true); err != nil {
+	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "token-made", identityIssuer, "sub-0", "service-account:sub-0", true, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "identity-made", identityIssuer, "sub", "service-account:sub", false); err != nil {
+	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "identity-made", identityIssuer, "sub", "service-account:sub", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Neither a token nor an identity: the CHECK that refused it is gone.
-	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "cleared", identityIssuer, "sub-2", "service-account:sub-2", false); err != nil {
+	if _, err := models.GetOrCreateSidecarForIdentity(models.DB, testOrgID, "cleared", identityIssuer, "sub-2", "service-account:sub-2", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := models.ClearSidecarIdentity(models.DB, testOrgID, "cleared"); err != nil {
