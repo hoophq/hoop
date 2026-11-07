@@ -50,21 +50,17 @@ func configRevision(body []byte) string {
 }
 
 // recordHandshake stores what the sidecar reported and what it is being
-// served. A failure to record is logged and never fails the handshake: the
-// sidecar needs its configuration more than the fleet view needs a row, and
-// the next tick is a minute away.
-//
-// It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
-// them offline when the handshakes stop.
-func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
-	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
+// served, and sets its mirrors online in the same statement; the
+// sidecarmirrorstatus job sets them offline when the handshakes stop. A
+// failure to record is logged and never fails the handshake: the sidecar
+// needs its configuration more than the fleet view needs a row, and the
+// next tick is a minute away.
+func recordHandshake(db *gorm.DB, sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
+	firstCheckIn, err := models.RecordSidecarHandshake(db, sc.OrgID, sc.ID,
 		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 		return
-	}
-	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
-		log.With("sidecar", sc.ID).Warnf("%v", err)
 	}
 	// The setup wizard waits for the first check-in. A heartbeat would reach
 	// every admin's stream, which is open on every page, once a minute per pod.
@@ -641,11 +637,14 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 //	@Failure		400,401,403,412,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
-	sidecar := apiroutes.SidecarFromContext(c)
+	sidecar := apiroutes.SidecarConfigurationFromContext(c)
 	if sidecar == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
+	// Under the request's deadline (apiroutes.SidecarRequestTimeout): work
+	// the sidecar stopped waiting for is cancelled, not finished.
+	db := models.DB.WithContext(c.Request.Context())
 	var req openapi.SidecarHandshakeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -658,7 +657,7 @@ func Handshake(c *gin.Context) {
 	// sidecar push its file: the plane never takes the file on its own.
 	if report := parseReport(sidecar, req.LocalConfiguration); report != nil {
 		if !usesConfigFile(sidecar.Configuration) && len(sidecar.Configuration.Listeners) == 0 {
-			started, err := models.StartSidecarInDiskModeTx(models.DB, sidecar.OrgID, sidecar.ID)
+			started, err := models.StartSidecarInDiskModeTx(db, sidecar.OrgID, sidecar.ID)
 			if err != nil {
 				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed recording the sidecar's config file")
 				return
@@ -673,7 +672,7 @@ func Handshake(c *gin.Context) {
 		if usesConfigFile(sidecar.Configuration) {
 			doc, err := json.Marshal(report)
 			if err == nil {
-				err = models.RecordSidecarReportedConfiguration(models.DB, sidecar.ID, doc)
+				err = models.RecordSidecarReportedConfiguration(db, sidecar.ID, doc)
 			}
 			if err != nil {
 				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar's config file, reason=%v", err)
@@ -691,7 +690,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar, req, "", capabilities)
+		recordHandshake(db, sidecar, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
 		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
@@ -706,7 +705,7 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the web app"})
 		return
 	}
-	served, err := serveDocument(sidecar, licenseData, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
+	served, err := serveDocument(db, sidecar, licenseData, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
 		// Recorded even on refusal, with the reason: a later write knows
 		// this build is too old instead of reading it as never seen, and
@@ -714,14 +713,14 @@ func Handshake(c *gin.Context) {
 		// that cannot run is not recently seen.
 		var missing services.ErrSidecarCapabilityMissing
 		if errors.As(err, &missing) {
-			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
+			if rerr := models.RecordSidecarServeRefusal(db, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
 				log.With("sidecar", sidecar.ID).Warnf("failed recording the refused handshake, reason=%v", rerr)
 			}
 		}
 		answerServeError(c, err)
 		return
 	}
-	recordHandshake(sidecar, req, served.revision, capabilities)
+	recordHandshake(db, sidecar, req, served.revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, served.revision)
 	offerSessionEvents(c, sidecar)
@@ -775,7 +774,7 @@ func orgLicense(c *gin.Context) json.RawMessage {
 // capabilities is what the requesting sidecar reported. A document it cannot
 // decode is refused rather than served: a strict decode would refuse the whole
 // of it, at startup or on reload.
-func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Handshake) (servedDocument, error) {
+func serveDocument(db *gorm.DB, sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Handshake) (servedDocument, error) {
 	orgID, err := uuid.Parse(sc.OrgID)
 	if err != nil {
 		return servedDocument{}, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
@@ -785,7 +784,7 @@ func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Ha
 	// answer is derived on every handshake. Composition touches only the
 	// sections the sidecar hot-reloads, so a rule edit reaches a running
 	// process without restarting it.
-	bound, err := models.ListBoundRulesForSidecar(models.DB, orgID, sc.ID)
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
 		return servedDocument{}, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", services.ErrSidecarRulesUnavailable, err)
 	}
@@ -1036,7 +1035,7 @@ func parseReport(sc *models.Sidecar, raw json.RawMessage) *daemon.Config {
 //	@Failure		401,403,422,500				{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
-	sidecar := apiroutes.SidecarFromContext(c)
+	sidecar := apiroutes.SidecarConfigurationFromContext(c)
 	if sidecar == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
@@ -1047,7 +1046,7 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := serveDocument(sidecar, licenseData, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
+	served, err := serveDocument(models.DB.WithContext(c.Request.Context()), sidecar, licenseData, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
 	if err != nil {
 		answerServeError(c, err)
 		return

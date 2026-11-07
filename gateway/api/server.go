@@ -241,12 +241,9 @@ func (a *Api) newAPIRouter(route *gin.Engine, baseURL string) *apiroutes.Router 
 }
 
 func (a *Api) StartAPI() {
-	// Gin's route.Run() resolves its address from PORT, so the default is
-	// written back to the environment for the non-TLS path below.
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8009"
-		os.Setenv("PORT", port)
 	}
 	route := a.BuildEngine()
 	// BuildEngine always assigns a.logger; guard the defer so a future
@@ -256,19 +253,29 @@ func (a *Api) StartAPI() {
 		defer a.logger.Sync()
 	}
 
+	// gin's route.Run() is ListenAndServe with no timeouts: a client that
+	// opens a connection and sends nothing holds a goroutine and a file
+	// descriptor for good. No WriteTimeout and no ReadTimeout: the live
+	// event stream and session downloads run as long as they need, and a
+	// request's own deadline (the sidecar routes set one) bounds the work.
+	// The idle timeout outlasts a sidecar's heartbeat wait (at most 72s), so
+	// its connection is reused rather than redialed every minute.
+	server := http.Server{
+		Addr:              ":" + port,
+		Handler:           route,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ErrorLog:          log.NewStdHttpLogger(),
+	}
 	if a.TLSConfig != nil {
-		server := http.Server{
-			Addr:      "0.0.0.0:" + port,
-			Handler:   route,
-			TLSConfig: a.TLSConfig,
-			ErrorLog:  log.NewStdHttpLogger(),
-		}
+		server.Addr = "0.0.0.0:" + port
+		server.TLSConfig = a.TLSConfig
 		if err := server.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("Failed to start HTTPS server, err=%v", err)
 		}
 		return
 	}
-	if err := route.Run(); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}
 }
@@ -282,19 +289,23 @@ func (a *Api) StartAPI() {
 // license lapses keeps its oldest sidecar and the rest stop handshaking
 // (SidecarSeatOnly). Service accounts and identity bindings stay Enterprise.
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
+	// The handshake, the configuration routes and filing a review read the
+	// sidecar's configuration (a review is authorized against it); the
+	// other routes run far more often (event batches, review polls every
+	// few seconds) and never do, so they skip reading it.
 	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Handshake)
 	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Configuration)
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
 	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostReview)
-	r.GET("/sidecars/reviews", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ListReviews)
-	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.GetReview)
-	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ClaimReview)
-	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.SettleReview)
+	r.GET("/sidecars/reviews", r.SidecarAuthWithoutConfigurationMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ListReviews)
+	r.GET("/sidecars/reviews/:id", r.SidecarAuthWithoutConfigurationMiddleware, apiroutes.SidecarSeatOnly, apisidecar.GetReview)
+	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthWithoutConfigurationMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ClaimReview)
+	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthWithoutConfigurationMiddleware, apiroutes.SidecarSeatOnly, apisidecar.SettleReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ImportConfiguration)
 	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
-	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)
+	r.POST("/sidecars/events", r.SidecarAuthWithoutConfigurationMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)
 
 	// Device-code login: a sidecar with no token asks to join the
 	// organization of the admin who approves its code. Start and poll carry

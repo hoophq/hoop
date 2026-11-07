@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -269,27 +270,105 @@ func deleteOrphanResource(tx *gorm.DB, orgID, name string) error {
 	return nil
 }
 
+// SidecarMirrorStates is the stored mirrors of one org by sidecar ID, as
+// SyncSidecarConnectionsTx reads and writes them. A reconcile reads it without
+// locks to skip the sidecars the sync would not change.
+type SidecarMirrorStates map[string][]sidecarMirrorState
+
+// sidecarMirrorState holds every column the sync writes on a kept mirror and
+// on its resource. updated_at is left out: the sync sets it on each write.
+type sidecarMirrorState struct {
+	SidecarID          string         `gorm:"column:sidecar_id"`
+	Listener           string         `gorm:"column:sidecar_listener"`
+	Name               string         `gorm:"column:name"`
+	ResourceName       sql.NullString `gorm:"column:resource_name"`
+	Type               sql.NullString `gorm:"column:type"`
+	SubType            sql.NullString `gorm:"column:subtype"`
+	ManagedBy          sql.NullString `gorm:"column:managed_by"`
+	HasAgent           bool           `gorm:"column:has_agent"`
+	AccessModeRunbooks sql.NullString `gorm:"column:access_mode_runbooks"`
+	AccessModeExec     sql.NullString `gorm:"column:access_mode_exec"`
+	AccessModeConnect  sql.NullString `gorm:"column:access_mode_connect"`
+	AccessSchema       sql.NullString `gorm:"column:access_schema"`
+	HasResource        bool           `gorm:"column:has_resource"`
+	ResourceType       sql.NullString `gorm:"column:resource_type"`
+	ResourceSubType    sql.NullString `gorm:"column:resource_subtype"`
+	// ResourceKept is a resource the sync leaves as it is: it names an agent,
+	// or another connection uses it (updateSidecarConnection).
+	ResourceKept bool `gorm:"column:resource_kept"`
+}
+
+// LoadSidecarMirrorStates reads the mirrors of every sidecar of orgID in one
+// query, so a reconcile costs no round trip for a sidecar it skips. The use
+// count of a resource is grouped once: connections.resource_name has no index.
+func LoadSidecarMirrorStates(db *gorm.DB, orgID string) (SidecarMirrorStates, error) {
+	var rows []sidecarMirrorState
+	err := db.Raw(`SELECT c.sidecar_id, c.sidecar_listener, c.name, c.resource_name, c.type, c.subtype, c.managed_by,
+		c.agent_id IS NOT NULL AS has_agent,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		r.name IS NOT NULL AS has_resource, r.type AS resource_type, r.subtype AS resource_subtype,
+		(r.agent_id IS NOT NULL
+		 OR COALESCE(u.n, 0) > CASE WHEN c.resource_name = c.name THEN 1 ELSE 0 END) AS resource_kept
+	FROM private.connections c
+	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.name
+	LEFT JOIN (SELECT resource_name, count(*) AS n FROM private.connections
+	           WHERE org_id = ? GROUP BY resource_name) u ON u.resource_name = c.name
+	WHERE c.org_id = ? AND c.sidecar_id IS NOT NULL`, orgID, orgID).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed loading sidecar mirrors, reason=%v", err)
+	}
+	out := make(SidecarMirrorStates)
+	for _, row := range rows {
+		out[row.SidecarID] = append(out[row.SidecarID], row)
+	}
+	return out, nil
+}
+
+// InSync reports whether SyncSidecarConnectionsTx(sidecarID, mirrors) would
+// write nothing: each mirror has its row, no other row exists, and each row
+// and its resource hold the projected columns.
+func (s SidecarMirrorStates) InSync(sidecarID string, mirrors []Connection) bool {
+	stored := s[sidecarID]
+	if len(stored) != len(mirrors) {
+		return false
+	}
+	byListener := make(map[string]*sidecarMirrorState, len(stored))
+	for i := range stored {
+		byListener[stored[i].Listener] = &stored[i]
+	}
+	for _, m := range mirrors {
+		row, ok := byListener[m.SidecarListener.String]
+		if !ok || !row.holds(m) {
+			return false
+		}
+		// Matched once: a second mirror on the same listener is a difference.
+		delete(byListener, m.SidecarListener.String)
+	}
+	return true
+}
+
+// holds reports whether updateSidecarConnection would leave row and its
+// resource as they are.
+func (row *sidecarMirrorState) holds(m Connection) bool {
+	text := func(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+	return row.ResourceName == text(row.Name) &&
+		row.Type == text(m.Type) && row.SubType == m.SubType && row.ManagedBy == m.ManagedBy &&
+		!row.HasAgent &&
+		row.AccessModeRunbooks == text(m.AccessModeRunbooks) && row.AccessModeExec == text(m.AccessModeExec) &&
+		row.AccessModeConnect == text(m.AccessModeConnect) && row.AccessSchema == text(m.AccessSchema) &&
+		row.HasResource &&
+		(row.ResourceKept || (row.ResourceType == text(m.Type) && row.ResourceSubType == m.SubType))
+}
+
 // SidecarMirrorOfflineAfter is how long a mirror stays online after its
 // sidecar's last handshake. A sidecar handshakes every minute, with 20%
 // jitter (heartbeatEvery, sidecar/daemon), so this is three missed polls.
 const SidecarMirrorOfflineAfter = 3 * time.Minute
 
-// MarkSidecarConnectionsOnline sets every mirror of one sidecar online. The
-// handshake calls it after it records last_seen_at;
-// MarkStaleSidecarConnectionsOffline undoes it.
-func MarkSidecarConnectionsOnline(db *gorm.DB, orgID, sidecarID string) error {
-	err := db.Exec(`UPDATE private.connections SET status = ?
-		WHERE org_id = ? AND sidecar_id = ? AND status <> ?`,
-		ConnectionStatusOnline, orgID, sidecarID, ConnectionStatusOnline).Error
-	if err != nil {
-		return fmt.Errorf("failed marking sidecar connections online, reason=%v", err)
-	}
-	return nil
-}
-
 // MarkStaleSidecarConnectionsOffline sets offline, in every org, each online
-// mirror whose sidecar has not handshaked within SidecarMirrorOfflineAfter.
-// It returns how many it changed.
+// mirror whose sidecar has not handshaked within SidecarMirrorOfflineAfter;
+// RecordSidecarHandshake sets them online again. It returns how many it
+// changed.
 //
 // The stale sidecars are locked before their mirrors, in the order the config
 // writers lock them. A handshake that refreshes last_seen_at meanwhile either

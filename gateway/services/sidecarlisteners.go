@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -38,15 +39,27 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 
 // ReconcileSidecarListenerConnections writes the mirrors of every sidecar of
 // orgID, one transaction per sidecar, for the rows that fell behind the write
-// path. A sidecar it cannot mirror is skipped and returned, never fatal: its
-// next write answers the same error to the admin.
+// path. A sidecar whose mirrors already match costs no statement of its own.
+// A sidecar it cannot mirror is skipped and returned, never fatal: its next
+// write answers the same error to the admin.
 func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
+	// Mirrors are read before the sidecars: a config written in between is
+	// compared with the mirrors it may have left behind, not with its older copy.
+	states, err := models.LoadSidecarMirrorStates(db, orgID)
+	if err != nil {
+		return []error{err}
+	}
 	sidecars, err := models.ListSidecars(db, orgID)
 	if err != nil {
 		return []error{fmt.Errorf("failed listing sidecars, reason=%v", err)}
 	}
 	var failed []error
-	for _, listed := range sidecars {
+	for i := range sidecars {
+		listed := &sidecars[i]
+		// A listing it cannot project takes the locked path, which reports it.
+		if mirrors, err := ProjectListeners(orgID, listed); err == nil && states.InSync(listed.ID, mirrors) {
+			continue
+		}
 		err := db.Transaction(func(tx *gorm.DB) error {
 			// Read again under the lock the config writers take: a write that
 			// lands after the listing must not be undone by its older copy.
@@ -68,18 +81,26 @@ func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
 
 // ReconcileAllSidecarListenerConnections runs the reconcile for every org.
 // Called at startup: it covers an org whose mirrors fell behind while this
-// gateway was not running, such as a redeploy after a rollback. It logs and
-// never stops the startup.
+// gateway was not running, such as a redeploy after a rollback. A replica
+// that starts while another runs it skips it. It logs and never fails.
 func ReconcileAllSidecarListenerConnections(db *gorm.DB) {
-	orgs, err := models.ListAllOrganizations()
-	if err != nil {
-		log.Warnf("sidecar mirrors: failed listing orgs, reason=%v", err)
-		return
-	}
-	for _, org := range orgs {
-		for _, err := range ReconcileSidecarListenerConnections(db, org.ID) {
-			log.With("org", org.ID).Warnf("sidecar mirrors: %v", err)
+	ran, err := models.RunOnOneReplica(context.Background(), db, "sidecar-mirror-reconcile", func(ctx context.Context) error {
+		orgs, err := models.ListAllOrganizations()
+		if err != nil {
+			return fmt.Errorf("failed listing orgs, reason=%v", err)
 		}
+		for _, org := range orgs {
+			for _, err := range ReconcileSidecarListenerConnections(db.WithContext(ctx), org.ID) {
+				log.With("org", org.ID).Warnf("sidecar mirrors: %v", err)
+			}
+		}
+		return nil
+	})
+	switch {
+	case err != nil:
+		log.Warnf("sidecar mirrors: %v", err)
+	case !ran:
+		log.Infof("sidecar mirrors: another replica runs the reconcile, skipped")
 	}
 }
 

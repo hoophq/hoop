@@ -69,6 +69,11 @@ config:
   POSTGRES_DB_URI: ''
   # 'postgres://<user>:<pwd>@<db-host>:<port>/<dbname>'
 
+  # -- Cap on each replica's Postgres connections; 0 removes it. Past the cap
+  # a request waits for a connection. Keep replicas x cap below the server's
+  # max_connections.
+  POSTGRES_MAX_OPEN_CONNS: '100'
+
   # -- REQUIRED. The address the web app and every sidecar reach this on. Must
   # carry a scheme: appconfig parses it with url.Parse, and without one the
   # hostname is read as a URL path and every route is mounted under it.

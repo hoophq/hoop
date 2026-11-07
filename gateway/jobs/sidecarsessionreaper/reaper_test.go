@@ -52,7 +52,7 @@ func event(seq int64, sessionID string, kind audit.Kind, at time.Time, statement
 func openSession(t *testing.T, sc *models.Sidecar, sessionID string) string {
 	t.Helper()
 	start := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
-	_, err := services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{
+	_, err := services.ApplySidecarSessionEvents(context.Background(), models.DB, sc, []daemon.SessionEvent{
 		event(1, sessionID, audit.KindSessionStart, start, ""),
 		event(2, sessionID, audit.KindStatement, start.Add(time.Second), "SELECT 1"),
 	})
@@ -141,7 +141,7 @@ func TestAReapedSessionTakesLateEvents(t *testing.T) {
 	require.Equal(t, 1, reapNow(t))
 
 	end := time.Now().UTC().Truncate(time.Second)
-	res, err := services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{
+	res, err := services.ApplySidecarSessionEvents(context.Background(), models.DB, sc, []daemon.SessionEvent{
 		event(3, "s-late", audit.KindStatement, end.Add(-time.Second), "SELECT 2"),
 		event(4, "s-late", audit.KindSessionEnd, end, ""),
 	})
@@ -154,7 +154,7 @@ func TestAReapedSessionTakesLateEvents(t *testing.T) {
 	assert.True(t, end.Equal(row.EndedAt.UTC()), "ended at its session_end: %v, want %v", row.EndedAt, end)
 	assert.Nil(t, row.ReapedAt, "the sidecar's end replaces the reap")
 
-	_, err = services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{
+	_, err = services.ApplySidecarSessionEvents(context.Background(), models.DB, sc, []daemon.SessionEvent{
 		event(5, "s-late", audit.KindStatement, end.Add(time.Second), "SELECT 3"),
 	})
 	var refused services.SidecarEventsRefused
@@ -164,7 +164,7 @@ func TestAReapedSessionTakesLateEvents(t *testing.T) {
 func TestReapLeavesAnEndedSessionAlone(t *testing.T) {
 	sc := startReaperDB(t)
 	id := openSession(t, sc, "s-ended")
-	_, err := services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{
+	_, err := services.ApplySidecarSessionEvents(context.Background(), models.DB, sc, []daemon.SessionEvent{
 		event(3, "s-ended", audit.KindSessionEnd, time.Now().UTC(), ""),
 	})
 	require.NoError(t, err)
@@ -182,6 +182,20 @@ func TestReapEndsTheSessionsOfADeletedSidecar(t *testing.T) {
 
 	require.Equal(t, 1, reapNow(t))
 	assert.Equal(t, "done", readRow(t, id).Status)
+}
+
+// A sidecar id that is not a uuid matches no sidecar: the session reads as
+// orphaned, and the pass does not fail on the cast.
+func TestReapEndsASessionWithAMalformedSidecarID(t *testing.T) {
+	sc := startReaperDB(t)
+	bad := openSession(t, sc, "s-bad-id")
+	require.NoError(t, models.DB.Exec(`UPDATE private.sessions
+		SET metadata = jsonb_set(metadata, '{sidecar,id}', '"not-a-uuid"') WHERE id = ?`, bad).Error)
+	live := openSession(t, sc, "s-good-id")
+
+	require.Equal(t, 1, reapNow(t))
+	assert.Equal(t, "done", readRow(t, bad).Status)
+	assert.Equal(t, "open", readRow(t, live).Status)
 }
 
 // A heartbeat between the list and the reap revives the session: the reap
@@ -216,7 +230,7 @@ func TestALateDenialReachesEventRouting(t *testing.T) {
 
 	deny := event(3, "s-late-deny", audit.KindViolation, time.Now().UTC(), "DROP TABLE users")
 	deny.Event.Rule = "no-drop"
-	_, err := services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{deny})
+	_, err := services.ApplySidecarSessionEvents(context.Background(), models.DB, sc, []daemon.SessionEvent{deny})
 	require.NoError(t, err)
 
 	count := func(producerID string) int64 {

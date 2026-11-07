@@ -35,10 +35,7 @@ func TestSidecarMirrorStatusFollowsTheLastCheckIn(t *testing.T) {
 		t.Fatalf("a new mirror is offline, got %q", got)
 	}
 
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := models.MarkSidecarConnectionsOnline(models.DB, testOrgID, pay.ID); err != nil {
+	if _, err := models.RecordSidecarHandshake(models.DB, pay.OrgID, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := mirrorStatus(t, pay.ID); got != models.ConnectionStatusOnline {
@@ -69,10 +66,7 @@ func TestSidecarMirrorStatusFollowsTheLastCheckIn(t *testing.T) {
 		t.Fatalf("a connection with no sidecar keeps its status, got %q", got)
 	}
 
-	if _, err := models.RecordSidecarHandshake(models.DB, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := models.MarkSidecarConnectionsOnline(models.DB, testOrgID, pay.ID); err != nil {
+	if _, err := models.RecordSidecarHandshake(models.DB, pay.OrgID, pay.ID, "1.0.0", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := mirrorStatus(t, pay.ID); got != models.ConnectionStatusOnline {

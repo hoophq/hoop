@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"slices"
+	"sync"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/events"
@@ -28,9 +29,56 @@ type sidecarSessionHook struct {
 	Republish bool
 }
 
+const (
+	// sidecarHookWorkers bounds the hooks running at once: a rollout opens
+	// and closes thousands of sessions, and each hook reads the database.
+	sidecarHookWorkers = 8
+	// sidecarHookQueueSize bounds the hooks that wait for a worker.
+	sidecarHookQueueSize = 1024
+)
+
+var (
+	sidecarHooksOnce sync.Once
+	sidecarHooks     *sidecarHookPool
+)
+
 // runSidecarSessionHooks fires in the background: a slow webhook endpoint
-// must not hold the sidecar's batch. Tests replace it.
-var runSidecarSessionHooks = func(h sidecarSessionHook) { go fireSidecarSessionHooks(h) }
+// must not hold the sidecar's batch.
+func runSidecarSessionHooks(h sidecarSessionHook) {
+	sidecarHooksOnce.Do(func() {
+		sidecarHooks = newSidecarHookPool(sidecarHookWorkers, sidecarHookQueueSize, fireSidecarSessionHooks)
+	})
+	sidecarHooks.enqueue(h)
+}
+
+// sidecarHookPool runs hooks on a fixed number of workers.
+type sidecarHookPool struct {
+	queue chan sidecarSessionHook
+}
+
+func newSidecarHookPool(workers, size int, fire func(sidecarSessionHook)) *sidecarHookPool {
+	p := &sidecarHookPool{queue: make(chan sidecarSessionHook, size)}
+	for range workers {
+		go func() {
+			for h := range p.queue {
+				fire(h)
+			}
+		}()
+	}
+	return p
+}
+
+// enqueue never blocks the batch: a full queue drops h, and it reports false.
+func (p *sidecarHookPool) enqueue(h sidecarSessionHook) bool {
+	select {
+	case p.queue <- h:
+		return true
+	default:
+		log.With("org", h.OrgID, "sid", h.SessionID).
+			Warnf("the sidecar session hooks queue is full (%d), dropped the hooks of this session", cap(p.queue))
+		return false
+	}
+}
 
 // fireSidecarSessionHooks runs in order, so session.open goes before
 // session.close when one batch holds both. Failures are logged: an agent
@@ -40,7 +88,7 @@ func fireSidecarSessionHooks(h sidecarSessionHook) {
 		return
 	}
 	logger := log.With("sid", h.SessionID)
-	// A bare goroutine: a panic here would stop the gateway.
+	// A worker goroutine: a panic here would stop the gateway.
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf("sidecar session hooks panicked: %v", r)

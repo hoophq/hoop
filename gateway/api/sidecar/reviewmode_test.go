@@ -94,7 +94,7 @@ func TestSettingReturnOnAnOldSidecarIsRefused(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 
 	// Handshaked without the header: a build that predates the field.
-	_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.190.0", "", "", "", "", nil)
+	_, err := models.RecordSidecarHandshake(models.DB, sc.OrgID, sc.ID, "1.190.0", "", "", "", "", nil)
 	require.NoError(t, err)
 	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("return"))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)

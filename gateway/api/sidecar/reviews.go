@@ -89,8 +89,11 @@ func (e ruleNotAuthorized) Error() string {
 //	@Failure		400,401,413,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
-	sidecar := authenticatedSidecar(c)
+	// Authorized against the configuration (authorizedApprovalRule), so the
+	// sidecar must be read with it.
+	sidecar := apiroutes.SidecarConfigurationFromContext(c)
 	if sidecar == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
 
@@ -121,7 +124,7 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	rule, err := authorizedApprovalRule(models.DB, sidecar, req.ListenerName, req.ApprovalRule)
+	rule, err := authorizedApprovalRule(models.DB.WithContext(c.Request.Context()), sidecar, req.ListenerName, req.ApprovalRule)
 	if err != nil {
 		var refusal ruleNotAuthorized
 		if errors.As(err, &refusal) {
@@ -166,7 +169,7 @@ func PostReview(c *gin.Context) {
 	now := time.Now().UTC()
 	const attempts = 2
 	for range attempts {
-		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
+		rev, err := models.GetLiveSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID,
 			req.ListenerName, rule.Name, statementHash, now)
 		switch {
 		case err == nil:
@@ -250,7 +253,7 @@ func ClaimReview(c *gin.Context) {
 
 	// Scoped to the calling sidecar, so a token cannot claim another
 	// sidecar's approval by guessing its id.
-	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	rev, err := models.GetSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, reviewID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
@@ -295,7 +298,7 @@ func SettleReview(c *gin.Context) {
 
 	// Read first, scoped to the calling sidecar, so a token cannot settle
 	// another sidecar's reservation or write anything on its review.
-	switch _, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID); {
+	switch _, err := models.GetSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, reviewID); {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
@@ -303,12 +306,12 @@ func SettleReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
 	}
-	settled, err := models.SettleSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID, *req.Accepted, time.Now().UTC())
+	settled, err := models.SettleSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, reviewID, *req.Accepted, time.Now().UTC())
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed settling the sidecar approval request")
 		return
 	}
-	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	rev, err := models.GetSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, reviewID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
@@ -354,7 +357,7 @@ func GetReview(c *gin.Context) {
 	}
 
 	// Another sidecar's review reads as not found, so a token cannot probe ids.
-	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	rev, err := models.GetSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, reviewID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
@@ -412,7 +415,7 @@ func ListReviews(c *gin.Context) {
 		limit = n
 	}
 
-	reviews, err := models.ListSidecarReviews(models.DB, sidecar.OrgID, sidecar.ID, status, limit)
+	reviews, err := models.ListSidecarReviews(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, status, limit)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing the sidecar approval requests")
 		return
@@ -487,7 +490,7 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 	// the database clock, which can pass it while the request waits on the lock.
 	refusedByDeadline := rev.Status == models.ReviewStatusApproved
 	if !forward && (refusedByDeadline || lapsedSidecarReview(rev, now)) {
-		expired, status, err := models.ExpireSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
+		expired, status, err := models.ExpireSidecarReview(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, rev.ID, now)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed expiring the sidecar approval request")
 			return
@@ -535,7 +538,7 @@ func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName 
 	if reserve {
 		take = models.ReserveApprovedSidecarReview
 	}
-	claimed, status, err := take(models.DB, sidecar.OrgID, rev.ID, now)
+	claimed, status, err := take(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, rev.ID, now)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
 			"failed consuming the approved sidecar approval request")

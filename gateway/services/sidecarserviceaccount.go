@@ -361,13 +361,14 @@ func betterServiceAccount(a, b *models.SidecarServiceAccount) bool {
 //
 // An issuer no mapping names is refused before anything is fetched: the
 // issuer of an unverified token is whatever its sender wrote. Every refusal
-// carries that issuer for the plane's log.
-func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw string) (*models.Sidecar, error) {
+// carries that issuer for the plane's log. withConfiguration reads the
+// sidecar's configuration with its row.
+func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw string, withConfiguration bool) (*models.Sidecar, error) {
 	issuer, err := externaljwt.UnverifiedIssuer(raw)
 	if err != nil {
 		return nil, refuseUnverified(ErrSidecarIdentityMalformed, "not a JWT with an issuer: %v", err)
 	}
-	sc, err := authenticateSidecarIdentity(ctx, db, verifier, raw, issuer)
+	sc, err := authenticateSidecarIdentity(ctx, db, verifier, raw, issuer, withConfiguration)
 	var r *SidecarIdentityRefusal
 	if errors.As(err, &r) {
 		r.Issuer = issuer
@@ -375,7 +376,7 @@ func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	return sc, err
 }
 
-func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw, issuer string) (*models.Sidecar, error) {
+func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw, issuer string, withConfiguration bool) (*models.Sidecar, error) {
 	mappings, err := models.ListSidecarServiceAccountsByIssuer(db, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing sidecar service accounts: %w", err)
@@ -397,7 +398,7 @@ func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	sa := match.ServiceAccount
 	sc, err := models.GetOrCreateSidecarForIdentity(db, sa.OrgID, match.Name, issuer, match.Subject,
 		sidecarCreatedByPrefix+match.Subject, sa.AdoptExistingSidecars,
-		func() error { return identitySeatFree(db, sa.OrgID, match.Name) })
+		func() error { return identitySeatFree(db, sa.OrgID, match.Name) }, withConfiguration)
 	var refusal *SidecarIdentityRefusal
 	switch {
 	case errors.As(err, &refusal):
