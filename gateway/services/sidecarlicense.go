@@ -40,6 +40,11 @@ type seatLicense struct {
 // out; its State reads the clock on every use, so caching it is not caching
 // a verdict (sidecar/CLAUDE.md, "The license verdict is a function of the
 // clock").
+//
+// A Status carrying an error is not cached. Load reports a document read
+// before its issued_at as an error, and that error clears when the time
+// arrives; caching it would pin the free-tier caps until a restart. Such a
+// document is verified on every call, the cost before this cache existed.
 func loadSidecarLicense(licenseData []byte) license.Status {
 	key := sha256.Sum256(licenseData)
 	if s, ok := sidecarLicenses.Load(key); ok {
@@ -49,7 +54,9 @@ func loadSidecarLicense(licenseData []byte) license.Status {
 		Value:  string(licenseData),
 		Source: "the organization license",
 	})
-	sidecarLicenses.Store(key, s)
+	if s.Err == nil {
+		sidecarLicenses.Store(key, s)
+	}
 	return s
 }
 
