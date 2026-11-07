@@ -35,6 +35,14 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 	return composeSidecarConfiguration(db, sc, "", "")
 }
 
+// ComposeSidecarConfigurationFrom is ComposeSidecarConfiguration over bound
+// rules the caller already read, for the handshake: it reads them once, to
+// decide whether the document it served last time still stands, and folds
+// them only when it does not.
+func ComposeSidecarConfigurationFrom(sc *models.Sidecar, bound models.SidecarBoundRules) (daemon.Config, error) {
+	return foldSidecarRules(daemon.Config(sc.Configuration), bound.Guardrails, bound.Masking, bound.Analyzers)
+}
+
 // ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,
 // as opposed to one the rules make impossible.
 //
@@ -68,18 +76,11 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 		return cfg, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
 	}
 
-	guardrails, err := models.ListGuardrailRulesForSidecar(db, orgID, sc.ID)
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
-	masking, err := models.ListDataMaskingRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
-	analyzers, err := models.ListAnalyzerRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
+	guardrails, masking, analyzers := bound.Guardrails, bound.Masking, bound.Analyzers
 	if skipName != "" {
 		switch skipKind {
 		case SidecarRuleGuardrail:

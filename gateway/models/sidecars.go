@@ -59,6 +59,12 @@ type Sidecar struct {
 	// sidecar a service account created has none: the column is NULL.
 	KeyHash       string               `gorm:"column:key_hash"`
 	Configuration SidecarConfiguration `gorm:"column:configuration"`
+	// ConfigurationHash names the stored document, computed by the database
+	// on read (md5 of the canonical jsonb text). The handshake uses it to
+	// tell whether the document it served last time is still the one
+	// stored, without encoding the configuration again. Empty on a row a
+	// query did not select it for; a caller treats that as "unknown".
+	ConfigurationHash string `gorm:"column:configuration_hash;->"`
 	CreatedBy     string               `gorm:"column:created_by"`
 	CreatedAt     time.Time            `gorm:"column:created_at"`
 
@@ -98,6 +104,7 @@ type Sidecar struct {
 
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
+	md5(s.configuration::text) AS configuration_hash,
 	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
 	s.last_error, s.served_revision_at, s.capabilities, s.identity_issuer, s.identity_subject,
 	s.reported_configuration::text AS reported_configuration, s.reported_configuration_at`
@@ -343,7 +350,8 @@ func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sideca
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
 	var item Sidecar
 	err := db.Raw(`
-	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration
+	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
+		md5(s.configuration::text) AS configuration_hash
 	FROM private.sidecars s
 	WHERE s.key_hash = ?`, keyHash).
 		Scan(&item).
