@@ -73,6 +73,8 @@ type Config struct {
 
 	eventRoutingWorkers int
 
+	pgMaxOpenConns int
+
 	slackSocketSlots int
 
 	spiffeMode          string
@@ -259,6 +261,16 @@ func Load() error {
 		}
 	}
 
+	// POSTGRES_MAX_OPEN_CONNS caps the gateway's connection pool. Zero, the
+	// default, leaves it unbounded; models.InitDatabaseConnection then keeps
+	// a fixed number of idle connections instead of the cap.
+	pgMaxOpenConns := 0
+	if v := os.Getenv("POSTGRES_MAX_OPEN_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			pgMaxOpenConns = n
+		}
+	}
+
 	// Slack allows 10 sockets per app and a slot switch briefly opens one
 	// extra, so 9 is the most that never reaches the reconnect loop the slots
 	// exist to prevent.
@@ -315,6 +327,7 @@ func Load() error {
 		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		rdpPIIGuardPolicy:               rdpPIIGuardPolicy,
 		eventRoutingWorkers:             eventRoutingWorkers,
+		pgMaxOpenConns:                  pgMaxOpenConns,
 		slackSocketSlots:                slackSocketSlots,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
@@ -530,6 +543,9 @@ func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThr
 func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) RDPPIIGuardPolicy() string             { return c.rdpPIIGuardPolicy }
 func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWorkers }
+
+// PgMaxOpenConns is POSTGRES_MAX_OPEN_CONNS: the pool cap, zero for none.
+func (c Config) PgMaxOpenConns() int { return c.pgMaxOpenConns }
 
 // SlackSocketSlots is how many gateway replicas may open a Slack socket per
 // organization in replica mode. The others post through the Web API only.

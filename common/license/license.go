@@ -205,6 +205,13 @@ func (l License) verify(now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("failed verifying license signature: %v", err)
 	}
+	return l.VerifyTerm(now)
+}
+
+// VerifyTerm reports whether now falls inside the license term. Verify runs
+// it after the signature check; a caller that already holds a verified
+// document re-runs only this, since the clock is the one input that moves.
+func (l License) VerifyTerm(now time.Time) error {
 	issuedAt, expireAt := time.Unix(l.Payload.IssuedAt, 0).In(time.UTC), time.Unix(l.Payload.ExpireAt, 0).In(time.UTC)
 	if issuedAt.IsZero() || expireAt.IsZero() {
 		return fmt.Errorf("unable to parse timestamp for issued_at or expire_at attributes")

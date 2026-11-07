@@ -686,12 +686,11 @@ func Handshake(c *gin.Context) {
 			}
 		}
 	}
+	// The middleware loaded the organization's license into the context;
+	// nothing re-reads it on this path. Eight sequential statements per
+	// handshake, times one a minute per sidecar, is the database's load.
+	licenseData := orgLicense(c)
 	if usesConfigFile(sidecar.Configuration) {
-		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
-			return
-		}
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
 		//
@@ -713,7 +712,7 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the web app"})
 		return
 	}
-	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
+	served, err := withOrgLicense(sidecar, licenseData, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
 		// Recorded even on refusal, with the reason: a later write knows
 		// this build is too old instead of reading it as never seen, and
@@ -744,6 +743,17 @@ func offerSessionEvents(c *gin.Context, sc *models.Sidecar) {
 	}
 }
 
+// orgLicense is the organization license SidecarAuthMiddleware loaded, as
+// the bytes the handshake serves and checks. Empty when the organization
+// holds none.
+func orgLicense(c *gin.Context) json.RawMessage {
+	ctx := storagev2.ParseContext(c)
+	if ctx.OrgLicenseData == nil {
+		return nil
+	}
+	return *ctx.OrgLicenseData
+}
+
 // withOrgLicense answers the config a sidecar must serve, carrying the
 // organization's license.
 //
@@ -766,13 +776,7 @@ func offerSessionEvents(c *gin.Context, sc *models.Sidecar) {
 // capabilities is what the requesting sidecar reported. A document it cannot
 // decode is refused rather than served: a strict decode would refuse the whole
 // of it, at startup or on reload.
-func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, error) {
-	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
-	if err != nil {
-		// Not found is not a missing license, it is a missing org: the
-		// token authenticated against a row that names it.
-		return daemon.Config(sc.Configuration), err
-	}
+func withOrgLicense(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Handshake) (daemon.Config, error) {
 	// The rules an admin bound to this sidecar are folded in here, on the way
 	// out, and never stored: the row keeps what an admin authored and the
 	// answer is derived on every handshake. Composition touches only the
@@ -1017,17 +1021,13 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
+	licenseData := orgLicense(c)
 	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
-		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
-			return
-		}
 		c.Header(licenseManagedHeader, "true")
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
+	served, err := withOrgLicense(sidecar, licenseData, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
 	if err != nil {
 		answerServeError(c, err)
 		return
@@ -1045,7 +1045,7 @@ func answerServeError(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
 		return
 	}
-	httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+	httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed composing the sidecar configuration")
 }
 
 // diskModeConfig is the whole answer a released sidecar receives: the

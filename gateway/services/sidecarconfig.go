@@ -68,18 +68,11 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 		return cfg, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
 	}
 
-	guardrails, err := models.ListGuardrailRulesForSidecar(db, orgID, sc.ID)
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
-	masking, err := models.ListDataMaskingRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
-	analyzers, err := models.ListAnalyzerRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
+	guardrails, masking, analyzers := bound.Guardrails, bound.Masking, bound.Analyzers
 	if skipName != "" {
 		switch skipKind {
 		case SidecarRuleGuardrail:
