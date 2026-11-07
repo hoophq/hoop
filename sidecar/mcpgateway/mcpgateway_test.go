@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/mcpgateway"
 	"github.com/hoophq/hoop/sidecar/mcpgateway/internal/testupstream"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -357,9 +359,8 @@ func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
 }
 
 // A tools/call is judged by its exact "name" key, as an MCP server reads it.
-// Params whose keys differ only in case are refused: Go reads them without
-// case, so the lane would judge one tool and a server in another language
-// would run the other.
+// Params that repeat a key, exactly, escaped or in another case, are
+// refused: the lane would judge one value and the server could run another.
 func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
@@ -372,6 +373,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 		`{"name":"echo","arguments":{"message":"x"},"ARGUMENTS":{"message":"y"}}`,
 		`{"Name":"echo","arguments":{"message":"x"}}`,
 		`{"name":"echo","arguments":{"message":"x"},"argumentſ":{"message":"y"}}`,
+		`{"name":"delete_customer","name":"echo","arguments":{"message":"x"}}`,
+		`{"name":"echo","arguments":{"message":"x"},"arguments":{"message":"y"}}`,
+		`{"name":"delete_customer","\u006eame":"echo","arguments":{"message":"x"}}`,
 	} {
 		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
 		if code != 200 || !strings.Contains(body, "-32602") {
@@ -380,6 +384,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	}
 	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
 		t.Fatalf("the lane judged %v, want no call", calls)
+	}
+	if body := c.call(t, 30, "echo", `{"message":"still works"}`); !strings.Contains(body, "still works") {
+		t.Fatalf("a normal call after the refusals: %s", body)
 	}
 }
 
@@ -484,6 +491,96 @@ func TestOneSidecarSessionPerMCPSession(t *testing.T) {
 	}
 	if active, total, _ := srv.Stats(); active != 1 || total != 2 {
 		t.Fatalf("stats active=%d total=%d", active, total)
+	}
+}
+
+// recRecorder keeps the messages the engine counts.
+type recRecorder struct {
+	telemetry.LaneRecorder // nil: the engine calls MCPMessage only
+	mu                     sync.Mutex
+	msgs                   []string
+}
+
+func (r *recRecorder) MCPMessage(m telemetry.MCPMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.msgs = append(r.msgs, strings.Join([]string{string(m.Direction), m.Method, m.Tool, m.Decision}, "|"))
+}
+
+func (r *recRecorder) count(msg string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, m := range r.msgs {
+		if m == msg {
+			n++
+		}
+	}
+	return n
+}
+
+// mcpproxy's observer feeds the lane's telemetry by method, tool and
+// decision, and every refusal reaches the lane's denied count, mcpproxy's
+// own included. A tool the upstream did not list, a call refused as invalid
+// params and a method MCP does not define are counted as (other).
+func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
+	rec := &recRecorder{}
+	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
+	t.Cleanup(up.Close)
+	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 4}, Open: ln.open, Telemetry: rec})
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	c.call(t, 3, "echo", `{"message":"hi"}`)
+	c.call(t, 4, "delete_customer", `{"id":"7"}`)
+	if body := c.call(t, 5, "made_up", `{}`); !strings.Contains(body, "was not advertised") {
+		t.Fatalf("unlisted tool: %s", body)
+	}
+	if _, body := c.post(t, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"delete_customer","name":"echo","arguments":{}}}`); !strings.Contains(body, "-32602") {
+		t.Fatalf("repeated name: %s", body)
+	}
+	if body := c.call(t, 6, "echo", `{"message":"over"}`); !strings.Contains(body, "-32012") {
+		t.Fatalf("call over the budget: %s", body)
+	}
+	c.post(t, `{"jsonrpc":"2.0","method":"notifications/x-custom"}`)
+
+	for msg, want := range map[string]int{
+		"client|initialize||allow":                          1,
+		"client|notifications/initialized||allow":           1,
+		"client|tools/list||allow":                          1,
+		"server|||allow":                                    1,
+		"client|tools/call|echo|allow":                      1,
+		"server||echo|allow":                                1,
+		"client|tools/call|delete_customer|deny":            1,
+		"client|tools/call|" + telemetry.MCPOther + "|deny": 2,
+		"client|tools/call|echo|deny":                       1,
+		"client|" + telemetry.MCPOther + "||allow":          1,
+	} {
+		if got := rec.count(msg); got != want {
+			t.Errorf("%s counted %d times, want %d; all: %v", msg, got, want, rec.msgs)
+		}
+	}
+	if _, _, denied := srv.Stats(); denied != 4 {
+		t.Fatalf("denied %d, want the rule, the unlisted tool, the invalid params and the budget", denied)
+	}
+}
+
+// The engine links none of mcpproxy's WAL, Prometheus or OTLP code: the
+// sidecar's audit and telemetry blocks do that work.
+func TestTheEngineLinksNoMCPProxyWALOrTelemetry(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, pkg := range strings.Fields(string(out)) {
+		for _, banned := range []string{"github.com/hoophq/mcpproxy/wal", "github.com/hoophq/mcpproxy/telemetry",
+			"github.com/prometheus/", "go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/exporters"} {
+			if strings.HasPrefix(pkg, banned) {
+				t.Errorf("the engine links %s", pkg)
+			}
+		}
 	}
 }
 

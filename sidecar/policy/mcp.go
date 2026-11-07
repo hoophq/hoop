@@ -43,20 +43,21 @@ func (r Rule) matchesMCPTool(stmt inspect.Statement) (matched, ok bool) {
 		return false, false
 	}
 	tool, named := stmt.Metadata[inspect.MetadataMCPTool]
-	if stmt.Protocol != inspect.MCP || stmt.Operation != inspect.OpCall || !named {
+	_, sql := stmt.Metadata[inspect.MetadataMCPSQLIndex]
+	if stmt.Protocol != inspect.MCP || stmt.Operation != inspect.OpCall || !named || sql {
 		return false, true
 	}
-	matches := func(g string) bool { return toolGlob(g, tool) }
+	matches := func(g string) bool { return ToolGlob(g, tool) }
 	if len(r.Tools) > 0 {
 		return slices.ContainsFunc(r.Tools, matches), true
 	}
 	return !slices.ContainsFunc(r.Allow, matches), true
 }
 
-// toolGlob matches name against pattern. `*` matches any run of characters;
+// ToolGlob matches name against pattern. `*` matches any run of characters;
 // every other byte matches itself, case included, as MCP tool names are
 // case-sensitive.
-func toolGlob(pattern, name string) bool {
+func ToolGlob(pattern, name string) bool {
 	p, n, star, mark := 0, 0, -1, 0
 	for n < len(name) {
 		switch {

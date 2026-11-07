@@ -6,8 +6,10 @@ curl ──> hoop-inspect 127.0.0.1:18901 ──> test MCP server 127.0.0.1:1890
 
 A `protocol: mcp` lane in front of the test MCP server from
 `sidecar/mcpgateway/internal/testupstream`. No Envoy: the lane takes a
-plain http upstream on loopback only, so the three containers share one
-network namespace and nothing is published on the host.
+plain http upstream on loopback only, so the containers share one
+network namespace and nothing is published on the host. The lane pushes
+metrics and traces to an OpenTelemetry Collector in the same namespace
+(`otelcol-mcp.yaml`), which prints them.
 
 ## Run it
 
@@ -39,6 +41,10 @@ The audit rows follow, each under the principal `demo-agent`: `session_start`, t
 catalog statement with the hidden tools in `mcp.tools_hidden`, one statement
 per call, the `delete_customer` violation, the budget refusal as activities,
 `session_end`.
+
+Then `/stats` for the lane (`denied: 2`, the rule and the budget), the
+`hoop.sidecar.mcp.messages` points by direction, method, tool and decision,
+and each tool call's trace: `hoop.statement` with its `policy` span.
 
 Edit a rule in `config-mcp.yaml` while the stack runs. The sidecar applies
 it within 10 seconds, or at once on
