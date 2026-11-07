@@ -11,7 +11,7 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex IconButton Switch
                                Text TextField Tooltip]]
-   ["lucide-react" :refer [ArrowDown Database Search Terminal Zap]]
+   ["lucide-react" :refer [ArrowDown ChevronDown ChevronRight Database Search Terminal Zap]]
    ["fancy-ansi/react" :refer [AnsiHtml]]
    [clojure.string :as string]
    [re-frame.core :as rf]
@@ -69,7 +69,7 @@
 ;; Each raw event_stream entry is `[seconds type base64-payload]`. We expand it
 ;; into one or more "rows" — postgres payloads can contain multiple PG frames
 ;; concatenated, and each frame becomes its own row.
-(defn- expand-event-row [postgres? row-idx [seconds event-type b64]]
+(defn- expand-event-row [postgres? mcp? row-idx [seconds event-type b64]]
   (cond
     (and postgres? (= event-type "i"))
     (let [frames (pg-wire/parse-payload b64)]
@@ -100,14 +100,14 @@
       :seconds seconds
       :event-type event-type
       :kind (case event-type
-              "o" :output
+              "o" (if mcp? :catalog :output)
               "e" :error
               :raw)
       :text (utilities/decode-b64 b64)}]))
 
-(defn- expand-stream [postgres? event-stream]
+(defn- expand-stream [postgres? mcp? event-stream]
   (->> event-stream
-       (map-indexed (fn [i row] (expand-event-row postgres? i row)))
+       (map-indexed (fn [i row] (expand-event-row postgres? mcp? i row)))
        (apply concat)
        vec))
 
@@ -244,6 +244,35 @@
                          tone)}
        text]]]))
 
+(defn- catalog-row
+  "A tools/list catalog: one line per tool, so it starts collapsed."
+  []
+  (let [open? (r/atom false)]
+    (fn [{:keys [seconds text absolute denied-rules]}]
+      [:> Flex {:gap "3" :align "start"
+                :class (str "px-radix-4 py-radix-2 "
+                            "border-b border-[--gray-a3] "
+                            "hover:bg-[--gray-2]")}
+       [:> Tooltip {:content (or absolute "")}
+        [:> Text {:size "1" :class (str "text-[--gray-10] tabular-nums "
+                                        "shrink-0 pt-1 w-20 font-mono")}
+         (format-relative seconds)]]
+       (when denied-rules
+         [guardrails-info/denied-badge denied-rules])
+       [:> Box {:class "min-w-0 grow"}
+        [:button {:type "button"
+                  :class "flex items-center gap-2 text-[--gray-11]"
+                  :aria-expanded @open?
+                  :on-click #(swap! open? not)}
+         [:> Badge {:color "gray" :variant "soft" :size "1"} "tools/list"]
+         [:> Text {:size "1"} "Tool catalog"]
+         (if @open? [:> ChevronDown {:size 14}] [:> ChevronRight {:size 14}])]
+        (when @open?
+          [:pre {:class (str "whitespace-pre-wrap break-words mt-2 "
+                             "text-[12px] leading-relaxed font-mono m-0 "
+                             "text-[--gray-12]")}
+           text])]])))
+
 (defn- waiting-banner [postgres?]
   [:> Flex {:align "center" :justify "center" :gap "2"
             :class "py-radix-6 text-[--gray-10] italic"}
@@ -353,7 +382,9 @@
                              :else :connecting)
               event-stream (or (:event_stream session) [])
               rows (mark-denied (guardrails-info/denied-at (:guardrails_info session))
-                                (expand-stream postgres? event-stream))
+                                (expand-stream postgres?
+                                               (session-format/mcp-catalog-output? session)
+                                               event-stream))
               terminal-events (live-terminal-events recording-format event-stream
                                                     (= stream-state :ended))
               terminal? (some? terminal-events)
@@ -418,6 +449,7 @@
                   (case (:kind row)
                     :query    [query-row row]
                     :protocol [protocol-row row]
+                    :catalog  [catalog-row row]
                     [text-row row])))
                (when (= stream-state :live)
                  [waiting-banner postgres?])])]

@@ -89,7 +89,9 @@
 (defmethod ^:private session-event-stream :default
   [session]
   [session-data-raw/main (:event_stream session) (:start_date session)
-   (guardrails-info/denied-at (:guardrails_info session))])
+   (guardrails-info/denied-at (:guardrails_info session))
+   (when (session-format/mcp-catalog-output? session)
+     {:badge "tools/list" :title "Tool catalog"})])
 
 (def ^:private sidecar-metadata-keys
   "Metadata keys a sidecar writes; sidecar-links renders them."

@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Box, Group, Paper, Stack, Text, UnstyledButton } from '@mantine/core'
 import { ChevronDown, ChevronUp, Search } from 'lucide-react'
+import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
 import { formatFullDate } from '@/utils/datetime'
 import { deniedAt } from '../decoders/liveTail'
+import { mcpCatalogOutput } from '../decoders/sessionFormat'
 import { b64ToText } from '../decoders/terminalDecoder'
 import DeniedBadge from './recording/DeniedBadge'
 import EmptyStream from './recording/EmptyStream'
@@ -24,9 +26,18 @@ function RawRow({ row }) {
       >
         <Group gap="sm" wrap="nowrap">
           {row.deniedRules && <DeniedBadge rules={row.deniedRules} />}
-          <Text size="xs" className={classes.mono} truncate flex={1} c={row.type === 'e' ? 'red' : undefined}>
-            {row.type === 'i' ? `> ${row.text}` : row.text}
-          </Text>
+          {row.catalog ? (
+            <Group gap="xs" wrap="nowrap" flex={1}>
+              <Badge color="gray" variant="light" tag>
+                tools/list
+              </Badge>
+              <Text size="xs">Tool catalog</Text>
+            </Group>
+          ) : (
+            <Text size="xs" className={classes.mono} truncate flex={1} c={row.type === 'e' ? 'red' : undefined}>
+              {row.type === 'i' ? `> ${row.text}` : row.text}
+            </Text>
+          )}
           <Text size="xs" c="dimmed" flex="none">
             {row.date}
           </Text>
@@ -48,16 +59,18 @@ export default function RawEvents({ session, largeOutput, showDenials = true }) 
     () => (showDenials ? deniedAt(session.guardrails_info) : NO_DENIALS),
     [showDenials, session.guardrails_info],
   )
+  const mcp = mcpCatalogOutput(session)
   const rows = useMemo(() => {
     const start = new Date(session.start_date).getTime()
     return stream.map(([seconds, type, payload], index) => ({
       key: index,
       type,
+      catalog: mcp && type === 'o',
       text: b64ToText(payload),
       date: formatFullDate(new Date(start + Math.trunc(seconds * 1000)).toISOString()),
       deniedRules: type !== 'e' ? denied.get(seconds) : undefined,
     }))
-  }, [stream, session.start_date, denied])
+  }, [stream, session.start_date, denied, mcp])
 
   const term = search.trim().toLowerCase()
   const visible = term

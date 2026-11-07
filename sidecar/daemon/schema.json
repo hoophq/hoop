@@ -95,7 +95,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
+      "help": "Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode. An mcp listener takes the MCP endpoint URL, such as https://mcp.example.com/mcp.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,
@@ -673,6 +673,51 @@
           "type": "boolean",
           "label": "EDT (experimental)",
           "help": "Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."
+        }
+      ]
+    },
+    {
+      "key": "mcp_gateway",
+      "type": "object",
+      "label": "MCP gateway",
+      "help": "How the sidecar reaches the MCP server, and the limits of one MCP session.",
+      "protocols": [
+        "mcp"
+      ],
+      "fields": [
+        {
+          "key": "transport",
+          "type": "string",
+          "label": "Transport",
+          "help": "How the sidecar reaches the MCP server.",
+          "enum": [
+            "streamable-http",
+            "sse"
+          ],
+          "default": "streamable-http"
+        },
+        {
+          "key": "on_rug_pull",
+          "type": "string",
+          "label": "On a rug pull",
+          "help": "A later tools/list that changes the description or input schema of a listed tool. kill ends the session; alert records it and goes on.",
+          "enum": [
+            "kill",
+            "alert"
+          ],
+          "default": "kill"
+        },
+        {
+          "key": "max_calls_per_session",
+          "type": "integer",
+          "label": "Max tool calls per session",
+          "help": "A refused call counts too. 0 is unlimited."
+        },
+        {
+          "key": "max_result_kb",
+          "type": "integer",
+          "label": "Max result size (KiB)",
+          "help": "Cuts the text of a tool result to this size. 0 is unlimited."
         }
       ]
     }

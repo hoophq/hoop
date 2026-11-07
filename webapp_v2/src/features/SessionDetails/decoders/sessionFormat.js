@@ -27,3 +27,7 @@ export function outputViewer(session) {
   }
   return recordingFormat(session)
 }
+
+// An mcp lane records output only for a tools/list catalog: a tools/call is input.
+export const mcpCatalogOutput = (session) =>
+  session.identity_type === 'sidecar' && session.connection_subtype === 'mcp'
