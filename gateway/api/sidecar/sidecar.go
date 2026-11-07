@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -685,11 +686,17 @@ func Handshake(c *gin.Context) {
 	// nothing re-reads it on this path. Every statement here runs once a
 	// minute per sidecar, and the fleet's size is the database's load.
 	licenseData := orgLicense(c)
-	// The interval rides on every answer and is recorded with the
-	// handshake, so the sweeper and the reaper measure this sidecar's
-	// silence at the rate it was told.
-	heartbeatSeconds := services.SidecarHeartbeatSeconds(models.DB, sidecar.OrgID)
-	c.Header(daemon.HeartbeatSecondsHeader, strconv.Itoa(heartbeatSeconds))
+	// The interval rides on the answer and is recorded with the handshake,
+	// so the sweeper and the reaper measure this sidecar's silence at the
+	// rate it was told. Only to a build that reports honoring the header:
+	// one that ignores it keeps the minute, and recording a longer
+	// interval for it would read it as alive for three times as long
+	// after it is gone. Fails closed: no capability, no header, NULL.
+	heartbeatSeconds := 0
+	if slices.Contains(capabilities, daemon.CapabilityHeartbeatInterval) {
+		heartbeatSeconds = services.SidecarHeartbeatSeconds(models.DB, sidecar.OrgID)
+		c.Header(daemon.HeartbeatSecondsHeader, strconv.Itoa(heartbeatSeconds))
+	}
 	if usesConfigFile(sidecar.Configuration) {
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.

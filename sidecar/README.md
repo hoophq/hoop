@@ -487,12 +487,15 @@ The plane can set the interval. Its answer carries
 `hoop-sidecar-heartbeat-seconds`, an integer from 30 to 3600, and the next
 wait uses it (jitter still applies); the change is logged as
 `control plane set the heartbeat interval`. A value outside the range, or
-not an integer, is ignored and the interval in force stays. Hoop's plane
-serves one minute per thousand sidecars in the organization, capped at ten
-minutes, so a fleet of any size costs it about the rate a thousand do; it
-counts a sidecar as silent in multiples of the interval it served, so a
-sidecar told to call less often is not read as gone. A plane that does not
-send the header leaves the minute in force.
+not an integer, is ignored and the interval in force stays. A build that
+honors the header says so with `heartbeat_interval` in its capabilities
+header, and a plane serves the header only to one that does: a build that
+would ignore it keeps the minute and is read as silent on the minute's
+terms. Hoop's plane serves one minute per thousand sidecars in the
+organization, capped at ten minutes, so a fleet of any size costs it about
+the rate a thousand do; it counts a sidecar as silent in multiples of the
+interval it served, so a sidecar told to call less often is not read as
+gone. A plane that does not send the header leaves the minute in force.
 
 #### Upgrading: the control plane first
 

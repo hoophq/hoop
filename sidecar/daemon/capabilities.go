@@ -68,6 +68,12 @@ const (
 	// CapabilitySessionEvents means this build sends its audit events to
 	// the plane when the handshake answers with SessionEventsHeader.
 	CapabilitySessionEvents = "session_events"
+	// CapabilityHeartbeatInterval means this build honors
+	// HeartbeatSecondsHeader. A plane serves a longer interval only to a
+	// build that reports it, and counts a sidecar's silence at the
+	// interval it served: a build that ignores the header keeps the
+	// minute, and must be read as gone on the minute's terms.
+	CapabilityHeartbeatInterval = "heartbeat_interval"
 	// CapabilityPlugins means this build decodes the plugins list and a
 	// listener's plugin options, and so runs any lane on an x- protocol:
 	// a plug-in protocol is never a protocol: entry, because no build
@@ -172,7 +178,7 @@ func capabilitySince() map[string]string {
 
 // behaviourCapabilities are the entries no field, rule type or protocol
 // generates. A behaviour has no type to generate it from, so it is listed.
-var behaviourCapabilities = []string{CapabilitySessionEvents}
+var behaviourCapabilities = []string{CapabilitySessionEvents, CapabilityHeartbeatInterval}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
