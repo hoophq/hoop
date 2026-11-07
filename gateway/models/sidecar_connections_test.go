@@ -351,3 +351,73 @@ func TestDeleteConnectionRefusesAMirror(t *testing.T) {
 		t.Errorf("a missing connection must answer not found as before, got %v", err)
 	}
 }
+
+// storeSidecar stores a sidecar with its listeners and no mirrors.
+func storeSidecar(t *testing.T, name string, listeners ...daemon.ListenerConfig) *models.Sidecar {
+	t.Helper()
+	sc := &models.Sidecar{OrgID: testOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name),
+		Configuration: models.SidecarConfiguration{Listeners: listeners}, CreatedBy: "tests@hoop.dev"}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("store sidecar %s: %v", name, err)
+	}
+	return sc
+}
+
+// rowVersions names each mirror of a sidecar with the xmin of its row and of
+// its resource. A write to either changes it.
+func rowVersions(t *testing.T, sidecarID string) string {
+	t.Helper()
+	return queryString(t, `SELECT COALESCE(string_agg(c.name || ' ' || c.xmin::text || ' ' || r.xmin::text, ',' ORDER BY c.name), '')
+		FROM private.connections c JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.name
+		WHERE c.org_id = ? AND c.sidecar_id = ?`, testOrgID, sidecarID)
+}
+
+// The startup reconcile writes nothing for a sidecar whose mirrors match its
+// listeners: at thousands of sidecars, rewriting them all holds the startup.
+// A mirror that was changed or removed is still put back.
+func TestTheReconcileWritesOnlyTheMirrorsThatDiffer(t *testing.T) {
+	startTestDB(t)
+	reconcile := func(t *testing.T) {
+		t.Helper()
+		if errs := services.ReconcileSidecarListenerConnections(models.DB, testOrgID); len(errs) > 0 {
+			t.Fatalf("reconcile: %v", errs)
+		}
+	}
+	appdb := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}
+	cache := daemon.ListenerConfig{Name: "cache", Protocol: "clickhouse"}
+	calm := storeSidecar(t, "calm", appdb, cache)
+	retyped := storeSidecar(t, "retyped", appdb)
+	lost := storeSidecar(t, "lost", appdb, cache)
+	reconcile(t)
+	if n := len(mirrorsOf(t, calm.ID)) + len(mirrorsOf(t, retyped.ID)) + len(mirrorsOf(t, lost.ID)); n != 5 {
+		t.Fatalf("the first reconcile must create the 5 mirrors, got %d", n)
+	}
+	// The sync leaves a resource an admin gave an agent, so it is no difference.
+	agentID := uuid.NewString()
+	execSQL(t, `INSERT INTO private.agents (id, org_id, name, mode, key_hash, status) VALUES (?, ?, 'res-agent', 'standard', 'x', 'DISCONNECTED')`, agentID, testOrgID)
+	execSQL(t, `UPDATE private.resources SET agent_id = ? WHERE org_id = ? AND name = 'calm-appdb'`, agentID, testOrgID)
+
+	before := map[string]string{}
+	for _, sc := range []*models.Sidecar{calm, retyped, lost} {
+		before[sc.Name] = rowVersions(t, sc.ID)
+	}
+	reconcile(t)
+	for _, sc := range []*models.Sidecar{calm, retyped, lost} {
+		if got := rowVersions(t, sc.ID); got != before[sc.Name] {
+			t.Errorf("sidecar %s: a reconcile rewrote mirrors that match: %s, was %s", sc.Name, got, before[sc.Name])
+		}
+	}
+
+	execSQL(t, `UPDATE private.connections SET type = 'custom', subtype = 'redis' WHERE org_id = ? AND name = 'retyped-appdb'`, testOrgID)
+	execSQL(t, `DELETE FROM private.connections WHERE org_id = ? AND name = 'lost-cache'`, testOrgID)
+	reconcile(t)
+	if got := mirrorsOf(t, retyped.ID)["appdb"]; got.Type != "database" || got.SubType != "postgres" {
+		t.Errorf("a changed mirror must be put back: %+v", got)
+	}
+	if got := mirrorsOf(t, lost.ID); len(got) != 2 || got["cache"].SubType != "clickhouse" {
+		t.Errorf("a removed mirror must be put back: %+v", got)
+	}
+	if got := rowVersions(t, calm.ID); got != before[calm.Name] {
+		t.Errorf("a reconcile that repairs other sidecars rewrote calm: %s, was %s", got, before[calm.Name])
+	}
+}

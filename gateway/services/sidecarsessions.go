@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -103,6 +104,11 @@ func sidecarMirrorConnection(sc sidecarIdentity, listener, protocol string) (sid
 type SidecarEventsRefused struct{ Reason string }
 
 func (e SidecarEventsRefused) Error() string { return e.Reason }
+
+// ErrSidecarSessionBusy is a batch with a session another request is
+// writing, often the abandoned request of this batch. The handler answers
+// 503; the sidecar resends the batch, and seq dedup skips what is applied.
+var ErrSidecarSessionBusy = errors.New("another request is recording a session of this batch")
 
 // ValidateSidecarSessionEvents refuses a batch the contract does not allow.
 func ValidateSidecarSessionEvents(events []daemon.SessionEvent) error {
@@ -568,13 +574,17 @@ func metricBool(m map[string]any, key string) bool {
 }
 
 // ApplySidecarSessionEvents applies each session in its own transaction. It
-// returns SidecarEventsRefused when every failure is permanent.
-func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.SessionEvent) (SidecarEventsResult, error) {
+// returns ErrSidecarSessionBusy when it skipped a session another request
+// holds, and SidecarEventsRefused when every failure is permanent. The other
+// sessions of the batch are applied in each case.
+func ApplySidecarSessionEvents(ctx context.Context, db *gorm.DB, sc *models.Sidecar, events []daemon.SessionEvent) (SidecarEventsResult, error) {
 	var result SidecarEventsResult
 	if err := ValidateSidecarSessionEvents(events); err != nil {
 		return result, err
 	}
-	mirrors, err := models.ListSidecarMirrorNames(db, sc.OrgID, sc.ID)
+	// Hooks run after the request ends, so they keep db without ctx.
+	dbc := db.WithContext(ctx)
+	mirrors, err := models.ListSidecarMirrorNames(dbc, sc.OrgID, sc.ID)
 	if err != nil {
 		return result, fmt.Errorf("failed reading the sidecar's mirror connections: %w", err)
 	}
@@ -593,12 +603,23 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	}
 
 	var refused, failed []error
+	busy := false
 	for _, sid := range order {
+		if err := ctx.Err(); err != nil {
+			// Each next session would fail the same way.
+			failed = append(failed, err)
+			break
+		}
 		var plan sidecarSessionPlan
-		err := db.Transaction(func(tx *gorm.DB) error {
+		err := dbc.Transaction(func(tx *gorm.DB) error {
 			id := SidecarSessionID(ident.ID, sid)
-			if err := models.LockSidecarSession(tx, id); err != nil {
+			// No wait: a resend must not queue behind the request it replaces.
+			got, err := models.TryLockSidecarSession(tx, id)
+			if err != nil {
 				return err
+			}
+			if !got {
+				return ErrSidecarSessionBusy
 			}
 			prior, err := models.GetSidecarSessionState(tx, ident.OrgID, id)
 			switch {
@@ -619,6 +640,8 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		})
 		var permanent SidecarEventsRefused
 		switch {
+		case errors.Is(err, ErrSidecarSessionBusy):
+			busy = true
 		case errors.As(err, &permanent):
 			refused = append(refused, permanent)
 		case permanentDBError(err):
@@ -639,6 +662,10 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	}
 	if len(failed) > 0 {
 		return result, errors.Join(failed...)
+	}
+	// Before refused: a 4xx stops the resend the busy session needs.
+	if busy {
+		return result, ErrSidecarSessionBusy
 	}
 	if len(refused) > 0 {
 		return result, SidecarEventsRefused{Reason: errors.Join(refused...).Error()}

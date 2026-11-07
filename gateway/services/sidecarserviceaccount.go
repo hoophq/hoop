@@ -361,13 +361,14 @@ func betterServiceAccount(a, b *models.SidecarServiceAccount) bool {
 //
 // An issuer no mapping names is refused before anything is fetched: the
 // issuer of an unverified token is whatever its sender wrote. Every refusal
-// carries that issuer for the plane's log.
-func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw string) (*models.Sidecar, error) {
+// carries that issuer for the plane's log. withConfiguration reads the
+// sidecar's configuration with its row.
+func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw string, withConfiguration bool) (*models.Sidecar, error) {
 	issuer, err := externaljwt.UnverifiedIssuer(raw)
 	if err != nil {
 		return nil, refuseUnverified(ErrSidecarIdentityMalformed, "not a JWT with an issuer: %v", err)
 	}
-	sc, err := authenticateSidecarIdentity(ctx, db, verifier, raw, issuer)
+	sc, err := authenticateSidecarIdentity(ctx, db, verifier, raw, issuer, withConfiguration)
 	var r *SidecarIdentityRefusal
 	if errors.As(err, &r) {
 		r.Issuer = issuer
@@ -375,7 +376,7 @@ func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	return sc, err
 }
 
-func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw, issuer string) (*models.Sidecar, error) {
+func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw, issuer string, withConfiguration bool) (*models.Sidecar, error) {
 	mappings, err := models.ListSidecarServiceAccountsByIssuer(db, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing sidecar service accounts: %w", err)
@@ -395,12 +396,14 @@ func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	}
 
 	sa := match.ServiceAccount
-	if err := identitySeatFree(db, sa.OrgID, match.Name); err != nil {
-		return nil, err
-	}
 	sc, err := models.GetOrCreateSidecarForIdentity(db, sa.OrgID, match.Name, issuer, match.Subject,
-		sidecarCreatedByPrefix+match.Subject, sa.AdoptExistingSidecars)
+		sidecarCreatedByPrefix+match.Subject, sa.AdoptExistingSidecars,
+		func() error { return identitySeatFree(db, sa.OrgID, match.Name) }, withConfiguration)
+	var refusal *SidecarIdentityRefusal
 	switch {
+	case errors.As(err, &refusal):
+		// The seat check refused a sidecar that does not exist yet.
+		return nil, err
 	case errors.Is(err, models.ErrSidecarNameDeleted):
 		return nil, refuseIdentity(ErrSidecarIdentityDeleted, "%s", SidecarDeletedMessage)
 	case errors.Is(err, models.ErrSidecarBoundToAnotherIdentity):
@@ -422,17 +425,11 @@ func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 }
 
 // identitySeatFree refuses a service account that would create a sidecar past
-// the organization's seats. It runs before the row exists: a refused
-// handshake must not leave a row that holds the seat. An existing sidecar, or
-// a deleted name, is left to SidecarSeatOnly and GetOrCreateSidecarForIdentity.
+// the organization's seats. GetOrCreateSidecarForIdentity runs it only when no
+// row has the name, before the insert: a refused handshake must not leave a
+// row that holds the seat. A deleted name is left to
+// GetOrCreateSidecarForIdentity, which refuses it.
 func identitySeatFree(db *gorm.DB, orgID, name string) error {
-	_, err := models.GetSidecarByNameOrID(db, orgID, name)
-	switch {
-	case err == nil:
-		return nil
-	case !errors.Is(err, models.ErrNotFound):
-		return fmt.Errorf("failed reading sidecar %q: %w", name, err)
-	}
 	if deleted, err := models.SidecarNameIsDeleted(db, orgID, name); err != nil || deleted {
 		return err
 	}

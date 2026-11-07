@@ -1,9 +1,11 @@
 package apiroutes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
@@ -11,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"gorm.io/gorm"
 )
 
 // SidecarTokenHeader carries the pre-generated key a sidecar authenticates
@@ -24,16 +27,42 @@ const SidecarTokenHeader = "hoop-sidecar-token"
 // fails a build instead of breaking the path.
 const SidecarIdentityHeader = daemon.SidecarIdentityHeader
 
-const sidecarContextKey = "sidecar-auth"
+// sidecarContextKey holds a sidecar read with its configuration;
+// sidecarWithoutConfigurationContextKey one read without it.
+const (
+	sidecarContextKey                     = "sidecar-auth"
+	sidecarWithoutConfigurationContextKey = "sidecar-auth-no-configuration"
+)
 
-// SidecarAuthMiddleware authenticates a sidecar and installs an org-scoped
-// context with no user, carrying the organization's license so
-// EnterpriseLicenseOnly can run after it. It records nothing: reporting what
-// a sidecar last said is the handlers' job.
+// SidecarRequestTimeout bounds every sidecar request. A sidecar gives up on
+// the plane after 15s (controlPlaneTimeout, sidecar/daemon) and sends again;
+// work past that answers nobody and holds a goroutine and a pool connection.
+// The database calls of a sidecar route run under it and are cancelled with
+// it.
+const SidecarRequestTimeout = 15 * time.Second
+
+// SidecarAuthMiddleware authenticates a sidecar, read with its
+// configuration, and installs an org-scoped context with no user, carrying
+// the organization's license so EnterpriseLicenseOnly can run after it. It
+// records nothing: reporting what a sidecar last said is the handlers' job.
 //
 // A sidecar sends a token or a service account identity, never both: with
 // two credentials there is no answer to which sidecar is calling.
-func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
+func (r *Router) SidecarAuthMiddleware(c *gin.Context) { r.sidecarAuth(c, true) }
+
+// SidecarAuthWithoutConfigurationMiddleware is SidecarAuthMiddleware for a
+// route that never reads the configuration: event batches and review polls,
+// which arrive far more often than handshakes. SidecarConfigurationFromContext
+// answers nil behind it, so a handler that needs the configuration cannot be
+// mounted here by mistake and read an empty one.
+func (r *Router) SidecarAuthWithoutConfigurationMiddleware(c *gin.Context) { r.sidecarAuth(c, false) }
+
+func (r *Router) sidecarAuth(c *gin.Context, withConfiguration bool) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), SidecarRequestTimeout)
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
+	db := models.DB.WithContext(ctx)
+
 	token := c.GetHeader(SidecarTokenHeader)
 	identity := c.GetHeader(SidecarIdentityHeader)
 	if token != "" && identity != "" {
@@ -42,7 +71,7 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 		return
 	}
 	if identity != "" {
-		r.sidecarIdentityAuth(c, identity)
+		r.sidecarIdentityAuth(c, db, identity, withConfiguration)
 		return
 	}
 	if token == "" {
@@ -50,7 +79,11 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 		return
 	}
 
-	sidecar, err := models.GetSidecarByKeyHash(models.DB, models.HashAPIKey(token))
+	lookup := models.GetSidecarByKeyHashWithoutConfiguration
+	if withConfiguration {
+		lookup = models.GetSidecarByKeyHash
+	}
+	sidecar, err := lookup(db, models.HashAPIKey(token))
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
@@ -60,7 +93,7 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
-	r.serveSidecar(c, sidecar)
+	r.serveSidecar(c, db, sidecar, withConfiguration)
 }
 
 // sidecarIdentityAuth resolves the sidecar a service account token reaches.
@@ -69,8 +102,8 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 // names; after, the answer names the reason, the sidecar logs it, and its
 // operator fixes the mapping from it. This is the one place a refusal is
 // logged.
-func (r *Router) sidecarIdentityAuth(c *gin.Context, identity string) {
-	sidecar, err := services.AuthenticateSidecarIdentity(c.Request.Context(), models.DB, r.sidecarIdentity, identity)
+func (r *Router) sidecarIdentityAuth(c *gin.Context, db *gorm.DB, identity string, withConfiguration bool) {
+	sidecar, err := services.AuthenticateSidecarIdentity(c.Request.Context(), db, r.sidecarIdentity, identity, withConfiguration)
 	if err != nil {
 		var refusal *services.SidecarIdentityRefusal
 		if errors.As(err, &refusal) {
@@ -89,29 +122,55 @@ func (r *Router) sidecarIdentityAuth(c *gin.Context, identity string) {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
-	r.serveSidecar(c, sidecar)
+	r.serveSidecar(c, db, sidecar, withConfiguration)
 }
 
 // serveSidecar installs the contexts every sidecar route reads, whichever
-// credential authenticated the sidecar.
-func (r *Router) serveSidecar(c *gin.Context, sidecar *models.Sidecar) {
-	licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
-	if err != nil {
-		log.Errorf("failed reading the organization license, err=%v", err)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
-		return
+// credential authenticated the sidecar. The license came with the sidecar
+// row; a row read without it reads the org.
+func (r *Router) serveSidecar(c *gin.Context, db *gorm.DB, sidecar *models.Sidecar, withConfiguration bool) {
+	licenseData := sidecar.OrgLicenseData
+	if !sidecar.OrgLicenseRead {
+		var err error
+		licenseData, err = models.GetOrgLicenseData(db, sidecar.OrgID)
+		if err != nil {
+			log.Errorf("failed reading the organization license, err=%v", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+			return
+		}
 	}
 
-	c.Set(sidecarContextKey, sidecar)
+	key := sidecarWithoutConfigurationContextKey
+	if withConfiguration {
+		key = sidecarContextKey
+	}
+	c.Set(key, sidecar)
 	c.Set(storagev2.ContextKey, storagev2.NewOrganizationContext(sidecar.OrgID).
 		WithOrgLicenseData(licenseData).
 		WithApiURL(r.apiURL))
 	c.Next()
 }
 
-// SidecarFromContext returns the sidecar SidecarAuthMiddleware authenticated,
-// or nil when the request did not pass through it.
+// SidecarFromContext returns the sidecar either sidecar middleware
+// authenticated, or nil when the request passed through neither. Its
+// configuration is empty behind SidecarAuthWithoutConfigurationMiddleware:
+// a handler that reads it uses SidecarConfigurationFromContext.
 func SidecarFromContext(c *gin.Context) *models.Sidecar {
+	if sidecar := SidecarConfigurationFromContext(c); sidecar != nil {
+		return sidecar
+	}
+	obj, ok := c.Get(sidecarWithoutConfigurationContextKey)
+	if !ok {
+		return nil
+	}
+	sidecar, _ := obj.(*models.Sidecar)
+	return sidecar
+}
+
+// SidecarConfigurationFromContext returns the sidecar SidecarAuthMiddleware
+// authenticated, read with its configuration, or nil when the request did
+// not pass through that middleware.
+func SidecarConfigurationFromContext(c *gin.Context) *models.Sidecar {
 	obj, ok := c.Get(sidecarContextKey)
 	if !ok {
 		return nil
@@ -123,7 +182,7 @@ func SidecarFromContext(c *gin.Context) *models.Sidecar {
 // SidecarSeatOnly replaces EnterpriseLicenseOnly on the routes a sidecar
 // calls. A free organization runs one sidecar under the free rule caps; a
 // sidecar past its seats is refused here, so it stops at its next handshake
-// instead of serving rules nobody pays for. Runs after SidecarAuthMiddleware.
+// instead of serving rules nobody pays for. Runs after a sidecar middleware.
 func SidecarSeatOnly(c *gin.Context) {
 	sidecar := SidecarFromContext(c)
 	if sidecar == nil {
@@ -135,7 +194,7 @@ func SidecarSeatOnly(c *gin.Context) {
 	if ctx.OrgLicenseData != nil {
 		data = *ctx.OrgLicenseData
 	}
-	err := services.CheckSidecarSeat(models.DB, sidecar.OrgID, sidecar.ID, data)
+	err := services.CheckSidecarSeat(models.DB.WithContext(c.Request.Context()), sidecar.OrgID, sidecar.ID, data)
 	switch {
 	case err == nil:
 		c.Next()

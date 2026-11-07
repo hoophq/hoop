@@ -36,7 +36,7 @@ func callClearIdentity(t *testing.T, nameOrID string) int {
 
 func reach(name, subject string, adopt bool) (*models.Sidecar, error) {
 	return models.GetOrCreateSidecarForIdentity(models.DB, switchOrgID, name, identityIssuer, subject,
-		"service-account:"+subject, adopt)
+		"service-account:"+subject, adopt, nil, true)
 }
 
 // Clearing the binding lets the next identity that reaches the sidecar bind

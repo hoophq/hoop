@@ -34,7 +34,20 @@ type SidecarSessionState struct {
 // is not enough: two resends can both create the row.
 func LockSidecarSession(tx *gorm.DB, sessionID string) error {
 	return tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`,
-		"sidecar-session:"+sessionID).Error
+		sidecarSessionLockKey(sessionID)).Error
+}
+
+// TryLockSidecarSession takes the lock of LockSidecarSession without a wait.
+// It reports false when another transaction holds it.
+func TryLockSidecarSession(tx *gorm.DB, sessionID string) (bool, error) {
+	var got bool
+	err := tx.Raw(`SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))`,
+		sidecarSessionLockKey(sessionID)).Scan(&got).Error
+	return got, err
+}
+
+func sidecarSessionLockKey(sessionID string) string {
+	return "sidecar-session:" + sessionID
 }
 
 // GetSidecarSessionState returns gorm.ErrRecordNotFound when the session does
@@ -181,11 +194,15 @@ type SidecarSessionStaleness struct {
 
 // staleSidecarSession is the condition both queries apply to the row s.
 // created_at is TIMESTAMP holding UTC; AT TIME ZONE 'UTC' reads it as the
-// instant it is, whatever the server's TimeZone.
+// instant it is, whatever the server's TimeZone. sc.id is compared as a uuid,
+// so the sidecars primary key finds the row; an id that is not a uuid
+// matches no sidecar and does not fail the cast.
 const staleSidecarSession = `s.origin = @origin AND s.status = 'open' AND (
 	NOT EXISTS (
 		SELECT 1 FROM private.sidecars sc
-		WHERE sc.org_id = s.org_id AND sc.id::text = s.metadata->'sidecar'->>'id'
+		WHERE sc.id = CASE WHEN (s.metadata->'sidecar'->>'id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+				THEN (s.metadata->'sidecar'->>'id')::uuid END
+			AND sc.org_id = s.org_id
 			AND COALESCE(sc.last_seen_at, s.created_at AT TIME ZONE 'UTC') >= @seen)
 	OR COALESCE((s.metadata->'sidecar'->>'last_event_at')::timestamptz,
 		s.created_at AT TIME ZONE 'UTC') < @event)`

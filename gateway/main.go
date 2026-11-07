@@ -74,7 +74,7 @@ func Run() {
 	bootstrap.Phase("Bootstrapping")
 
 	pgURI := appconfig.Get().PgURI()
-	migrateURI, dbMaxOpenConns := pgURI, 0
+	migrateURI, dbMaxOpenConns := pgURI, appconfig.Get().PgMaxOpenConns()
 	if appconfig.Get().IsPgliteEnabled() {
 		pgliteStep := bootstrap.Step("Embedded database (pglite)")
 		pgliteInstance, err := pglite.Start(context.Background(), appconfig.Get().PgliteDataDir())
@@ -107,7 +107,9 @@ func Run() {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
-	services.ReconcileAllSidecarListenerConnections(models.DB)
+	// In the background: at thousands of sidecars it takes seconds, and the
+	// API must not wait for it.
+	go services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL

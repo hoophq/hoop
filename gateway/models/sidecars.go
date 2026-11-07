@@ -65,8 +65,15 @@ type Sidecar struct {
 	// stored, without encoding the configuration again. Empty on a row a
 	// query did not select it for; a caller treats that as "unknown".
 	ConfigurationHash string `gorm:"column:configuration_hash;->"`
-	CreatedBy     string               `gorm:"column:created_by"`
-	CreatedAt     time.Time            `gorm:"column:created_at"`
+	// OrgLicenseData is the organization's license document, read with the
+	// row by the lookups that authenticate a sidecar (GetSidecarByKeyHash,
+	// GetOrCreateSidecarForIdentity) so a sidecar request does not read the
+	// org row again. OrgLicenseRead says those lookups ran: a false one is
+	// a row read without it, not an org without a license.
+	OrgLicenseData json.RawMessage `gorm:"column:org_license_data;->"`
+	OrgLicenseRead bool            `gorm:"column:org_license_read;->"`
+	CreatedBy      string          `gorm:"column:created_by"`
+	CreatedAt      time.Time       `gorm:"column:created_at"`
 
 	// The service account identity this sidecar is bound to: the first that
 	// reached it. Another identity is refused until an admin clears them
@@ -171,19 +178,31 @@ const sidecarBindAttempts = 3
 //   - Not bound, made with a token: ErrSidecarHasToken, unless
 //     adoptTokenSidecar. Then it is bound and its token keeps working.
 //   - Not bound, no token (an admin cleared the binding): bound.
-//   - No sidecar with that name: created with no token and bound, unless
-//     the name is in sidecar_deleted_names: ErrSidecarNameDeleted, and
-//     nothing is created.
+//   - No sidecar with that name: admit runs, and a refusal is returned as
+//     is with nothing created; then the row is created with no token and
+//     bound, unless the name is in sidecar_deleted_names:
+//     ErrSidecarNameDeleted, and nothing is created.
+//
+// admit is the caller's check for a row that does not exist yet (the
+// organization's seats). It runs on that branch only, so a heartbeat of an
+// existing sidecar reads its row once. Nil admits. withConfiguration reads
+// the configuration with the row; without it the row comes back with an
+// empty one.
 //
 // The bind is an UPDATE that requires identity_subject IS NULL, so of two
 // identities that race for one row exactly one binds it, and the other reads
 // the row again and is refused. The insert is ON CONFLICT DO NOTHING followed
 // by a SELECT, so concurrent first boots create one row.
-func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, adoptTokenSidecar bool) (*Sidecar, error) {
+func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, adoptTokenSidecar bool, admit func() error, withConfiguration bool) (*Sidecar, error) {
 	for range sidecarBindAttempts {
-		sc, err := getSidecarForIdentity(db, orgID, name)
+		sc, err := getSidecarForIdentity(db, orgID, name, withConfiguration)
 		if errors.Is(err, ErrNotFound) {
-			sc, err = createSidecarForIdentity(db, orgID, name, issuer, subject, createdBy)
+			if admit != nil {
+				if err := admit(); err != nil {
+					return nil, err
+				}
+			}
+			sc, err = createSidecarForIdentity(db, orgID, name, issuer, subject, createdBy, withConfiguration)
 		}
 		if err != nil {
 			return nil, err
@@ -214,7 +233,7 @@ func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, cr
 		name, sidecarBindAttempts)
 }
 
-func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string) (*sidecarForIdentity, error) {
+func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, withConfiguration bool) (*sidecarForIdentity, error) {
 	if deleted, err := SidecarNameIsDeleted(db, orgID, name); err != nil || deleted {
 		if deleted {
 			return nil, ErrSidecarNameDeleted
@@ -237,7 +256,7 @@ func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, created
 	if err != nil {
 		return nil, err
 	}
-	sc, err := getSidecarForIdentity(db, orgID, name)
+	sc, err := getSidecarForIdentity(db, orgID, name, withConfiguration)
 	if !errors.Is(err, ErrNotFound) {
 		return sc, err
 	}
@@ -260,11 +279,27 @@ type sidecarForIdentity struct {
 	HasToken bool `gorm:"column:has_token"`
 }
 
-func getSidecarForIdentity(db *gorm.DB, orgID, name string) (*sidecarForIdentity, error) {
+// sidecarOrgLicenseColumns ride on every read that authenticates a sidecar,
+// joined from private.orgs as o.
+const sidecarOrgLicenseColumns = `o.license_data AS org_license_data, TRUE AS org_license_read`
+
+// sidecarIdentityColumnsWithoutConfiguration is what a sidecar route that
+// never reads the configuration needs from the row: who the sidecar is and
+// the identity it is bound to. The configuration is the large column, and
+// event batches and review polls arrive far more often than handshakes.
+const sidecarIdentityColumnsWithoutConfiguration = `
+	s.id, s.org_id, s.name, s.created_by, s.created_at, s.identity_issuer, s.identity_subject`
+
+func getSidecarForIdentity(db *gorm.DB, orgID, name string, withConfiguration bool) (*sidecarForIdentity, error) {
+	columns := sidecarIdentityColumnsWithoutConfiguration
+	if withConfiguration {
+		columns = sidecarColumns
+	}
 	var item sidecarForIdentity
 	err := db.Raw(`
-	SELECT`+sidecarColumns+`, s.key_hash IS NOT NULL AS has_token
+	SELECT`+columns+`, s.key_hash IS NOT NULL AS has_token, `+sidecarOrgLicenseColumns+`
 	FROM private.sidecars s
+	JOIN private.orgs o ON o.id = s.org_id
 	WHERE s.org_id = ? AND s.name = ?`, orgID, name).
 		Scan(&item).
 		Error
@@ -345,14 +380,27 @@ func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sideca
 	return &item, nil
 }
 
-// GetSidecarByKeyHash resolves the token holder. It is not org scoped: the
-// token identifies the organization.
+// GetSidecarByKeyHash resolves the token holder, with its configuration. It
+// is not org scoped: the token identifies the organization.
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
+	return getSidecarByKeyHash(db, keyHash, `
+	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
+	md5(s.configuration::text) AS configuration_hash`)
+}
+
+// GetSidecarByKeyHashWithoutConfiguration is GetSidecarByKeyHash for a route
+// that never reads the configuration: the row comes back with an empty one.
+func GetSidecarByKeyHashWithoutConfiguration(db *gorm.DB, keyHash string) (*Sidecar, error) {
+	return getSidecarByKeyHash(db, keyHash, `
+	s.id, s.org_id, s.name, s.created_by, s.created_at`)
+}
+
+func getSidecarByKeyHash(db *gorm.DB, keyHash, columns string) (*Sidecar, error) {
 	var item Sidecar
 	err := db.Raw(`
-	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
-		md5(s.configuration::text) AS configuration_hash
+	SELECT`+columns+`, `+sidecarOrgLicenseColumns+`
 	FROM private.sidecars s
+	JOIN private.orgs o ON o.id = s.org_id
 	WHERE s.key_hash = ?`, keyHash).
 		Scan(&item).
 		Error
@@ -661,33 +709,46 @@ func SidecarNameIsDeleted(db *gorm.DB, orgID, name string) (bool, error) {
 // which the plane did serve, ends it whatever the sidecar reports: the
 // sidecar never received the document it names and holds nothing about it.
 //
+// The same statement sets the sidecar's mirrors online, which the
+// sidecarmirrorstatus job sets offline when the handshakes stop. The
+// connections update waits on the sidecar update through the EXISTS, an
+// InitPlan run before its scan, so the sidecar row is locked before its
+// mirrors: the order MarkStaleSidecarConnectionsOffline and the config
+// writers take them in.
+//
 // firstCheckIn reports a sidecar that had never handshaken before.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) (firstCheckIn bool, err error) {
+func RecordSidecarHandshake(db *gorm.DB, orgID, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) (firstCheckIn bool, err error) {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
 	err = db.Raw(`
-	WITH before AS (SELECT last_seen_at FROM private.sidecars WHERE id = @id)
-	UPDATE private.sidecars SET
-		last_seen_at = NOW(),
-		reported_version = NULLIF(@version, ''),
-		applied_revision = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
-			THEN applied_revision ELSE NULLIF(@applied, '') END,
-		last_error = CASE WHEN last_outcome = @not_served THEN NULLIF(@error, '')
-			WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_error
-			ELSE NULLIF(@error, '') END,
-		last_outcome = CASE WHEN last_outcome = @not_served THEN NULLIF(@outcome, '')
-			WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_outcome
-			ELSE NULLIF(@outcome, '') END,
-		served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
-			THEN NOW() ELSE served_revision_at END,
-		served_revision = NULLIF(@served, ''),
-		capabilities = @capabilities
-	WHERE id = @id
-	RETURNING (SELECT b.last_seen_at IS NULL FROM before b)`, map[string]any{
+	WITH before AS (SELECT last_seen_at FROM private.sidecars WHERE id = @id),
+	recorded AS (
+		UPDATE private.sidecars SET
+			last_seen_at = NOW(),
+			reported_version = NULLIF(@version, ''),
+			applied_revision = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
+				THEN applied_revision ELSE NULLIF(@applied, '') END,
+			last_error = CASE WHEN last_outcome = @not_served THEN NULLIF(@error, '')
+				WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_error
+				ELSE NULLIF(@error, '') END,
+			last_outcome = CASE WHEN last_outcome = @not_served THEN NULLIF(@outcome, '')
+				WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_outcome
+				ELSE NULLIF(@outcome, '') END,
+			served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
+				THEN NOW() ELSE served_revision_at END,
+			served_revision = NULLIF(@served, ''),
+			capabilities = @capabilities
+		WHERE id = @id
+		RETURNING id),
+	online AS (
+		UPDATE private.connections SET status = @online_status
+		WHERE org_id = @org AND sidecar_id = @id AND status <> @online_status
+			AND EXISTS (SELECT 1 FROM recorded))
+	SELECT (SELECT b.last_seen_at IS NULL FROM before b) FROM recorded`, map[string]any{
 		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
 		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
-		"not_served": SidecarOutcomeNotServed,
+		"not_served": SidecarOutcomeNotServed, "org": orgID, "online_status": ConnectionStatusOnline,
 	}).Scan(&firstCheckIn).Error
 	return firstCheckIn, err
 }

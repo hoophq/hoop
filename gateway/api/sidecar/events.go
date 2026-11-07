@@ -30,7 +30,7 @@ import (
 //	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request				body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarSessionEventsResponse
-//	@Failure		400,401,403,412,413,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,403,412,413,422,500,503	{object}	openapi.HTTPError
 //	@Router			/sidecars/events [post]
 func PostEvents(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -75,8 +75,13 @@ func PostEvents(c *gin.Context) {
 		return
 	}
 
-	result, err := services.ApplySidecarSessionEvents(models.DB, sidecar, req.Events)
+	result, err := services.ApplySidecarSessionEvents(c.Request.Context(), models.DB, sidecar, req.Events)
 	if err != nil {
+		if errors.Is(err, services.ErrSidecarSessionBusy) {
+			// The sidecar resends the batch after a backoff.
+			c.JSON(http.StatusServiceUnavailable, gin.H{"message": err.Error() + "; resend it later"})
+			return
+		}
 		var refused services.SidecarEventsRefused
 		if errors.As(err, &refused) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refused.Error()})
