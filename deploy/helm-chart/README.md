@@ -137,14 +137,14 @@ times as you have upstreams to front.
 
 Everything the relay does is decided by the config document under `config:`.
 There is no startable default, so the chart refuses to render a Deployment that
-could not start: a config naming no listeners, an admin server on a port other
-than 19000, a control plane with no token. See
+could not start: a config naming no listeners, a control plane with no token.
+The admin server is optional; the chart probes its own health port. See
 [chart/sidecar/README.md](./chart/sidecar/README.md) for the full reference.
 
 ```sh
 cat - > ./sidecar-values.yaml <<EOF
 config:
-  # Required, and on 19000: the chart probes /healthz there.
+  # Optional and unauthenticated; leave it out to turn it off.
   admin:
     listen: '0.0.0.0:19000'
   audit:

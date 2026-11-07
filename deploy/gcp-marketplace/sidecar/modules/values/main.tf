@@ -24,8 +24,8 @@ locals {
   }
   simple_ports = local.protocol_ports[var.protocol]
 
-  # The admin port is fixed: the chart probes /healthz on 19000 and refuses a
-  # config that puts admin anywhere else.
+  # The admin port the chart declares and its Service targets. The chart
+  # probes its own health port, so this listener is optional for the pod.
   admin_listen = "0.0.0.0:19000"
 
   # The free tier enforces one guardrail rule, so a preset is one rule.
