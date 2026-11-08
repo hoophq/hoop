@@ -107,7 +107,6 @@ func Run() {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
-	services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL
@@ -269,6 +268,11 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	// A mirror of a sidecar listener reads offline when its sidecar stops
 	// checking in; the handshake sets it online.
 	go sidecarmirrorstatus.Run(context.Background(), models.DB)
+
+	// Put back the sidecar mirrors that fell behind, as after a rollback. In
+	// the background: its run grows with the sidecar count, and the health
+	// check must answer while it runs.
+	go services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

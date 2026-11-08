@@ -198,6 +198,63 @@ func TestTheStartupReconcilePutsBackMirrorsThatFellBehind(t *testing.T) {
 	assert.Empty(t, mirrorNames(t, stuck.ID))
 }
 
+// mirrorRowVersions is the xmin of every mirror of sidecarID and of the
+// resource under its name: an UPDATE changes it even when no value changes.
+func mirrorRowVersions(t *testing.T, sidecarID string) []string {
+	t.Helper()
+	var versions []string
+	require.NoError(t, models.DB.Raw(`SELECT c.xmin::text || '/' || r.xmin::text FROM private.connections c
+		JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.name
+		WHERE c.org_id = ? AND c.sidecar_id = ? ORDER BY c.name`, switchOrgID, sidecarID).Scan(&versions).Error)
+	return versions
+}
+
+// A startup with nothing behind must not write: it runs on every start of
+// every replica, for every sidecar.
+func TestTheStartupReconcileWritesNothingWhenMirrorsAreInSync(t *testing.T) {
+	startSwitchDB(t)
+	w, sc := postSidecar(t, "calm", `{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
+		{"name": "app db", "protocol": "http", "listen": ":8080", "upstream": "api:80"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	before := mirrorRowVersions(t, sc.ID)
+	require.Len(t, before, 2)
+
+	services.ReconcileAllSidecarListenerConnections(models.DB)
+	assert.Equal(t, before, mirrorRowVersions(t, sc.ID))
+}
+
+// Every column the write path projects is compared: a drift in any one of them
+// is put back, not taken as in sync.
+func TestTheStartupReconcilePutsBackADriftedColumn(t *testing.T) {
+	for _, tc := range []struct{ name, drift string }{
+		{"an access mode", `UPDATE private.connections SET access_mode_connect = 'enabled' WHERE org_id = ? AND name = ?`},
+		{"the connection subtype", `UPDATE private.connections SET subtype = 'mysql' WHERE org_id = ? AND name = ?`},
+		{"the resource subtype", `UPDATE private.resources SET subtype = 'mysql' WHERE org_id = ? AND name = ?`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			startSwitchDB(t)
+			w, sc := postSidecar(t, "drift", `{"listeners": [
+				{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+			require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+			res := models.DB.Exec(tc.drift, switchOrgID, "drift-appdb")
+			require.NoError(t, res.Error)
+			require.EqualValues(t, 1, res.RowsAffected, "the drift reached the mirror")
+
+			services.ReconcileAllSidecarListenerConnections(models.DB)
+			var got struct {
+				Connect, Subtype, ResourceSubtype string
+			}
+			require.NoError(t, models.DB.Raw(`SELECT c.access_mode_connect AS connect, c.subtype, r.subtype AS resource_subtype
+				FROM private.connections c JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.name
+				WHERE c.org_id = ? AND c.sidecar_id = ?`, switchOrgID, sc.ID).Scan(&got).Error)
+			assert.Equal(t, "disabled", got.Connect)
+			assert.Equal(t, "postgres", got.Subtype)
+			assert.Equal(t, "postgres", got.ResourceSubtype)
+		})
+	}
+}
+
 // DELETE /connections must not take a mirror: the sidecar's configuration owns
 // it.
 func TestTheConnectionsAPIRefusesToDeleteAMirror(t *testing.T) {
