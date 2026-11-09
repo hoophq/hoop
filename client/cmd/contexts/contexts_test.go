@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/featureflag"
@@ -259,4 +260,39 @@ func captureStdout(t *testing.T, f func()) string {
 	_ = w.Close()
 	out, _ := io.ReadAll(r)
 	return string(out)
+}
+
+// create, use and remove wait while another hoop process holds the store lock.
+func TestCommandsWaitForTheStoreLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Cleanup(func() { apiURLFlag, apiKeyFlag, skipSyncFlag, forceFlag = "", "", false, false })
+	gw := fakeGateway(t, true)
+	apiURLFlag, apiKeyFlag, skipSyncFlag, forceFlag = gw, "hpk_x", true, true
+
+	for _, step := range []struct {
+		cmd  *cobra.Command
+		args []string
+	}{{createCmd, []string{"dev"}}, {useCmd, []string{"dev"}}, {removeCmd, []string{"dev"}}} {
+		t.Run(step.cmd.Name(), func(t *testing.T) {
+			// another process: its own store and lock file handle
+			unlock, err := clientconfig.NewContextStore(filepath.Join(home, ".hoop")).Lock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- step.cmd.RunE(step.cmd, step.args) }()
+			select {
+			case err := <-done:
+				unlock()
+				t.Fatalf("%s ran while the lock was held (err=%v)", step.cmd.Name(), err)
+			case <-time.After(300 * time.Millisecond):
+			}
+			unlock()
+			if err := <-done; err != nil {
+				t.Fatalf("%s after unlock: %v", step.cmd.Name(), err)
+			}
+		})
+	}
 }
