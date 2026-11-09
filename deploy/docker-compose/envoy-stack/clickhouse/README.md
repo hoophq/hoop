@@ -74,7 +74,8 @@ parameter, in the POST body, or in both joined by a line feed. The lane's
 request is followed by a SQL statement the guardrail and the trail read.
 `/**`, because ClickHouse also runs `/query?query=`. For an API that takes
 SQL in the body only, `http.sql.text` lists the routes instead. The rows after
-`INSERT ... FORMAT` are not read as SQL. A compressed or multipart body is an
+`INSERT ... FORMAT` are not read as SQL, except `FORMAT Values`, whose rows
+can hold subqueries. A multipart body, or any other compressed body, is an
 `unknown` statement. See "SQL in URL parameters and plain bodies" in
 `sidecar/README.md`. The request line is still scanned too, which covers
 `?param_x=` values ClickHouse binds into `{x:Type}`. OPA's fat gate on

@@ -4677,8 +4677,8 @@ in both, joined by a line feed. Without these keys the lane's statement is
   (a server that parses forms reads it), a body under `Content-Encoding`, a
   body cut at `max_body_bytes`, a malformed percent-escape and bytes that
   are not text each become an `unknown` statement with the reason in
-  `sql.incomplete`. Plain SQL sent with a form type, as `curl --data` does,
-  is still read.
+  `sql.incomplete`. INSERT rows are the exception, as above. Plain SQL sent
+  with a form type, as `curl --data` does, is still read.
   The text check also catches ClickHouse's own `decompress=1` format.
 - **`tools` and `refuse`** read JSON bodies and need `fields`.
 - **`{t:Identifier}` hides the table.** ClickHouse binds `param_t=customers`
