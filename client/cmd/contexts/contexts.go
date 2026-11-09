@@ -233,7 +233,10 @@ var useCmd = &cobra.Command{
 
 The login of the context you leave is kept in that context first. When the
 target context has a login, the CLI then installs and activates the version
-its gateway runs, as ` + "`hoop versions sync`" + ` does.`,
+its gateway runs, as ` + "`hoop versions sync`" + ` does.
+
+A context with a login needs the flag experimental.cli_contexts on at its
+gateway (Settings > Experimental). It is off by default.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -322,8 +325,9 @@ const flagTimeout = 15 * time.Second
 var errNoLogin = errors.New("no login")
 
 // decideFlag turns the target gateway's answer into a decision:
-//   - flag reported off: refuse the switch;
-//   - flag absent (a gateway that predates it): switch and sync;
+//   - flag on: switch and sync;
+//   - flag off (the default), or absent (a gateway that predates it, where no
+//     admin can turn it on): refuse the switch;
 //   - no login, or the gateway cannot answer (an expired login): switch, but
 //     skip the sync, so the user can still reach the context to log in.
 func decideFlag(name string, flags map[string]bool, err error) flagGate {
@@ -334,9 +338,14 @@ func decideFlag(name string, flags map[string]bool, err error) flagGate {
 		}
 		return flagGate{syncHint: fmt.Sprintf("Version sync skipped: %s. Run `hoop login`, then `hoop versions sync`.", reason)}
 	}
-	if enabled, ok := flags[featureflag.FlagCLIContexts]; ok && !enabled {
-		return flagGate{err: fmt.Errorf("the gateway of context %s turned off %s; ask an admin to turn it on at Settings > Experimental",
+	enabled, known := flags[featureflag.FlagCLIContexts]
+	if !known {
+		return flagGate{err: fmt.Errorf("the gateway of context %s is too old for %s; upgrade it, then ask an admin to turn the flag on at Settings > Experimental",
 			name, featureflag.FlagCLIContexts)}
+	}
+	if !enabled {
+		return flagGate{err: fmt.Errorf("%s is off on the gateway of context %s; ask an admin to turn it on at Settings > Experimental",
+			featureflag.FlagCLIContexts, name)}
 	}
 	return flagGate{}
 }

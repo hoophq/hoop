@@ -174,8 +174,8 @@ var catalog = map[string]Flag{
 	},
 	FlagCLIContexts: {
 		Name:        FlagCLIContexts,
-		Description: "Let the hoop CLI switch between saved installations with `hoop context use`. Each context keeps its own URL and login, and switching syncs the CLI version with that gateway. When off, `hoop context use` refuses to switch to a context of this organization.",
-		Default:     true,
+		Description: "Let the hoop CLI switch between saved installations with `hoop context use`. Each context keeps its own URL and login, and switching syncs the CLI version with that gateway. When off, `hoop context use` refuses a context logged in to this organization.",
+		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentClient},
 	},

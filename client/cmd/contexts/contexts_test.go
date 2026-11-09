@@ -22,7 +22,8 @@ func TestDecideFlag(t *testing.T) {
 		wantHint bool
 	}{
 		{name: "flag on", flags: map[string]bool{featureflag.FlagCLIContexts: true}},
-		{name: "older gateway without the flag", flags: map[string]bool{"beta.oracle_native": true}},
+		{name: "older gateway without the flag", flags: map[string]bool{"beta.oracle_native": true}, wantErr: true},
+		{name: "no flags at all", flags: nil, wantErr: true},
 		{name: "flag off", flags: map[string]bool{featureflag.FlagCLIContexts: false}, wantErr: true},
 		{name: "no login", err: errNoLogin, wantHint: true},
 		{name: "gateway error", err: errors.New("401"), wantHint: true},
@@ -36,6 +37,23 @@ func TestDecideFlag(t *testing.T) {
 				t.Fatalf("syncHint = %q, wantHint %v", got.syncHint, tc.wantHint)
 			}
 		})
+	}
+}
+
+// An org gets `hoop context use` only after an admin turns the flag on.
+func TestCLIContextsFlagIsOffByDefault(t *testing.T) {
+	f, ok := featureflag.Lookup(featureflag.FlagCLIContexts)
+	if !ok {
+		t.Fatalf("%s is not in the catalog", featureflag.FlagCLIContexts)
+	}
+	if f.Default {
+		t.Fatalf("%s defaults to on, want off", featureflag.FlagCLIContexts)
+	}
+	if got := featureflag.SnapshotForOrg("org-without-overrides")[featureflag.FlagCLIContexts]; got {
+		t.Fatal("serverinfo reports the flag on for an org that never set it")
+	}
+	if gate := decideFlag("prd", featureflag.SnapshotForOrg("org-without-overrides"), nil); gate.err == nil {
+		t.Fatal("use is allowed on a gateway at the default")
 	}
 }
 
