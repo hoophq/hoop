@@ -334,3 +334,22 @@ listeners:
     #   capture_body: true
     #   max_body_bytes: 8192
     #   headers: [Content-Type]
+
+  # A second door to the same database, with OPA live and nothing of its own
+  # beyond it. Client bytes the postgres codec cannot decode reach Rego as an
+  # `unknown` statement with no text and the codec's error in
+  # metadata.parse_error, and rule `inspect` in opa/authz.rego refuses them.
+  # appdb above keeps OPA off, so every other beat of ./demo.sh is unchanged.
+  # The demo reaches this lane from the client container, past Envoy: Envoy
+  # forwards pgwire as opaque TCP, so it adds nothing to this case.
+  - name: appdb-opa
+    protocol: postgres
+    listen: 0.0.0.0:15433
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+    opa:
+      url: http://opa:8181/v1/data/envoy/authz/inspect
+      # An undefined decision denies, and so does an OPA outage.
+      fail_open: false
