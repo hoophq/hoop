@@ -6,8 +6,6 @@ import (
 	"errors"
 	"slices"
 
-	commonlicense "github.com/hoophq/hoop/common/license"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
@@ -30,8 +28,7 @@ func OrgHasEnterpriseSidecars(licenseData json.RawMessage) bool {
 	if len(bytes.TrimSpace(licenseData)) == 0 {
 		return false
 	}
-	l, err := commonlicense.Parse(licenseData, appconfig.Get().ApiHostname())
-	return err == nil && l.Payload.Type == commonlicense.EnterpriseType
+	return isEnterpriseLicense(licenseData)
 }
 
 // CreateSidecarWithinSeats creates a token sidecar and its listener mirrors

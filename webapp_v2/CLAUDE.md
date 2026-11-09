@@ -424,7 +424,8 @@ var(--mantine-spacing-xs | sm | md | lg | xl)
    role tokens below, never gray-N (the gray scale starts at Radix step 3;
    CLJS_PATTERNS.md has the mapping). */
 var(--hoop-surface-subtle | muted | strong | raised)
-var(--hoop-border-subtle | divider)
+var(--hoop-border-subtle | divider | strong | selected)
+var(--hoop-tint-pink | violet | indigo | green)
 var(--hoop-terminal-bg | text)
 
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */

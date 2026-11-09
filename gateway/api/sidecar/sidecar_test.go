@@ -61,3 +61,31 @@ func TestControlPlaneAnswerNeverCarriesLoadFromDisk(t *testing.T) {
 		t.Errorf("the control-plane answer carries load_from_disk: %s", raw)
 	}
 }
+
+// The page offers a protocol only some builds link (mcp) by what the sidecar
+// reported. Null, before any handshake, must not read as "reports nothing".
+func TestTheAdminResponseCarriesTheReportedCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		caps []string
+		want string
+	}{
+		{"never handshaked", nil, `null`},
+		{"too old to report", []string{}, `[]`},
+		{"reported", []string{"protocol:mcp"}, `["protocol:mcp"]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(toResponse(models.Sidecar{ID: "sc-1", Capabilities: tc.caps}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if string(got["capabilities"]) != tc.want {
+				t.Errorf("capabilities = %s, want %s", got["capabilities"], tc.want)
+			}
+		})
+	}
+}

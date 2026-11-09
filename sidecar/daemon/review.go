@@ -71,9 +71,15 @@ type planReviewer struct {
 	log      *slog.Logger
 }
 
-// File implements analyzer.Reviewer.
+// File implements analyzer.Reviewer. A hold under a level's human approver
+// (analyzer.FiledLevel) files that risk level and no approval_rule; the plane
+// then authorizes it against the level's groups.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
-	res, err := r.cp.fileReview(ctx, r.listener, r.rule, statement, r.reserve)
+	f := reviewFiling{listener: r.listener, rule: r.rule, statement: statement, reserve: r.reserve}
+	if level, ok := analyzer.FiledLevel(ctx); ok {
+		f.rule, f.level = "", level
+	}
+	res, err := r.cp.fileReview(ctx, f)
 	r.checkReserved(res)
 	return res, err
 }
@@ -163,11 +169,13 @@ func WithLocalReviewer(r LocalReviewer) Option {
 // holdRefusal is why a lane that holds statements cannot be built, or "".
 //
 // Two refusals, both at build rather than in Config.Validate for the reason
-// holdsWithoutAPlane gives. With a control plane, require_review needs an
-// approval_rule: the plane refuses a review that names none. Without one, it
-// needs a local reviewer, or there is nowhere to file the review at all.
+// holdsWithoutAPlane gives. With a control plane, a held level with no
+// approvers entry needs an approval_rule: the plane refuses a review that
+// names none. Without one, a level a person approves needs a local reviewer,
+// or there is nowhere to file the review at all. A level the approval agent
+// decides needs neither.
 func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
-	if !analyzerHolds(la) {
+	if !humanHolds(la) {
 		return ""
 	}
 	if holdsWithoutAPlane(cfg, la, ac) {
@@ -180,13 +188,13 @@ func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 			}
 			return ""
 		}
-		return fmt.Sprintf("the analyzer block asks for %s and this sidecar has no control "+
-			"plane; the approval request is filed with the plane named by %s or the "+
-			"control_plane_url key, or with the person running `hoop start sidecar` "+
-			"in a terminal, and there is neither",
+		return fmt.Sprintf("the analyzer block asks for %s with a human approver and this "+
+			"sidecar has no control plane; the approval request is filed with the plane "+
+			"named by %s or the control_plane_url key, or with the person running "+
+			"`hoop start sidecar` in a terminal, and there is neither",
 			holdAction, ControlPlaneURLEnv)
 	}
-	if la.ApprovalRule == "" {
+	if ruleHolds(la) && la.ApprovalRule == "" {
 		return fmt.Sprintf("the analyzer block asks for %s and names no approval_rule; the "+
 			"rule is what decides who may approve a held statement, and the control "+
 			"plane refuses an approval request that does not name one", holdAction)
@@ -217,13 +225,23 @@ func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 // leave observe without a restart that hits this same refusal. Accepting it
 // would let an operator rehearse a control that does not exist.
 func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) bool {
-	if !analyzerHolds(la) {
+	if !humanHolds(la) {
 		return false
 	}
 	if ac != nil && ac.cp != nil {
 		return false
 	}
 	return !cfg.controlPlaneConfigured()
+}
+
+// reviewFiling is one POST /api/sidecars/reviews.
+//
+// level set files under that level's human approver and omits
+// approval_rule; the plane reads approvers.<level> in the stored block.
+type reviewFiling struct {
+	listener, rule, statement string
+	reserve                   bool
+	level                     analyzer.RiskLevel
 }
 
 // fileReview runs one POST /api/sidecars/reviews.
@@ -234,20 +252,27 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 //
 // Every failure returns an error, and the caller denies on one. There is no
 // retry here: a hold that is still pending asks again through claimReview.
-func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statement string, reserve bool) (analyzer.ReviewResult, error) {
+func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyzer.ReviewResult, error) {
 	var out analyzer.ReviewResult
 
 	// The statement is base64 because it is bytes, not text: a wire
 	// statement can carry anything the client typed, and the plane hashes
 	// exactly what arrives to match a retry against the approval.
 	req := map[string]any{
-		"listener_name": listener,
-		"approval_rule": rule,
-		"payload":       base64.StdEncoding.EncodeToString([]byte(statement)),
+		"listener_name": f.listener,
+		"payload":       base64.StdEncoding.EncodeToString([]byte(f.statement)),
+	}
+	// A filing without a level sends the body it always sent.
+	under := fmt.Sprintf("rule %q", f.rule)
+	if f.level == "" {
+		req["approval_rule"] = f.rule
+	} else {
+		under = fmt.Sprintf("the %s risk level's approvers", f.level)
+		req["risk_level"] = string(f.level)
 	}
 	// Only when set, so a lane that does not reserve sends the body it
 	// always sent.
-	if reserve {
+	if f.reserve {
 		req["reserve"] = true
 	}
 	body, err := json.Marshal(req)
@@ -265,10 +290,11 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 			"large for an approval request: %s", cp.url, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// The plane authorizes each review against the configuration it
-		// stored for this sidecar, so a listener whose approval_rule was
-		// edited locally, or a rule with no reviewers, lands here.
+		// stored for this sidecar, so a listener whose approval_rule or
+		// approvers were edited locally, or a rule with no reviewers,
+		// lands here.
 		return out, fmt.Errorf("the control plane at %s refused an approval request for listener %q "+
-			"under rule %q: %s", cp.url, listener, rule, controlPlaneMessage(raw))
+			"under %s: %s", cp.url, f.listener, under, controlPlaneMessage(raw))
 	}
 	return cp.reviewAnswer(resp, raw)
 }
