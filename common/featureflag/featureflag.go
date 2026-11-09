@@ -40,7 +40,8 @@ const FlagAnalyzeBeforeRunForms = "experimental.analyze_before_run_forms"
 // FlagReviewNotifications is spelled here for the same reason.
 const FlagReviewNotifications = "experimental.review_notifications"
 
-// FlagCLIContexts is spelled here for the same reason.
+// FlagCLIContexts is spelled here for the same reason. Released CLIs refuse
+// `hoop context use` when a gateway omits it: never remove it, flip Default.
 const FlagCLIContexts = "experimental.cli_contexts"
 
 // catalog is the single source of truth for all known feature flags.

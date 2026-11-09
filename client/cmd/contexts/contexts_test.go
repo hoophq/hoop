@@ -2,10 +2,12 @@ package contexts
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -26,7 +28,10 @@ func TestDecideFlag(t *testing.T) {
 		{name: "no flags at all", flags: nil, wantErr: true},
 		{name: "flag off", flags: map[string]bool{featureflag.FlagCLIContexts: false}, wantErr: true},
 		{name: "no login", err: errNoLogin, wantHint: true},
-		{name: "gateway error", err: errors.New("401"), wantHint: true},
+		{name: "expired login", err: &clientconfig.StatusError{Code: http.StatusUnauthorized}, wantHint: true},
+		{name: "login refused", err: &clientconfig.StatusError{Code: http.StatusForbidden}, wantHint: true},
+		{name: "gateway error", err: &clientconfig.StatusError{Code: http.StatusBadGateway}, wantErr: true},
+		{name: "gateway unreachable", err: errors.New("dial tcp: connection refused"), wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := decideFlag("prd", tc.flags, tc.err)
@@ -54,29 +59,6 @@ func TestCLIContextsFlagIsOffByDefault(t *testing.T) {
 	}
 	if gate := decideFlag("prd", featureflag.SnapshotForOrg("org-without-overrides"), nil); gate.err == nil {
 		t.Fatal("use is allowed on a gateway at the default")
-	}
-}
-
-func TestHasContextCommand(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script as the fake binary")
-	}
-	dir := t.TempDir()
-	write := func(name, body string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0700); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	// what released versions before `hoop context` answer
-	old := write("old", `echo 'Error: unknown command "context" for "hoop"' >&2; exit 1`)
-	if err := hasContextCommand(old); err == nil {
-		t.Fatal("a binary without `context` was accepted")
-	}
-	newer := write("new", `[ "$1 $2" = "context --help" ] || exit 2; echo usage`)
-	if err := hasContextCommand(newer); err != nil {
-		t.Fatalf("a binary with `context` was refused: %v", err)
 	}
 }
 
@@ -133,8 +115,9 @@ func TestCreateRefusesToReplaceActiveContext(t *testing.T) {
 	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Cleanup(func() { apiURLFlag, apiKeyFlag, overwriteFlag, skipSyncFlag = "", "", false, false })
 	run := func(cmd *cobra.Command, args ...string) error { return cmd.RunE(cmd, args) }
+	gw := fakeGateway(t, true)
 
-	apiURLFlag, apiKeyFlag = "http://a:1", "hpk_old"
+	apiURLFlag, apiKeyFlag = gw, "hpk_old"
 	if err := run(createCmd, "dev"); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +126,7 @@ func TestCreateRefusesToReplaceActiveContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a new key for the active context would be undone by the next save-back
-	apiURLFlag, apiKeyFlag, overwriteFlag = "http://a:1", "hpk_new", true
+	apiURLFlag, apiKeyFlag, overwriteFlag = gw, "hpk_new", true
 	if err := run(createCmd, "dev"); err == nil {
 		t.Fatal("replaced the active context")
 	}
@@ -151,5 +134,80 @@ func TestCreateRefusesToReplaceActiveContext(t *testing.T) {
 	apiURLFlag, apiKeyFlag = "", ""
 	if err := run(createCmd, "dev"); err != nil {
 		t.Fatalf("copy over the active context: %v", err)
+	}
+}
+
+func TestCreateCopyKeepsLoginOfActive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Cleanup(func() { apiURLFlag, apiKeyFlag, overwriteFlag, skipSyncFlag = "", "", false, false })
+	run := func(cmd *cobra.Command, args ...string) error { return cmd.RunE(cmd, args) }
+	gw := fakeGateway(t, true)
+
+	apiURLFlag, apiKeyFlag = gw, "hpk_old"
+	if err := run(createCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	apiURLFlag, apiKeyFlag, skipSyncFlag = "", "", true
+	if err := run(useCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	// `hoop login` refreshes the token in config.toml only
+	if err := os.WriteFile(filepath.Join(home, ".hoop", "config.toml"),
+		[]byte("api_url = \""+gw+"\"\ntoken = \"hpk_new\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(createCmd, "dev-copy"); err != nil {
+		t.Fatal(err)
+	}
+	s := clientconfig.NewContextStore(filepath.Join(home, ".hoop"))
+	dev, err := s.Get("dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dev.Token != "hpk_new" {
+		t.Fatalf("dev token = %q, want the login made before the copy", dev.Token)
+	}
+	if active, _ := s.Active(); active != "dev-copy" {
+		t.Fatalf("active = %q, want dev-copy", active)
+	}
+}
+
+// fakeGateway answers /api/serverinfo with experimental.cli_contexts set to on.
+func fakeGateway(t *testing.T, on bool) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/serverinfo" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"feature_flags": map[string]bool{featureflag.FlagCLIContexts: on}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestUseRefusedWhenFlagOff(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Cleanup(func() { apiURLFlag, apiKeyFlag = "", "" })
+	run := func(cmd *cobra.Command, args ...string) error { return cmd.RunE(cmd, args) }
+
+	apiURLFlag, apiKeyFlag = fakeGateway(t, false), "hpk_x"
+	if err := run(createCmd, "prd"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".hoop", "config.toml")
+	before := []byte("api_url = \"https://dev.example.com\"\n")
+	if err := os.WriteFile(cfg, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(useCmd, "prd"); err == nil {
+		t.Fatal("use was allowed with the flag off")
+	}
+	if after, _ := os.ReadFile(cfg); string(after) != string(before) {
+		t.Fatalf("config.toml changed after a refused use: %q", after)
 	}
 }

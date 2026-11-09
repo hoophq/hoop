@@ -51,9 +51,8 @@ func (c *Context) Config() *Config {
 	}
 }
 
-// ContextStore keeps contexts in <home>/contexts/<name>.toml and the name of
-// the active one in <home>/contexts/current. Older CLIs read only
-// <home>/config.toml, which Use writes in the format they know.
+// ContextStore keeps contexts in <home>/contexts/<name>.toml and the active name
+// in <home>/contexts/current. Older CLIs read only config.toml, which Use writes.
 type ContextStore struct {
 	dir        string
 	configFile string
@@ -189,9 +188,8 @@ func (s *ContextStore) activeName() (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Active returns the name of the active context, or "" when there is none.
-// A context counts as active only while config.toml still points at its
-// api_url: `hoop config create` can point config.toml somewhere else.
+// Active returns the active context, or "" when there is none or config.toml
+// points at another api_url (`hoop config create` can do that).
 func (s *ContextStore) Active() (string, error) {
 	name, err := s.activeName()
 	if err != nil || name == "" {
@@ -215,9 +213,8 @@ func (s *ContextStore) Active() (string, error) {
 	return name, nil
 }
 
-// Resolve returns a context as it is in use. For the active context that is
-// config.toml, which holds a login made after the last switch; for any other
-// context it is the context file.
+// Resolve returns a context as in use: config.toml for the active one (it holds
+// a login made since the last switch), the context file for any other.
 func (s *ContextStore) Resolve(name string) (*Context, error) {
 	ctx, err := s.Get(name)
 	if err != nil {
@@ -259,12 +256,8 @@ func (s *ContextStore) SetActive(name string) error {
 	return nil
 }
 
-// Use makes name the active context. First it saves config.toml back into
-// the active context, so a token from `hoop login` is kept. Then it writes the
-// target into config.toml and marks it active.
-//
-// When config.toml holds an installation no context keeps, Use returns
-// ErrUnsavedConfig unless force is set.
+// Use saves config.toml back into the active context, then writes name into
+// config.toml and marks it active. Without force, it refuses a config no context keeps.
 func (s *ContextStore) Use(name string, force bool) (*Context, error) {
 	target, err := s.Get(name)
 	if err != nil {
@@ -275,7 +268,7 @@ func (s *ContextStore) Use(name string, force bool) (*Context, error) {
 			return nil, err
 		}
 	}
-	if err := s.saveBack(); err != nil {
+	if err := s.SaveBack(); err != nil {
 		return nil, err
 	}
 	// a save-back into the target itself changes what we must write
@@ -293,9 +286,8 @@ func (s *ContextStore) Use(name string, force bool) (*Context, error) {
 	return target, nil
 }
 
-// checkSaved returns ErrUnsavedConfig when config.toml has an installation
-// that is not the active context and that no context holds with the same
-// api_url and token.
+// checkSaved returns ErrUnsavedConfig when config.toml is not the active context
+// and no context holds its api_url and token.
 func (s *ContextStore) checkSaved() error {
 	current, err := s.ReadConfigFile()
 	if err != nil || current.ApiURL == "" {
@@ -316,7 +308,9 @@ func (s *ContextStore) checkSaved() error {
 	return fmt.Errorf("%w (api_url=%s)", ErrUnsavedConfig, current.ApiURL)
 }
 
-func (s *ContextStore) saveBack() error {
+// SaveBack copies config.toml into the active context, so a login made since
+// the last switch is kept. It does nothing when no context is active.
+func (s *ContextStore) SaveBack() error {
 	active, err := s.Active()
 	if err != nil || active == "" {
 		return err

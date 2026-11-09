@@ -7,8 +7,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -99,7 +99,10 @@ current configuration ($HOME/.hoop/config.toml), login included.`,
 		}
 		fmt.Printf("Context %s saved (api_url=%s)\n", ctx.Name, ctx.ApiURL)
 		if apiURLFlag == "" {
-			// it is a copy of config.toml, so it is the context in use
+			// a copy of config.toml is the context in use; keep the login of the one it replaces
+			if err := s.SaveBack(); err != nil {
+				return err
+			}
 			return s.SetActive(ctx.Name)
 		}
 		return nil
@@ -267,36 +270,13 @@ gateway (Settings > Experimental). It is off by default.`,
 			fmt.Println(gate.syncHint)
 			return nil
 		}
-		// sync against the selected context, not HOOP_* env vars that Load prefers
-		err = versions.SyncIf(target.Config(), hasContextCommand)
-		var notActivated *versions.NotActivatedError
-		if errors.As(err, &notActivated) {
-			fmt.Printf("The gateway runs %s, but hoop %s has no `hoop context`, so this CLI stays active to let you switch again.\n"+
-				"Run `hoop versions use %s` to use that version anyway.\n", notActivated.Version, notActivated.Version, notActivated.Version)
-			return nil
-		}
-		if err != nil {
+		// The gate passed, so the gateway runs a release that has `hoop context`.
+		// Sync against the context, not the HOOP_* env vars that Load prefers.
+		if err := versions.Sync(target.Config()); err != nil {
 			return fmt.Errorf("switched to context %s, but the version sync failed: %w", target.Name, err)
 		}
 		return nil
 	},
-}
-
-// hasContextCommand refuses a CLI binary without `hoop context`: activating
-// it would leave the user unable to switch contexts again. Released versions
-// before this command answer `context --help` with "unknown command".
-// `--help` runs no command code and reads no configuration.
-func hasContextCommand(binary string) error {
-	out, err := exec.Command(binary, "context", "--help").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("it has no `hoop context` command (%v: %s)", err, strings.TrimSpace(firstLine(out)))
-	}
-	return nil
-}
-
-func firstLine(b []byte) string {
-	line, _, _ := strings.Cut(string(b), "\n")
-	return line
 }
 
 type flagGate struct {
@@ -307,7 +287,7 @@ type flagGate struct {
 }
 
 // checkFlag reads experimental.cli_contexts from the target gateway with the
-// target's own login, because each gateway holds the flag for its own org.
+// target's login: each gateway holds the flag for its own org.
 func checkFlag(target *clientconfig.Context) flagGate {
 	if target.Token == "" {
 		return decideFlag(target.Name, nil, errNoLogin)
@@ -318,25 +298,22 @@ func checkFlag(target *clientconfig.Context) flagGate {
 	return decideFlag(target.Name, flags, err)
 }
 
-// flagTimeout bounds the flag read, so a gateway that never answers falls
-// into the "cannot answer" path instead of blocking the switch.
+// flagTimeout bounds the flag read, so a gateway that never answers cannot block the CLI.
 const flagTimeout = 15 * time.Second
 
 var errNoLogin = errors.New("no login")
 
-// decideFlag turns the target gateway's answer into a decision:
-//   - flag on: switch and sync;
-//   - flag off (the default), or absent (a gateway that predates it, where no
-//     admin can turn it on): refuse the switch;
-//   - no login, or the gateway cannot answer (an expired login): switch, but
-//     skip the sync, so the user can still reach the context to log in.
+// decideFlag allows the switch only when the gateway reports the flag on. Without
+// a valid login there is no org to ask: switch, skip the sync, let the user log in.
 func decideFlag(name string, flags map[string]bool, err error) flagGate {
-	if err != nil {
-		reason := "the gateway did not answer"
-		if errors.Is(err, errNoLogin) {
-			reason = "the context has no login"
-		}
-		return flagGate{syncHint: fmt.Sprintf("Version sync skipped: %s. Run `hoop login`, then `hoop versions sync`.", reason)}
+	var status *clientconfig.StatusError
+	switch {
+	case errors.Is(err, errNoLogin),
+		errors.As(err, &status) && (status.Code == http.StatusUnauthorized || status.Code == http.StatusForbidden):
+		return flagGate{syncHint: fmt.Sprintf("Version sync skipped: the context has no valid login. "+
+			"Run `hoop login`, then `hoop context use %s` again to sync the CLI version.", name)}
+	case err != nil:
+		return flagGate{err: fmt.Errorf("cannot read %s from the gateway of context %s: %v", featureflag.FlagCLIContexts, name, err)}
 	}
 	enabled, known := flags[featureflag.FlagCLIContexts]
 	if !known {

@@ -28,32 +28,11 @@ var (
 // The function prints the same progress lines regardless of which
 // upstream produced the target, so the user-visible output is
 // consistent between `hoop versions sync` and `hoop versions upgrade`.
-func installAndActivate(target string) error { return installAndActivateIf(target, nil) }
-
-// NotActivatedError means the target version was installed, but accept
-// refused to make it the active CLI.
-type NotActivatedError struct {
-	Version string
-	Reason  error
-}
-
-func (e *NotActivatedError) Error() string {
-	return fmt.Sprintf("hoop %s was installed but not activated: %v", e.Version, e.Reason)
-}
-
-func (e *NotActivatedError) Unwrap() error { return e.Reason }
-
-// installAndActivateIf installs target and activates it only when accept,
-// if set, returns nil for the installed binary.
-func installAndActivateIf(target string, accept func(binary string) error) error {
+func installAndActivate(target string) error {
 	layout, err := upgrade.DefaultLayout()
 	if err != nil {
 		return err
 	}
-	return installAndActivateIn(layout, target, accept)
-}
-
-func installAndActivateIn(layout upgrade.Layout, target string, accept func(binary string) error) error {
 	store, err := upgrade.LoadStore(layout)
 	if err != nil {
 		return err
@@ -88,11 +67,6 @@ func installAndActivateIn(layout upgrade.Layout, target string, accept func(bina
 	entry, err := installer.Install(target, platform, store)
 	if err != nil {
 		return err
-	}
-	if accept != nil {
-		if err := accept(layout.VersionBinary(entry.Version)); err != nil {
-			return &NotActivatedError{Version: entry.Version, Reason: err}
-		}
 	}
 	if err := upgrade.SetActive(layout, store, entry.Version); err != nil {
 		return err
