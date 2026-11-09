@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -32,12 +33,13 @@ func readLegacy(t *testing.T, path string) legacyConfig {
 }
 
 func TestValidateContextName(t *testing.T) {
-	for _, ok := range []string{"dev", "hoop-prd", "br.stg_1", "A"} {
+	for _, ok := range []string{"dev", "hoop-prd", "br.stg_1", "a"} {
 		if err := ValidateContextName(ok); err != nil {
 			t.Errorf("%q: unexpected error %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "../x", "a/b", ".hidden", "-x", "current", "a b"} {
+	// upper case: Dev and dev are one file on macOS and Windows
+	for _, bad := range []string{"", "../x", "a/b", ".hidden", "-x", "current", "a b", "Dev", "A"} {
 		if err := ValidateContextName(bad); err == nil {
 			t.Errorf("%q: expected an error", bad)
 		}
@@ -237,5 +239,57 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Two hoop processes switching at once must not save one installation into the
+// other's context. Each goroutine opens its own store, as a process does.
+func TestContextUseConcurrentKeepsEachInstallation(t *testing.T) {
+	home := t.TempDir()
+	s := NewContextStore(home)
+	want := map[string]Context{
+		"dev": {ApiURL: "https://dev.example.com", Token: "dev-token"},
+		"prd": {ApiURL: "https://prd.example.com", Token: "prd-token"},
+	}
+	for name, c := range want {
+		must(t, s.Save(&Context{Name: name, ApiURL: c.ApiURL, Token: c.Token}))
+	}
+	if _, err := s.Use("dev", false); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for i := range 4 {
+		name := []string{"dev", "prd"}[i%2]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s := NewContextStore(home)
+			for range 50 {
+				unlock, err := s.Lock()
+				if err != nil {
+					errs <- err
+					return
+				}
+				_, err = s.Use(name, false)
+				unlock()
+				if err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	for name, c := range want {
+		got, err := s.Get(name)
+		must(t, err)
+		if got.ApiURL != c.ApiURL || got.Token != c.Token {
+			t.Fatalf("%s = %+v, want %+v", name, got, c)
+		}
 	}
 }

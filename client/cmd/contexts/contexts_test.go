@@ -4,10 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -210,4 +212,51 @@ func TestUseRefusedWhenFlagOff(t *testing.T) {
 	if after, _ := os.ReadFile(cfg); string(after) != string(before) {
 		t.Fatalf("config.toml changed after a refused use: %q", after)
 	}
+}
+
+func TestRemoveRefusesActiveAndShowOmitsToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Cleanup(func() { apiURLFlag, apiKeyFlag, skipSyncFlag, forceFlag = "", "", false, false })
+	run := func(cmd *cobra.Command, args ...string) error { return cmd.RunE(cmd, args) }
+
+	apiURLFlag, apiKeyFlag = fakeGateway(t, true), "hpk_secret"
+	if err := run(createCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	apiURLFlag, apiKeyFlag, skipSyncFlag = "", "", true
+	if err := run(useCmd, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() {
+		if err := run(showCmd); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if strings.Contains(out, "hpk_secret") || !strings.Contains(out, "token=OMITTED") {
+		t.Fatalf("show printed:\n%s", out)
+	}
+	if err := run(removeCmd, "dev"); err == nil {
+		t.Fatal("removed the active context without --force")
+	}
+	forceFlag = true
+	if err := run(removeCmd, "dev"); err != nil {
+		t.Fatalf("remove --force: %v", err)
+	}
+}
+
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = stdout }()
+	f()
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	return string(out)
 }

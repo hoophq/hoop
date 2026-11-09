@@ -63,6 +63,19 @@ func init() {
 
 func store() (*clientconfig.ContextStore, error) { return clientconfig.DefaultContextStore() }
 
+// lockedStore returns the store with its lock held, for commands that write it.
+func lockedStore() (*clientconfig.ContextStore, func(), error) {
+	s, err := store()
+	if err != nil {
+		return nil, nil, err
+	}
+	unlock, err := s.Lock()
+	if err != nil {
+		return nil, nil, err
+	}
+	return s, unlock, nil
+}
+
 var createCmd = &cobra.Command{
 	Use:   "create NAME",
 	Short: "Save an installation as a named context",
@@ -74,10 +87,11 @@ current configuration ($HOME/.hoop/config.toml), login included.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		s, err := store()
+		s, unlock, err := lockedStore()
 		if err != nil {
 			return err
 		}
+		defer unlock()
 		ctx, err := buildContext(s, args[0])
 		if err != nil {
 			return err
@@ -243,23 +257,8 @@ gateway (Settings > Experimental). It is off by default.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		s, err := store()
+		target, gate, err := switchContext(args[0])
 		if err != nil {
-			return err
-		}
-		// use the active context's latest login, not the one saved at the last switch
-		target, err := s.Resolve(args[0])
-		if err != nil {
-			return err
-		}
-		gate := checkFlag(target)
-		if gate.err != nil {
-			return gate.err
-		}
-		if target, err = s.Use(target.Name, forceFlag); err != nil {
-			if errors.Is(err, clientconfig.ErrUnsavedConfig) {
-				return fmt.Errorf("%v; save it first with `hoop context create NAME`, or pass --force to overwrite it", err)
-			}
 			return err
 		}
 		fmt.Printf("Switched to context %s (api_url=%s)\n", target.Name, target.ApiURL)
@@ -277,6 +276,32 @@ gateway (Settings > Experimental). It is off by default.`,
 		}
 		return nil
 	},
+}
+
+// switchContext checks the flag and writes the target into config.toml, holding
+// the store's lock so no other hoop process writes in between.
+func switchContext(name string) (*clientconfig.Context, flagGate, error) {
+	s, unlock, err := lockedStore()
+	if err != nil {
+		return nil, flagGate{}, err
+	}
+	defer unlock()
+	// use the active context's latest login, not the one saved at the last switch
+	target, err := s.Resolve(name)
+	if err != nil {
+		return nil, flagGate{}, err
+	}
+	gate := checkFlag(target)
+	if gate.err != nil {
+		return nil, gate, gate.err
+	}
+	if target, err = s.Use(target.Name, forceFlag); err != nil {
+		if errors.Is(err, clientconfig.ErrUnsavedConfig) {
+			err = fmt.Errorf("%v; save it first with `hoop context create NAME`, or pass --force to overwrite it", err)
+		}
+		return nil, gate, err
+	}
+	return target, gate, nil
 }
 
 type flagGate struct {
@@ -334,10 +359,11 @@ var removeCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		s, err := store()
+		s, unlock, err := lockedStore()
 		if err != nil {
 			return err
 		}
+		defer unlock()
 		active, err := s.Active()
 		if err != nil {
 			return err

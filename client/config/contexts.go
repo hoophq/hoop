@@ -2,6 +2,7 @@ package clientconfig
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,8 +10,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/gofrs/flock"
 	"github.com/hoophq/hoop/common/clientconfig"
 )
 
@@ -24,9 +27,14 @@ var ErrUnsavedConfig = errors.New("the current configuration is not saved in a c
 const (
 	contextsDirName  = "contexts"
 	activeContextKey = "current"
+	lockFileName     = ".lock"
+	// lockTimeout covers another `hoop context use` that waits on its gateway
+	lockTimeout = 30 * time.Second
 )
 
-var contextNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+// Lower case only: macOS and Windows file systems ignore case, so Dev and dev
+// would share one file.
+var contextNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // Context is one named installation. Its keys are the keys of config.toml,
 // so a context file and config.toml stay interchangeable.
@@ -78,7 +86,7 @@ func DefaultContextStore() (*ContextStore, error) {
 // ValidateContextName refuses names that are not a plain file name.
 func ValidateContextName(name string) error {
 	if !contextNameRe.MatchString(name) || name == activeContextKey {
-		return fmt.Errorf("invalid context name %q: use 1-64 letters, digits, '.', '_' or '-', starting with a letter or digit (%q is reserved)",
+		return fmt.Errorf("invalid context name %q: use 1-64 lower-case letters, digits, '.', '_' or '-', starting with a letter or digit (%q is reserved)",
 			name, activeContextKey)
 	}
 	return nil
@@ -191,26 +199,34 @@ func (s *ContextStore) activeName() (string, error) {
 // Active returns the active context, or "" when there is none or config.toml
 // points at another api_url (`hoop config create` can do that).
 func (s *ContextStore) Active() (string, error) {
+	current, err := s.activeConfig()
+	if err != nil || current == nil {
+		return "", err
+	}
+	return current.Name, nil
+}
+
+// activeConfig reads config.toml once and returns it, named after the active
+// context, when it still points at that context's api_url. Otherwise nil.
+func (s *ContextStore) activeConfig() (*Context, error) {
 	name, err := s.activeName()
 	if err != nil || name == "" {
-		return "", err
+		return nil, err
 	}
 	ctx, err := s.Get(name)
 	if errors.Is(err, ErrContextNotFound) {
 		// the marker names a context that was removed by hand
-		return "", nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	current, err := s.ReadConfigFile()
-	if err != nil {
-		return "", err
+	if err != nil || current.ApiURL != ctx.ApiURL {
+		return nil, err
 	}
-	if current.ApiURL != ctx.ApiURL {
-		return "", nil
-	}
-	return name, nil
+	current.Name = name
+	return current, nil
 }
 
 // Resolve returns a context as in use: config.toml for the active one (it holds
@@ -220,19 +236,14 @@ func (s *ContextStore) Resolve(name string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	active, err := s.Active()
+	current, err := s.activeConfig()
 	if err != nil {
 		return nil, err
 	}
-	if active != name {
-		return ctx, nil
+	if current != nil && current.Name == name {
+		return current, nil
 	}
-	current, err := s.ReadConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	current.Name = name
-	return current, nil
+	return ctx, nil
 }
 
 // ReadConfigFile reads config.toml as stored, without the HOOP_* env overrides
@@ -311,16 +322,27 @@ func (s *ContextStore) checkSaved() error {
 // SaveBack copies config.toml into the active context, so a login made since
 // the last switch is kept. It does nothing when no context is active.
 func (s *ContextStore) SaveBack() error {
-	active, err := s.Active()
-	if err != nil || active == "" {
+	// save the same read of config.toml that matched the active api_url
+	current, err := s.activeConfig()
+	if err != nil || current == nil {
 		return err
 	}
-	current, err := s.ReadConfigFile()
-	if err != nil {
-		return err
-	}
-	current.Name = active
 	return s.Save(current)
+}
+
+// Lock takes the store's lock file, so two hoop processes cannot interleave
+// their writes to config.toml and the contexts. Call unlock when done.
+func (s *ContextStore) Lock() (unlock func(), err error) {
+	if err := os.MkdirAll(s.dir, 0700); err != nil {
+		return nil, fmt.Errorf("failed creating %s: %v", s.dir, err)
+	}
+	fl := flock.New(filepath.Join(s.dir, lockFileName))
+	ctx, cancel := context.WithTimeout(context.Background(), lockTimeout)
+	defer cancel()
+	if ok, err := fl.TryLockContext(ctx, 50*time.Millisecond); !ok {
+		return nil, fmt.Errorf("another hoop context command holds %s: %v", fl.Path(), err)
+	}
+	return func() { _ = fl.Unlock() }, nil
 }
 
 func writeTOML(path string, v any) error {
@@ -328,12 +350,20 @@ func writeTOML(path string, v any) error {
 	if err := toml.NewEncoder(buf).Encode(v); err != nil {
 		return fmt.Errorf("failed encoding %s: %v", path, err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0600); err != nil {
+	// a unique temp file, so two writers never rename each other's file; mode 0600
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return fmt.Errorf("failed writing %s: %v", path, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	_, err = f.Write(buf.Bytes())
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
 		return fmt.Errorf("failed writing %s: %v", path, err)
 	}
 	return nil
