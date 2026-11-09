@@ -3,6 +3,8 @@ package analyzer
 import (
 	"container/list"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -12,8 +14,8 @@ import (
 )
 
 // handoffPins keeps the approval request each hand-off require_approval
-// filed, keyed by handoffKey: the level's hand-off configuration and the
-// exact content the agent read.
+// filed, keyed by pinKey: the level's hand-off configuration, the exact
+// content the agent read, and the exact bytes File sent.
 //
 // The verdict cache cannot do this. It may be off, evict the entry, or hold
 // a new classification, and the agent then decides again. A return-mode
@@ -29,6 +31,12 @@ type handoffPins struct {
 	entries map[string]*list.Element
 	order   *list.List // front is the most recently filed
 	ttl     time.Duration
+
+	// seq numbers each filing, and filing holds the latest one in flight
+	// per key. A filing publishes its pin only while it is still the
+	// latest, so a late answer never replaces a newer filing's pin.
+	seq    uint64
+	filing map[string]uint64
 
 	// now is injected so tests can expire pins without sleeping.
 	now func() time.Time
@@ -55,8 +63,24 @@ func newHandoffPins() *handoffPins {
 		entries: map[string]*list.Element{},
 		order:   list.New(),
 		ttl:     handoffPinTTL,
+		filing:  map[string]uint64{},
 		now:     time.Now,
 	}
+}
+
+// pinKey binds a pin to the agent's content (memoKey) and to the exact bytes
+// File sends for stmt, match_ignore applied. Under send: redacted two
+// statements can read the same to the agent, and an approval binds to the
+// bytes. The whole SHA-256, not fingerprint's prefix: a collision would
+// release one statement on another's approval. Empty when the statement
+// cannot be filed: nothing is pinned.
+func (e *Evaluator) pinKey(memoKey string, stmt inspect.Statement) string {
+	text, _, err := reviewText(stmt, e.cfg.MatchIgnore)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(memoKey + "\x00" + text))
+	return hex.EncodeToString(sum[:])
 }
 
 // get returns the live pin for key.
@@ -76,10 +100,28 @@ func (p *handoffPins) get(key string) (handoffPin, bool) {
 	return *pin, true
 }
 
-// set pins the request a new filing named, replacing whatever key held.
-func (p *handoffPins) set(key, reviewID, reason string) {
+// begin starts a filing for key and returns its number.
+func (p *handoffPins) begin(key string) uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.seq++
+	p.filing[key] = p.seq
+	return p.seq
+}
+
+// finish ends filing gen for key. With publish it pins reviewID, replacing
+// whatever key held, but only when no later filing for key started since.
+func (p *handoffPins) finish(key string, gen uint64, reviewID, reason string, publish bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	latest := p.filing[key]
+	if latest != gen {
+		return
+	}
+	delete(p.filing, key)
+	if !publish {
+		return
+	}
 	pin := &handoffPin{key: key, reviewID: reviewID, reason: reason, filedAt: p.now()}
 	if el, ok := p.entries[key]; ok {
 		el.Value = pin

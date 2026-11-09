@@ -376,9 +376,19 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	if ignored > 0 {
 		notes[MetadataReviewMatchIgnored] = strconv.Itoa(ignored)
 	}
+	// A filing that may pin takes its number first: a late answer must
+	// not replace the pin of a filing that started after it.
+	var gen uint64
+	if pin.key != "" {
+		gen = e.pins.begin(pin.key)
+	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
 	})
+	if pin.key != "" {
+		live := err == nil && res.ID != "" && (res.Status == reviewPending || res.Status == reviewProcessing)
+		e.pins.finish(pin.key, gen, res.ID, pin.reason, live)
+	}
 	if err != nil {
 		e.errs.Add(1)
 		v := e.denyHold(notes, res.ID, res.Status, "the approval request could not be filed")
@@ -387,9 +397,6 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	}
 	if res.ID != "" {
 		notes[MetadataReviewID] = res.ID
-		if pin.key != "" && (res.Status == reviewPending || res.Status == reviewProcessing) {
-			e.pins.set(pin.key, res.ID, pin.reason)
-		}
 	}
 	if res.Forward {
 		return e.release(ctx, notes, res)

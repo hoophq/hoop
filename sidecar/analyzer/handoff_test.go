@@ -836,20 +836,26 @@ func TestAHandoffDecisionIsNotReusedForAnotherIdentifier(t *testing.T) {
 }
 
 // pinReviewer files pending requests r1, r2, ... in order and answers each
-// claim from claim, which a test may use to act in the middle of one. It
-// keeps what it filed and what it was asked to claim.
+// claim from claim, which a test may use to act in the middle of one; onFile
+// runs inside the n-th filing, before it answers. It keeps what it filed and
+// what it was asked to claim.
 type pinReviewer struct {
 	mu      sync.Mutex
 	filed   []string
 	claimed []string
 	claim   func(id string) (analyzer.ReviewResult, error)
+	onFile  func(n int)
 }
 
 func (r *pinReviewer) File(_ context.Context, statement string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.filed = append(r.filed, statement)
-	return analyzer.ReviewResult{ID: "r" + strconv.Itoa(len(r.filed)), Status: "PENDING"}, nil
+	n, onFile := len(r.filed), r.onFile
+	r.mu.Unlock()
+	if onFile != nil {
+		onFile(n)
+	}
+	return analyzer.ReviewResult{ID: "r" + strconv.Itoa(n), Status: "PENDING"}, nil
 }
 
 func (r *pinReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult, error) {
@@ -1124,5 +1130,68 @@ func TestAHandoffOutcomeReportsTheResolvedAction(t *testing.T) {
 	defer mu.Unlock()
 	if !slices.Equal(outcomes, want) {
 		t.Errorf("outcomes = %+v, want %+v", outcomes, want)
+	}
+}
+
+// Under send: redacted two statements can read the same to the agent. A pin
+// binds to the bytes filed too, so the second statement never claims the
+// first one's request: it is decided and filed on its own.
+func TestAPinBindsToTheFiledBytes(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+	rev := &pinReviewer{claim: answer("r1", "EXECUTED", true)}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
+		c.Review = rev
+		c.Redact = strings.NewReplacer("ana@x.io", "<EMAIL>", "bob@x.io", "<EMAIL>").Replace
+		returnMode(c)
+	})
+	first := sqlStmt("DELETE FROM users WHERE email = 'ana@x.io'", inspect.OpDelete, "users")
+	second := sqlStmt("DELETE FROM users WHERE email = 'bob@x.io'", inspect.OpDelete, "users")
+	if v := ev.Evaluate(first); !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r1" {
+		t.Fatalf("first: %+v, want a pending r1", v)
+	}
+	v := ev.Evaluate(second)
+	if !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("second: %+v, want its own pending r2, not r1's release", v)
+	}
+	filed, claimed := rev.counts()
+	if len(claimed) != 0 || !slices.Equal(filed, []string{first.Text, second.Text}) || len(p.asks()) != 2 {
+		t.Errorf("filed %q, claimed %v, asked %d; want each statement filed and decided on its own",
+			filed, claimed, len(p.asks()))
+	}
+	// The first statement's resend still claims its own request.
+	ev.Evaluate(first)
+	if _, claimed := rev.counts(); !slices.Equal(claimed, []string{"r1"}) {
+		t.Errorf("claimed %v, want r1 for the first statement's resend", claimed)
+	}
+}
+
+// A filing whose answer arrives late does not replace the pin of a filing
+// that started after it: R1's answer lands after R2 is pinned, and the next
+// resend claims R2.
+func TestALateFilingDoesNotReplaceANewerPin(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+	rev := &pinReviewer{claim: func(id string) (analyzer.ReviewResult, error) {
+		return analyzer.ReviewResult{ID: id, Status: "PENDING"}, nil
+	}}
+	ev := pinEvaluator(t, p, rev)
+	var b policy.Verdict
+	rev.onFile = func(n int) {
+		if n == 1 {
+			// R1's answer is in flight: B files and pins R2 first.
+			b = ev.Evaluate(deleteStatement())
+		}
+	}
+	if a := ev.Evaluate(deleteStatement()); !a.Denied || a.Annotations[analyzer.MetadataReviewID] != "r1" {
+		t.Fatalf("A: %+v, want a pending r1", a)
+	}
+	if !b.Denied || b.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("B: %+v, want a pending r2", b)
+	}
+	if c := ev.Evaluate(deleteStatement()); !c.Denied || c.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("C: %+v, want r2 from the newer pin", c)
+	}
+	if _, claimed := rev.counts(); !slices.Equal(claimed, []string{"r2"}) {
+		t.Errorf("claimed %v, want r2", claimed)
 	}
 }

@@ -269,14 +269,15 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
 		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
 	memoKey := handoffKey(h, content)
+	pinKey := e.pinKey(memoKey, stmt)
 	// Before the cache, which may have lost the decision: a statement whose
 	// hold the agent selected asks about that request (handoffPins).
-	if pin, ok := e.pins.get(memoKey); ok && !skipPin {
+	if pin, ok := e.pins.get(pinKey); ok && pinKey != "" && !skipPin {
 		return handoffDecision{action: ActionRequireReview, reason: pin.reason,
-			pin: pinRef{key: memoKey, reason: pin.reason, reviewID: pin.reviewID}}
+			pin: pinRef{key: pinKey, reason: pin.reason, reviewID: pin.reviewID}}
 	}
 	if m, ok := e.cache.decision(c.key, memoKey); ok {
-		return withPin(handoffDecision{action: m.action, reason: m.reason}, memoKey)
+		return withPin(handoffDecision{action: m.action, reason: m.reason}, pinKey)
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
 	if !ok {
@@ -299,7 +300,7 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 		return failSafe(handoffUndecided, err)
 	}
 	e.cache.remember(c.key, memoKey, handoffMemo{action: d.action, reason: d.reason})
-	return withPin(d, memoKey)
+	return withPin(d, pinKey)
 }
 
 // withPin marks a require_review decision with the key its hold pins.

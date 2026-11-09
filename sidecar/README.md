@@ -1711,15 +1711,19 @@ cached reason. A fail-safe result is never cached. A cached
 `require_approval` still holds each statement for its own approval.
 
 A `require_approval` the agent selects also pins the pending approval request
-it files, in either `review_mode`, under the same fingerprint and apart from
-the cache. The resend of the same statement makes no model call and files
-nothing: it claims the pinned request (`POST /api/sidecars/reviews/<id>/claim`)
-and the plane decides. Approved, the statement runs on it. Still pending, it
-holds as a filed request does (return mode denies with the id). Rejected,
-revoked, expired, already used or gone, the pin is dropped and the agent
-decides again. A failed claim denies and keeps the pin. A newer filing for the
-same statement replaces the pin, and only the request a pin names can remove
-it. A pin lives at most 30 minutes after its filing, and 1024 newer pins push
+it files, in either `review_mode`, apart from the cache. The pin is keyed by
+the decision's fingerprint and by the exact bytes the request filed
+(`match_ignore` applied), so two statements that read the same to the agent
+under `send: redacted` never share one. The resend of the same statement
+makes no model call and files nothing: it claims the pinned request
+(`POST /api/sidecars/reviews/<id>/claim`) and the plane decides. Approved, the
+statement runs on it. Still pending, it holds as a filed request does (return
+mode denies with the id). Rejected, revoked, expired, already used or gone,
+the pin is dropped and the agent decides again. A failed claim denies and
+keeps the pin. A newer filing for the same statement replaces the pin, a
+filing answered after a newer one started does not, and only the request a
+pin names can remove it. A pin lives at most 30 minutes after its filing, and
+1024 newer pins push
 it out. It is per sidecar process: a restart, a reload or another replica asks
 the agent again. A fail-safe is never pinned. The statements metric reports
 `require_review` for a resend that claimed a pin.
