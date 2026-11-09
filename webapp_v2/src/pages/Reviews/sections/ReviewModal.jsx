@@ -15,6 +15,7 @@ import {
   Timer,
   Package,
   Users,
+  Workflow,
 } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
@@ -25,12 +26,14 @@ import Tooltip from '@/components/Tooltip'
 import { formatFullDate, formatRelativeTime } from '@/utils/datetime'
 import { useReviewStore } from '../store'
 import {
+  HANDOFF_ROUTE,
   STATUS,
   canApprove,
   canReject,
   canRevoke,
   decidedGroups,
   expiryLabel,
+  isHandoffReview,
   isSettled,
   isSidecarReview,
   reviewSource,
@@ -217,6 +220,14 @@ export default function ReviewModal({
               <Badge variant="light" color={risk.color} fullLabel>
                 {risk.label}
               </Badge>
+            </DetailRow>
+          )}
+
+          {isHandoffReview(review) && (
+            <DetailRow icon={Workflow} label="Route">
+              <Text size="sm" fw={500}>
+                {HANDOFF_ROUTE}
+              </Text>
             </DetailRow>
           )}
 

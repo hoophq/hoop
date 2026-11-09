@@ -58,6 +58,24 @@ const maxSidecarReviewSessions = 100
 // denial; metadata.sidecar.guardrails_omitted counts the rest.
 const maxSidecarGuardRails = 100
 
+// maxSidecarAIDecisions caps metadata.sidecar.ai_decisions per session;
+// metadata.sidecar.ai_decisions_dropped counts the rest.
+const maxSidecarAIDecisions = 200
+
+// maxSidecarAIDecisionReasonChars bounds a reason an entry stores. The
+// sidecar caps the agents' reasons below it.
+const maxSidecarAIDecisionReasonChars = 4096
+
+// maxSidecarAIDecisionsBytes caps the stored text of
+// metadata.sidecar.ai_decisions; an entry past it is counted in
+// ai_decisions_dropped. The reasons are the only free text an entry holds.
+const maxSidecarAIDecisionsBytes = 256 << 10
+
+// sidecarAIDecisionTextOverhead is what the stored jsonb text adds to an
+// entry's compact JSON at most: a space after each colon and comma of its
+// eleven keys (21), and the ", " that separates it from the previous entry.
+const sidecarAIDecisionTextOverhead = 23
+
 // maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
 // read; metrics.truncated marks it.
 const maxSidecarSessionStreamBytes = sessionwal.DefaultMaxRead
@@ -169,6 +187,8 @@ type sidecarSessionPlan struct {
 	ReviewIDs []string
 	// ReviewSessions are the review sessions linked before this batch.
 	ReviewSessions []string
+	// AIDecisions are appended to metadata.sidecar.ai_decisions.
+	AIDecisions []sidecarAIDecision
 
 	Accepted   int
 	Duplicates int
@@ -248,10 +268,29 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		truncated: metricBool(metrics, "truncated"),
 	}
 	guardRailsRoom, omitted := maxSidecarGuardRails, int64(0)
+	decisionsRoom, dropped := maxSidecarAIDecisions, int64(0)
+	decisionsBytesRoom := maxSidecarAIDecisionsBytes
 	if prior != nil {
 		guardRailsRoom -= prior.GuardRails
 		omitted = prior.GuardRailsOmitted
+		decisionsRoom -= prior.AIDecisions
+		decisionsBytesRoom -= prior.AIDecisionsBytes
+		dropped = prior.AIDecisionsDropped
 		plan.ReviewSessions = prior.ReviewSessions
+	}
+	addDecision := func(e daemon.SessionEvent) {
+		d, ok := sidecarAIDecisionFor(e)
+		if !ok {
+			return
+		}
+		size := sidecarAIDecisionSize(d)
+		if len(plan.AIDecisions) < decisionsRoom && size <= decisionsBytesRoom {
+			plan.AIDecisions = append(plan.AIDecisions, d)
+			decisionsBytesRoom -= size
+			return
+		}
+		dropped++
+		plan.Sidecar["ai_decisions_dropped"] = dropped
 	}
 	for _, e := range fresh {
 		ev := e.Event
@@ -259,11 +298,13 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		case audit.KindStatement:
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			plan.addReview(ev)
+			addDecision(e)
 		case audit.KindViolation:
 			elapsed, added := stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			// 1µs later: the raw view keys rows by elapsed time.
 			stream.add(ev.Timestamp.Add(time.Microsecond), streamError, denialText(ev))
 			plan.addReview(ev)
+			addDecision(e)
 			if len(plan.GuardRails) < guardRailsRoom {
 				rail := sidecarGuardRail(ev)
 				if added {
@@ -330,6 +371,92 @@ func (p *sidecarSessionPlan) addReview(ev audit.Event) {
 	if s := id.String(); !slices.Contains(p.ReviewIDs, s) {
 		p.ReviewIDs = append(p.ReviewIDs, s)
 	}
+}
+
+// sidecarAIDecision is one entry of metadata.sidecar.ai_decisions: what the
+// analyzer decided on one statement. Empty fields are left out. The reasons
+// are stored as the sidecar sent them: it redacts them before they leave.
+type sidecarAIDecision struct {
+	Seq                int64  `json:"seq"`
+	Timestamp          string `json:"timestamp,omitempty"`
+	RiskLevel          string `json:"risk_level,omitempty"`
+	RiskAction         string `json:"risk_action,omitempty"`
+	HandoffDecision    string `json:"handoff_decision,omitempty"`
+	HandoffReason      string `json:"handoff_reason,omitempty"`
+	Approver           string `json:"approver,omitempty"`
+	ApprovalDecision   string `json:"approval_decision,omitempty"`
+	ApprovalReasonCode string `json:"approval_reason_code,omitempty"`
+	ApprovalReason     string `json:"approval_reason,omitempty"`
+	ReviewID           string `json:"review_id,omitempty"`
+}
+
+// sidecarAIDecisionFor reads the analyzer's decision off an event. ok is
+// false when the analyzer rated nothing: the metadata has no known
+// risk_level. Every other field keeps only a value of the sidecar's
+// vocabulary, a reason cut to its bound, and a review id that parses.
+func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
+	md := e.Event.Metadata
+	level := md[analyzer.MetadataRiskLevel]
+	if !analyzer.RiskLevel(level).Valid() {
+		return sidecarAIDecision{}, false
+	}
+	d := sidecarAIDecision{
+		Seq:              e.Seq,
+		RiskLevel:        level,
+		RiskAction:       knownValue(md[analyzer.MetadataAction], analyzer.Action(md[analyzer.MetadataAction]).Valid()),
+		HandoffDecision:  knownValue(md[analyzer.MetadataHandoffDecision], handoffDecision(md[analyzer.MetadataHandoffDecision])),
+		HandoffReason:    truncateChars(pgText(md[analyzer.MetadataHandoffReason]), maxSidecarAIDecisionReasonChars),
+		Approver:         knownValue(md[analyzer.MetadataApprover], approverValue(md[analyzer.MetadataApprover])),
+		ApprovalDecision: knownValue(md[analyzer.MetadataApprovalDecision], approvalDecision(md[analyzer.MetadataApprovalDecision])),
+		ApprovalReasonCode: knownValue(md[analyzer.MetadataApprovalReasonCode],
+			analyzer.ReasonCode(md[analyzer.MetadataApprovalReasonCode]).Valid()),
+		ApprovalReason: truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
+	}
+	if !e.Event.Timestamp.IsZero() {
+		d.Timestamp = e.Event.Timestamp.UTC().Format(time.RFC3339Nano)
+	}
+	// An id the review page can open, or nothing.
+	if id, err := uuid.Parse(md[analyzer.MetadataReviewID]); err == nil {
+		d.ReviewID = id.String()
+	}
+	return d, true
+}
+
+// knownValue is v when it is of the vocabulary, else "".
+func knownValue(v string, known bool) string {
+	if !known {
+		return ""
+	}
+	return v
+}
+
+// handoffDecision reports an action the hand-off agent selects, in either
+// spelling of the hold.
+func handoffDecision(v string) bool {
+	switch analyzer.Action(v).Canonical() {
+	case analyzer.ActionAllow, analyzer.ActionWarn, analyzer.ActionBlock, analyzer.ActionRequireReview:
+		return true
+	}
+	return false
+}
+
+func approverValue(v string) bool {
+	return analyzer.Approver(v) == analyzer.ApproverHuman || analyzer.Approver(v) == analyzer.ApproverAIAgent
+}
+
+func approvalDecision(v string) bool {
+	return v == analyzer.DecisionApproved || v == analyzer.DecisionRejected
+}
+
+// sidecarAIDecisionSize is at least the bytes an entry adds to the stored
+// jsonb text: its compact JSON, which escapes no less than jsonb does, plus
+// the spaces jsonb writes.
+func sidecarAIDecisionSize(d sidecarAIDecision) int {
+	raw, err := json.Marshal(d)
+	if err != nil {
+		return maxSidecarAIDecisionsBytes + 1
+	}
+	return len(raw) + sidecarAIDecisionTextOverhead
 }
 
 // mergeReviewSessions adds linked to prior, in order, up to the cap.
@@ -733,6 +860,15 @@ func applySidecarSessionPlan(tx *gorm.DB, sc sidecarIdentity, plan sidecarSessio
 		}
 		if merged := mergeReviewSessions(plan.ReviewSessions, linked); len(merged) > len(plan.ReviewSessions) {
 			plan.Sidecar["review_sessions"] = merged
+		}
+	}
+	if len(plan.AIDecisions) > 0 {
+		entries, err := json.Marshal(plan.AIDecisions)
+		if err != nil {
+			return fmt.Errorf("encoding the AI decisions: %w", err)
+		}
+		if err := models.AppendSidecarSessionAIDecisionsTx(tx, orgID, plan.SessionID, entries); err != nil {
+			return fmt.Errorf("recording the AI decisions: %w", err)
 		}
 	}
 	if err := models.SetSidecarSessionProgress(tx, orgID, plan.SessionID, plan.Sidecar, plan.Metrics); err != nil {

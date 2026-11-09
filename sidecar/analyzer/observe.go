@@ -30,8 +30,9 @@ const (
 	// CallClassify is a risk classification.
 	CallClassify CallKind = "classify"
 
-	// CallDecide is the approval agent's decision on a held statement.
-	// It spends from the same purse as a classification.
+	// CallDecide is an agent's decision: the approval agent's on a held
+	// statement, or the hand-off agent's on an ai-handoff level. It spends
+	// from the same purse as a classification.
 	CallDecide CallKind = "decide"
 )
 
@@ -67,7 +68,9 @@ type Outcome struct {
 	Status string
 
 	// RiskLevel and Action are set for a classified statement (ok, cached)
-	// and empty otherwise. A refused statement carries ActionBlock.
+	// and empty otherwise. A refused statement carries ActionBlock. An
+	// ai-handoff level carries the action its hand-off resolved to: the
+	// agent's decision or the fail-safe, never ActionHandoff.
 	RiskLevel RiskLevel
 	Action    Action
 }
