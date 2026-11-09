@@ -4986,7 +4986,8 @@ block), the rule also matches the effects the scanner did see, so
 matches client statements only: a response carries no verb, so the codecs
 report it as `unknown`, and a rule naming `unknown` would otherwise refuse
 every response. The `operations` scope of every other rule type uses the
-same test.
+same test. Client bytes the codec cannot decode are also `unknown`, with the
+reason in `metadata.parse_error`, so a rule naming `unknown` refuses them.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
@@ -5133,6 +5134,26 @@ result := {"denied": true, "rule": "no-writes-to-customers"} if {
 
 `operation` stays the worst single effect and `tables` stays the flattened
 names, so a rule written before the split keeps firing.
+
+**Client bytes the codec cannot decode reach policy too.** The gate turns
+them into one `unknown` client statement with no text and the decode error
+in `metadata.parse_error`, judged after the statements decoded before them:
+
+```json
+{"input": {"protocol": "postgres", "direction": "client", "operation": "unknown",
+           "statement": "", "metadata": {"parse_error": "libhoop/codec/postgres: malformed message"}}}
+```
+
+```rego
+result := {"denied": true, "rule": "parse-error"} if input.metadata.parse_error
+```
+
+A denial refuses the bytes and ends the connection: after a decode error the
+codec no longer tracks the stream. A policy that allows the statement, or a
+lane with no policy, forwards the bytes and lets the upstream's own parser
+judge them. A rule naming `unknown` refuses them, as does OPA's undefined
+result with `fail_open: false`. Response bytes the codec cannot decode are
+still forwarded unjudged. The error is audited as `kind: error` either way.
 
 `phase` and `findings` appear only on a lane that consults OPA after a
 producer (see [Analyzing statements with a
