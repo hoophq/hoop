@@ -1195,3 +1195,33 @@ func TestALateFilingDoesNotReplaceANewerPin(t *testing.T) {
 		t.Errorf("claimed %v, want r2", claimed)
 	}
 }
+
+// A File that panics leaves no filing marked in flight, and publishes no
+// pin: the panic reaches the caller, and the next statement files afresh.
+func TestAPanickingFilingLeavesNoFilingBehind(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+	rev := &pinReviewer{claim: answer("r1", "PENDING", false)}
+	rev.onFile = func(n int) {
+		if n == 1 {
+			panic("the review backend broke")
+		}
+	}
+	ev := pinEvaluator(t, p, rev)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic did not reach the caller")
+			}
+		}()
+		ev.Evaluate(deleteStatement())
+	}()
+	if n := analyzer.PendingFilings(ev); n != 0 {
+		t.Errorf("%d filing(s) left in flight after the panic", n)
+	}
+	if v := ev.Evaluate(deleteStatement()); !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("after the panic: %+v, want a fresh pending r2", v)
+	}
+	if _, claimed := rev.counts(); len(claimed) != 0 {
+		t.Errorf("claimed %v; the panicking filing published a pin", claimed)
+	}
+}

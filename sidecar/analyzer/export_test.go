@@ -24,3 +24,10 @@ func ShareCache(dst, src *Evaluator) {
 func SetHandoffPinClock(e *Evaluator, now func() time.Time) {
 	e.pins.now = now
 }
+
+// PendingFilings counts the hand-off filings still marked in flight.
+func PendingFilings(e *Evaluator) int {
+	e.pins.mu.Lock()
+	defer e.pins.mu.Unlock()
+	return len(e.pins.filing)
+}

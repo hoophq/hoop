@@ -377,10 +377,13 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		notes[MetadataReviewMatchIgnored] = strconv.Itoa(ignored)
 	}
 	// A filing that may pin takes its number first: a late answer must
-	// not replace the pin of a filing that started after it.
+	// not replace the pin of a filing that started after it. The deferred
+	// finish ends a filing that never answered (a panicking File) without
+	// publishing; after the finish below it does nothing.
 	var gen uint64
 	if pin.key != "" {
 		gen = e.pins.begin(pin.key)
+		defer e.pins.finish(pin.key, gen, "", "", false)
 	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
