@@ -371,11 +371,32 @@ describe('POST /resources matches the CLJS wizard: Claude Code, MCP, MCP Gateway
     expect(payload()).toEqual(fixture('claude-code'))
   })
 
-  it('claude-code, Secrets Manager: the default URL takes the provider too', () => {
+  it('claude-code, Secrets Manager: the default URL stays a value (Q39)', () => {
     start('claude-code', 'cc-vault')
     store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
     typeKey(0, 'envvar:HEADER_X_API_KEY', 'secret/claude:KEY')
-    expect(payload()).toEqual(fixture('claude-code-vault'))
+    const cljs = fixture('claude-code-vault')
+    const secret = { ...cljs.roles[0].secret, 'envvar:REMOTE_URL': btoa('https://api.anthropic.com') }
+    expect(payload()).toEqual({ ...cljs, roles: [{ ...cljs.roles[0], secret }] })
+  })
+
+  it('Secrets Manager: a URL the admin typed or sourced takes the provider (Q39)', () => {
+    start('claude-code', 'cc-vault')
+    typeKey(0, 'envvar:REMOTE_URL', 'secret/claude:URL')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    expect(secretOf(role(0).credentials)['envvar:REMOTE_URL']).toBe(btoa('_vaultkv1:secret/claude:URL'))
+
+    start('claude-code', 'cc-vault')
+    role(0).credentials.getState().setFieldSource('envvar:REMOTE_URL', SOURCES.VAULT_KV1)
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    expect(secretOf(role(0).credentials)['envvar:REMOTE_URL']).toBe(btoa('_vaultkv1:https://api.anthropic.com'))
+  })
+
+  it('mcpproxy, Secrets Manager: a catalog URL stays a value (Q39)', () => {
+    start('mcpproxy', 'gw-c7')
+    role(0).credentials.getState().setFormValue('envvar:REMOTE_URL', 'https://mcp.context7.com/mcp')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    expect(secretOf(role(0).credentials)['envvar:REMOTE_URL']).toBe(btoa('https://mcp.context7.com/mcp'))
   })
 
   it('claude-code, Vertex: the URL from the region, every field manual', () => {
@@ -478,6 +499,42 @@ describe('POST /resources matches the CLJS wizard: Claude Code, MCP, MCP Gateway
     expect(sent.mcp_oauth_flow_id).toBe('flow-1')
     expect(sent.secret['envvar:HEADER_AUTHORIZATION']).toBe(btoa('Bearer t'))
     expect(sent.secret['envvar:MCP_AUTH']).toBe(btoa('static'))
+  })
+
+  it('an OAuth login is staged only for the server it was issued for (Q38)', () => {
+    start('mcpproxy', 'gw-oauth')
+    const credentials = role(0).credentials
+    setting(0, 'envvar:REMOTE_URL', 'https://b.example/mcp')
+    expect(credentials.getState().adoptMcpOAuth('https://a.example/mcp', 'Bearer a', 'flow-a')).toBe(false)
+    expect(payload().roles[0].secret).not.toHaveProperty('envvar:HEADER_AUTHORIZATION')
+    expect(payload().roles[0]).not.toHaveProperty('mcp_oauth_flow_id')
+
+    expect(credentials.getState().adoptMcpOAuth(' https://b.example/mcp ', 'Bearer b', 'flow-b')).toBe(true)
+    expect(payload().roles[0].secret['envvar:HEADER_AUTHORIZATION']).toBe(btoa('Bearer b'))
+    expect(payload().roles[0].mcp_oauth_flow_id).toBe('flow-b')
+  })
+
+  it.each([
+    ['the admin edits the URL', (s) => s.replaceSecret('envvar:REMOTE_URL', btoa('https://evil.example/mcp'))],
+    ['the admin picks a catalog server', (s) => s.setFormValue('envvar:REMOTE_URL', 'https://mcp.linear.app/mcp')],
+    ['the transport turns stdio', (s) => s.cancelSecretChange('envvar:REMOTE_URL')],
+  ])('drops the OAuth login when %s (Q38)', (_, change) => {
+    start('mcpproxy', 'gw-oauth')
+    const credentials = role(0).credentials
+    setting(0, 'envvar:REMOTE_URL', 'https://a.example/mcp')
+    credentials.getState().adoptMcpOAuth('https://a.example/mcp', 'Bearer a', 'flow-a')
+    change(credentials.getState())
+    const [sent] = payload().roles
+    expect(sent.secret).not.toHaveProperty('envvar:HEADER_AUTHORIZATION')
+    expect(sent).not.toHaveProperty('mcp_oauth_flow_id')
+  })
+
+  it('keeps a static Authorization header when the URL changes', () => {
+    start('mcpproxy', 'gw-custom')
+    setting(0, 'envvar:REMOTE_URL', 'https://a.example/mcp')
+    typeKey(0, 'envvar:HEADER_Authorization', 'tok-1')
+    setting(0, 'envvar:REMOTE_URL', 'https://b.example/mcp')
+    expect(payload().roles[0].secret['envvar:HEADER_Authorization']).toBe(btoa('tok-1'))
   })
 
   it.each([

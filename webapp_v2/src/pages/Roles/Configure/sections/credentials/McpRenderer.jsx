@@ -80,6 +80,8 @@ export default function McpRenderer({
   const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const createMode = useCredentialsStore((s) => Boolean(s.createMode))
+  const adoptMcpOAuth = useCredentialsStore((s) => s.adoptMcpOAuth)
 
   // Auth-flow-only inputs — never persisted as connection env vars.
   const [clientId, setClientId] = useState('')
@@ -111,7 +113,7 @@ export default function McpRenderer({
     showSnackbar({ level: 'error', text: 'MCP authorization failed', description: message, details })
   }
 
-  const redeemToken = async (flowId) => {
+  const redeemToken = async (flowId, serverUrl) => {
     if (!flowId) {
       finishError('Missing flow id')
       return
@@ -122,7 +124,12 @@ export default function McpRenderer({
         finishError('No token returned')
         return
       }
-      replaceSecret(AUTH_HEADER_KEY, encodeSecretValue(data.authorization_header))
+      if (!createMode) {
+        replaceSecret(AUTH_HEADER_KEY, encodeSecretValue(data.authorization_header))
+      } else if (!adoptMcpOAuth(data.server_url || serverUrl, data.authorization_header, flowId)) {
+        finishError('The server URL changed during authorization. Authorize again.')
+        return
+      }
       setBusy(false)
       setAuthError(null)
       showSnackbar({ level: 'success', text: 'MCP connection authorized' })
@@ -131,7 +138,7 @@ export default function McpRenderer({
     }
   }
 
-  const watchPopup = (popup) => {
+  const watchPopup = (popup, serverUrl) => {
     const started = Date.now()
     pollTimer.current = setInterval(() => {
       const stop = () => {
@@ -154,7 +161,7 @@ export default function McpRenderer({
       stop()
       popup.close()
       if (outcome.ok) {
-        redeemToken(outcome.flowId)
+        redeemToken(outcome.flowId, serverUrl)
       } else {
         const reason = outcome.reason
           ? `: ${outcome.reason.replace(/_/g, ' ')}`
@@ -192,7 +199,7 @@ export default function McpRenderer({
         finishError('Popup blocked. Allow popups for this site and retry.')
         return
       }
-      watchPopup(popup)
+      watchPopup(popup, serverUrl)
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to start authorization')
     }

@@ -174,6 +174,8 @@ export default function McpProxyRenderer({
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
   const setMcpOAuthFlowId = useCredentialsStore((s) => s.setMcpOAuthFlowId)
+  const adoptMcpOAuth = useCredentialsStore((s) => s.adoptMcpOAuth)
+  const setFormValue = useCredentialsStore((s) => s.setFormValue)
   const pendingFlowId = useCredentialsStore((s) => s.mcpOAuthFlowId)
   const commandDraft = useCredentialsStore((s) => s.drafts.command)
   const setDraft = useCredentialsStore((s) => s.setDraft)
@@ -188,6 +190,12 @@ export default function McpProxyRenderer({
   const pollTimer = useRef(null)
 
   useEffect(() => () => clearInterval(pollTimer.current), [])
+
+  const stopWatching = () => {
+    clearInterval(pollTimer.current)
+    pollTimer.current = null
+    setBusy(false)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -347,6 +355,7 @@ export default function McpProxyRenderer({
     if (!next || next === authMode) return
     setAuthModeOverride(next)
     if (createMode) {
+      stopWatching()
       setMcpOAuthFlowId(null)
       setAuthError(null)
       forgetCredential()
@@ -389,7 +398,7 @@ export default function McpProxyRenderer({
     })
   }
 
-  const redeemToken = async (flowId) => {
+  const redeemToken = async (flowId, serverUrl) => {
     if (!flowId) {
       finishError('Missing flow id')
       return
@@ -404,8 +413,15 @@ export default function McpProxyRenderer({
       // gateway adopt this login into a grant it can renew from the refresh
       // token (services.AdoptMCPOAuthGrant). Saving only the header leaves a
       // credential that dies at the provider's TTL.
-      replaceSecret(oauthKey, encodeSecretValue(data.authorization_header))
-      setMcpOAuthFlowId(flowId)
+      if (createMode) {
+        if (!adoptMcpOAuth(data.server_url || serverUrl, data.authorization_header, flowId)) {
+          finishError('The server URL changed during authorization. Authorize again.')
+          return
+        }
+      } else {
+        replaceSecret(oauthKey, encodeSecretValue(data.authorization_header))
+        setMcpOAuthFlowId(flowId)
+      }
       setBusy(false)
       setAuthError(null)
       showSnackbar({
@@ -418,7 +434,7 @@ export default function McpProxyRenderer({
     }
   }
 
-  const watchPopup = (popup) => {
+  const watchPopup = (popup, serverUrl) => {
     const started = Date.now()
     pollTimer.current = setInterval(() => {
       const stop = () => {
@@ -440,7 +456,7 @@ export default function McpProxyRenderer({
       if (!outcome) return
       stop()
       popup.close()
-      if (outcome.ok) redeemToken(outcome.flowId)
+      if (outcome.ok) redeemToken(outcome.flowId, serverUrl)
       else {
         const reason = outcome.reason ? `: ${outcome.reason.replace(/_/g, ' ')}` : ''
         finishError(`Authorization denied${reason}`)
@@ -474,7 +490,7 @@ export default function McpProxyRenderer({
         finishError('Popup blocked. Allow popups for this site and retry.')
         return
       }
-      watchPopup(popup)
+      watchPopup(popup, serverUrl)
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to start authorization')
     }
@@ -484,6 +500,7 @@ export default function McpProxyRenderer({
     setMcpOAuthFlowId(null)
     setAuthError(null)
     if (createMode) {
+      stopWatching()
       forgetCredential()
       return
     }
@@ -500,12 +517,13 @@ export default function McpProxyRenderer({
     if (!name || name === server) return
     const picked = catalog.entries.find((e) => e.name === name) || null
     setServer(name)
+    stopWatching()
     setMcpOAuthFlowId(null)
     setAuthError(null)
     forgetCredential()
     if (picked) {
       changeTransport(picked.transport || transport)
-      setSetting(ENV.remoteUrl, picked.url)
+      setFormValue(ENV.remoteUrl, picked.url)
     }
     // Kept when the new server accepts it, as coerce-auth-mode does.
     setAuthModeOverride(authMode)
