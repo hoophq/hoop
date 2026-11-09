@@ -97,10 +97,16 @@ locals {
 
   config_values = {
     simple        = yamlencode({ config = local.simple_config })
-    document      = yamlencode({ config = local.document })
+    # No admin listener: turn the admin Service off too, or it targets a
+    # port nothing binds. Two strings, not one object: the two shapes differ.
+    document = local.document_admin_on ? yamlencode({ config = local.document }) : yamlencode({
+      config  = local.document
+      service = { enabled = false }
+    })
     configmap     = yamlencode({ existingConfigMap = var.existing_config_map })
     control_plane = yamlencode({ controlPlane = { url = var.control_plane_url } })
   }[var.config_source]
+  document_admin_on = try(trimspace(local.document.admin.listen), "") != ""
 
   # A sidecar that runs its own file has nobody to approve a login code, so
   # the free tier runs with no login (ENG-906). control_plane has a credential.

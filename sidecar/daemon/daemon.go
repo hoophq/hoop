@@ -618,6 +618,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkHealthListen(cfg, strings.TrimSpace(os.Getenv(HealthListenEnv))); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs

@@ -32,7 +32,7 @@ func checkHealthListen(cfg *Config, addr string) error {
 	if addr == "" {
 		return nil
 	}
-	_, p, err := net.SplitHostPort(addr)
+	host, p, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("%s %q: want host:port: %w", HealthListenEnv, addr, err)
 	}
@@ -54,7 +54,7 @@ func checkHealthListen(cfg *Config, addr string) error {
 		"the admin listener (admin.listen)": cfg.Admin.Listen,
 		"the MCP server (mcp.listen)":       mcpListen,
 	} {
-		if n, ok := listenPort(other); ok && n == port {
+		if oh, n, ok := listenHostPort(other); ok && n == port && sameBindHost(host, oh) {
 			return clash(what)
 		}
 	}
@@ -62,13 +62,13 @@ func checkHealthListen(cfg *Config, addr string) error {
 		if l.Network == "unix" {
 			continue
 		}
-		first, ok := listenPort(l.listenAddress())
-		if !ok {
+		lh, first, ok := listenHostPort(l.listenAddress())
+		if !ok || !sameBindHost(host, lh) {
 			continue
 		}
 		last := first
-		// Slot mode binds first_port through first_port+count-1; Validate
-		// makes listen name first_port.
+		// Slot mode binds first_port through first_port+count-1 on the
+		// lane's host; Validate makes listen name first_port.
 		if l.ICA != nil && l.ICA.Slots != nil {
 			first, last = l.ICA.Slots.FirstPort, l.ICA.Slots.FirstPort+l.ICA.Slots.Count-1
 		}
@@ -79,15 +79,33 @@ func checkHealthListen(cfg *Config, addr string) error {
 	return nil
 }
 
-// listenPort resolves the port of a host:port the way net.Listen does: a
-// service name or a zero-padded number names the same port as its decimal.
-func listenPort(addr string) (int, bool) {
-	_, p, err := net.SplitHostPort(addr)
+// listenHostPort splits a host:port and resolves the port the way net.Listen
+// does: a service name or a zero-padded number names the same port as its
+// decimal.
+func listenHostPort(addr string) (string, int, bool) {
+	h, p, err := net.SplitHostPort(addr)
 	if err != nil {
-		return 0, false
+		return "", 0, false
 	}
 	n, err := net.LookupPort("tcp", p)
-	return n, err == nil && n != 0
+	return h, n, err == nil && n != 0
+}
+
+// sameBindHost reports whether two listeners on one port would collide: when
+// either binds every address, or both name the same one. Two distinct local
+// addresses can share a port.
+func sameBindHost(a, b string) bool {
+	wildcard := func(h string) bool {
+		ip := net.ParseIP(h)
+		return h == "" || (ip != nil && ip.IsUnspecified())
+	}
+	if wildcard(a) || wildcard(b) {
+		return true
+	}
+	if ia, ib := net.ParseIP(a), net.ParseIP(b); ia != nil && ib != nil {
+		return ia.Equal(ib)
+	}
+	return strings.EqualFold(a, b)
 }
 
 // handleHealth mounts /healthz and /readyz on mux. The admin listener and the

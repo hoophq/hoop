@@ -16,6 +16,10 @@ run "document_without_admin_is_accepted" {
     condition     = alltrue([for d in output.values_yaml : try(yamldecode(d).config.admin, null) == null])
     error_message = "a config document without admin rendered values that turn admin on"
   }
+  assert {
+    condition     = anytrue([for d in output.values_yaml : try(yamldecode(d).service.enabled == false, false)])
+    error_message = "admin off left the admin Service on, targeting a port nothing binds"
+  }
 }
 
 run "document_with_admin_on_another_port_is_refused" {
@@ -41,5 +45,9 @@ run "document_with_admin_on_19000_is_accepted" {
   assert {
     condition     = anytrue([for d in output.values_yaml : try(yamldecode(d).config.admin.listen == "0.0.0.0:19000", false)])
     error_message = "admin on 19000 did not reach the chart values"
+  }
+  assert {
+    condition     = alltrue([for d in output.values_yaml : try(yamldecode(d).service.enabled, true) != false])
+    error_message = "admin on 19000 turned the admin Service off"
   }
 }

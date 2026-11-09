@@ -89,8 +89,8 @@ func TestHealthListenerReturnsBindFailure(t *testing.T) {
 
 // A health port that another listener of the config also binds is refused
 // before anything binds, naming the other listener. An ICA slot range counts
-// as bound on every port it spans, and ports compare the way net.Listen
-// resolves them.
+// as bound on every port it spans, ports compare the way net.Listen resolves
+// them, and two distinct local addresses may share a port.
 func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 	cfg := &Config{
 		Admin: AdminConfig{Listen: "0.0.0.0:19000"},
@@ -109,6 +109,8 @@ func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 		{"0.0.0.0:19000", "admin listener"},
 		{"0.0.0.0:019000", "admin listener"},
 		{"0.0.0.0:8765", "MCP server"},
+		{"127.0.0.1:8765", "MCP server"},
+		{"127.0.0.1:15432", "appdb"},
 		{"0.0.0.0:15432", "appdb"},
 		{"0.0.0.0:19001", "desktops"},
 		{"0.0.0.0:19003", "desktops"},
@@ -122,7 +124,7 @@ func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 			t.Errorf("checkHealthListen(%q) = %v, want an error saying %q", tc.addr, err, tc.want)
 		}
 	}
-	for _, addr := range []string{"", "0.0.0.0:19005", "0.0.0.0:19006", "127.0.0.1:0"} {
+	for _, addr := range []string{"", "0.0.0.0:19005", "0.0.0.0:19006", "127.0.0.1:0", "10.0.0.5:8765"} {
 		if err := checkHealthListen(cfg, addr); err != nil {
 			t.Errorf("checkHealthListen(%q) = %v, want nil", addr, err)
 		}
