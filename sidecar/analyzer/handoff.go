@@ -226,6 +226,10 @@ type handoffDecision struct {
 
 	// cause is why the agent did not decide, or nil for a decision.
 	cause error
+
+	// pin is what a hold this decision files pins: set for a
+	// require_review the agent selected, never for a fail-safe.
+	pin pinRef
 }
 
 // handoffKey keys a hand-off decision on a classification's cache entry: the
@@ -237,10 +241,10 @@ func handoffKey(h *handoffLevel, content string) string {
 }
 
 // handoff runs the hand-off agent for one classified statement, or reuses
-// the decision the cache keeps for its shape and handoffKey. It never
-// returns an action the level does not allow. Anything but one valid call
-// of an allowed tool applies the most restrictive allowed action, and that
-// is never cached.
+// the decision a filed hold pinned, or the one the cache keeps for its shape
+// and handoffKey. It never returns an action the level does not allow.
+// Anything but one valid call of an allowed tool applies the most
+// restrictive allowed action, and that is never cached or pinned.
 func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
 	level RiskLevel, c classified) handoffDecision {
 	h := e.handoffs[level]
@@ -264,8 +268,13 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
 		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
 	memoKey := handoffKey(h, content)
+	// Before the cache, which may have lost the decision: a hold the agent
+	// selected answers its resend from the same approval (handoffPins).
+	if reason, ok := e.pins.get(memoKey); ok {
+		return handoffDecision{action: ActionRequireReview, reason: reason, pin: pinRef{memoKey, reason}}
+	}
 	if m, ok := e.cache.decision(c.key, memoKey); ok {
-		return handoffDecision{action: m.action, reason: m.reason}
+		return withPin(handoffDecision{action: m.action, reason: m.reason}, memoKey)
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
 	if !ok {
@@ -288,6 +297,14 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 		return failSafe(handoffUndecided, err)
 	}
 	e.cache.remember(c.key, memoKey, handoffMemo{action: d.action, reason: d.reason})
+	return withPin(d, memoKey)
+}
+
+// withPin marks a require_review decision with the key its hold pins.
+func withPin(d handoffDecision, key string) handoffDecision {
+	if d.action == ActionRequireReview {
+		d.pin = pinRef{key: key, reason: d.reason}
+	}
 	return d
 }
 
@@ -340,7 +357,7 @@ func (e *Evaluator) applyHandoff(stmt inspect.Statement, ec *policy.EvalContext,
 		return policy.Verdict{Annotations: notes}
 	case ActionRequireReview:
 		h := e.handoffs[level]
-		return e.requestApproval(stmt, ec, notes, level, c, h.approval.Approver, h.approvalPrompt, true)
+		return e.requestApproval(stmt, ec, notes, level, c, h.approval.Approver, h.approvalPrompt, true, d.pin)
 	}
 	msg := e.cfg.Message
 	if msg == "" {

@@ -310,9 +310,9 @@ const (
 // With no Chain to hand it to, it holds at once: nothing runs after a bare
 // evaluator, so here is already last.
 func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
-	ec *policy.EvalContext, notes map[string]string) policy.Verdict {
+	ec *policy.EvalContext, notes map[string]string, pin pinRef) policy.Verdict {
 	mode, source := e.reviewMode(ctx, stmt)
-	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source) }
+	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source, pin) }
 	if ec.RequestReview(policy.ReviewRequest{
 		Mode: string(mode), ModeSource: source, Resolve: resolve,
 	}) {
@@ -338,8 +338,11 @@ func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
 //
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
+//
+// A filed hold the hand-off agent selected pins that decision (pin), in any
+// mode, until the hold settles here: see handoffPins.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
-	mode ReviewMode, source string) policy.Verdict {
+	mode ReviewMode, source string, pin pinRef) (v policy.Verdict) {
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 
@@ -375,6 +378,14 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	}
 	if res.ID != "" {
 		notes[MetadataReviewID] = res.ID
+		if pin.key != "" {
+			e.pins.pin(pin.key, pin.reason)
+			defer func() {
+				if holdSettled(v) {
+					e.pins.unpin(pin.key)
+				}
+			}()
+		}
 	}
 	if res.Forward {
 		return e.release(ctx, notes, res)

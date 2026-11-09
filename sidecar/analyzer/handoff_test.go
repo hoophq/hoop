@@ -832,3 +832,130 @@ func TestAHandoffDecisionIsNotReusedForAnotherIdentifier(t *testing.T) {
 		t.Errorf("the same statement asked again: %d call(s), want 2", n)
 	}
 }
+
+// returnReviewer answers each filing with one pending review, or with its
+// release once approved is set, and keeps the statements filed.
+type returnReviewer struct {
+	mu         sync.Mutex
+	approved   bool
+	statements []string
+}
+
+func (r *returnReviewer) File(_ context.Context, statement string) (analyzer.ReviewResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.statements = append(r.statements, statement)
+	if r.approved {
+		return analyzer.ReviewResult{Forward: true, ID: "r1", Status: "EXECUTED"}, nil
+	}
+	return analyzer.ReviewResult{ID: "r1", Status: "PENDING"}, nil
+}
+
+func (r *returnReviewer) Claim(context.Context, string) (analyzer.ReviewResult, error) {
+	return analyzer.ReviewResult{}, errors.New("unused")
+}
+
+func (r *returnReviewer) filed() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.statements)
+}
+
+// testClock is a clock a test moves by hand.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) Add(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// A hold the hand-off agent selected is pinned once filed: with no verdict
+// cache, the resend of the same statement files again, with no hand-off
+// call, even when the agent would now allow it. The pin lasts the 30-minute
+// hold; after it the agent is asked again.
+func TestAFiledHandoffHoldIsPinnedForItsResend(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine now")}}
+	rev := &returnReviewer{}
+	clock := &testClock{now: time.Unix(1_700_000_000, 0)}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
+		c.Review = rev
+		returnMode(c)
+	})
+	analyzer.SetHandoffPinClock(ev, clock.Now)
+
+	v := ev.Evaluate(deleteStatement())
+	if !v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "require_approval" {
+		t.Fatalf("first: %+v, want the pending return-mode denial", v)
+	}
+	clock.Add(10 * time.Minute)
+	v = ev.Evaluate(deleteStatement())
+	if !v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "require_approval" ||
+		v.Annotations[analyzer.MetadataHandoffReason] != "needs a person" {
+		t.Fatalf("resend: %+v, want the pinned require_approval", v)
+	}
+	if n := len(p.asks()); n != 1 {
+		t.Errorf("asked the hand-off agent %d time(s), want one: the resend reads the pin", n)
+	}
+	if got := rev.filed(); len(got) != 2 || got[0] != got[1] || got[0] != deleteStatement().Text {
+		t.Errorf("filed %q, want the same statement twice", got)
+	}
+
+	// Past the hold's life the pin is gone, and the agent decides again.
+	clock.Add(31 * time.Minute)
+	v = ev.Evaluate(deleteStatement())
+	if v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
+		t.Fatalf("after the pin expired: %+v after %d ask(s)", v, len(p.asks()))
+	}
+}
+
+// The approved resend releases the statement and settles the hold, so the
+// pin goes and the next statement asks the agent again. A fail-safe hold is
+// never pinned.
+func TestASettledHandoffHoldDropsItsPin(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine")}}
+	rev := &returnReviewer{}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
+		c.Review = rev
+		returnMode(c)
+	})
+	ev.Evaluate(deleteStatement())
+	rev.mu.Lock()
+	rev.approved = true
+	rev.mu.Unlock()
+	if v := ev.Evaluate(deleteStatement()); v.Denied || len(p.asks()) != 1 {
+		t.Fatalf("the approved resend: %+v after %d ask(s), want released from the pin", v, len(p.asks()))
+	}
+	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
+		t.Fatalf("after release: %+v after %d ask(s), want a new decision", v, len(p.asks()))
+	}
+
+	// No block allowed: the fail-safe is require_approval, and it files
+	// without a pin.
+	allowed := []analyzer.Action{analyzer.ActionAllow, analyzer.ActionRequireApproval}
+	p = &handoffProvider{replies: []decideReply{{}, pick("allow", "fine")}}
+	rev = &returnReviewer{}
+	ev = handoffEvaluator(t, p, analyzer.Handoff{Allowed: allowed, Approval: approvalFor(allowed)},
+		func(c *analyzer.Config) {
+			c.Review = rev
+			returnMode(c)
+		})
+	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffReason] != "the hand-off agent did not decide" ||
+		len(rev.filed()) != 1 {
+		t.Fatalf("fail-safe: %+v, filed %d", v, len(rev.filed()))
+	}
+	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
+		t.Fatalf("after a fail-safe hold: %+v after %d ask(s), want a new decision", v, len(p.asks()))
+	}
+}

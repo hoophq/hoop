@@ -18,3 +18,9 @@ func SetRetryPacing(e *Evaluator, base, limit time.Duration) {
 func ShareCache(dst, src *Evaluator) {
 	dst.cache = src.cache
 }
+
+// SetHandoffPinClock replaces the clock the hand-off pins read, so a test
+// expires a pin without sleeping.
+func SetHandoffPinClock(e *Evaluator, now func() time.Time) {
+	e.pins.now = now
+}

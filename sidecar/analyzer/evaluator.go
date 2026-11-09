@@ -378,6 +378,9 @@ type Evaluator struct {
 	// level.
 	handoffs map[RiskLevel]*handoffLevel
 
+	// pins keeps the hand-off decisions whose hold was filed.
+	pins *handoffPins
+
 	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
 	// constants read directly, so a test can shorten them; nothing outside
 	// the package can.
@@ -504,6 +507,7 @@ func New(cfg Config) (*Evaluator, error) {
 		promptKey:    fingerprint(prompt),
 		agentPrompts: agentPrompts,
 		handoffs:     handoffs,
+		pins:         newHandoffPins(),
 		holds:        holds,
 		budget:       budget,
 		reviewWait:   ReviewWait,
@@ -656,7 +660,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
 		return e.requestApproval(stmt, ec, notes, level, c, e.cfg.Approvals[level].Approver,
-			e.agentPrompts[level], false)
+			e.agentPrompts[level], false, pinRef{})
 	}
 
 	if action != ActionBlock {
@@ -683,9 +687,9 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 // requestApproval holds a statement under its approver: the approval agent
 // with agentPrompt, a person who approves the level (human), or a person
 // under the lane's approval rule (""). handoff marks a hold the hand-off
-// agent selected.
+// agent selected, and pin is what its filing pins.
 func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
-	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool) policy.Verdict {
+	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
 	ctx := withHoldDetail(connContext(ec), HoldDetail{
 		Rule:        e.cfg.Rule,
 		RiskLevel:   level,
@@ -701,7 +705,7 @@ func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalConte
 	case ApproverHuman:
 		ctx = withFiledLevel(ctx, level)
 	}
-	return e.requestHold(ctx, stmt, ec, notes)
+	return e.requestHold(ctx, stmt, ec, notes, pin)
 }
 
 // connContext returns the context of the connection the statement arrived on,

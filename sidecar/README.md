@@ -1710,6 +1710,16 @@ for the same statement from the same user. A hit makes no call and keeps the
 cached reason. A fail-safe result is never cached. A cached
 `require_approval` still holds each statement for its own approval.
 
+A `require_approval` the agent selects is also pinned once its approval
+request is filed, in either `review_mode`, under the same fingerprint and
+apart from the cache: the resend of the same statement files again with no
+call, so the plane answers from the approved request, even with the cache off
+or after it dropped the decision. The pin ends when the hold settles in this
+process (released, rejected, revoked, expired or used), 30 minutes after the
+last filing, or when 1024 newer pins push it out. It is per sidecar process:
+a restart, a reload or another replica asks the agent again. A fail-safe is
+never pinned.
+
 The audit record keeps `risk_action: ai-handoff` and adds `handoff_decision`
 (`allow`, `warn`, `block` or `require_approval`) and `handoff_reason`. The
 agent's reason has the same leak risk as the approval agent's: the record and
