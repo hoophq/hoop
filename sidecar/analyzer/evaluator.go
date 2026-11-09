@@ -568,9 +568,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		level = res.RiskLevel
 		action = e.cfg.Actions.actionFor(level)
 	}
-	if status == StatusRefused {
+	switch {
+	case status == StatusRefused:
 		e.observe(status, "", ActionBlock)
-	} else {
+	case action == ActionHandoff:
+		// Observed below, with the action the hand-off resolved to.
+	default:
 		e.observe(status, level, action)
 	}
 	e.report(ec, status, level)
@@ -642,7 +645,8 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 
 	if action == ActionHandoff {
 		// risk_action stays ai-handoff; the decision and its reason ride
-		// beside it. A cached decision is reused, but a hold it selects
+		// beside it. The outcome reports the decision, the agent's or the
+		// fail-safe. A cached decision is reused, but a hold it selects
 		// still runs for this statement.
 		//
 		// The agent runs here, not deferred through ec.RequestReview like
@@ -651,7 +655,9 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// all: the decide phase must see that hold as input.review, and a
 		// hold asked for from inside a Resolve is never run, which would
 		// forward a statement the agent held.
-		return e.applyHandoff(stmt, ec, notes, level, c, e.handoff(ctx, stmt, ec, level, c))
+		d := e.handoff(ctx, stmt, ec, level, c)
+		e.observe(status, level, d.action)
+		return e.applyHandoff(stmt, ec, notes, level, c, d)
 	}
 
 	if action == ActionRequireReview {

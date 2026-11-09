@@ -522,3 +522,23 @@ func TestTheHandoffReasonIsRedactedForTheRecord(t *testing.T) {
 		})
 	}
 }
+
+// The statements series labels a hand-off level with the action it resolved
+// to, not ai-handoff.
+func TestTheHandoffMetricReportsTheResolvedAction(t *testing.T) {
+	metrics := newAnalyzerMetrics("stub", "m")
+	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: &handoffAgent{replies: []string{"warn"}}, metrics: metrics}
+	pol, err := buildPolicy("payments", GuardrailsConfig{}, handoffBlock("warn", "block"), nil, nil, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol.Evaluate(deleteFromUsers())
+	out := metrics.render()
+	if want := `hoop_inspect_analyzer_statements_total{analyzer="payments",status="ok",risk_level="high",action="warn"} 1`; !strings.Contains(out, want) {
+		t.Errorf("missing %s\n---\n%s", want, out)
+	}
+	if strings.Contains(out, `action="ai-handoff"`) {
+		t.Errorf("a hand-off statement was labelled ai-handoff:\n%s", out)
+	}
+}

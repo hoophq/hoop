@@ -2441,7 +2441,9 @@ at every sidecar does not mark one down.
 `analyzer` is the lane name for an analyzer block, the rule name for the
 deprecated rule form. The duration covers one provider call, retries
 included, so a timeout lands at `timeout_sec`. `kind` is `classify` for a
-risk classification and `decide` for the approval agent. Buckets run from
+risk classification and `decide` for the approval and hand-off agents.
+`action` on an `ai-handoff` level is the action the hand-off resolved to: the
+agent's decision or the fail-safe, never `ai-handoff`. Buckets run from
 0.25 s to 60 s. The counters survive hot reloads. Two queries worth having:
 
 ```
@@ -2715,7 +2717,8 @@ dashboard written against the old name goes dark.
 No metric carries a principal, a session id, a table or statement text:
 those are unbounded, and they belong on the span and the log record below.
 The analyzer families are the ones `GET /metrics` serves in Prometheus text,
-which stays as it is. Counters survive a hot reload.
+which stays as it is; `hoop.action` reports a hand-off level's resolved
+action, as `action` does there. Counters survive a hot reload.
 
 **Latency.** `hoop.sidecar.statement.duration` has one series per stage of a
 statement's life:

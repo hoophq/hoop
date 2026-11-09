@@ -959,3 +959,39 @@ func TestASettledHandoffHoldDropsItsPin(t *testing.T) {
 		t.Fatalf("after a fail-safe hold: %+v after %d ask(s), want a new decision", v, len(p.asks()))
 	}
 }
+
+// The outcome of a hand-off level reports the action it resolved to, the
+// agent's or the fail-safe, never ai-handoff; a cached decision reports the
+// same.
+func TestAHandoffOutcomeReportsTheResolvedAction(t *testing.T) {
+	var mu sync.Mutex
+	var outcomes []analyzer.Outcome
+	record := func(c *analyzer.Config) {
+		c.OnOutcome = func(o analyzer.Outcome) {
+			mu.Lock()
+			outcomes = append(outcomes, o)
+			mu.Unlock()
+		}
+	}
+	p := &handoffProvider{replies: []decideReply{pick("warn", "read only")}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, func(c *analyzer.Config) {
+		record(c)
+		withCache(c)
+	})
+	ev.Evaluate(deleteStatement())
+	ev.Evaluate(deleteStatement())
+
+	failing := handoffEvaluator(t, &handoffProvider{}, analyzer.Handoff{Allowed: allFour}, record)
+	failing.Evaluate(deleteStatement())
+
+	want := []analyzer.Outcome{
+		{Rule: "payments", Status: analyzer.StatusOK, RiskLevel: analyzer.RiskMedium, Action: analyzer.ActionWarn},
+		{Rule: "payments", Status: analyzer.StatusCached, RiskLevel: analyzer.RiskMedium, Action: analyzer.ActionWarn},
+		{Rule: "payments", Status: analyzer.StatusOK, RiskLevel: analyzer.RiskMedium, Action: analyzer.ActionBlock},
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(outcomes, want) {
+		t.Errorf("outcomes = %+v, want %+v", outcomes, want)
+	}
+}
