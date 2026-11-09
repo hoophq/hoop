@@ -12,8 +12,8 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
-// postgresFastMaskingFlag lets libhoop skip masking for catalog query
-// responses and mask batches at the same time.
+// postgresFastMaskingFlag lets libhoop mask only the computed, comment and
+// user table columns of a response to a catalog query.
 const postgresFastMaskingFlag = "experimental.postgres_fast_masking"
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
