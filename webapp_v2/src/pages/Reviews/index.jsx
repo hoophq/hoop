@@ -82,8 +82,10 @@ export default function Reviews() {
     return sortByNewest(reviews.filter(STATUS_FILTERS[filter]))
   }, [reviews, filter])
 
+  // The link names the review's session, or the review itself: a session's
+  // AI decisions know only the review id.
   const selected = useMemo(
-    () => reviews.find((review) => review.session === sessionId) ?? null,
+    () => reviews.find((review) => review.session === sessionId || review.id === sessionId) ?? null,
     [reviews, sessionId],
   )
 

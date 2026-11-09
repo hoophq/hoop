@@ -12,3 +12,9 @@ func SetReviewPacing(e *Evaluator, wait, poll time.Duration) {
 func SetRetryPacing(e *Evaluator, base, limit time.Duration) {
 	e.retryBase, e.retryCap = base, limit
 }
+
+// ShareCache makes dst read and write src's verdict cache, as one cache that
+// outlived a configuration change would.
+func ShareCache(dst, src *Evaluator) {
+	dst.cache = src.cache
+}

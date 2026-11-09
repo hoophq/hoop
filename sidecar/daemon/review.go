@@ -73,11 +73,13 @@ type planReviewer struct {
 
 // File implements analyzer.Reviewer. A hold under a level's human approver
 // (analyzer.FiledLevel) files that risk level and no approval_rule; the plane
-// then authorizes it against the level's groups.
+// then authorizes it against the level's groups. A hold the hand-off agent
+// selected (analyzer.ViaHandoff) says so with handoff.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	f := reviewFiling{listener: r.listener, rule: r.rule, statement: statement, reserve: r.reserve}
 	if level, ok := analyzer.FiledLevel(ctx); ok {
 		f.rule, f.level = "", level
+		f.handoff = analyzer.ViaHandoff(ctx)
 	}
 	res, err := r.cp.fileReview(ctx, f)
 	r.checkReserved(res)
@@ -238,10 +240,12 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 //
 // level set files under that level's human approver and omits
 // approval_rule; the plane reads approvers.<level> in the stored block.
+// handoff marks a hold the hand-off agent selected on an ai-handoff level.
 type reviewFiling struct {
 	listener, rule, statement string
 	reserve                   bool
 	level                     analyzer.RiskLevel
+	handoff                   bool
 }
 
 // fileReview runs one POST /api/sidecars/reviews.
@@ -269,6 +273,11 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 	} else {
 		under = fmt.Sprintf("the %s risk level's approvers", f.level)
 		req["risk_level"] = string(f.level)
+		// Only when set, so a level outside a hand-off sends the body it
+		// always sent.
+		if f.handoff {
+			req["handoff"] = true
+		}
 	}
 	// Only when set, so a lane that does not reserve sends the body it
 	// always sent.
