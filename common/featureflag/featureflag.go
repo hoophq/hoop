@@ -73,7 +73,7 @@ var catalog = map[string]Flag{
 	},
 	"experimental.postgres_fast_masking": {
 		Name:        "experimental.postgres_fast_masking",
-		Description: "Faster data masking on native Postgres connections, for IDEs such as DBeaver. In responses to catalog queries, object names and definitions read from system tables are not masked; table data, comments, computed values and system views still are. Output guardrails still run on every column. When off, every column of every result is masked.",
+		Description: "Faster data masking on native Postgres connections, for IDEs such as DBeaver. In responses to catalog queries, object names and definitions read from system tables are not masked; table data, comments, permission lists, computed values and system views still are. Output guardrails still run on every column. When off, every column of every result is masked.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
