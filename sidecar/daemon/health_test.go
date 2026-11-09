@@ -117,6 +117,8 @@ func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 		{"0.0.0.0:19003", "desktops"},
 		{"0.0.0.0:19004", "desktops"},
 		{"0.0.0.0:80", "web"},
+		{"[::]:15432", "appdb"},
+		{":15432", "appdb"},
 		{"19001", "host:port"},
 		{"0.0.0.0:no-such-service", "not a port number"},
 	} {
@@ -125,7 +127,9 @@ func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 			t.Errorf("checkHealthListen(%q) = %v, want an error saying %q", tc.addr, err, tc.want)
 		}
 	}
-	for _, addr := range []string{"", "0.0.0.0:19005", "0.0.0.0:19006", "127.0.0.1:0", "10.0.0.5:8765"} {
+	// [::1] is IPv6, and 0.0.0.0 leaves IPv6 free; 10.0.0.5 is a distinct
+	// IPv4 address from the MCP server's 127.0.0.1.
+	for _, addr := range []string{"", "0.0.0.0:19005", "0.0.0.0:19006", "127.0.0.1:0", "10.0.0.5:8765", "[::1]:19000"} {
 		if err := checkHealthListen(cfg, addr); err != nil {
 			t.Errorf("checkHealthListen(%q) = %v, want nil", addr, err)
 		}

@@ -131,7 +131,7 @@ spec:
         defaultValue: 1
     outputs:
       - name: admin_service
-        description: "Service of the admin server on 19000: /healthz, /stats, /config."
+        description: "Service of the admin server on 19000: /stats, /config. Empty when the config document turns admin off."
       - name: lane_ports
         description: Ports of the lane Service.
       - name: lane_service

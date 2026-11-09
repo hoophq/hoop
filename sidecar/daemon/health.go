@@ -91,18 +91,26 @@ func listenHostPort(addr string) (string, int, bool) {
 	return h, n, err == nil && n != 0
 }
 
-// sameBindHost reports whether two listeners on one port would collide: when
-// either binds every address, or both name the same one. Two distinct local
-// addresses can share a port.
+// sameBindHost reports whether two listeners on one port would collide. An
+// empty host or "::" binds every address of both families; "0.0.0.0" binds
+// every IPv4 address and leaves IPv6 free. Otherwise two literals collide when
+// equal, and a name collides with the same name. Names are not resolved: an
+// alias the check misses still fails at bind, loudly, as before.
 func sameBindHost(a, b string) bool {
-	wildcard := func(h string) bool {
-		ip := net.ParseIP(h)
-		return h == "" || (ip != nil && ip.IsUnspecified())
+	ia, ib := net.ParseIP(a), net.ParseIP(b)
+	allFamilies := func(h string, ip net.IP) bool {
+		return h == "" || (ip != nil && ip.IsUnspecified() && ip.To4() == nil)
 	}
-	if wildcard(a) || wildcard(b) {
+	if allFamilies(a, ia) || allFamilies(b, ib) {
 		return true
 	}
-	if ia, ib := net.ParseIP(a), net.ParseIP(b); ia != nil && ib != nil {
+	anyV4 := func(ip net.IP) bool { return ip != nil && ip.IsUnspecified() }
+	// A name may resolve to IPv4, so it counts as one against 0.0.0.0.
+	v4OrName := func(ip net.IP) bool { return ip == nil || ip.To4() != nil }
+	if (anyV4(ia) && v4OrName(ib)) || (anyV4(ib) && v4OrName(ia)) {
+		return true
+	}
+	if ia != nil && ib != nil {
 		return ia.Equal(ib)
 	}
 	return strings.EqualFold(a, b)

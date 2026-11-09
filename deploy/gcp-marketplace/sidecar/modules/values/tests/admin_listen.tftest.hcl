@@ -20,6 +20,10 @@ run "document_without_admin_is_accepted" {
     condition     = anytrue([for d in output.values_yaml : try(yamldecode(d).service.enabled == false, false)])
     error_message = "admin off left the admin Service on, targeting a port nothing binds"
   }
+  assert {
+    condition     = output.admin_service_enabled == false
+    error_message = "admin off still reports an admin Service"
+  }
 }
 
 run "document_with_admin_on_another_port_is_refused" {
@@ -49,5 +53,9 @@ run "document_with_admin_on_19000_is_accepted" {
   assert {
     condition     = alltrue([for d in output.values_yaml : try(yamldecode(d).service.enabled, true) != false])
     error_message = "admin on 19000 turned the admin Service off"
+  }
+  assert {
+    condition     = output.admin_service_enabled
+    error_message = "admin on 19000 reports no admin Service"
   }
 }

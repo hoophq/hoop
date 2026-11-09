@@ -50,3 +50,8 @@ output "lane_ports" {
   description = "Ports the lane Service publishes."
   value       = [for p in local.lane_ports : p.port]
 }
+
+output "admin_service_enabled" {
+  description = "Whether the values keep the chart's admin Service. False for a config document without admin."
+  value       = var.config_source != "document" || local.document_admin_on
+}
