@@ -1,3 +1,4 @@
+import { APPROVER_HUMAN, isHoldAction, readLevelApprover } from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -24,6 +25,7 @@ const RULE_TYPE_LABELS = {
   http_resource: 'HTTP resource',
   http_status: 'HTTP status',
   grpc_status: 'gRPC status',
+  mcp_tool: 'MCP tool',
 }
 
 // LaneAnalyzerConfig.HighRisk/MediumRisk/LowRisk (sidecar/daemon/analyzer.go).
@@ -33,6 +35,17 @@ const RISK_ACTIONS = {
   warn: 'warns',
   block: 'blocks',
   defer: 'reports',
+}
+
+// A held level names its approver in `approvers.<level>` (ENG-680). A hold
+// with no entry is decided through the block's approval rule.
+function riskDetail(spec, level) {
+  const action = spec[level]
+  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  const read = readLevelApprover(spec, level)
+  if (!read) return 'hold (approval rule)'
+  if (read.approver !== APPROVER_HUMAN) return 'hold (AI agent)'
+  return read.groups.length > 0 ? `hold (Human: ${read.groups.join(', ')})` : 'hold (Human: administrators)'
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -72,6 +85,9 @@ function ruleMatcher(rule) {
     case 'http_status':
     case 'grpc_status':
       return [join(rule.methods), join(rule.statuses)].filter(Boolean).join(' ') || null
+    case 'mcp_tool':
+      if (join(rule.allow)) return `allow only ${join(rule.allow)}`
+      return join(rule.tools) ? `deny ${join(rule.tools)}` : null
     default:
       return null
   }
@@ -102,7 +118,7 @@ function analyzerDetail(spec) {
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
     .filter((level) => spec[level])
-    .map((level) => `${level} ${RISK_ACTIONS[spec[level]] ?? spec[level]}`)
+    .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
   return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')

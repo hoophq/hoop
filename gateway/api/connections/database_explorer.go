@@ -394,13 +394,19 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
+	// MongoDB columns run on the same shell as the databases and tables queries
+	var cmdOverride []string
+	if currentConnectionType == pb.ConnectionTypeMongoDB {
+		cmdOverride = getConnectionCommandOverride(currentConnectionType, conn.Command)
+	}
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		ConnectionName: conn.Name,
-		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
-		UserAgent:      userAgent,
-		Verb:           pb.ClientVerbPlainExec,
+		OrgID:                     ctx.GetOrgID(),
+		ConnectionName:            conn.Name,
+		ConnectionCommandOverride: cmdOverride,
+		BearerToken:               apiroutes.GetAccessTokenFromRequest(c),
+		UserAgent:                 userAgent,
+		Verb:                      pb.ClientVerbPlainExec,
 	})
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)

@@ -58,22 +58,22 @@ grants := {
 
 # One listener, one service. The base stack has a single ext_authz caller
 # (:8443 -> httpbin); the grpc/ overlay adds :8444 -> ledger, the spanner/
-# overlay :8445 -> spanner, the clickhouse/ overlay :8446 -> clickhouse and
-# the kubernetes/ overlay :8447 -> kubernetes, and keying on the destination
-# port keeps this file the one policy all five stacks load. A port none of
-# the rules name yields an undefined service, and the grant check fails
-# closed on it.
+# overlay :8445 -> spanner, the clickhouse/ overlay :8446 and :8448 ->
+# clickhouse and the kubernetes/ overlay :8447 -> kubernetes, and keying on
+# the destination port keeps this file the one policy all five stacks load.
+# A port none of the rules name yields an undefined service, and the grant
+# check fails closed on it.
 listener_port := input.attributes.destination.address.socketAddress.portValue
 
 service := "ledger" if listener_port == 8444
 
 service := "spanner" if listener_port == 8445
 
-service := "clickhouse" if listener_port == 8446
+service := "clickhouse" if listener_port in {8446, 8448}
 
 service := "kubernetes" if listener_port == 8447
 
-service := "httpbin" if not listener_port in {8444, 8445, 8446, 8447}
+service := "httpbin" if not listener_port in {8444, 8445, 8446, 8447, 8448}
 
 allow if {
 	some svc in grants[user]

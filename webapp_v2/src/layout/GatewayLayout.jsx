@@ -7,6 +7,7 @@ import AppHeader from './Header/GatewayHeader';
 import LicenseBanner from './LicenseBanner';
 import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
+import SessionDetailsHost from '@/features/SessionDetails';
 import ApprovalNotifications from '@/features/ApprovalNotifications';
 
 const HEADER_HEIGHT = 56;
@@ -118,6 +119,7 @@ function GatewayLayout({ children }) {
       {/* Mounted here, outside AppShell, so it is available on React routes and
           on the ClojureApp catch-all alike. */}
       <NativeConnectionsDrawer />
+      <SessionDetailsHost />
       <ApprovalNotifications />
     </>
   );

@@ -2,7 +2,7 @@ import { Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
 import Table from '@/components/Table'
 import { formatRelativeTime } from '@/utils/datetime'
-import { STATUS, reviewSource, statusLabel } from '../helpers'
+import { STATUS, reviewSource, ruleLabel, statusLabel } from '../helpers'
 import classes from './ReviewsTable.module.css'
 
 export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSelect }) {
@@ -20,6 +20,7 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
         {reviews.map((review) => {
           const source = reviewSource(review, sidecarsById)
           const status = statusLabel(review)
+          const rule = ruleLabel(review)
           const live = review.status === STATUS.PENDING || review.status === STATUS.APPROVED
           return (
             <Table.Tr
@@ -41,8 +42,8 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
                 </Stack>
               </Table.Td>
               <Table.Td miw={160}>
-                <Text size="sm" c={review.access_request_rule_name ? undefined : 'dimmed'}>
-                  {review.access_request_rule_name ?? '—'}
+                <Text size="sm" c={rule ? undefined : 'dimmed'}>
+                  {rule ?? '—'}
                 </Text>
               </Table.Td>
               <Table.Td miw={120}>

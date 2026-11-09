@@ -7,6 +7,7 @@ import {
   CircleCheckBig,
   CircleUser,
   Container,
+  Gauge,
   Hash,
   Hourglass,
   OctagonX,
@@ -33,6 +34,7 @@ import {
   isSettled,
   isSidecarReview,
   reviewSource,
+  riskLevel,
   statusLabel,
 } from '../helpers'
 
@@ -172,6 +174,7 @@ export default function ReviewModal({
   const mayReject = canReject(review, user)
   const revocable = canRevoke(review)
   const expiry = expiryLabel(review)
+  const risk = riskLevel(review)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Approval Details" size="xl">
@@ -206,6 +209,14 @@ export default function ReviewModal({
               <Text size="sm" fw={500}>
                 {review.access_request_rule_name}
               </Text>
+            </DetailRow>
+          )}
+
+          {risk && (
+            <DetailRow icon={Gauge} label="Risk level">
+              <Badge variant="light" color={risk.color} fullLabel>
+                {risk.label}
+              </Badge>
             </DetailRow>
           )}
 

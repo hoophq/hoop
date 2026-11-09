@@ -20,6 +20,9 @@ func TestAnalyzerMetricsExposition(t *testing.T) {
 	m.call(analyzer.Call{Rule: "k8sapi", Outcome: analyzer.CallTimeout, Duration: 90 * time.Second, Attempts: 1,
 		Err: errors.New("deadline")})
 	m.call(analyzer.Call{Rule: `we"ird`, Outcome: analyzer.CallOK, Duration: time.Second, Attempts: 1})
+	// The approval agent's call is its own series, under the same lane.
+	m.call(analyzer.Call{Rule: "k8sapi", Kind: analyzer.CallDecide, Outcome: analyzer.CallOK,
+		Duration: time.Second, Attempts: 2})
 	m.outcome(analyzer.Outcome{Rule: "k8sapi", Status: analyzer.StatusCached, RiskLevel: analyzer.RiskLow, Action: analyzer.ActionAllow})
 	m.outcome(analyzer.Outcome{Rule: "k8sapi", Status: analyzer.StatusCached, RiskLevel: analyzer.RiskLow, Action: analyzer.ActionAllow})
 
@@ -29,8 +32,9 @@ func TestAnalyzerMetricsExposition(t *testing.T) {
 	}
 	out := b.String()
 
-	const ok = `analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",outcome="ok"`
-	const timeout = `analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",outcome="timeout"`
+	const ok = `analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",outcome="ok",kind="classify"`
+	const timeout = `analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",outcome="timeout",kind="classify"`
+	const decide = `analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",outcome="ok",kind="decide"`
 	for _, line := range []string{
 		"# TYPE hoop_inspect_analyzer_request_duration_seconds histogram",
 		`hoop_inspect_analyzer_request_duration_seconds_bucket{` + ok + `,le="0.25"} 0`,
@@ -44,7 +48,9 @@ func TestAnalyzerMetricsExposition(t *testing.T) {
 		`hoop_inspect_analyzer_request_duration_seconds_bucket{` + timeout + `,le="60"} 0`,
 		`hoop_inspect_analyzer_request_duration_seconds_bucket{` + timeout + `,le="+Inf"} 1`,
 		`analyzer="we\"ird"`,
-		`hoop_inspect_analyzer_retries_total{analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash"} 2`,
+		`hoop_inspect_analyzer_retries_total{analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",kind="classify"} 2`,
+		`hoop_inspect_analyzer_request_duration_seconds_count{` + decide + `} 1`,
+		`hoop_inspect_analyzer_retries_total{analyzer="k8sapi",provider="vertex",model="gemini-3.8-flash",kind="decide"} 1`,
 		`hoop_inspect_analyzer_statements_total{analyzer="k8sapi",status="cached",risk_level="low",action="allow"} 2`,
 	} {
 		if !strings.Contains(out, line) {

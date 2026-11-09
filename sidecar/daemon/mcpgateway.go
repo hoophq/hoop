@@ -30,14 +30,15 @@ func isMCPGateway(lc ListenerConfig) bool {
 // and mcpproxy's session policy. Tool allow and deny are guardrail rules of
 // type mcp_tool.
 type MCPGatewayConfig struct {
-	Transport          string                     `json:"transport,omitempty"`
-	BlockSampling      *bool                      `json:"block_sampling,omitempty"`
-	BlockElicitation   *bool                      `json:"block_elicitation,omitempty"`
-	OnRugPull          string                     `json:"on_rug_pull,omitempty"`
-	MaxCallsPerSession int                        `json:"max_calls_per_session,omitempty"`
-	MaxResultKB        int                        `json:"max_result_kb,omitempty"`
-	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty"`
-	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty"`
+	Transport string `json:"transport,omitempty" label:"Transport" help:"How the sidecar reaches the MCP server." enum:"streamable-http,sse" default:"streamable-http"`
+	// Out of the form: they default to true, and the form writes a switch only when it is on.
+	BlockSampling      *bool                      `json:"block_sampling,omitempty" ui:"-"`
+	BlockElicitation   *bool                      `json:"block_elicitation,omitempty" ui:"-"`
+	OnRugPull          string                     `json:"on_rug_pull,omitempty" label:"On a rug pull" help:"A later tools/list that changes the description or input schema of a listed tool. kill ends the session; alert records it and goes on." enum:"kill,alert" default:"kill"`
+	MaxCallsPerSession int                        `json:"max_calls_per_session,omitempty" label:"Max tool calls per session" help:"A refused call counts too. 0 is unlimited."`
+	MaxResultKB        int                        `json:"max_result_kb,omitempty" label:"Max result size (KiB)" help:"Cuts the text of a tool result to this size. 0 is unlimited."`
+	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty" ui:"-"`
+	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty" ui:"-"`
 }
 
 type MCPToolOverride struct {
@@ -71,14 +72,11 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": an mcp listener listens on tcp; MCP clients do not connect to unix sockets")
 	} else if host, _, err := net.SplitHostPort(lc.Listen); err != nil {
 		problems = append(problems, name+": an mcp listener needs listen as host:port")
-	} else if !loopbackHost(host) {
-		problems = append(problems, name+": an mcp listener may bind only a loopback address until it authenticates its callers")
+	} else if !loopbackHost(host) && lc.CallerToken == nil {
+		problems = append(problems, name+": an mcp listener binds a non-loopback address only with caller_token, which authenticates its callers")
 	}
 	if lc.MaxConns > 0 {
 		problems = append(problems, name+": max_conns does not apply to an mcp listener; MCP runs over HTTP requests, not long connections")
-	}
-	if lc.DownstreamTLS != nil {
-		problems = append(problems, name+": downstream_tls is not supported on an mcp listener yet")
 	}
 	m := lc.MCPGateway
 	if m == nil {
@@ -148,6 +146,16 @@ type MCPLaneSession interface {
 	Close(ctx context.Context)
 }
 
+// MCPCallerCheck admits a request by its Header, which the engine removes
+// before mcpproxy reads the request.
+type MCPCallerCheck struct {
+	Header string
+	// Resolve names the caller of credential, the header's values joined by
+	// ", ". Key tells apart the callers one subject stands for; it never
+	// leaves the process.
+	Resolve func(ctx context.Context, credential string) (subject, key string, err error)
+}
+
 // MCPGatewayLane is the daemon's input to the engine for one lane.
 type MCPGatewayLane struct {
 	Name           string
@@ -157,6 +165,11 @@ type MCPGatewayLane struct {
 	Policy         MCPGatewayConfig
 	UpstreamTLS    *tls.Config
 	IdentityHeader string
+	// DownstreamTLS is the certificate MCP clients are served with; nil
+	// serves plain HTTP.
+	DownstreamTLS *tls.Config
+	// Caller, when set, admits only the requests it resolves.
+	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
 	// Open starts the sidecar session for one MCP session. Nil on a
@@ -229,6 +242,14 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 	if tlsConf == nil {
 		tlsConf = &tls.Config{RootCAs: ln.trustRoots, MinVersion: tls.VersionTLS12}
 	}
+	downstream, err := lc.DownstreamTLS.BuildDownstreamTLS()
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
+	caller, err := mcpCallerCheck(ln)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
 	rules := newLiveRules(ln)
 	laneLog := log.With("listener", ln.name)
 	resolved := MCPGatewayLane{
@@ -238,6 +259,8 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		Transport:          lc.MCPGateway.transport(),
 		UpstreamTLS:        tlsConf,
 		IdentityHeader:     lc.IdentityHeader,
+		DownstreamTLS:      downstream,
+		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
 		Log:                laneLog,
 	}

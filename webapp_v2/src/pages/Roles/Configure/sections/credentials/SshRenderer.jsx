@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
 import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
@@ -52,10 +52,15 @@ function deriveAuthMethod(connection) {
 }
 
 export default function SshRenderer({ connection, availableSources, forceNewState, hideRoleInfo }) {
-  const initialMethod = useMemo(() => deriveAuthMethod(connection), [connection])
-  const [authMethod, setAuthMethod] = useState(initialMethod)
+  const createMode = useCredentialsStore((s) => s.createMode)
+  // A new role has no stored secret: a typed key means key auth.
+  const keyTyped = useCredentialsStore((s) => 'envvar:AUTHORIZED_SERVER_KEYS' in s.stagedSecrets)
+  const [authMethod, setAuthMethod] = useState(() =>
+    createMode && keyTyped ? 'key' : deriveAuthMethod(connection),
+  )
   const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const chooseSshAuth = useCredentialsStore((s) => s.chooseSshAuth)
   const setDraft = useCredentialsStore((s) => s.setDraft)
   const draftSubtype = useCredentialsStore((s) => s.drafts.subtype)
 
@@ -81,6 +86,10 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
     const secrets = connection?.secret || {}
     const passKey = 'envvar:PASS'
     const keyKey = 'envvar:AUTHORIZED_SERVER_KEYS'
+    if (createMode) {
+      chooseSshAuth(next)
+      return
+    }
     if (next === 'password') {
       cancelSecretChange(passKey)
       if (keyKey in secrets) deleteSecret(keyKey)

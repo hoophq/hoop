@@ -22,9 +22,18 @@ export const emptyRule = () => ({
   resources: [],
   methods: [],
   statuses: [],
+  tools: [],
+  allow: [],
+  // Form state only: the list an mcp_tool rule edits.
+  mcpList: 'tools',
 })
 
-const withKey = (rule) => ({ ...emptyRule(), ...rule, key: Math.random().toString(36).slice(2) })
+const withKey = (rule) => ({
+  ...emptyRule(),
+  ...rule,
+  mcpList: rule.allow?.length > 0 ? 'allow' : 'tools',
+  key: Math.random().toString(36).slice(2),
+})
 
 // The spec is the UI's truth for statement rules; the agent `input` half is
 // read only when there is no spec, since save rewrites it from the spec. An

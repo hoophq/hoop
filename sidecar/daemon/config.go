@@ -190,6 +190,11 @@ type Config struct {
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
 
+	// fileDeprecations are deprecations reported only when this document
+	// is a local file; see fileDeprecations. SetupWith adds them to
+	// Deprecations when the file is what runs.
+	fileDeprecations []string
+
 	// lic is the VERIFIED license resolveLicenseFor reached. Setup fills it,
 	// UseLicense sets it for a caller assembling a Config in Go. Not a
 	// config key: the file names a license and does not carry a verdict.
@@ -336,7 +341,7 @@ type ListenerConfig struct {
 	// Upstream is the real backend. An http listener also takes a URL,
 	// which makes it a reverse proxy in front of that origin; see
 	// address.go.
-	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode." protocols:"!ssh" ui:"required,basic"`
+	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode. An mcp listener takes the MCP endpoint URL, such as https://mcp.example.com/mcp." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
@@ -362,6 +367,8 @@ type ListenerConfig struct {
 	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
+	// An mcp lane serves MCP over TLS with it.
+	//
 	// MySQL negotiates in-band too and is still refused, because the relay
 	// does not speak that exchange: the server greets first there, and the
 	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
@@ -371,7 +378,7 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner,mcp" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
@@ -401,12 +408,12 @@ type ListenerConfig struct {
 
 	// CallerToken refuses every request whose header does not hold a token
 	// listed in a file on the sidecar host, and names the caller with a
-	// configured name. http lanes only, and exclusive with identity_header
+	// configured name. http and mcp lanes only, and exclusive with identity_header
 	// and google_identity: one lane, one authority for who the caller is.
 	//
 	// It is for a lane reachable from anywhere, where identity_header would
 	// let any caller claim any name. See CallerTokenConfig.
-	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
+	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http,mcp" ui:"presence"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -502,8 +509,7 @@ type ListenerConfig struct {
 	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
 
 	// MCPGateway is an mcp lane upstream transport and mcpproxy tool policy.
-	// Out of the control plane form for now.
-	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" ui:"-"`
+	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" label:"MCP gateway" help:"How the sidecar reaches the MCP server, and the limits of one MCP session." protocols:"mcp"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a
@@ -844,6 +850,9 @@ func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 // AdminConfig configures the health/stats endpoint.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
+	// ICAReadinessJSON lets an external relay require explicit live engine
+	// inspection attestation. Default keeps the existing plaintext /readyz API.
+	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty" cap:"ica_readiness_json"`
 }
 
 // LoadConfig reads and validates a config file.
@@ -1002,6 +1011,7 @@ func (c *Config) normalize() error {
 			warnAIRules(where+": guardrails", lc.Guardrails.Rules, warn)
 			foldRuleApprovalActions(lc.Guardrails.Rules)
 		}
+		c.fileDeprecations = append(c.fileDeprecations, fileDeprecations(where, lc.Analyzer)...)
 		if err := foldApprovalSpellings(lc.Analyzer); err != nil {
 			conflict("%s: analyzer: %v", where, err)
 		}
@@ -1020,10 +1030,10 @@ func (c *Config) normalize() error {
 // onto the canonical review ones: approval_mode onto review_mode, and
 // require_approval onto require_review on every risk level.
 //
-// Aliases, not deprecations: the product calls the concept approval, and an
-// operator who writes it that way is not behind. No warning, then. The
-// canonical names stay because the plane serves them and every released
-// sidecar decodes them; after this, nothing reads the alias.
+// Aliases, not deprecations: the plane serves the canonical names and every
+// released sidecar decodes them, so a document the plane served is never
+// warned about. A local file that writes require_review is; see
+// fileDeprecations.
 //
 // Both keys set and equal is the same setting written twice, and loads.
 // Both set and different is refused, for the reason normalize gives; the
@@ -1047,6 +1057,30 @@ func foldApprovalSpellings(la *LaneAnalyzerConfig) error {
 	la.MediumRisk = canonicalAction(la.MediumRisk)
 	la.LowRisk = canonicalAction(la.LowRisk)
 	return nil
+}
+
+// fileDeprecations lists the deprecated spellings of an analyzer block that
+// only a local file is told about: the require_review spelling and the
+// listener approval_rule. The plane serves both to older builds itself, so
+// a served document must not warn. Read before foldApprovalSpellings.
+func fileDeprecations(where string, la *LaneAnalyzerConfig) []string {
+	if la == nil {
+		return nil
+	}
+	var out []string
+	for _, l := range la.levels() {
+		if analyzer.Action(*l.action) == analyzer.ActionRequireReview {
+			out = append(out, fmt.Sprintf("%s: analyzer: %s risk: require_review is deprecated; "+
+				"write require_approval", where, l.name))
+		}
+	}
+	if la.ApprovalRule != "" {
+		out = append(out, fmt.Sprintf("%s: analyzer: approval_rule is deprecated; write each held "+
+			"level as approvers.<level>: {type: human, groups: [...]}. "+
+			"-migrate cannot convert it: the groups are in the control plane's rule %q",
+			where, la.ApprovalRule))
+	}
+	return out
 }
 
 // Canonicalize folds the approval spellings of one analyzer block, as
@@ -1465,13 +1499,13 @@ func (c *Config) validate(onHost bool) error {
 
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
-		// negotiates in-band; grpc/spanner, ClickHouse and http use
+		// negotiates in-band; grpc/spanner, ClickHouse, http and mcp use
 		// TLS-on-connect, http with ALPN.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) && !isMCPGateway(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc, spanner and mcp, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -1511,9 +1545,9 @@ func (c *Config) validate(onHost bool) error {
 			}
 		}
 		if l.CallerToken != nil {
-			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+			if (inspect.Protocol(l.Protocol) != inspect.HTTP && !isMCPGateway(l)) || isGRPCTransport(l) || isSSH(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: caller_token is only supported on http, not %q", name, l.Protocol))
+					"%s: caller_token is only supported on http and mcp, not %q", name, l.Protocol))
 			}
 			if l.IdentityHeader != "" {
 				problems = append(problems, fmt.Sprintf(
@@ -1523,7 +1557,7 @@ func (c *Config) validate(onHost bool) error {
 				problems = append(problems, fmt.Sprintf(
 					"%s: caller_token and google_identity both name the caller; keep one", name))
 			}
-			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
+			problems = append(problems, l.CallerToken.validate(name, l)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
@@ -2000,7 +2034,7 @@ func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
 	gated := opa.enabled() && opa.Gate
 	if la != nil {
 		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated,
-			ac.reviewerFor(lane, la, gc.observing()))
+			ac.reviewerFor(lane, la, gc.observing()), gc.observing())
 		if err != nil {
 			return nil, err
 		}
@@ -2062,22 +2096,8 @@ func analyzerDefers(la *LaneAnalyzerConfig) bool {
 	if la == nil {
 		return false
 	}
-	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
-		if analyzer.Action(raw) == analyzer.ActionDefer {
-			return true
-		}
-	}
-	return false
-}
-
-// analyzerHolds reports whether a lane's analyzer block holds any risk level
-// for human approval: the require_review counterpart of analyzerDefers.
-func analyzerHolds(la *LaneAnalyzerConfig) bool {
-	if la == nil {
-		return false
-	}
-	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
-		if analyzer.Action(raw).Canonical() == analyzer.ActionRequireReview {
+	for _, l := range la.levels() {
+		if analyzer.Action(*l.action) == analyzer.ActionDefer {
 			return true
 		}
 	}

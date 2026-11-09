@@ -19,7 +19,7 @@
 // Guardrails
 // ---------------------------------------------------------------------------
 
-// The eight rule types, with the fields each one reads. `protocols` narrows
+// The rule types, with the fields each one reads. `protocols` narrows
 // which lanes may carry it: a sidecar REFUSES a rule its lane cannot read,
 // at startup, rather than skipping it at evaluation.
 //
@@ -76,6 +76,15 @@ export const GUARDRAIL_RULE_TYPES = [
     fields: ['statuses'],
     protocols: ['grpc', 'spanner'],
   },
+  {
+    // Sets one of the two: `tools` denies, `allow` lets only those through.
+    // It matches a tools/call only, so `call` is its one operations scope.
+    value: 'mcp_tool',
+    label: 'MCP tool',
+    fields: ['tools', 'allow'],
+    protocols: ['mcp'],
+    scope: ['call'],
+  },
 ]
 
 // Every operations value, by the protocol that produces it. The field is the
@@ -94,12 +103,15 @@ export const OPERATIONS = {
     'sftp_rename', 'sftp_mkdir', 'sftp_rmdir', 'sftp_list', 'sftp_stat',
     'sftp_setstat', 'sftp_symlink',
   ],
+  // call is a tools/call, show the tools/list catalog.
+  mcp: ['call', 'show'],
 }
 
 // Which operations family a listener protocol produces.
 export function operationsFor(protocol) {
   const p = (protocol ?? '').toLowerCase()
   if (p === 'ssh') return OPERATIONS.ssh
+  if (p === 'mcp') return OPERATIONS.mcp
   if (p === 'http' || p === 'grpc') return OPERATIONS.http
   return OPERATIONS.sql
 }
@@ -113,6 +125,11 @@ export const TABLE_ACCESS = [
 export const GUARDRAIL_ACTIONS = [
   { value: '', label: 'Deny the statement' },
   { value: 'defer', label: 'Report a finding, let Rego decide' },
+]
+
+export const MCP_TOOL_LISTS = [
+  { value: 'tools', label: 'Deny these tools' },
+  { value: 'allow', label: 'Allow only these tools' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -190,26 +207,46 @@ export const SSH_ONLY_STRATEGY = 'mask'
 // AI analyzer
 // ---------------------------------------------------------------------------
 
-// An unset level and an explicit `allow` do the same thing, and the list has
-// both because omitting the key keeps it out of the served document. They need
-// different LABELS: two entries reading "Allow" in one dropdown give the
-// operator no way to tell which one they picked.
+// An unset level and an explicit `allow` do the same thing; an unset one
+// stays out of the served document. The form shows an unset level as the
+// select's placeholder, so the list carries one "Allow" only.
 export const ANALYZER_ACTIONS = [
-  { value: '', label: 'Not set (allows)' },
-  { value: 'allow', label: 'Allow' },
-  { value: 'warn', label: 'Warn' },
-  { value: 'block', label: 'Block' },
-  { value: 'defer', label: 'Defer to Rego' },
+  { value: 'allow', label: 'Allow', description: 'Run with no check' },
+  { value: 'warn', label: 'Warn', description: 'Run and show a warning' },
+  { value: 'block', label: 'Block', description: 'Stop the statement' },
+  { value: 'defer', label: 'Defer to Rego', description: 'Let a Rego policy decide' },
 ]
 
-// The action that holds a statement for a human. It needs a second object
-// behind it (the rule naming who may release), which the form writes beside
-// it. Every protocol holds (EVL-312).
+// The action that holds a statement for approval. `require_approval` is the
+// newer spelling of the same action; the plane serves `require_review`.
 export const REVIEW_ACTION = 'require_review'
+const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_approval'])
+export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
 // analyzerActionsFor lists the level actions, the hold included.
 export function analyzerActionsFor() {
-  return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
+  return [
+    ...ANALYZER_ACTIONS,
+    { value: REVIEW_ACTION, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' },
+  ]
+}
+
+// Who decides a held statement of one risk level (ENG-680): the
+// `approvers.<level>.type` of an analyzer spec.
+export const APPROVER_AI = 'ai_agent'
+export const APPROVER_HUMAN = 'human'
+export const APPROVERS = [
+  { value: APPROVER_AI, label: 'AI agent', description: 'AI approves or rejects the request. No person is necessary.' },
+  { value: APPROVER_HUMAN, label: 'Human', description: 'A person approves or rejects the request. AI can select groups.' },
+]
+
+// readLevelApprover reads `approvers.<level>` of a stored analyzer spec. It is
+// null when the level has no entry: the spec's approval_rule decides that hold.
+export function readLevelApprover(spec, level) {
+  const entry = spec?.approvers?.[level]
+  if (entry?.type === APPROVER_HUMAN) return { approver: APPROVER_HUMAN, groups: entry.groups ?? [], prompt: '' }
+  if (entry?.type === APPROVER_AI) return { approver: APPROVER_AI, groups: [], prompt: entry.prompt ?? '' }
+  return null
 }
 
 // How a held statement answers its client. Hold is the sidecar's default, so

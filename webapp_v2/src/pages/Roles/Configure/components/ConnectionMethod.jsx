@@ -1,8 +1,10 @@
-import { Anchor, Group, Stack, Title } from '@mantine/core'
-import { FileSpreadsheet, GlobeLock, ExternalLink, Fingerprint } from 'lucide-react'
+import { Stack, Title } from '@mantine/core'
+import { FileSpreadsheet, GlobeLock, Fingerprint } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
+import SetupDocsHint from '@/components/SetupDocsHint'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
+import { docsUrl } from '@/utils/docsUrl'
 import { SOURCES, SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 const SECRETS_PROVIDERS = [
@@ -76,7 +78,7 @@ export function ConnectionMethodSection({
 
 export function SecretsManagerProviderSection({ provider, onProviderChange }) {
   return (
-    <Stack gap="xs">
+    <Stack gap={4}>
       <Select
         label="Secrets manager provider"
         data={SECRETS_PROVIDERS.map((p) => ({ value: p, label: SOURCE_LABELS[p] }))}
@@ -84,18 +86,10 @@ export function SecretsManagerProviderSection({ provider, onProviderChange }) {
         onChange={(v) => v && onProviderChange(v)}
         allowDeselect={false}
       />
-      <Anchor
-        size="sm"
-        href="https://hoop.dev/docs/setup/configuration/secrets-manager"
-        target="_blank"
-        rel="noopener noreferrer"
-        w="fit-content"
-      >
-        <Group gap={4} component="span" wrap="nowrap">
-          <ExternalLink size={12} />
-          Learn more about secrets manager setup
-        </Group>
-      </Anchor>
+      <SetupDocsHint
+        topic={provider === SOURCES.AWS_SECRETS_MANAGER ? 'AWS Secrets Manager' : 'HashiCorp Vault'}
+        href={docsUrl.setup.configuration.secretsManager}
+      />
     </Stack>
   )
 }

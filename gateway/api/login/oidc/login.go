@@ -33,10 +33,21 @@ type handler struct {
 	// newVerifier loads the OIDC verifier. Tests replace it to run the
 	// callback without an identity provider.
 	newVerifier func() (idp.OidcVerifier, error)
+	// newAnalytics builds the analytics client a sign-in reports to. Tests
+	// replace it to read what a sign-in sends. nil means analytics.New.
+	newAnalytics func() *analytics.Segment
 }
 
+// signupTrackDelay gives the signup Identify time to reach Intercom before the
+// hoop-signup event. Tests set it to zero.
+var signupTrackDelay = 10 * time.Second
+
 func New() *handler {
-	return &handler{apiURL: appconfig.Get().ApiURL(), newVerifier: idp.NewOidcVerifierProvider}
+	return &handler{
+		apiURL:       appconfig.Get().ApiURL(),
+		newVerifier:  idp.NewOidcVerifierProvider,
+		newAnalytics: analytics.New,
+	}
 }
 
 func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
@@ -255,6 +266,9 @@ func (h *handler) LoginCallback(c *gin.Context) {
 				c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 				return
 			}
+			// ctx was loaded before the registration: reload it so the
+			// analytics below carry the user's org, subject and mode.
+			ctx = reloadSignupContext(ctx, uinfo.Subject)
 		}
 
 		h.analyticsTrack(isNewUser, userAgent, ctx)
@@ -371,7 +385,10 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 		if err := models.UpdateUser(iuser); err != nil {
 			return false, fmt.Errorf("failed updating invited user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
 		}
-		return true, nil
+		// Not a new sign-up: the invite (POST /api/users) already sent
+		// hoop-signup. The first sign-in is a login, as on a single-tenant
+		// gateway.
+		return false, nil
 	}
 	// If the user is inactive, they can not login in the system
 	// until an admin changes their status to active
@@ -521,36 +538,86 @@ func updateLoginState(login *models.Login) {
 	}
 }
 
+// reloadSignupContext returns the context of a user that registerMultiTenantUser
+// just created or activated. The context the callback loaded earlier predates
+// the user and their org, so it has no org, email or analytics mode, and the
+// signup Identify would be skipped. On error it keeps the old context.
+func reloadSignupContext(ctx *models.Context, subject string) *models.Context {
+	newCtx, err := models.GetUserContext(subject)
+	if err != nil || newCtx == nil || newCtx.OrgID == "" {
+		log.With("multitenant", true).Warnf("failed reloading user context after signup, subject=%s, reason=%v", subject, err)
+		return ctx
+	}
+	return newCtx
+}
+
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := ctx.GetLicenseType()
-	trackClient := analytics.New()
-	defer trackClient.Close()
+	newAnalytics := h.newAnalytics
+	if newAnalytics == nil {
+		newAnalytics = analytics.New
+	}
 	if !isNewUser {
+		trackClient := newAnalytics()
 		trackClient.Track(ctx.UserSubject, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 		})
+		trackClient.Close()
 		return
 	}
-	trackClient.Identify(&types.APIContext{
-		OrgID:          ctx.OrgID,
-		OrgLicenseData: &ctx.OrgLicenseData,
-		UserID:         ctx.UserSubject,
-		UserEmail:      ctx.UserEmail,
-		UserName:       ctx.UserName,
+	// Without an org the per-org analytics mode cannot be checked: send
+	// nothing rather than an event that belongs to no org.
+	if ctx.OrgID == "" {
+		log.Warnf("skipping signup analytics, no organization for subject=%s", ctx.UserSubject)
+		return
+	}
+	// The org's stored mode decides, not the mode cache: a new org is not in
+	// the cache yet, and a disabled org must send nothing.
+	if ctx.OrgAnalyticsMode == models.AnalyticsModeDisabled {
+		return
+	}
+	identifyClient := newAnalytics()
+	identifyClient.Identify(&types.APIContext{
+		OrgID:            ctx.OrgID,
+		OrgLicenseData:   &ctx.OrgLicenseData,
+		OrgAnalyticsMode: ctx.OrgAnalyticsMode,
+		UserID:           ctx.UserSubject,
+		UserEmail:        ctx.UserEmail,
+		UserName:         ctx.UserName,
 	})
+	delay := signupTrackDelay
 	go func() {
+		// Close flushes the Identify before the wait, so a restart during
+		// the wait does not lose it. It runs here, off the sign-in, because
+		// it waits for the upload.
+		identifyClient.Close()
 		// wait some time until the identify call get times to reach to intercom
-		time.Sleep(time.Second * 10)
-		trackClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
+		time.Sleep(delay)
+		// An admin may have opted the org out during the wait, maybe on
+		// another gateway, whose change this gateway's mode cache never
+		// sees. Read the stored mode again, and send nothing if it cannot
+		// be read.
+		org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
+		if err != nil {
+			log.Warnf("skipping signup analytics, failed reading the analytics mode of org=%s: %v", ctx.OrgID, err)
+			return
+		}
+		if org.AnalyticsMode == models.AnalyticsModeDisabled {
+			return
+		}
+		// A client of its own: a closed client drops what it is given.
+		signupClient := newAnalytics()
+		signupClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 		})
+		signupClient.Close()
 	}()
 }
 

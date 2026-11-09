@@ -117,6 +117,20 @@
         {:data {:items items
                 :total_redact_count total-redact}}))))
 
+(defn- sidecar-masking-report
+  "What a sidecar masked, from the counts it sent (metrics.data_masking). The
+  gateway files the entities of one event as one type, a+b; each is a category."
+  [session]
+  (let [{:keys [info_types total_redact_count]} (get-in session [:metrics :data_masking])
+        counts (reduce (fn [acc [joined n]]
+                         (reduce #(update %1 %2 (fnil + 0) n)
+                                 acc
+                                 (remove cs/blank? (cs/split (name joined) #"\+"))))
+                       {}
+                       info_types)]
+    {:data {:items (map (fn [[info-type n]] {:info_type info-type :count n}) counts)
+            :total_redact_count (or total_redact_count 0)}}))
+
 (defn data-masking-analytics [session-report & {:keys [title subtitle hide-summary?]}]
   (let [redacted-types (map #(utilities/sanitize-string (:info_type %))
                             (-> session-report :data :items))
@@ -297,6 +311,12 @@
         rdp-status-subtitle (when (rdp-session? session)
                               [rdp-analysis-tracker {:session session}])]
     (cond
+      ;; A sidecar masks without the gateway's provider: show what it masked, or nothing.
+      (= "sidecar" (:identity_type session))
+      (let [report (sidecar-masking-report session)]
+        (when (pos? (get-in report [:data :total_redact_count]))
+          [data-masking-analytics report]))
+
       (not= redact-provider "mspresidio")
       [no-presidio-callout]
 

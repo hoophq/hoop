@@ -108,9 +108,20 @@ func sameBindHost(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// handleHealth mounts /healthz and /readyz on mux. The admin listener and the
-// health listener share it, so a probe gets the same answer from either.
-func handleHealth(mux *http.ServeMux, endpoints []endpointServer, endpointNames []string) {
+// healthState is what /readyz reads. The admin listener and the health
+// listener build their routes from one value, so a probe gets the same answer
+// from either.
+type healthState struct {
+	endpoints     []endpointServer
+	endpointNames []string
+	// icaReadinessJSON is admin.ica_readiness_json: /readyz answers with the
+	// ICA inspection attestation instead of plain text.
+	icaReadinessJSON bool
+	proxyCount       int
+}
+
+// handleHealth mounts /healthz and /readyz on mux.
+func handleHealth(mux *http.ServeMux, h healthState) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
@@ -121,7 +132,11 @@ func handleHealth(mux *http.ServeMux, endpoints []endpointServer, endpointNames 
 	// connections until then. /readyz reports that, separate from
 	// /healthz; other lanes are ready once bound, so it returns 200 for them.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
+		if h.icaReadinessJSON {
+			writeICAReadiness(w, h.endpoints, h.proxyCount)
+			return
+		}
+		if notReady := notReadyEndpoints(h.endpoints, h.endpointNames); len(notReady) > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
 			return
@@ -134,13 +149,13 @@ func handleHealth(mux *http.ServeMux, endpoints []endpointServer, endpointNames 
 // serveHealth binds addr and serves the health routes until ctx ends. A bind
 // failure is returned: the platform probes this address, and a process it
 // cannot probe gets restarted in a loop.
-func serveHealth(ctx context.Context, addr string, endpoints []endpointServer, endpointNames []string, log *slog.Logger) error {
+func serveHealth(ctx context.Context, addr string, h healthState, log *slog.Logger) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("health listener (%s): %w", HealthListenEnv, err)
 	}
 	mux := http.NewServeMux()
-	handleHealth(mux, endpoints, endpointNames)
+	handleHealth(mux, h)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()

@@ -8,7 +8,8 @@ import { TagsInput as MantineTagsInput } from '@mantine/core'
  *     label="Command Arguments"
  *     value={args}
  *     onChange={setArgs}
- *     splitChars={[',']}
+ *     splitChars={[]}
+ *     allowDuplicates
  *   />
  */
 export default function TagsInput(props) {

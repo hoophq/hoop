@@ -166,6 +166,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
+	// The file is what runs: standalone, or a plane that delegates to disk.
+	if local != nil && cfg == local {
+		cfg.Deprecations = append(cfg.Deprecations, cfg.fileDeprecations...)
+	}
 	// Retained so a pii drift rebuilds the detector the way startup would,
 	// and so a reload re-reads the config file the way startup would: a
 	// standalone process on every edit, a plane-owned one on a mid-run
@@ -1245,7 +1249,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
 	} else if strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
 			"hint", "set admin.listen to install a license through the admin API")
@@ -1309,7 +1313,8 @@ func Run(cfg *Config, det Plugin) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if serr := serveHealth(ctx, addr, endpoints, endpointNames, log); serr != nil {
+			h := healthState{endpoints, endpointNames, cfg.Admin.ICAReadinessJSON, len(servers)}
+			if serr := serveHealth(ctx, addr, h, log); serr != nil {
 				log.Error("health endpoint failed", "listen", addr, "error", serr)
 				errCh <- serr
 			}
@@ -1602,15 +1607,17 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// Said out loud because it is the one control observe mode
 		// switches OFF rather than records: every other rule still runs
 		// and still writes what it would have done, while a review
-		// nobody filed cannot be approved later either.
+		// nobody filed cannot be approved later either. The approval
+		// agent is not asked either: its call would decide nothing.
 		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
 				"observe mode files no approval request: a held statement is recorded as "+
-					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
+					policy.AnnotationWouldDeny+" and forwarded, and no approver, person or "+
+					"approval agent, is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
-		if !gc.observing() && analyzerHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
+		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
@@ -1993,15 +2000,18 @@ func serveAdmin(
 	otel *otelExporter,
 	licenseAPI http.Handler,
 	log *slog.Logger,
+	icaReadinessJSON bool,
 ) {
 	mux := http.NewServeMux()
 
-	handleHealth(mux, endpoints, endpointNames)
+	handleHealth(mux, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
 
-	// The one write on this listener. licenseHandler refuses it unless the
+	// License writes require their own secret. ICA deployment drain below has a
+	// separate token and is disabled by default. licenseHandler refuses it unless the
 	// operator set AdminSecretEnv, and then asks for that secret: every
 	// read here is unauthenticated, and a write must not be.
 	mux.Handle("PUT /license", licenseAPI)
+	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
 
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {

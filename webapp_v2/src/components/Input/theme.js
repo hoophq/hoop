@@ -2,6 +2,7 @@ import {
   Combobox,
   Input,
   InputBase,
+  PasswordInput,
   Textarea,
   MultiSelect,
   TagsInput,
@@ -28,8 +29,8 @@ import classes from './Input.module.css'
 // value down to Input as an explicit prop, which beats any theme default on
 // the Input key. Theme defaultProps DO override those local defaults, so
 // every such component gets its own entry below (registered in
-// src/theme.js): InputBase (under TextInput, PasswordInput, Select,
-// Autocomplete, NumberInput), Textarea, MultiSelect, TagsInput, PillsInput,
+// src/theme.js): InputBase (under TextInput, Select, Autocomplete,
+// NumberInput), PasswordInput, Textarea, MultiSelect, TagsInput, PillsInput,
 // and PickerInputBase from @mantine/dates (under DatePickerInput — plain
 // object entry in src/theme.js since the component isn't exported).
 // If you adopt another Mantine input with its own local size default
@@ -71,6 +72,7 @@ export const InputTheme = Input.extend({
 })
 
 export const InputBaseTheme = InputBase.extend({ defaultProps: SIZE_DEFAULT })
+export const PasswordInputTheme = PasswordInput.extend({ defaultProps: SIZE_DEFAULT })
 export const TextareaTheme = Textarea.extend({ defaultProps: SIZE_DEFAULT })
 export const MultiSelectTheme = MultiSelect.extend({ defaultProps: SIZE_DEFAULT })
 export const TagsInputTheme = TagsInput.extend({ defaultProps: SIZE_DEFAULT })
