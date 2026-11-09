@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import RdpAnalysisStatus from '../viewers/rdp/RdpAnalysisStatus'
 import InsightCard from './InsightCard'
-import { categoriesText, itemsText, maskingAnalytics } from './helpers'
+import { categoriesText, itemsText, maskingAnalytics, maskingPanel } from './helpers'
 
 const DATA_MASKING_PATH = '/features/data-masking'
 
@@ -106,7 +106,9 @@ export default function DataMasking({ session }) {
   // A sidecar masks on its own, whatever the gateway's provider and license.
   const sidecar = session.identity_type === 'sidecar'
 
-  if (!hasData && redactProvider !== 'mspresidio') return <UnlockCallout />
+  const panel = maskingPanel({ sidecar, hasData, presidio: redactProvider === 'mspresidio' })
+  if (panel === 'none') return null
+  if (panel === 'unlock') return <UnlockCallout />
 
   const promote = isFreeLicense && !sidecar
   const title = (

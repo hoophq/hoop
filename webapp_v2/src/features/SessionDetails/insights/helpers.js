@@ -62,6 +62,14 @@ function splitJoined(items) {
 
 export const itemsText = (total) => `${total} ${total === 1 ? 'item' : 'items'}`
 
+// What the masking card shows: 'none', 'unlock' or 'report'. A sidecar masks
+// without the gateway's provider, so it shows what it masked, or nothing.
+export function maskingPanel({ sidecar, hasData, presidio }) {
+  if (hasData) return 'report'
+  if (sidecar) return 'none'
+  return presidio ? 'report' : 'unlock'
+}
+
 // Collapsed: "3 (Email Address + 2 more)"; open: "3 (Email Address, Person, Phone Number)".
 export function categoriesText(items, { full }) {
   if (!items.length) return full ? '-' : '0'

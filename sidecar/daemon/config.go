@@ -336,7 +336,7 @@ type ListenerConfig struct {
 	// Upstream is the real backend. An http listener also takes a URL,
 	// which makes it a reverse proxy in front of that origin; see
 	// address.go.
-	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode." protocols:"!ssh" ui:"required,basic"`
+	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode. An mcp listener takes the MCP endpoint URL, such as https://mcp.example.com/mcp." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
@@ -504,8 +504,7 @@ type ListenerConfig struct {
 	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
 
 	// MCPGateway is an mcp lane upstream transport and mcpproxy tool policy.
-	// Out of the control plane form for now.
-	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" ui:"-"`
+	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" label:"MCP gateway" help:"How the sidecar reaches the MCP server, and the limits of one MCP session." protocols:"mcp"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a

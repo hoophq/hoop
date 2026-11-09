@@ -1106,6 +1106,7 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.Deprecations = configDeprecations(s.Configuration)
 	resp.IdentityIssuer = derefOrEmpty(s.IdentityIssuer)
 	resp.IdentitySubject = derefOrEmpty(s.IdentitySubject)
+	resp.Capabilities = s.Capabilities
 	// Lenient: the page shows what the file runs, and a strict decode would
 	// hide the whole report over one key this gateway does not know.
 	if s.ReportedConfiguration != nil {
