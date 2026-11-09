@@ -1,6 +1,7 @@
 package clientconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,9 +15,25 @@ type serverInfoFlags struct {
 	FeatureFlags map[string]bool `json:"feature_flags"`
 }
 
+// StatusError is a non-200 answer from /api/serverinfo.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("failed fetching serverinfo, status=%d, body=%s", e.Code, e.Body)
+}
+
 // FetchFeatureFlags retrieves the feature flags from the gateway's /serverinfo endpoint.
 func FetchFeatureFlags(conf *Config) (map[string]bool, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/serverinfo", conf.ApiURL), nil)
+	return FetchFeatureFlagsContext(context.Background(), conf)
+}
+
+// FetchFeatureFlagsContext is FetchFeatureFlags bound to ctx, so a caller can
+// set a deadline.
+func FetchFeatureFlagsContext(ctx context.Context, conf *Config) (map[string]bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/serverinfo", conf.ApiURL), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +48,7 @@ func FetchFeatureFlags(conf *Config) (map[string]bool, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed fetching serverinfo, status=%d, body=%s", resp.StatusCode, string(body))
+		return nil, &StatusError{Code: resp.StatusCode, Body: string(body)}
 	}
 	var si serverInfoFlags
 	if err := json.NewDecoder(resp.Body).Decode(&si); err != nil {
