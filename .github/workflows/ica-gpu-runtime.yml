@@ -49,7 +49,7 @@ jobs:
           echo "engine=$engine" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
-          repository: matheusfrancisco/TurboOCR
+          repository: hoophq/TurboOCR
           ref: ${{ inputs.turboocr_revision }}
           token: ${{ secrets.GH_TOKEN }}
           path: turboocr-source
