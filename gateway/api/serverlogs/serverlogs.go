@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/serverlogs"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -32,7 +33,7 @@ const (
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	limit := parseIntQuery(c, "limit", defaultLimit, 1, maxLimit)
-	c.JSON(http.StatusOK, lastN(toResponse(serverlogs.Snapshot(ctx.OrgID)), limit))
+	c.JSON(http.StatusOK, lastN(toResponse(serverlogs.Snapshot(ctx.OrgID, appconfig.Get().OrgMultitenant())), limit))
 }
 
 // toResponse maps buffered entries to the response schema, sorted by

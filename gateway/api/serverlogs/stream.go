@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/serverlogs"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -32,6 +33,7 @@ const (
 //	@Router			/server-logs/stream [get]
 func Stream(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	multiTenant := appconfig.Get().OrgMultitenant()
 	backlog := parseIntQuery(c, "backlog", defaultBacklog, 0, maxLimit)
 
 	flusher, ok := c.Writer.(http.Flusher)
@@ -51,7 +53,7 @@ func Stream(c *gin.Context) {
 	flusher.Flush()
 
 	// Initial cursor and backlog, taken atomically from the ring.
-	entries, seq := serverlogs.Since(ctx.OrgID, 0)
+	entries, seq := serverlogs.Since(ctx.OrgID, 0, multiTenant)
 	if backlog > 0 {
 		if err := writeEvents(c, flusher, lastN(toResponse(entries), backlog)); err != nil {
 			return
@@ -68,7 +70,7 @@ func Stream(c *gin.Context) {
 			return
 		case <-poll.C:
 			var fresh []serverlogs.Entry
-			fresh, seq = serverlogs.Since(ctx.OrgID, seq)
+			fresh, seq = serverlogs.Since(ctx.OrgID, seq, multiTenant)
 			if len(fresh) == 0 {
 				continue
 			}
