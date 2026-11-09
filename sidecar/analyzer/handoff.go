@@ -241,12 +241,13 @@ func handoffKey(h *handoffLevel, content string) string {
 }
 
 // handoff runs the hand-off agent for one classified statement, or reuses
-// the decision a filed hold pinned, or the one the cache keeps for its shape
-// and handoffKey. It never returns an action the level does not allow.
-// Anything but one valid call of an allowed tool applies the most
-// restrictive allowed action, and that is never cached or pinned.
+// the request a filed hold pinned (unless skipPin), or the decision the
+// cache keeps for its shape and handoffKey. It never returns an action the
+// level does not allow. Anything but one valid call of an allowed tool
+// applies the most restrictive allowed action, and that is never cached or
+// pinned.
 func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
-	level RiskLevel, c classified) handoffDecision {
+	level RiskLevel, c classified, skipPin bool) handoffDecision {
 	h := e.handoffs[level]
 	if h == nil {
 		// New refuses this; kept so a broken invariant still denies.
@@ -268,10 +269,11 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
 		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
 	memoKey := handoffKey(h, content)
-	// Before the cache, which may have lost the decision: a hold the agent
-	// selected answers its resend from the same approval (handoffPins).
-	if reason, ok := e.pins.get(memoKey); ok {
-		return handoffDecision{action: ActionRequireReview, reason: reason, pin: pinRef{memoKey, reason}}
+	// Before the cache, which may have lost the decision: a statement whose
+	// hold the agent selected asks about that request (handoffPins).
+	if pin, ok := e.pins.get(memoKey); ok && !skipPin {
+		return handoffDecision{action: ActionRequireReview, reason: pin.reason,
+			pin: pinRef{key: memoKey, reason: pin.reason, reviewID: pin.reviewID}}
 	}
 	if m, ok := e.cache.decision(c.key, memoKey); ok {
 		return withPin(handoffDecision{action: m.action, reason: m.reason}, memoKey)
@@ -344,20 +346,37 @@ func parseHandoff(calls []ToolCall, tools []ToolSpec) (Action, string, bool) {
 // applyHandoff runs the action the hand-off resolved to through the paths
 // the level's own action would take: allow and warn forward, block denies
 // with the recorded reason, and require_review holds under the hand-off's
-// approver.
-func (e *Evaluator) applyHandoff(stmt inspect.Statement, ec *policy.EvalContext,
+// approver. A hold on a pinned request carries how to decide again when
+// the plane says that request is over; that runs inside the hold, so it
+// holds directly.
+func (e *Evaluator) applyHandoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
 	notes map[string]string, level RiskLevel, c classified, d handoffDecision) policy.Verdict {
+	return e.resolveHandoff(notes, c, d, func(pin pinRef) policy.Verdict {
+		if pin.reviewID != "" {
+			pin.again = func(hold func(pinRef) policy.Verdict) policy.Verdict {
+				return e.resolveHandoff(notes, c, e.handoff(ctx, stmt, ec, level, c, true), hold)
+			}
+		}
+		h := e.handoffs[level]
+		return e.requestApproval(stmt, ec, notes, level, c, h.approval.Approver, h.approvalPrompt, true, pin)
+	})
+}
+
+// resolveHandoff applies decision d; hold runs a require_review.
+func (e *Evaluator) resolveHandoff(notes map[string]string, c classified, d handoffDecision,
+	hold func(pinRef) policy.Verdict) policy.Verdict {
 	notes[MetadataHandoffDecision] = HandoffToolName(d.action)
 	reason := d.reason
 	if reason != "" {
 		notes[MetadataHandoffReason] = reason
+	} else {
+		delete(notes, MetadataHandoffReason)
 	}
 	switch d.action {
 	case ActionAllow, ActionWarn:
 		return policy.Verdict{Annotations: notes}
 	case ActionRequireReview:
-		h := e.handoffs[level]
-		return e.requestApproval(stmt, ec, notes, level, c, h.approval.Approver, h.approvalPrompt, true, d.pin)
+		return hold(d.pin)
 	}
 	msg := e.cfg.Message
 	if msg == "" {

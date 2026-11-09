@@ -655,9 +655,9 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// all: the decide phase must see that hold as input.review, and a
 		// hold asked for from inside a Resolve is never run, which would
 		// forward a statement the agent held.
-		d := e.handoff(ctx, stmt, ec, level, c)
+		d := e.handoff(ctx, stmt, ec, level, c, false)
 		e.observe(status, level, d.action)
-		return e.applyHandoff(stmt, ec, notes, level, c, d)
+		return e.applyHandoff(ctx, stmt, ec, notes, level, c, d)
 	}
 
 	if action == ActionRequireReview {

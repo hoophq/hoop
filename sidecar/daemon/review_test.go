@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -236,6 +237,22 @@ func TestAClaimAsksAboutOneReviewByID(t *testing.T) {
 	}
 	if got.payload != "" || got.listen != "" || got.rule != "" {
 		t.Errorf("the claim carried a filing body: %+v", got)
+	}
+}
+
+// The claim route's own 404 is a review the plane does not have, which a
+// pinned hand-off reads as over; Gin's plain 404 is an older plane, and is
+// not.
+func TestAClaimOnAMissingReviewIsNotFound(t *testing.T) {
+	cp, _ := reviewPlane(t, http.StatusNotFound, `{"message":"approval request not found"}`)
+	_, err := cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
+	if !errors.Is(err, analyzer.ErrReviewNotFound) {
+		t.Errorf("the route's 404 read as %v", err)
+	}
+	cp, _ = reviewPlane(t, http.StatusNotFound, `404 page not found`)
+	_, err = cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
+	if err == nil || errors.Is(err, analyzer.ErrReviewNotFound) || !strings.Contains(err.Error(), "older than this sidecar") {
+		t.Errorf("an old plane's 404 read as %v", err)
 	}
 }
 

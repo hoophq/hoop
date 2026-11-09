@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -245,9 +246,13 @@ type Reviewer interface {
 	File(ctx context.Context, statement string) (ReviewResult, error)
 
 	// Claim answers about one review by id, spending it when it is
-	// approved. It never files.
+	// approved. It never files. A review the backend does not have
+	// answers an error wrapping ErrReviewNotFound.
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
 }
+
+// ErrReviewNotFound is a Claim about a review the backend does not have.
+var ErrReviewNotFound = errors.New("the approval request was not found")
 
 // Settler is a Reviewer whose release can be a reservation: the backend
 // answers PROCESSING with Forward, and the approval is spent only once the
@@ -339,10 +344,11 @@ func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
 //
-// A filed hold the hand-off agent selected pins that decision (pin), in any
-// mode, until the hold settles here: see handoffPins.
+// A hold the hand-off agent selected pins the request it files while that
+// request is pending, in any mode. A statement that hit a pin claims the
+// pinned request instead of filing: see handoffPins and holdPinned.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
-	mode ReviewMode, source string, pin pinRef) (v policy.Verdict) {
+	mode ReviewMode, source string, pin pinRef) policy.Verdict {
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 
@@ -358,6 +364,9 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// Gone before anything was filed: paging a human for a statement
 		// that can no longer run is noise.
 		return e.denyEnded(ctx, notes, "", "", "the connection ended before the approval request was filed")
+	}
+	if pin.reviewID != "" {
+		return e.holdPinned(ctx, stmt, notes, mode, source, pin)
 	}
 
 	text, ignored, err := reviewText(stmt, e.cfg.MatchIgnore)
@@ -378,13 +387,8 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	}
 	if res.ID != "" {
 		notes[MetadataReviewID] = res.ID
-		if pin.key != "" {
-			e.pins.pin(pin.key, pin.reason)
-			defer func() {
-				if holdSettled(v) {
-					e.pins.unpin(pin.key)
-				}
-			}()
+		if pin.key != "" && (res.Status == reviewPending || res.Status == reviewProcessing) {
+			e.pins.set(pin.key, res.ID, pin.reason)
 		}
 	}
 	if res.Forward {

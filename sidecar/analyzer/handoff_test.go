@@ -3,10 +3,12 @@ package analyzer_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -833,32 +835,54 @@ func TestAHandoffDecisionIsNotReusedForAnotherIdentifier(t *testing.T) {
 	}
 }
 
-// returnReviewer answers each filing with one pending review, or with its
-// release once approved is set, and keeps the statements filed.
-type returnReviewer struct {
-	mu         sync.Mutex
-	approved   bool
-	statements []string
+// pinReviewer files pending requests r1, r2, ... in order and answers each
+// claim from claim, which a test may use to act in the middle of one. It
+// keeps what it filed and what it was asked to claim.
+type pinReviewer struct {
+	mu      sync.Mutex
+	filed   []string
+	claimed []string
+	claim   func(id string) (analyzer.ReviewResult, error)
 }
 
-func (r *returnReviewer) File(_ context.Context, statement string) (analyzer.ReviewResult, error) {
+func (r *pinReviewer) File(_ context.Context, statement string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.statements = append(r.statements, statement)
-	if r.approved {
-		return analyzer.ReviewResult{Forward: true, ID: "r1", Status: "EXECUTED"}, nil
+	r.filed = append(r.filed, statement)
+	return analyzer.ReviewResult{ID: "r" + strconv.Itoa(len(r.filed)), Status: "PENDING"}, nil
+}
+
+func (r *pinReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult, error) {
+	r.mu.Lock()
+	r.claimed = append(r.claimed, id)
+	claim := r.claim
+	r.mu.Unlock()
+	if claim == nil {
+		return analyzer.ReviewResult{}, errors.New("no claim scripted")
 	}
-	return analyzer.ReviewResult{ID: "r1", Status: "PENDING"}, nil
+	return claim(id)
 }
 
-func (r *returnReviewer) Claim(context.Context, string) (analyzer.ReviewResult, error) {
-	return analyzer.ReviewResult{}, errors.New("unused")
-}
-
-func (r *returnReviewer) filed() []string {
+func (r *pinReviewer) counts() (filed, claimed []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return slices.Clone(r.statements)
+	return slices.Clone(r.filed), slices.Clone(r.claimed)
+}
+
+// pinEvaluator hands medium off to an agent that may hold for a person, in
+// return mode.
+func pinEvaluator(t *testing.T, p *handoffProvider, rev *pinReviewer) *analyzer.Evaluator {
+	return handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
+		c.Review = rev
+		returnMode(c)
+	})
+}
+
+func answer(id, status string, forward bool) func(string) (analyzer.ReviewResult, error) {
+	return func(string) (analyzer.ReviewResult, error) {
+		return analyzer.ReviewResult{ID: id, Status: status, Forward: forward}, nil
+	}
 }
 
 // testClock is a clock a test moves by hand.
@@ -879,84 +903,191 @@ func (c *testClock) Add(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// A hold the hand-off agent selected is pinned once filed: with no verdict
-// cache, the resend of the same statement files again, with no hand-off
-// call, even when the agent would now allow it. The pin lasts the 30-minute
-// hold; after it the agent is asked again.
-func TestAFiledHandoffHoldIsPinnedForItsResend(t *testing.T) {
+// The resend of a statement whose hold the agent selected claims the pinned
+// request: still pending, it denies again with that id, with no model call
+// and no new filing, even with no verdict cache and an agent that would now
+// allow. The pin lives at most 30 minutes; after it the agent decides again.
+func TestAPendingPinnedRequestHoldsTheResend(t *testing.T) {
 	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine now")}}
-	rev := &returnReviewer{}
+	rev := &pinReviewer{claim: answer("r1", "PENDING", false)}
 	clock := &testClock{now: time.Unix(1_700_000_000, 0)}
-	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
-		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
-		c.Review = rev
-		returnMode(c)
-	})
+	ev := pinEvaluator(t, p, rev)
 	analyzer.SetHandoffPinClock(ev, clock.Now)
 
-	v := ev.Evaluate(deleteStatement())
-	if !v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "require_approval" {
-		t.Fatalf("first: %+v, want the pending return-mode denial", v)
+	if v := ev.Evaluate(deleteStatement()); !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r1" {
+		t.Fatalf("first: %+v, want the pending r1", v)
 	}
-	clock.Add(10 * time.Minute)
-	v = ev.Evaluate(deleteStatement())
-	if !v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "require_approval" ||
-		v.Annotations[analyzer.MetadataHandoffReason] != "needs a person" {
-		t.Fatalf("resend: %+v, want the pinned require_approval", v)
+	for i := range 2 {
+		clock.Add(10 * time.Minute)
+		v := ev.Evaluate(deleteStatement())
+		if !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r1" ||
+			v.Annotations[analyzer.MetadataHandoffDecision] != "require_approval" ||
+			v.Annotations[analyzer.MetadataHandoffReason] != "needs a person" ||
+			!strings.Contains(v.Message, "r1") {
+			t.Fatalf("resend %d: %+v, want r1 still pending", i+1, v)
+		}
 	}
-	if n := len(p.asks()); n != 1 {
-		t.Errorf("asked the hand-off agent %d time(s), want one: the resend reads the pin", n)
-	}
-	if got := rev.filed(); len(got) != 2 || got[0] != got[1] || got[0] != deleteStatement().Text {
-		t.Errorf("filed %q, want the same statement twice", got)
+	filed, claimed := rev.counts()
+	if len(p.asks()) != 1 || len(filed) != 1 || !slices.Equal(claimed, []string{"r1", "r1"}) {
+		t.Errorf("asked %d, filed %v, claimed %v; want 1 ask, 1 filing, 2 claims of r1", len(p.asks()), filed, claimed)
 	}
 
-	// Past the hold's life the pin is gone, and the agent decides again.
-	clock.Add(31 * time.Minute)
-	v = ev.Evaluate(deleteStatement())
-	if v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
-		t.Fatalf("after the pin expired: %+v after %d ask(s)", v, len(p.asks()))
+	// 31 minutes after the filing the pin is gone: the agent decides again.
+	clock.Add(11 * time.Minute)
+	if v := ev.Evaluate(deleteStatement()); v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "allow" {
+		t.Fatalf("after the pin expired: %+v", v)
+	}
+	if _, claimed := rev.counts(); len(p.asks()) != 2 || len(claimed) != 2 {
+		t.Errorf("after expiry: asked %d, claimed %v", len(p.asks()), claimed)
 	}
 }
 
-// The approved resend releases the statement and settles the hold, so the
-// pin goes and the next statement asks the agent again. A fail-safe hold is
-// never pinned.
-func TestASettledHandoffHoldDropsItsPin(t *testing.T) {
+// An approved pinned request releases the resend with its id, and the pin
+// goes: the next statement asks the agent again and claims nothing.
+func TestAnApprovedPinnedRequestReleasesTheResend(t *testing.T) {
 	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine")}}
-	rev := &returnReviewer{}
-	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
-		Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}, func(c *analyzer.Config) {
-		c.Review = rev
-		returnMode(c)
-	})
+	rev := &pinReviewer{claim: answer("r1", "EXECUTED", true)}
+	ev := pinEvaluator(t, p, rev)
 	ev.Evaluate(deleteStatement())
-	rev.mu.Lock()
-	rev.approved = true
-	rev.mu.Unlock()
-	if v := ev.Evaluate(deleteStatement()); v.Denied || len(p.asks()) != 1 {
-		t.Fatalf("the approved resend: %+v after %d ask(s), want released from the pin", v, len(p.asks()))
+	v := ev.Evaluate(deleteStatement())
+	if v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r1" || len(p.asks()) != 1 {
+		t.Fatalf("approved resend: %+v after %d ask(s), want r1 released", v, len(p.asks()))
 	}
-	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
-		t.Fatalf("after release: %+v after %d ask(s), want a new decision", v, len(p.asks()))
+	v = ev.Evaluate(deleteStatement())
+	filed, claimed := rev.counts()
+	if v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 ||
+		len(filed) != 1 || len(claimed) != 1 {
+		t.Fatalf("after release: %+v, asked %d, filed %v, claimed %v", v, len(p.asks()), filed, claimed)
 	}
+}
 
-	// No block allowed: the fail-safe is require_approval, and it files
-	// without a pin.
+// A pinned request that reached a final status between resends (rejected,
+// revoked, expired, spent by an accepted reservation, or gone) drops the pin
+// and decides again: an agent that allows forwards and files nothing; one
+// that holds again files a fresh request and pins it.
+func TestAFinalPinnedRequestAsksTheAgentAgain(t *testing.T) {
+	notFound := func(string) (analyzer.ReviewResult, error) {
+		return analyzer.ReviewResult{}, fmt.Errorf("%w: r1", analyzer.ErrReviewNotFound)
+	}
+	for name, claim := range map[string]func(string) (analyzer.ReviewResult, error){
+		"rejected": answer("r1", "REJECTED", false),
+		"revoked":  answer("r1", "REVOKED", false),
+		"expired":  answer("r1", "EXPIRED", false),
+		"executed": answer("r1", "EXECUTED", false),
+		"gone":     notFound,
+	} {
+		t.Run(name+"/allow", func(t *testing.T) {
+			p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine")}}
+			rev := &pinReviewer{claim: claim}
+			ev := pinEvaluator(t, p, rev)
+			ev.Evaluate(deleteStatement())
+			v := ev.Evaluate(deleteStatement())
+			if v.Denied || v.Annotations[analyzer.MetadataHandoffDecision] != "allow" ||
+				v.Annotations[analyzer.MetadataReviewID] != "" || v.Annotations[analyzer.MetadataReviewMode] != "" {
+				t.Fatalf("resend: %+v, want the agent's new allow", v)
+			}
+			ev.Evaluate(deleteStatement())
+			filed, claimed := rev.counts()
+			if len(p.asks()) != 3 || len(filed) != 1 || !slices.Equal(claimed, []string{"r1"}) {
+				t.Errorf("asked %d, filed %v, claimed %v; want 3 asks, 1 filing, one claim of r1",
+					len(p.asks()), filed, claimed)
+			}
+		})
+		t.Run(name+"/hold again", func(t *testing.T) {
+			p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+			rev := &pinReviewer{claim: func(id string) (analyzer.ReviewResult, error) {
+				if id == "r1" {
+					return claim(id)
+				}
+				return analyzer.ReviewResult{ID: id, Status: "PENDING"}, nil
+			}}
+			ev := pinEvaluator(t, p, rev)
+			ev.Evaluate(deleteStatement())
+			if v := ev.Evaluate(deleteStatement()); !v.Denied || v.Annotations[analyzer.MetadataReviewID] != "r2" {
+				t.Fatalf("resend: %+v, want a fresh pending r2", v)
+			}
+			ev.Evaluate(deleteStatement())
+			if _, claimed := rev.counts(); !slices.Equal(claimed, []string{"r1", "r2"}) {
+				t.Errorf("claimed %v, want r1 then the new pin r2", claimed)
+			}
+		})
+	}
+}
+
+// A claim that fails denies, and keeps the pin for the next resend.
+func TestAFailedPinnedClaimDenies(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person"), pick("allow", "fine")}}
+	rev := &pinReviewer{claim: func(string) (analyzer.ReviewResult, error) {
+		return analyzer.ReviewResult{}, errors.New("control plane unreachable")
+	}}
+	ev := pinEvaluator(t, p, rev)
+	ev.Evaluate(deleteStatement())
+	v := ev.Evaluate(deleteStatement())
+	if !v.Denied || v.Err == nil || !strings.Contains(v.Message, "could not be checked") {
+		t.Fatalf("resend: %+v, want a denial", v)
+	}
+	ev.Evaluate(deleteStatement())
+	filed, claimed := rev.counts()
+	if len(p.asks()) != 1 || len(filed) != 1 || !slices.Equal(claimed, []string{"r1", "r1"}) {
+		t.Errorf("asked %d, filed %v, claimed %v; want the pin kept", len(p.asks()), filed, claimed)
+	}
+}
+
+// Two resends race on one pin. A claims r1 and spends it; before A's answer
+// lands, B reads r1 as used, decides again and files r2. A's cleanup must
+// not delete B's pin: the next resend claims r2.
+func TestANewerFilingOwnsThePin(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+	rev := &pinReviewer{}
+	ev := pinEvaluator(t, p, rev)
+	ev.Evaluate(deleteStatement())
+
+	r1Claims := 0
+	var b policy.Verdict
+	rev.claim = func(id string) (analyzer.ReviewResult, error) {
+		if id != "r1" {
+			return analyzer.ReviewResult{ID: id, Status: "PENDING"}, nil
+		}
+		r1Claims++
+		if r1Claims == 1 {
+			// A's claim is in flight: B resends now.
+			b = ev.Evaluate(deleteStatement())
+			return analyzer.ReviewResult{ID: "r1", Status: "EXECUTED", Forward: true}, nil
+		}
+		return analyzer.ReviewResult{ID: "r1", Status: "EXECUTED"}, nil
+	}
+	if a := ev.Evaluate(deleteStatement()); a.Denied || a.Annotations[analyzer.MetadataReviewID] != "r1" {
+		t.Fatalf("A: %+v, want released on r1", a)
+	}
+	if !b.Denied || b.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("B: %+v, want a pending r2", b)
+	}
+	if c := ev.Evaluate(deleteStatement()); !c.Denied || c.Annotations[analyzer.MetadataReviewID] != "r2" {
+		t.Fatalf("C: %+v, want r2 from B's pin", c)
+	}
+	if _, claimed := rev.counts(); !slices.Equal(claimed, []string{"r1", "r1", "r2"}) {
+		t.Errorf("claimed %v, want A and B on r1, then C on r2", claimed)
+	}
+}
+
+// A fail-safe hold files without a pin: the next statement asks again.
+func TestAFailSafeHandoffHoldIsNotPinned(t *testing.T) {
 	allowed := []analyzer.Action{analyzer.ActionAllow, analyzer.ActionRequireApproval}
-	p = &handoffProvider{replies: []decideReply{{}, pick("allow", "fine")}}
-	rev = &returnReviewer{}
-	ev = handoffEvaluator(t, p, analyzer.Handoff{Allowed: allowed, Approval: approvalFor(allowed)},
+	p := &handoffProvider{replies: []decideReply{{}, pick("allow", "fine")}}
+	rev := &pinReviewer{claim: answer("r1", "PENDING", false)}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allowed, Approval: approvalFor(allowed)},
 		func(c *analyzer.Config) {
 			c.Review = rev
 			returnMode(c)
 		})
-	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffReason] != "the hand-off agent did not decide" ||
-		len(rev.filed()) != 1 {
-		t.Fatalf("fail-safe: %+v, filed %d", v, len(rev.filed()))
+	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffReason] != "the hand-off agent did not decide" {
+		t.Fatalf("fail-safe: %+v", v)
 	}
-	if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 {
-		t.Fatalf("after a fail-safe hold: %+v after %d ask(s), want a new decision", v, len(p.asks()))
+	v := ev.Evaluate(deleteStatement())
+	filed, claimed := rev.counts()
+	if v.Annotations[analyzer.MetadataHandoffDecision] != "allow" || len(p.asks()) != 2 ||
+		len(filed) != 1 || len(claimed) != 0 {
+		t.Fatalf("after a fail-safe hold: %+v, asked %d, filed %v, claimed %v", v, len(p.asks()), filed, claimed)
 	}
 }
 

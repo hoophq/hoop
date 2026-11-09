@@ -329,7 +329,12 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string, reserv
 		return out, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		// Also what a control plane older than this sidecar answers: it
+		// The route's own 404 names a review the plane does not have.
+		if planeNotFound(raw) {
+			return out, fmt.Errorf("%w: the control plane at %s has no approval request %s",
+				analyzer.ErrReviewNotFound, cp.url, reviewID)
+		}
+		// Gin's plain 404 is a control plane older than this sidecar: it
 		// has no claim route. The hold denies either way, and the retry
 		// path still works against it.
 		return out, fmt.Errorf("the control plane at %s has no approval request %s to claim; "+
