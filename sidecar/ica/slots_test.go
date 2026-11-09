@@ -85,6 +85,22 @@ func TestSignalDrainsExistingTCPBeforeRuntimeClose(t *testing.T) {
 	if active != 1 {
 		t.Fatal("no active session")
 	}
+	if !srv.(*server).BeginICADrain() {
+		t.Fatal("admission drain failed")
+	}
+	if srv.Ready() {
+		t.Fatal("admission-drained sidecar is ready")
+	}
+	if active, _, _ := srv.Stats(); active != 1 {
+		t.Fatal("admission drain closed existing desktop")
+	}
+	client.SetReadDeadline(time.Now().Add(40 * time.Millisecond))
+	var probe [1]byte
+	if _, err := client.Read(probe[:]); err == nil {
+		t.Fatal("unexpected desktop bytes")
+	} else if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+		t.Fatal("admission drain closed client", err)
+	}
 	cancel()
 	select {
 	case err := <-done:

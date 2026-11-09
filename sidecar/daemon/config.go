@@ -846,6 +846,9 @@ func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 // AdminConfig configures the health/stats endpoint.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
+	// ICAReadinessJSON lets an external relay require explicit live engine
+	// inspection attestation. Default keeps the existing plaintext /readyz API.
+	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty"`
 }
 
 // LoadConfig reads and validates a config file.
