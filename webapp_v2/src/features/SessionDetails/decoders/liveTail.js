@@ -26,7 +26,7 @@ export function deniedLabel(rules) {
 // Rows of one stream event. A postgres input chunk holds wire frames, one row
 // each; a finished session read with event_stream=raw-queries holds plain SQL,
 // one Query row.
-function eventRows(postgres, index, [seconds, type, b64]) {
+function eventRows(postgres, mcp, index, [seconds, type, b64]) {
   if (postgres && type === 'i') {
     const frames = parsePayload(b64)
     if (frames.length) {
@@ -42,14 +42,15 @@ function eventRows(postgres, index, [seconds, type, b64]) {
     }
     return [{ key: `${index}`, seconds, type, pgTypeName: 'Query', sql: b64ToText(b64), kind: 'query' }]
   }
-  const kind = type === 'o' ? 'output' : type === 'e' ? 'error' : 'raw'
+  const kind = type === 'o' ? (mcp ? 'catalog' : 'output') : type === 'e' ? 'error' : 'raw'
   return [{ key: `${index}`, seconds, type, kind, text: b64ToText(b64) }]
 }
 
 // Rows of the stream, statements a guardrail denied flagged. The denial's own
 // error row shares no time with its statement, so only statements match.
-export function streamRows(eventStream, { postgres, denied }) {
-  const rows = eventStream.flatMap((event, i) => eventRows(postgres, i, event))
+// `mcp` reads every output row as a tools/list catalog (mcpCatalogOutput).
+export function streamRows(eventStream, { postgres, mcp, denied }) {
+  const rows = eventStream.flatMap((event, i) => eventRows(postgres, mcp, i, event))
   if (!denied?.size) return rows
   return rows.map((row) =>
     row.type !== 'e' && denied.has(row.seconds) ? { ...row, deniedRules: denied.get(row.seconds) } : row,

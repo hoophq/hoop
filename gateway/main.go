@@ -107,7 +107,6 @@ func Run() {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
-	services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL
@@ -377,6 +376,11 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 		"Gateway": "localhost:8010",
 	}
 	bootstrap.Ready(urls)
+
+	// Put back the sidecar mirrors that fell behind, as after a rollback. In
+	// the background, after the startup reads: its run grows with the sidecar
+	// count, and the embedded database has one connection.
+	go services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	a.StartAPI()
 }

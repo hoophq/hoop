@@ -118,7 +118,7 @@ function ObjectBody({ field, path, form, setField, errors }) {
 }
 
 // One schema field, with the input its type calls for.
-function Field({ field, path, form, setField, errors }) {
+function Field({ field, path, form, setField, errors, capabilities }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
   const common = { label: field.label, description: field.help, error: errors[path] }
@@ -136,7 +136,7 @@ function Field({ field, path, form, setField, errors }) {
   }
 
   if (path === 'protocol') {
-    return <Select {...hinted} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
+    return <Select {...hinted} required data={protocolOptions(value, capabilities)} value={value || null} onChange={set} allowDeselect={false} />
   }
 
   switch (field.type) {
@@ -265,8 +265,8 @@ const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).
  * chrome of its own. `form` and `errors` come from ../listeners.
  * `features` is the Feature settings panel, built by the caller from the stored document.
  */
-export default function ListenerForm({ form, setField, errors, features }) {
-  const ctx = { form, setField, errors }
+export default function ListenerForm({ form, setField, errors, features, capabilities }) {
+  const ctx = { form, setField, errors, capabilities }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
   const identity = pick(basic, IDENTITY)

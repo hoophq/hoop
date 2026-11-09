@@ -11,7 +11,7 @@ import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
-import { analyzerBlocked } from '@/pages/Sidecars/config'
+import { analyzerBlocked, laneFeatureBlocked } from '@/pages/Sidecars/config'
 import { REVIEW_MODE_HOLD, REVIEW_MODES, isHoldAction } from '@/pages/sidecarRuleVocabulary'
 import OptionalLabel from '../components/OptionalLabel'
 import LevelApprover from './sections/LevelApprover'
@@ -19,7 +19,8 @@ import TriggerItemsInput from './sections/TriggerItemsInput'
 
 // Provider, model and credential are not here: they live in the sidecar's own
 // analyzer section, a file path the control plane cannot supply.
-const listenerBlocked = (sidecar) => analyzerBlocked(sidecar.configuration)
+const listenerBlocked = (sidecar, listener) =>
+  analyzerBlocked(sidecar.configuration) ?? laneFeatureBlocked(listener.protocol, 'ai-analyzer')
 
 const LEVELS = [
   {

@@ -127,6 +127,7 @@ function Editor({ sidecar, index, onDone, onLeave }) {
             form={form}
             setField={setField}
             errors={errors}
+            capabilities={sidecar.capabilities ?? null}
             features={<FeatureSettings sidecar={sidecar} listener={isNew ? null : listeners[index]} />}
           />
         </Paper>

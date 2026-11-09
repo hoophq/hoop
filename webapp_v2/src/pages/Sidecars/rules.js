@@ -1,7 +1,7 @@
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
-import { analyzerBlocked } from './config'
+import { analyzerBlocked, laneFeatureBlocked } from './config'
 
 // Guardrail and masking rules are addressed by id, analyzer rules by name.
 export const RULE_APIS = {
@@ -30,7 +30,20 @@ export const RULE_APIS = {
 export function targetLanes(sidecar, listener, featureKey) {
   const config = sidecar.configuration
   if (featureKey === 'ai-analyzer' && analyzerBlocked(config)) return []
-  return (listener ? [listener] : (config?.listeners ?? [])).map((l) => l?.name).filter(Boolean)
+  return (listener ? [listener] : (config?.listeners ?? []))
+    .filter((l) => l?.name && !laneFeatureBlocked(l.protocol, featureKey))
+    .map((l) => l.name)
+}
+
+// Why Add is not offered for a feature, or null: no section for the analyzer,
+// or no lane in reach that can carry the feature.
+export function addBlocked(sidecar, listener, featureKey) {
+  if (featureKey === 'ai-analyzer' && analyzerBlocked(sidecar.configuration)) {
+    return analyzerBlocked(sidecar.configuration)
+  }
+  if (targetLanes(sidecar, listener, featureKey).length > 0) return null
+  const lanes = listener ? [listener] : (sidecar.configuration?.listeners ?? [])
+  return lanes.map((l) => laneFeatureBlocked(l?.protocol, featureKey)).find(Boolean) ?? null
 }
 
 export const lanesAsTargets = (sidecar, lanes) =>

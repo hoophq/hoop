@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
+import { Box, Divider, Group, Paper, Stack, Text, UnstyledButton } from '@mantine/core'
 import { AnsiHtml } from 'fancy-ansi/react'
-import { ArrowDown, Database, Search, Terminal, Zap } from 'lucide-react'
+import { ArrowDown, ChevronDown, ChevronRight, Database, Search, Terminal, Zap } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import Badge from '@/components/Badge'
 import Switch from '@/components/Switch'
@@ -16,7 +16,7 @@ import {
   liveTerminalEvents,
   streamRows,
 } from '../decoders/liveTail'
-import { recordingFormat } from '../decoders/sessionFormat'
+import { mcpCatalogOutput, recordingFormat } from '../decoders/sessionFormat'
 import { terminalText } from '../decoders/terminalDecoder'
 import DeniedBadge from './recording/DeniedBadge'
 import EmptyStream from './recording/EmptyStream'
@@ -113,6 +113,29 @@ function TextRow({ row }) {
   )
 }
 
+// A tools/list catalog: one line per tool, so it starts collapsed.
+function CatalogRow({ row }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Group gap="sm" align="flex-start" wrap="nowrap" className={classes.row}>
+      <Time row={row} />
+      {row.deniedRules && <DeniedBadge rules={row.deniedRules} />}
+      <Stack gap="xs" flex={1} miw={0}>
+        <UnstyledButton onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <Group gap="xs" wrap="nowrap" c="dimmed">
+            <Badge color="gray" variant="light" tag>
+              tools/list
+            </Badge>
+            <Text size="xs">Tool catalog</Text>
+            {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+          </Group>
+        </UnstyledButton>
+        {open && <pre className={classes.pre}>{row.text}</pre>}
+      </Stack>
+    </Group>
+  )
+}
+
 function Waiting({ postgres }) {
   return (
     <Group justify="center" gap="xs" py="lgAlt" c="dimmed">
@@ -131,6 +154,7 @@ export default function LiveTail({ session, largeOutput }) {
   const live = session.verb === 'connect' && session.status === 'open'
   const { state, events } = useSessionStream(session, { enabled: live, catchUp: !largeOutput })
   const postgres = session.connection_subtype === 'postgres'
+  const mcp = mcpCatalogOutput(session)
   const format = recordingFormat(session)
   const [onlyQueries, setOnlyQueries] = useState(true)
   const [search, setSearch] = useState('')
@@ -140,7 +164,7 @@ export default function LiveTail({ session, largeOutput }) {
   const now = useSyncExternalStore(state === 'live' ? subscribeTick : noop, getTick)
 
   const denied = useMemo(() => deniedAt(session.guardrails_info), [session.guardrails_info])
-  const rows = useMemo(() => streamRows(events, { postgres, denied }), [events, postgres, denied])
+  const rows = useMemo(() => streamRows(events, { postgres, mcp, denied }), [events, postgres, mcp, denied])
   const terminalEvents = useMemo(
     () => liveTerminalEvents(format, events, state === 'ended'),
     [format, events, state],
@@ -189,6 +213,7 @@ export default function LiveTail({ session, largeOutput }) {
         {visible.map((row) => {
           if (row.kind === 'query') return <QueryRow key={row.key} row={row} />
           if (row.kind === 'protocol') return <ProtocolRow key={row.key} row={row} />
+          if (row.kind === 'catalog') return <CatalogRow key={row.key} row={row} />
           return <TextRow key={row.key} row={row} />
         })}
         {state === 'live' && <Waiting postgres={postgres} />}

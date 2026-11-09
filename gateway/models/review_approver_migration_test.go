@@ -15,11 +15,11 @@ import (
 
 // The migration before and the one under test, stepped to by number.
 const (
-	beforeRiskLevelVersion = 147
-	riskLevelVersion       = 148
+	beforeRiskLevelVersion = 148
+	riskLevelVersion       = 149
 )
 
-// Migration 000148 adds reviews.risk_level and its dedup index, and the down
+// Migration 000149 adds reviews.risk_level and its dedup index, and the down
 // removes both. No other column comes or goes.
 func TestReviewRiskLevelMigration(t *testing.T) {
 	if testing.Short() {

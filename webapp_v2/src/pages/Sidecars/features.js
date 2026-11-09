@@ -25,6 +25,7 @@ const RULE_TYPE_LABELS = {
   http_resource: 'HTTP resource',
   http_status: 'HTTP status',
   grpc_status: 'gRPC status',
+  mcp_tool: 'MCP tool',
 }
 
 // LaneAnalyzerConfig.HighRisk/MediumRisk/LowRisk (sidecar/daemon/analyzer.go).
@@ -84,6 +85,9 @@ function ruleMatcher(rule) {
     case 'http_status':
     case 'grpc_status':
       return [join(rule.methods), join(rule.statuses)].filter(Boolean).join(' ') || null
+    case 'mcp_tool':
+      if (join(rule.allow)) return `allow only ${join(rule.allow)}`
+      return join(rule.tools) ? `deny ${join(rule.tools)}` : null
     default:
       return null
   }

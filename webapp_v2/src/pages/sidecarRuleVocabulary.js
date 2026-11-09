@@ -19,7 +19,7 @@
 // Guardrails
 // ---------------------------------------------------------------------------
 
-// The eight rule types, with the fields each one reads. `protocols` narrows
+// The rule types, with the fields each one reads. `protocols` narrows
 // which lanes may carry it: a sidecar REFUSES a rule its lane cannot read,
 // at startup, rather than skipping it at evaluation.
 //
@@ -76,6 +76,15 @@ export const GUARDRAIL_RULE_TYPES = [
     fields: ['statuses'],
     protocols: ['grpc', 'spanner'],
   },
+  {
+    // Sets one of the two: `tools` denies, `allow` lets only those through.
+    // It matches a tools/call only, so `call` is its one operations scope.
+    value: 'mcp_tool',
+    label: 'MCP tool',
+    fields: ['tools', 'allow'],
+    protocols: ['mcp'],
+    scope: ['call'],
+  },
 ]
 
 // Every operations value, by the protocol that produces it. The field is the
@@ -94,12 +103,15 @@ export const OPERATIONS = {
     'sftp_rename', 'sftp_mkdir', 'sftp_rmdir', 'sftp_list', 'sftp_stat',
     'sftp_setstat', 'sftp_symlink',
   ],
+  // call is a tools/call, show the tools/list catalog.
+  mcp: ['call', 'show'],
 }
 
 // Which operations family a listener protocol produces.
 export function operationsFor(protocol) {
   const p = (protocol ?? '').toLowerCase()
   if (p === 'ssh') return OPERATIONS.ssh
+  if (p === 'mcp') return OPERATIONS.mcp
   if (p === 'http' || p === 'grpc') return OPERATIONS.http
   return OPERATIONS.sql
 }
@@ -113,6 +125,11 @@ export const TABLE_ACCESS = [
 export const GUARDRAIL_ACTIONS = [
   { value: '', label: 'Deny the statement' },
   { value: 'defer', label: 'Report a finding, let Rego decide' },
+]
+
+export const MCP_TOOL_LISTS = [
+  { value: 'tools', label: 'Deny these tools' },
+  { value: 'allow', label: 'Allow only these tools' },
 ]
 
 // ---------------------------------------------------------------------------

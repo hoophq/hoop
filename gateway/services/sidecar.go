@@ -239,10 +239,7 @@ func (e ErrSidecarConfigOverCap) Error() string {
 func CheckSidecarConfigurationLimits(cfg daemon.Config, licenseData json.RawMessage) error {
 	lic := license.Status{}
 	if len(bytes.TrimSpace(licenseData)) > 0 {
-		lic = license.Load(license.Ref{
-			Value:  string(licenseData),
-			Source: "the organization license",
-		})
+		lic = loadSidecarLicense(licenseData)
 	}
 	if problems := cfg.CheckLimits(lic); len(problems) > 0 {
 		return ErrSidecarConfigOverCap{Problems: problems}

@@ -17,6 +17,7 @@ import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
+import { laneFeatureBlocked } from '@/pages/Sidecars/config'
 import { ENTITY_TYPES, SSH_ONLY_STRATEGY, maskPreview } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
 import {
@@ -33,6 +34,8 @@ import { emptyCustomEntity, emptyRule } from './useDataMaskingEditor'
 // by entity type; a sidecar masks the decoded response itself, by entity or
 // by column name, with a strategy. An option one engine does not run carries
 // a RuleSupportTag.
+
+const listenerBlocked = (_sidecar, listener) => laneFeatureBlocked(listener.protocol, 'data-masking')
 
 const AGENT_PROVIDER_REQUIRED =
   'Needs a rule-driven DLP provider (Microsoft Presidio or alcatraz). Sidecars mask without one.'
@@ -287,7 +290,7 @@ export default function DataMaskingFields({ editor }) {
         title="Distribute to listeners"
         description="A listener's mask rules replace the sidecar defaults rather than adding to them."
       >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
+        <SidecarTargetPicker value={targets} onChange={setTargets} listenerBlocked={listenerBlocked} />
       </SectionRow>
 
       <SectionRow

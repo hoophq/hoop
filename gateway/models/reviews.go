@@ -129,7 +129,7 @@ type SidecarReviewKey struct {
 }
 
 // The statement scopes, one per key. Each implies the predicate of its
-// partial unique index (000125 for a rule, 000148 for a level), so a lookup
+// partial unique index (000125 for a rule, 000149 for a level), so a lookup
 // uses the index. IS NOT DISTINCT FROM implies neither. The statuses are
 // literal: a generic plan proves no predicate from a bound status. Args: org,
 // sidecar, listener, the key, the statement hash.
