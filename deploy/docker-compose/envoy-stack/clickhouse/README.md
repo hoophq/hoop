@@ -72,7 +72,8 @@ and 64 MiB per block; `clickhouse.max_frame_bytes` and
 parameter, in the POST body, or in both joined by a line feed. The lane's
 `http.sql` block (`params: {/**: query}`) reads it the same way, so each
 request is followed by a SQL statement the guardrail and the trail read.
-`/**`, because ClickHouse also runs `/query?query=`. The rows after
+`/**`, because ClickHouse also runs `/query?query=`. For an API that takes
+SQL in the body only, `http.sql.text` lists the routes instead. The rows after
 `INSERT ... FORMAT` are not read as SQL. A compressed or multipart body is an
 `unknown` statement. See "SQL in URL parameters and plain bodies" in
 `sidecar/README.md`. The request line is still scanned too, which covers

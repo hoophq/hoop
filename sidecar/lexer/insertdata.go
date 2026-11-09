@@ -37,8 +37,9 @@ func InsertData(sql string, d Dialect) (head string, ok bool) {
 		case tok.isWord("format"):
 			name, more := s.next()
 			// Values rows can be expressions with scalar subqueries, so
-			// they are read as SQL like a VALUES clause.
-			if !more || s.incomplete != "" || !name.isName() || strings.EqualFold(name.Text, "values") {
+			// they are read as SQL like a VALUES clause. A quoted name can
+			// spell Values with an escape the scanner does not decode.
+			if !more || s.incomplete != "" || name.Kind != Word || strings.EqualFold(name.Text, "values") {
 				return "", false
 			}
 			return sql[:s.pos], true

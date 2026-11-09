@@ -4660,20 +4660,25 @@ in both, joined by a line feed. Without these keys the lane's statement is
 - **One source per route.** A pattern in two of `fields`, `params` and
   `text` is refused at load. Routes resolve by the longest pattern, as
   `fields` does.
-- **The parameter.** It is read from the request line, split on `&`, with
-  every name unescaped and compared without case. A second value for it is
-  refused. A parameter the lane redacts (`sensitive_query_params` or the
+- **The parameter.** It is read from the request line, split on `&` as
+  ClickHouse does, with every name unescaped and compared without case. A
+  second value for it is refused, and so is a `;` that changes its value:
+  some servers split on `;` too. A parameter the lane redacts (`sensitive_query_params` or the
   codec's defaults) cannot be named.
 - **INSERT rows.** In ClickHouse, what follows `INSERT ... FORMAT <name>`
   is rows the server parses with that format, never SQL. The statement is
   judged alone, as an insert on its table, and `http.sql_inline_rows` marks
   it. The rows can be binary, compressed or longer than `max_body_bytes`.
   `FORMAT Values` is the exception: its rows can be expressions with scalar
-  subqueries, so it is read whole, as a `VALUES` clause is.
+  subqueries, so it is read whole, as a `VALUES` clause is. So is a quoted
+  format name, which can spell `Values` with an escape.
 - **Unreadable is `unknown`.** A multipart body (ClickHouse reads a form
-  field as a parameter), a body under `Content-Encoding`, a body cut at
-  `max_body_bytes`, a malformed percent-escape and bytes that are not text
-  each become an `unknown` statement with the reason in `sql.incomplete`.
+  field as a parameter), a form body with a field named like the parameter
+  (a server that parses forms reads it), a body under `Content-Encoding`, a
+  body cut at `max_body_bytes`, a malformed percent-escape and bytes that
+  are not text each become an `unknown` statement with the reason in
+  `sql.incomplete`. Plain SQL sent with a form type, as `curl --data` does,
+  is still read.
   The text check also catches ClickHouse's own `decompress=1` format.
 - **`tools` and `refuse`** read JSON bodies and need `fields`.
 - **`{t:Identifier}` hides the table.** ClickHouse binds `param_t=customers`

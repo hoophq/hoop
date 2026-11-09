@@ -91,6 +91,13 @@ func TestSQLParamReadsEveryClickHouseShape(t *testing.T) {
 	if sql.Operation != inspect.OpDrop || sql.Metadata[codechttp.MetadataSQLResource] != "/query" {
 		t.Errorf("/query: %q %s %v", sql.Text, sql.Operation, sql.Metadata)
 	}
+
+	// curl --data sends a form content type, and ClickHouse reads the body as SQL.
+	sql = sqlOf(t, codechttp.Options{SQL: clickhouseSQL()},
+		request("POST", "/", "Content-Type: application/x-www-form-urlencoded\r\n", "SELECT 7 % 3 FROM appdb.customers"))
+	if sql.Operation != inspect.OpSelect {
+		t.Errorf("a form-typed SQL body: %q %s", sql.Text, sql.Operation)
+	}
 }
 
 // A request that carries no SQL, a health check or a page of the web UI,
@@ -146,6 +153,7 @@ func TestSQLParamInsertRowsAreNotReadAsSQL(t *testing.T) {
 // reason recorded, so a rule naming unknown refuses it. Nothing binary
 // reaches its text.
 func TestSQLParamUnreadableIsUnknown(t *testing.T) {
+	cutAtFormat := "INSERT INTO t /*" + strings.Repeat("x", 40) + "*/ FORMAT Val"
 	for _, tc := range []struct {
 		name, target, headers, body string
 		maxBody                     int
@@ -157,7 +165,9 @@ func TestSQLParamUnreadableIsUnknown(t *testing.T) {
 			"--b\r\nContent-Disposition: form-data; name=\"query\"\r\n\r\nDROP TABLE t\r\n--b--\r\n", 0, "multipart"},
 		{"multipart after an INSERT", "/?query=INSERT%20INTO%20t%20FORMAT%20TSV", "Content-Type: multipart/form-data; boundary=b\r\n",
 			"--b--\r\n", 0, "multipart"},
+		{"form field", "/?query=SELECT%201", "Content-Type: application/x-www-form-urlencoded\r\n", "x=1&query=DROP+TABLE+t", 0, "form body"},
 		{"truncated", "/", "", "SELECT 1 /*" + strings.Repeat("x", 200) + "*/; DROP TABLE t", 64, "max_body_bytes"},
+		{"truncated in the format name", "/", "", cutAtFormat + "ues (1, (SELECT secret FROM s))", len(cutAtFormat), "max_body_bytes"},
 		{"bad escape in a name", "/?qu%ZZery=DROP%20TABLE%20t", "", "", 0, "malformed percent-escape"},
 		{"bad escape in the SQL", "/?query=DROP%20TABLE%20t%ZZ", "", "", 0, "malformed percent-escape"},
 		{"binary body", "/", "", "\x02\x00\x00\x00\x0cDROP TABLE t", 0, "not text"},
@@ -203,6 +213,25 @@ func TestSQLParamFragmentIsRefused(t *testing.T) {
 		if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), "#") {
 			t.Errorf("%s: err = %v, want the request refused", target, err)
 		}
+	}
+}
+
+// libhoop and some servers also end a pair at ;, ClickHouse does not, so a ;
+// that changes the SQL parameter is refused.
+func TestSQLParamSemicolonIsRefused(t *testing.T) {
+	for _, target := range []string{
+		"/?max_threads=1;query=DROP%20TABLE%20t",
+		"/?query=SELECT%201;query=DROP%20TABLE%20t",
+		"/?query=SELECT%201;DROP%20TABLE%20t",
+	} {
+		_, err := decodeClient(t, codechttp.New(codechttp.Options{SQL: clickhouseSQL()}), request("GET", target, "", ""))
+		if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), ";") {
+			t.Errorf("%s: err = %v, want the request refused", target, err)
+		}
+	}
+	sql := sqlOf(t, codechttp.Options{SQL: clickhouseSQL()}, request("GET", "/?param_x=a;b&query=DROP%20TABLE%20t", "", ""))
+	if sql.Operation != inspect.OpDrop {
+		t.Errorf("a ; in another parameter: %q %s", sql.Text, sql.Operation)
 	}
 }
 

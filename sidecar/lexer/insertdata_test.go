@@ -17,7 +17,6 @@ func TestInsertDataSplitsTheRowsOff(t *testing.T) {
 		{"INSERT INTO db.format FORMAT CSV", "INSERT INTO db.format FORMAT CSV"},
 		{"INSERT INTO FUNCTION format(CSV, 'x') FORMAT TSV\n", "INSERT INTO FUNCTION format(CSV, 'x') FORMAT TSV"},
 		{"/* c */ INSERT INTO t FORMAT CSV\n1,'a'", "/* c */ INSERT INTO t FORMAT CSV"},
-		{"INSERT INTO t FORMAT `TSV`\nDROP TABLE t", "INSERT INTO t FORMAT `TSV`"},
 	} {
 		head, ok := lexer.InsertData(tc.sql, lexer.ClickHouse)
 		if !ok || head != tc.head {
@@ -34,6 +33,8 @@ func TestInsertDataLeavesOtherStatementsWhole(t *testing.T) {
 		"INSERT INTO t VALUES (1, 'a')",
 		"INSERT INTO t FORMAT Values (1, (SELECT secret FROM s))",
 		"INSERT INTO t FORMAT `values` (1)",
+		"INSERT INTO t FORMAT `Val\\x75es` (1, (SELECT secret FROM s))",
+		"INSERT INTO t FORMAT `TSV`\nDROP TABLE t",
 		"INSERT INTO t; DROP TABLE t FORMAT TSV",
 		"INSERT INTO t FORMAT",
 		"INSERT INTO t ('a FORMAT TSV",

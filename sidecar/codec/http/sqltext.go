@@ -56,6 +56,10 @@ func (r *sqlReader) readText(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.Stat
 		// ClickHouse reads a multipart form field as a URL parameter.
 		return r.unreadable(rt, param, "a multipart body can carry SQL in a form field; send the SQL in the URL or a plain body"), nil
 	}
+	if hasBody && rt.source.param != "" && isForm(d.ContentType) && formHas(d.Body, rt.source.param) {
+		// ClickHouse reads this body as SQL; a server that parses forms reads the field.
+		return r.unreadable(rt, param, fmt.Sprintf("the form body carries the SQL parameter %q, which servers read differently", rt.source.param)), nil
+	}
 	if found {
 		if head, ok := lexer.InsertData(param, r.opts.Dialect); ok {
 			return r.text(rt, head, true), nil
@@ -71,7 +75,8 @@ func (r *sqlReader) readText(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.Stat
 		} else {
 			sql = d.Body
 		}
-		if head, ok := lexer.InsertData(sql, r.opts.Dialect); ok {
+		// A cut right after the format name may have shortened it: FORMAT Val|ues.
+		if head, ok := lexer.InsertData(sql, r.opts.Dialect); ok && (!d.BodyTruncated || len(head) < len(sql)) {
 			return r.text(rt, head, true), nil
 		}
 		if d.BodyTruncated {
@@ -106,8 +111,9 @@ func (r *sqlReader) unreadable(rt sqlRoute, text, reason string) []inspect.State
 }
 
 // queryValue returns the value of the URL parameter name in a
-// request-target. It splits on & only and unescapes every key: Go's
-// lenient parser drops a pair with a bad escape, which would hide the SQL.
+// request-target. It splits on & as ClickHouse does, refuses a ; that
+// changes the reading, and unescapes every key: Go's lenient parser drops a
+// pair with a bad escape, which would hide the SQL.
 // Names compare case-insensitively, so a server that does too cannot be
 // reached past the lane. A second value is refused: reading one would
 // leave the other unread.
@@ -121,10 +127,20 @@ func queryValue(target, name string) (value string, found bool, err error) {
 	if q < 0 {
 		return "", false, nil
 	}
-	for pair := range strings.SplitSeq(target[q+1:], "&") {
-		if pair == "" {
-			continue
-		}
+	query := target[q+1:]
+	if value, found, err = paramValue(query, name, "&"); err != nil || strings.IndexByte(query, ';') < 0 {
+		return value, found, err
+	}
+	// ClickHouse ends a pair at & only; libhoop and some servers also at ;.
+	if v, f, err := paramValue(query, name, "&;"); err != nil || v != value || f != found {
+		return "", false, fmt.Errorf("the request-target separates parameters with ;, which servers read differently: %w", inspect.ErrStreamUnsafe)
+	}
+	return value, found, nil
+}
+
+// paramValue is queryValue over a query string whose pairs end at any byte in seps.
+func paramValue(query, name, seps string) (value string, found bool, err error) {
+	for _, pair := range strings.FieldsFunc(query, func(c rune) bool { return strings.ContainsRune(seps, c) }) {
 		rawKey, rawValue, _ := strings.Cut(pair, "=")
 		key, kerr := url.QueryUnescape(rawKey)
 		if kerr != nil {
@@ -142,6 +158,21 @@ func queryValue(target, name string) (value string, found bool, err error) {
 		found = true
 	}
 	return value, found, nil
+}
+
+func isForm(contentType string) bool {
+	mt, _, _ := strings.Cut(contentType, ";")
+	return strings.EqualFold(strings.TrimSpace(mt), "application/x-www-form-urlencoded")
+}
+
+func formHas(body, name string) bool {
+	for _, pair := range strings.FieldsFunc(body, func(c rune) bool { return c == '&' || c == ';' }) {
+		rawKey, _, _ := strings.Cut(pair, "=")
+		if key, err := url.QueryUnescape(rawKey); err == nil && strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // isText reports whether s is UTF-8 with no control byte but whitespace.
