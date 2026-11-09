@@ -293,3 +293,30 @@ func TestContextUseConcurrentKeepsEachInstallation(t *testing.T) {
 		}
 	}
 }
+
+func TestContextUseLeavesNoTempFiles(t *testing.T) {
+	home := t.TempDir()
+	s := NewContextStore(home)
+	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com", Token: "t"}))
+	if _, err := s.Use("dev", false); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{home, filepath.Join(home, "contexts")} {
+		entries, err := os.ReadDir(dir)
+		must(t, err)
+		for _, e := range entries {
+			if filepath.Ext(e.Name()) == ".tmp" {
+				t.Fatalf("temp file left behind: %s", filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	// config.toml stays private after an atomic replace
+	st, err := os.Stat(filepath.Join(home, "config.toml"))
+	must(t, err)
+	if mode := st.Mode().Perm(); mode != 0600 {
+		t.Fatalf("config.toml mode = %v, want 0600", mode)
+	}
+	if got := readLegacy(t, filepath.Join(home, "config.toml")); got.Token != "t" {
+		t.Fatalf("config.toml = %+v", got)
+	}
+}

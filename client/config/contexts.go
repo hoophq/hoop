@@ -261,7 +261,7 @@ func (s *ContextStore) SetActive(name string) error {
 	if _, err := s.Get(name); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(s.dir, activeContextKey), []byte(name+"\n"), 0600); err != nil {
+	if err := writeFileAtomic(filepath.Join(s.dir, activeContextKey), []byte(name+"\n")); err != nil {
 		return fmt.Errorf("failed marking context %s active: %v", name, err)
 	}
 	return nil
@@ -286,9 +286,8 @@ func (s *ContextStore) Use(name string, force bool) (*Context, error) {
 	if target, err = s.Get(name); err != nil {
 		return nil, err
 	}
-	conf := target.Config()
-	conf.filepath = s.configFile
-	if _, err := conf.Save(); err != nil {
+	// atomic, so an interrupted switch leaves the old config.toml, never a broken one
+	if err := writeTOML(s.configFile, target.Config()); err != nil {
 		return nil, err
 	}
 	if err := s.SetActive(name); err != nil {
@@ -350,12 +349,18 @@ func writeTOML(path string, v any) error {
 	if err := toml.NewEncoder(buf).Encode(v); err != nil {
 		return fmt.Errorf("failed encoding %s: %v", path, err)
 	}
+	return writeFileAtomic(path, buf.Bytes())
+}
+
+// writeFileAtomic replaces path in one rename, so an interrupted write never
+// leaves a truncated file behind.
+func writeFileAtomic(path string, data []byte) error {
 	// a unique temp file, so two writers never rename each other's file; mode 0600
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed writing %s: %v", path, err)
 	}
-	_, err = f.Write(buf.Bytes())
+	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
