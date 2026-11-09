@@ -2,6 +2,7 @@ import { Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/
 import { Bot, FileCheck2, User } from 'lucide-react'
 import Radio from '@/components/Radio'
 import { APPROVER_AI, APPROVER_HUMAN, APPROVERS } from '@/pages/sidecarRuleVocabulary'
+import CardConnector from '../../components/CardConnector'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { APPROVER_RULE } from '../useSidecarAiAnalyzerEditor'
@@ -84,10 +85,14 @@ export function ApproverCard(props) {
   )
 }
 
-// The card stack under a level that holds for approval.
-export default function LevelApprover(props) {
+// The card stack under a level that holds for approval: the AI policy
+// settings card (`policy`) first, since its rules apply before the approval
+// (f20), then the Approver card.
+export default function LevelApprover({ policy, ...props }) {
   return (
     <Paper withBorder radius="lg" p="md">
+      {policy}
+      <CardConnector />
       <ApproverCard {...props} />
     </Paper>
   )

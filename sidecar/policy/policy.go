@@ -191,6 +191,13 @@ type EvalContext struct {
 	// state between statements; the hop is the caller's.
 	SkipResponses map[string]bool
 
+	// ResponseMasks are masks an evaluator applies to the response of the
+	// current statement only: the AI analyzer's per-statement data masking
+	// (ENG-662). Like SkipResponses, the hop to the response is the
+	// caller's. The gate reads them after an allow; it never adds them to
+	// the lane's masker, which every statement shares.
+	ResponseMasks []ResponseMask
+
 	// Context carries per-connection facts an evaluator may need: the
 	// authenticated user, the connection name, a correlation id.
 	//
@@ -430,6 +437,25 @@ func (e *EvalContext) DeclineResponses(source string) {
 		e.SkipResponses = make(map[string]bool, 1)
 	}
 	e.SkipResponses[source] = true
+}
+
+// ResponseMask rewrites values in the response to one statement. It has the
+// method set of gate.Masker, which this package cannot import, so any masker
+// the gate takes satisfies it.
+type ResponseMask interface {
+	Mask(data []byte) (out []byte, entities []string, count int)
+	MaskCell(column string, value []byte) (out []byte, entities []string, count int)
+}
+
+// MaskResponse asks the caller that owns the exchange (the gate) to apply m
+// to the response of the current statement, and to no other. The gate
+// ignores it when the statement is denied, and denies the statement when it
+// cannot tie a response to it. See ResponseMasks.
+func (e *EvalContext) MaskResponse(m ResponseMask) {
+	if e == nil || m == nil {
+		return
+	}
+	e.ResponseMasks = append(e.ResponseMasks, m)
 }
 
 // ContextualEvaluator is an Evaluator that reads what earlier evaluators in

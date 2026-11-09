@@ -261,13 +261,14 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		}
 		rule := daemon.LaneAnalyzerConfig{
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
-			LowRisk: base.LowRisk, Approvers: base.Approvers, Handoffs: base.Handoffs,
+			LowRisk: base.LowRisk, Approvers: base.Approvers, Handoffs: base.Handoffs, AIRules: base.AIRules,
 			Prompt: base.Prompt, Message: base.Message,
 			ApprovalRule: base.ApprovalRule, ReviewMode: base.ReviewMode,
 			MatchIgnore: base.MatchIgnore,
 		}
+		// ai_rules decide too: a level left unset allows, with the AI rules.
 		if rule.Trigger == nil && rule.HighRisk == "" && rule.MediumRisk == "" && rule.LowRisk == "" &&
-			rule.Prompt == "" && rule.Message == "" {
+			rule.Prompt == "" && rule.Message == "" && len(levelAIRules(&rule)) == 0 {
 			continue
 		}
 		ruleName, err := name(SidecarRuleAnalyzer, scName, l.Name, "analyzer")
@@ -285,7 +286,8 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			Targets: []ImportedTarget{{Listener: l.Name}}})
 
 		base.Trigger = nil
-		base.HighRisk, base.MediumRisk, base.LowRisk, base.Approvers, base.Handoffs = "", "", "", nil, nil
+		base.HighRisk, base.MediumRisk, base.LowRisk = "", "", ""
+		base.Approvers, base.Handoffs, base.AIRules = nil, nil, nil
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
 		base.MatchIgnore = nil
 		l.Analyzer = &base

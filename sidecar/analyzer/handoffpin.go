@@ -47,6 +47,10 @@ type handoffPin struct {
 	reviewID string
 	reason   string
 	filedAt  time.Time
+
+	// rules is the AI rule outcome the filing applied (ENG-662). A pinned
+	// resend applies it again, failed outcome included, without asking.
+	rules ruleOutcome
 }
 
 // maxHandoffPins bounds the pins one evaluator keeps. The oldest goes first;
@@ -109,9 +113,11 @@ func (p *handoffPins) begin(key string) uint64 {
 	return p.seq
 }
 
-// finish ends filing gen for key. With publish it pins reviewID, replacing
-// whatever key held, but only when no later filing for key started since.
-func (p *handoffPins) finish(key string, gen uint64, reviewID, reason string, publish bool) {
+// finish ends filing gen for ref.key. With publish it pins reviewID and
+// ref's reason and rule outcome, replacing whatever the key held, but only
+// when no later filing for the key started since.
+func (p *handoffPins) finish(gen uint64, ref pinRef, reviewID string, publish bool) {
+	key := ref.key
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	latest := p.filing[key]
@@ -122,7 +128,7 @@ func (p *handoffPins) finish(key string, gen uint64, reviewID, reason string, pu
 	if !publish {
 		return
 	}
-	pin := &handoffPin{key: key, reviewID: reviewID, reason: reason, filedAt: p.now()}
+	pin := &handoffPin{key: key, reviewID: reviewID, reason: ref.reason, rules: ref.rules, filedAt: p.now()}
 	if el, ok := p.entries[key]; ok {
 		el.Value = pin
 		p.order.MoveToFront(el)
@@ -150,8 +156,9 @@ func (p *handoffPins) drop(key, reviewID string) {
 // pinRef ties a hold to the hand-off decision that asked for it. The zero
 // value pins nothing: a direct hold, or a fail-safe.
 type pinRef struct {
-	// key and reason are what a filing pins.
+	// key, reason and rules are what a filing pins.
 	key, reason string
+	rules       ruleOutcome
 
 	// reviewID is the pinned request this statement claims instead of
 	// filing. again decides the hand-off afresh, with no pin, when that

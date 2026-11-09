@@ -613,7 +613,7 @@
             "description": "Risk evaluation actions per level"
           },
           "sidecar_spec": {
-            "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nOmitted on a rule no sidecar runs.",
+            "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nai_rules.\u003clevel\u003e may set guardrails and mask, {mode, rules}: the guardrail and data\nmasking rules of this organization the AI may apply to a statement at that risk level.\nmode is existing_only (default) or existing_and_new; rules names library rules, and\nabsent allows all. Refused on a block or defer level, for an entry with neither, for a\nname the library does not hold, and without an Enterprise license.\n\nOmitted on a rule no sidecar runs.",
             "type": "object"
           },
           "sidecar_targets": {
