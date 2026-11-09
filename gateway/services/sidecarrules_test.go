@@ -142,10 +142,21 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 		},
 		// ---- hand-off levels: the sidecar's own refusals, at save --------
 		{
-			name: "a hand-off level with no handoffs entry",
+			// No entry allows all four, the hold included.
+			name: "a hand-off level with no handoffs entry and no approval rule",
 			kind: SidecarRuleAnalyzer,
 			spec: `{"high":"ai-handoff"}`,
-			want: "handoffs.high is missing",
+			want: "names no approval_rule",
+		},
+		{
+			name: "a hand-off level with no handoffs entry",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","approval_rule":"r"}`,
+		},
+		{
+			name: "a hand-off with no allowed_actions key",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","approval_rule":"r","handoffs":{"high":{"prompt":"Prefer warn"}}}`,
 		},
 		{
 			name: "a handoffs entry on a level that does not hand off",

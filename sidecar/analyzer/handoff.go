@@ -19,8 +19,8 @@ type Handoff struct {
 	Prompt string
 
 	// Allowed are the actions the agent may select: allow, warn, block and
-	// require_review (also spelled require_approval). New refuses an empty
-	// list and any other action.
+	// require_review (also spelled require_approval). Nil allows all four;
+	// New refuses an empty, non-nil list and any other action.
 	Allowed []Action
 
 	// Approval is who decides on a require_review the agent selects, as
@@ -116,24 +116,25 @@ type handoffLevel struct {
 }
 
 // newHandoffs checks Config.Handoffs against the action map and builds the
-// runtime form.
+// runtime form. An ai-handoff level with no entry hands off with all four
+// actions and the default prompt.
 func newHandoffs(cfg Config, actions ActionMap) (map[RiskLevel]*handoffLevel, error) {
-	for level, a := range actions {
-		if _, ok := cfg.Handoffs[level]; a == ActionHandoff && !ok {
-			return nil, fmt.Errorf("sidecar/analyzer: risk %q hands off and has no hand-off configuration", level)
-		}
-	}
-	var out map[RiskLevel]*handoffLevel
-	for level, h := range cfg.Handoffs {
+	for level := range cfg.Handoffs {
 		if actions.actionFor(level) != ActionHandoff {
 			return nil, fmt.Errorf("sidecar/analyzer: risk %q has a hand-off configuration and its action "+
 				"is not %s", level, ActionHandoff)
+		}
+	}
+	var out map[RiskLevel]*handoffLevel
+	for level, a := range actions {
+		if a != ActionHandoff {
+			continue
 		}
 		if _, ok := cfg.Provider.(ToolCaller); !ok {
 			return nil, fmt.Errorf("sidecar/analyzer: provider %q cannot run the hand-off agent that risk %q "+
 				"names", cfg.Provider.Name(), level)
 		}
-		hl, err := newHandoffLevel(level, h)
+		hl, err := newHandoffLevel(level, cfg.Handoffs[level])
 		if err != nil {
 			return nil, err
 		}
@@ -146,8 +147,12 @@ func newHandoffs(cfg Config, actions ActionMap) (map[RiskLevel]*handoffLevel, er
 }
 
 func newHandoffLevel(level RiskLevel, h Handoff) (*handoffLevel, error) {
+	allowed := h.Allowed
+	if allowed == nil {
+		allowed = handoffOrder[:]
+	}
 	seen := map[Action]bool{}
-	for _, a := range h.Allowed {
+	for _, a := range allowed {
 		switch c := a.Canonical(); c {
 		case ActionAllow, ActionWarn, ActionBlock, ActionRequireReview:
 			seen[c] = true

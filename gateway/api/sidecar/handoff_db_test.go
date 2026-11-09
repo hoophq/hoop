@@ -153,6 +153,30 @@ func TestAHandoffFilingThatDoesNotMatchTheLevelIsRefused(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 }
 
+// A hand-off level with no allowed_actions, or with no handoffs entry,
+// allows all four actions, the hold included, so its human hold files.
+func TestAHandoffWithNoAllowedActionsMayHoldForAHuman(t *testing.T) {
+	startStatusTestDB(t)
+	org := uuid.MustParse(statusTestOrgID)
+	sc := seedLevelSidecar(t, "handoff-absent", "handoff-absent-rule", `{
+		"high": "ai-handoff", "medium": "ai-handoff",
+		"approval_rule": "handoff-absent-rule",
+		"handoffs": {"high": {"prompt": "Prefer warn"}},
+		"approvers": {"high": {"type": "human", "groups": ["dba"]}, "medium": {"type": "human"}}}`)
+
+	managed, err := services.AnalyzerApprovalRule(models.DB, org, "handoff-absent-rule")
+	require.NoError(t, err)
+	require.NotNil(t, managed, "a hand-off with no allowed_actions may hold, so it keeps the managed rule")
+
+	for level, groups := range map[string][]string{"high": {"dba"}, "medium": {types.GroupAdmin}} {
+		rec := fileHandoff(sc, "DELETE FROM payments WHERE id = 1", level)
+		require.Equal(t, http.StatusCreated, rec.Code, "%s: %s", level, rec.Body.String())
+		filed := decodeReviewResponse(t, rec)
+		assert.Equal(t, groups, reviewGroupNames(filed.Review), level)
+		assert.True(t, filed.Review.ViaHandoff, level)
+	}
+}
+
 // A level can switch between a direct hold and a hand-off. A review filed one
 // way never answers a filing made the other way.
 func TestAHandoffReviewIsKeptApartFromADirectReview(t *testing.T) {

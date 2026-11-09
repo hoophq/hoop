@@ -59,9 +59,9 @@ function riskDetail(spec, level) {
   const action = spec[level]
   const read = readLevelApprover(spec, level)
   if (isHandoffAction(action)) {
-    const allowed = readLevelHandoff(spec, level)?.allowed ?? []
+    const { allowed } = readLevelHandoff(spec, level)
     const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
-    return parts.length > 0 ? `hand-off (${parts.join(', ')})` : 'hand-off'
+    return `hand-off (${parts.join(', ')})`
   }
   if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
   return `hold (${approverDetail(read, ': ')})`

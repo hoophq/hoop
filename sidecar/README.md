@@ -1648,8 +1648,12 @@ A `handoffs.<level>` entry has these keys:
 
 | Key | Meaning |
 |---|---|
-| `allowed_actions` | a list of what the hand-off agent may select: `allow`, `warn`, `block`, `require_approval` (`require_review` is its alias). Required |
+| `allowed_actions` | a list of what the hand-off agent may select: `allow`, `warn`, `block`, `require_approval` (`require_review` is its alias). Absent allows all four; an empty list `[]` is refused |
 | `prompt` | replaces the hand-off agent's instruction |
+
+An `ai-handoff` level with no `handoffs.<level>` entry hands off with all four
+actions and the default instruction. Such a level can select
+`require_approval`, so it holds like any level that can.
 
 Who decides a `require_approval` the agent selects is `approvers.<level>`,
 as for a held level: `human` files its approval request with the risk level
@@ -1663,8 +1667,7 @@ These are refused at load, by `-validate`, and by the control plane at save:
 
 | Setting | Why |
 |---|---|
-| an `ai-handoff` level with no `handoffs.<level>` | the agent has nothing to select |
-| `allowed_actions` empty | the agent has nothing to select |
+| `allowed_actions: []` | the agent has nothing to select; remove the key to allow all four |
 | `allowed_actions` with `ai-handoff`, `defer` or an unknown value | the agent cannot select it |
 | an action named twice in `allowed_actions`, `require_review` and `require_approval` included | one action, one tool |
 | `handoffs.<level>` on a level whose action is not `ai-handoff` | nothing hands off |
@@ -1745,11 +1748,11 @@ such a level needs a control plane or a terminal, and counts as a level that
 waits for a person for `review_mode`, `approval_mode`, `spend_approval_on`
 and `match_ignore`. The deprecated `ai_analysis` rule form cannot hand off.
 
-`handoffs` needs capability `analyzer_ai_handoff`, and every `ai-handoff`
-level needs a `handoffs` entry, so a sidecar that does not report the
-capability is refused the block, naming the capability and the release that
-adds it. The plane serves no downgrade: an older sidecar has no action that
-lets the agent choose.
+`handoffs` needs capability `analyzer_ai_handoff`, and so does every
+`ai-handoff` level, with or without a `handoffs` entry: a sidecar that does
+not report the capability is refused the block, naming the capability and the
+release that adds it. The plane serves no downgrade: an older sidecar has no
+action that lets the agent choose.
 
 **Deprecated spellings.** `require_review` is the earlier spelling of
 `require_approval`. A local file that uses it, or a listener `approval_rule`,

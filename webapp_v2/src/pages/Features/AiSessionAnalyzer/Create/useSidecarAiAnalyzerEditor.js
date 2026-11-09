@@ -14,6 +14,7 @@ import {
   operationsFor,
   readLevelApprover,
   readLevelHandoff,
+  writeLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
 
@@ -76,7 +77,7 @@ function specToForm(spec, ruleName, reviewers) {
   for (const level of LEVEL_KEYS) {
     const action = spec[level] ?? ''
     form[level] = isHoldAction(action) ? REVIEW_ACTION : action
-    if (isHandoffAction(action)) form.handoff[level] = readLevelHandoff(spec, level) ?? emptyHandoff()
+    if (isHandoffAction(action)) form.handoff[level] = readLevelHandoff(spec, level)
     if (!canHold(form, level)) continue
     const read = readLevelApprover(spec, level)
     if (read) {
@@ -114,11 +115,6 @@ function approverToSpec(approval) {
   return null
 }
 
-// handoffs.<level> (ENG-661): the actions the agent may select, and its prompt.
-function handoffToSpec(handoff) {
-  const prompt = handoff.prompt.trim()
-  return prompt !== '' ? { allowed_actions: [...handoff.allowed], prompt } : { allowed_actions: [...handoff.allowed] }
-}
 // An item keeps only the fields it names, or is null when it names none.
 function compactItem(item) {
   const out = {}
@@ -145,7 +141,7 @@ function formToSpec(f, ruleName) {
   for (const level of LEVEL_KEYS) {
     if (f[level] === '') continue
     spec[level] = f[level]
-    if (isHandoffAction(f[level])) handoffs[level] = handoffToSpec(f.handoff[level])
+    if (isHandoffAction(f[level])) handoffs[level] = writeLevelHandoff(f.handoff[level])
     const approver = canHold(f, level) ? approverToSpec(f.approval[level]) : null
     if (approver) approvers[level] = approver
   }

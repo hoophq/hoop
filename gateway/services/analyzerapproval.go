@@ -129,21 +129,11 @@ func LevelAction(block *daemon.LaneAnalyzerConfig, level analyzer.RiskLevel) str
 }
 
 // HandoffCanHold reports whether level is ai-handoff and its hand-off agent
-// may select require_approval, in either spelling.
+// may select require_approval, in either spelling. A level with no handoffs
+// entry, or an entry with no allowed_actions, allows all four, the hold
+// included, as the sidecar reads it.
 func HandoffCanHold(block *daemon.LaneAnalyzerConfig, level analyzer.RiskLevel) bool {
-	if analyzer.Action(LevelAction(block, level)) != analyzer.ActionHandoff {
-		return false
-	}
-	h := block.LevelHandoff(level)
-	if h == nil {
-		return false
-	}
-	for _, a := range h.AllowedActions {
-		if holdsAction(a) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(block.HandoffActions(level), analyzer.ActionRequireReview)
 }
 
 // specApprovalRule reads the approval_rule a spec names, empty when it does

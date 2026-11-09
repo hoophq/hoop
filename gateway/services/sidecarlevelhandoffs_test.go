@@ -99,7 +99,9 @@ func TestAnAnalyzerRuleHoldsThroughAHandoff(t *testing.T) {
 		`{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["require_approval"]}},` +
 			`"approvers":{"high":{"type":"ai_agent"}}}`: true,
 		`{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["allow","block"]}}}`: false,
-		`{"high":"ai-handoff"}`: false,
+		`{"high":"ai-handoff"}`: true,
+		`{"high":"ai-handoff","handoffs":{"high":{"prompt":"Prefer warn"}}}`: true,
+		`{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":[]}}}`:   false,
 		`{"high":"block","handoffs":{"high":{"allowed_actions":["require_approval"]}}}`: false,
 	} {
 		if got := AnalyzerRuleHolds(json.RawMessage(spec)); got != want {

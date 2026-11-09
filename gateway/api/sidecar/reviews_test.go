@@ -299,8 +299,12 @@ func TestListenerHoldsForHumanThroughAHandoff(t *testing.T) {
 		"no approvers entry files under approval_rule")
 	assert.Nil(t, listenerHoldsForHuman(block("require_review", holds, human), "appdb", analyzer.RiskHigh, true),
 		"a level that does not hand off")
-	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", nil, human), "appdb", analyzer.RiskHigh, true),
-		"a hand-off level with no handoffs entry")
+	assert.NotNil(t, listenerHoldsForHuman(block("ai-handoff", nil, human), "appdb", analyzer.RiskHigh, true),
+		"a hand-off level with no handoffs entry allows all four, the hold included")
+	absent := block("ai-handoff", nil, human)
+	absent[0].Analyzer.Handoffs = &daemon.LevelHandoffs{High: &daemon.LevelHandoff{Prompt: "Prefer warn"}}
+	assert.NotNil(t, listenerHoldsForHuman(absent, "appdb", analyzer.RiskHigh, true),
+		"a hand-off entry with no allowed_actions allows all four, the hold included")
 }
 
 // handoff names how a level held, so it means nothing under a rule.

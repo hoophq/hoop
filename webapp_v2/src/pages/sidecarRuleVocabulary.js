@@ -248,20 +248,27 @@ export const HANDOFF_CHOICES = [
 ]
 const HANDOFF_VALUES = HANDOFF_CHOICES.map((c) => c.value)
 
-// readLevelHandoff reads `handoffs.<level>` of a stored analyzer spec:
-// {allowed (in HANDOFF_CHOICES order, `require_review` read as the hold),
-// prompt}. It is null when the level has no entry. Unknown values are
-// dropped; when none is left, the most restrictive action stays.
+// readLevelHandoff reads `handoffs.<level>` of a stored analyzer spec for an
+// `ai-handoff` level: {allowed (in HANDOFF_CHOICES order, `require_review`
+// read as the hold), prompt}. A missing entry, or a missing
+// `allowed_actions`, allows all four, as the sidecar reads it. Unknown values
+// are dropped; when none is left, the most restrictive action stays.
 export function readLevelHandoff(spec, level) {
   const entry = spec?.handoffs?.[level]
-  if (entry == null || typeof entry !== 'object') return null
+  const known = entry != null && typeof entry === 'object'
+  const prompt = known && typeof entry.prompt === 'string' ? entry.prompt : ''
+  if (!known || entry.allowed_actions == null) return { allowed: [...HANDOFF_VALUES], prompt }
   const names = Array.isArray(entry.allowed_actions) ? entry.allowed_actions : []
   const set = new Set(names.map((n) => (isHoldAction(n) ? HANDOFF_HOLD : n)))
   const allowed = HANDOFF_VALUES.filter((v) => set.has(v))
-  return {
-    allowed: allowed.length > 0 ? allowed : ['block'],
-    prompt: typeof entry.prompt === 'string' ? entry.prompt : '',
-  }
+  return { allowed: allowed.length > 0 ? allowed : ['block'], prompt }
+}
+
+// writeLevelHandoff renders a form's hand-off as `handoffs.<level>`. It
+// always writes the explicit list, so a saved spec never relies on absence.
+export function writeLevelHandoff(handoff) {
+  const prompt = handoff.prompt.trim()
+  return prompt !== '' ? { allowed_actions: [...handoff.allowed], prompt } : { allowed_actions: [...handoff.allowed] }
 }
 
 // Who decides a held statement of one risk level (ENG-680): the

@@ -9,10 +9,11 @@ import (
 
 // CapabilityAIHandoff means this build runs a risk level whose action is
 // ai-handoff and reads analyzer.handoffs. The cap tag on
-// LaneAnalyzerConfig.Handoffs puts it in the header. Every ai-handoff level
-// needs a handoffs entry, so a build without the capability is refused the
-// document. No downgrade exists: an older build has no action that lets the
-// AI agent select one.
+// LaneAnalyzerConfig.Handoffs puts it in the header, and CheckServable
+// asks for it for every ai-handoff level value too, so a build without it
+// is refused the document even when the level has no handoffs entry. No
+// downgrade exists: an older build has no action that lets the AI agent
+// select one.
 const CapabilityAIHandoff = "analyzer_ai_handoff"
 
 // LevelHandoffs configures each ai-handoff risk level of an analyzer block.
@@ -24,11 +25,14 @@ type LevelHandoffs struct {
 
 // LevelHandoff is the hand-off agent of one ai-handoff level. Who decides a
 // require_approval the agent selects is approvers.<level>; a level with no
-// entry files under the block's approval_rule.
+// entry files under the block's approval_rule. An ai-handoff level with no
+// entry hands off with all four actions and the default prompt.
 type LevelHandoff struct {
 	// AllowedActions are the actions the agent may select: allow, warn,
-	// block and require_approval (also spelled require_review). Required.
-	AllowedActions []string `json:"allowed_actions,omitempty"`
+	// block and require_approval (also spelled require_review). Absent
+	// (nil) allows all four; an explicit empty list is refused. omitzero,
+	// as on rules, so a stored [] is served as [] and never as absent.
+	AllowedActions []string `json:"allowed_actions,omitzero"`
 
 	// Prompt replaces the hand-off agent's default instruction. The fixed
 	// contract stays.
@@ -70,10 +74,20 @@ func handoffSelectable(c analyzer.Action) bool {
 	return false
 }
 
-// actions lists the allowed actions in their canonical spelling, each once.
-// Validation refuses the unknown ones; here they are skipped.
+// allHandoffActions is what the agent may select when a level sets no
+// allowed_actions, in the order the agent reads its tools.
+var allHandoffActions = [...]analyzer.Action{analyzer.ActionAllow, analyzer.ActionWarn,
+	analyzer.ActionBlock, analyzer.ActionRequireReview}
+
+// actions lists the allowed actions in their canonical spelling, each once:
+// all four when h, or its allowed_actions, is absent. Validation refuses the
+// unknown ones and an empty list; here they are skipped, and the result
+// stays non-nil, so analyzer.New refuses it rather than reading all four.
 func (h *LevelHandoff) actions() []analyzer.Action {
-	var out []analyzer.Action
+	if h == nil || h.AllowedActions == nil {
+		return slices.Clone(allHandoffActions[:])
+	}
+	out := []analyzer.Action{}
 	for _, v := range h.AllowedActions {
 		c := analyzer.Action(v).Canonical()
 		if handoffSelectable(c) && !slices.Contains(out, c) {
@@ -83,26 +97,40 @@ func (h *LevelHandoff) actions() []analyzer.Action {
 	return out
 }
 
+// HandoffActions returns what the hand-off agent of level may select, in the
+// canonical spelling: handoffs.<level>.allowed_actions, or all four when the
+// entry or the key is absent. Nil when level does not hand off.
+func (la *LaneAnalyzerConfig) HandoffActions(level analyzer.RiskLevel) []analyzer.Action {
+	if la == nil {
+		return nil
+	}
+	for _, l := range la.levels() {
+		if l.risk == level && handsOff(*l.action) {
+			return la.LevelHandoff(level).actions()
+		}
+	}
+	return nil
+}
+
 // handoffHolds reports an ai-handoff level whose agent can select
 // require_approval. Such a level holds like a level whose action holds: its
 // approver is approvers.<level>, or approval_rule when it has none.
 func (la *LaneAnalyzerConfig) handoffHolds(l laneLevel) bool {
-	if !handsOff(*l.action) {
-		return false
-	}
-	h := la.LevelHandoff(l.risk)
-	return h != nil && slices.Contains(h.actions(), analyzer.ActionRequireReview)
+	return handsOff(*l.action) && slices.Contains(la.LevelHandoff(l.risk).actions(), analyzer.ActionRequireReview)
 }
 
 // handoffs maps each ai-handoff level onto its hand-off, for the evaluator.
 func (la *LaneAnalyzerConfig) handoffs() map[analyzer.RiskLevel]analyzer.Handoff {
 	var out map[analyzer.RiskLevel]analyzer.Handoff
 	for _, l := range la.levels() {
-		h := la.LevelHandoff(l.risk)
-		if !handsOff(*l.action) || h == nil {
+		if !handsOff(*l.action) {
 			continue
 		}
-		hd := analyzer.Handoff{Prompt: h.Prompt, Allowed: h.actions()}
+		h := la.LevelHandoff(l.risk)
+		hd := analyzer.Handoff{Allowed: h.actions()}
+		if h != nil {
+			hd.Prompt = h.Prompt
+		}
 		if a := la.LevelApprover(l.risk); a != nil && la.handoffHolds(l) {
 			hd.Approval = analyzer.Approval{Approver: a.Type}
 			if a.Type == analyzer.ApproverAIAgent {
@@ -118,8 +146,9 @@ func (la *LaneAnalyzerConfig) handoffs() map[analyzer.RiskLevel]analyzer.Handoff
 }
 
 // validateLevelHandoffs refuses a hand-off the sidecar cannot act on: an
-// ai-handoff level with no allowed actions, an action the agent cannot
-// select, one named twice, and an entry on a level that does not hand off.
+// empty allowed_actions, an action the agent cannot select, one named
+// twice, and an entry on a level that does not hand off. A missing entry,
+// or a missing allowed_actions, allows all four.
 func validateLevelHandoffs(la *LaneAnalyzerConfig, where string) []string {
 	var problems []string
 	for _, l := range la.levels() {
@@ -134,13 +163,12 @@ func validateLevelHandoffs(la *LaneAnalyzerConfig, where string) []string {
 			continue
 		}
 		if h == nil {
-			problems = append(problems, fmt.Sprintf("%s: %s risk is %s and handoffs.%s is missing; it lists the "+
-				"allowed_actions the hand-off agent may select", where, l.name, analyzer.ActionHandoff, l.name))
 			continue
 		}
-		if len(h.AllowedActions) == 0 {
+		if h.AllowedActions != nil && len(h.AllowedActions) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: allowed_actions is empty; list the actions the "+
-				"hand-off agent may select (allow, warn, block or require_approval)", at))
+				"hand-off agent may select (allow, warn, block or require_approval), or remove the key "+
+				"to allow all four", at))
 		}
 		var seen []analyzer.Action
 		for i, v := range h.AllowedActions {

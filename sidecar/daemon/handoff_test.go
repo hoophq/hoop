@@ -90,13 +90,11 @@ func TestHandoffRefusals(t *testing.T) {
 		la   func() *LaneAnalyzerConfig
 		want string
 	}{
-		"no handoffs entry": {func() *LaneAnalyzerConfig {
-			la := handoffBlock("warn")
-			la.Handoffs = nil
+		"empty allowed_actions": {func() *LaneAnalyzerConfig {
+			la := handoffBlock()
+			la.Handoffs.High.AllowedActions = []string{}
 			return la
-		}, "appdb: analyzer block: high risk is ai-handoff and handoffs.high is missing"},
-		"empty allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock() },
-			"handoffs.high: allowed_actions is empty"},
+		}, "handoffs.high: allowed_actions is empty"},
 		"unknown action": {func() *LaneAnalyzerConfig { return handoffBlock("warn", "delete") },
 			`handoffs.high: allowed_actions[1] "delete" is not an action the hand-off agent can select`},
 		"hand-off in allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock("ai-handoff") },
@@ -145,7 +143,9 @@ func TestHandoffRefusals(t *testing.T) {
 	}
 
 	// Accepted: a hold with an approver needs no rule, a hold with none
-	// takes the rule, and both spellings of the hold read the same.
+	// takes the rule, and both spellings of the hold read the same. A
+	// missing entry, or a missing allowed_actions, allows all four, the
+	// hold included, so it takes the rule too.
 	for name, la := range map[string]*LaneAnalyzerConfig{
 		"human approver": func() *LaneAnalyzerConfig {
 			la := handoffBlock("warn", "require_approval")
@@ -163,6 +163,18 @@ func TestHandoffRefusals(t *testing.T) {
 			return la
 		}(),
 		"no hold": handoffBlock("allow", "warn"),
+		"no handoffs entry": func() *LaneAnalyzerConfig {
+			la := handoffBlock()
+			la.Handoffs = nil
+			la.ApprovalRule = "dba-rule"
+			return la
+		}(),
+		"no allowed_actions": func() *LaneAnalyzerConfig {
+			la := handoffBlock()
+			la.Handoffs.High.Prompt = "Prefer warn"
+			la.ApprovalRule = "dba-rule"
+			return la
+		}(),
 	} {
 		if got := ValidateLaneAnalyzerBlock(la, "appdb"); len(got) != 0 {
 			t.Errorf("%s: refused: %v", name, got)
@@ -185,25 +197,95 @@ func init() {
 
 // handoffAgent rates everything high and answers each Decide in order, the
 // last reply repeating, as a ToolCaller. A reply is a tool name, or a tool
-// name and its JSON arguments after a space.
+// name and its JSON arguments after a space. It keeps the tool names of
+// each ask.
 type handoffAgent struct {
 	highRiskProvider
 	mu      sync.Mutex
 	replies []string
 	systems []string
+	tools   [][]string
 }
 
-func (h *handoffAgent) Decide(_ context.Context, system, _ string, _ []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
+func (h *handoffAgent) Decide(_ context.Context, system, _ string, tools []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := len(h.systems)
 	h.systems = append(h.systems, system)
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	h.tools = append(h.tools, names)
 	reply := h.replies[min(n, len(h.replies)-1)]
 	name, args, ok := strings.Cut(reply, " ")
 	if !ok {
 		args = `{"reason":"checked"}`
 	}
 	return []analyzer.ToolCall{{Name: name, Args: json.RawMessage(args)}}, nil
+}
+
+// An ai-handoff level with no handoffs entry, or with an entry that sets no
+// allowed_actions, hands off with all four actions; an explicit empty list
+// is refused; and the served form keeps [] apart from absent.
+func TestAnAbsentAllowedActionsAllowsAllFour(t *testing.T) {
+	doc := `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":1","upstream":"h:1",
+		"analyzer":{"trigger":{"operations":["delete"]},"high":"ai-handoff","medium":"ai-handoff","approval_rule":"dba-rule",
+			"handoffs":{"medium":{"prompt":"Prefer warn"}}}}]}`
+	cfg, err := LoadConfigBytes([]byte(doc))
+	if err != nil {
+		t.Fatalf("a hand-off with no allowed_actions was refused: %v", err)
+	}
+	la := cfg.Listeners[0].Analyzer
+	all := []analyzer.Action{analyzer.ActionAllow, analyzer.ActionWarn, analyzer.ActionBlock, analyzer.ActionRequireReview}
+	got := la.handoffs()
+	if h := got[analyzer.RiskHigh]; !slices.Equal(h.Allowed, all) || h.Prompt != "" {
+		t.Errorf("high (no entry) = %+v, want all four and no prompt", h)
+	}
+	if h := got[analyzer.RiskMedium]; !slices.Equal(h.Allowed, all) || h.Prompt != "Prefer warn" {
+		t.Errorf("medium (no allowed_actions) = %+v, want all four and the prompt", h)
+	}
+	if a := la.HandoffActions(analyzer.RiskHigh); !slices.Equal(a, all) {
+		t.Errorf("HandoffActions(high) = %v", a)
+	}
+	if a := la.HandoffActions(analyzer.RiskLow); a != nil {
+		t.Errorf("HandoffActions(low) = %v, want nil: low does not hand off", a)
+	}
+	if !ruleHolds(la) {
+		t.Errorf("an absent allowed_actions does not hold under approval_rule")
+	}
+
+	stub := &handoffAgent{replies: []string{"warn"}}
+	pol, err := buildPolicy("appdb", GuardrailsConfig{}, la, nil, nil,
+		&analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: stub, cp: &controlPlane{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol.Evaluate(deleteFromUsers())
+	if len(stub.tools) != 1 || !slices.Equal(stub.tools[0], []string{"allow", "warn", "block", "require_approval"}) {
+		t.Errorf("tools offered = %v, want all four", stub.tools)
+	}
+
+	empty := strings.Replace(doc, `"medium":{"prompt":"Prefer warn"}`, `"medium":{"allowed_actions":[]}`, 1)
+	if _, err := LoadConfigBytes([]byte(empty)); err == nil || !strings.Contains(err.Error(), "allowed_actions is empty") {
+		t.Errorf("an explicit empty allowed_actions loaded: %v", err)
+	}
+
+	served := func(allowed []string) string {
+		la := handoffBlock(allowed...)
+		la.ApprovalRule = "dba-rule"
+		raw, err := json.Marshal(ServedForm(*blockLane(la)).Listeners[0].Analyzer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	if raw := served([]string{}); !strings.Contains(raw, `"handoffs":{"high":{"allowed_actions":[]}}`) {
+		t.Errorf("an explicit empty list was not served as []: %s", raw)
+	}
+	if raw := served(nil); !strings.Contains(raw, `"handoffs":{"high":{}}`) {
+		t.Errorf("an absent list was not served as absent: %s", raw)
+	}
 }
 
 // A hand-off level whose hold a person approves needs a plane or a
@@ -285,6 +367,26 @@ func TestTheHandoffNeedsItsCapability(t *testing.T) {
 	}
 	if err := CheckServable(cfg, Handshake{Version: "1.200.0", Capabilities: SidecarCapabilities()}); err != nil {
 		t.Errorf("refused to this build: %v", err)
+	}
+
+	// A bare ai-handoff level, with no handoffs entry, is refused by its
+	// value alone: no cap-tagged key is set, and an older build has no
+	// such action.
+	bare := handoffBlock()
+	bare.Handoffs = nil
+	bare.ApprovalRule = "dba-rule"
+	for _, hs := range []Handshake{
+		{Version: "1.200.0", Capabilities: []string{"protocol:postgres"}},
+		{Version: "1.200.0", Capabilities: without},
+	} {
+		err := CheckServable(*blockLane(bare), hs)
+		if err == nil || !strings.Contains(err.Error(), CapabilityAIHandoff) ||
+			!strings.Contains(err.Error(), "sets high risk to ai-handoff") {
+			t.Errorf("a bare ai-handoff level was servable to a build without the capability: %v", err)
+		}
+	}
+	if err := CheckServable(*blockLane(bare), Handshake{Version: "1.200.0", Capabilities: SidecarCapabilities()}); err != nil {
+		t.Errorf("a bare ai-handoff level was refused to this build: %v", err)
 	}
 
 	// An empty handoffs block says nothing, and is not served.

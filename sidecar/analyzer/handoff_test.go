@@ -678,14 +678,14 @@ func TestAnUndecidedHandoffIsNotCached(t *testing.T) {
 func TestNewRefusesAHandoffItCannotRun(t *testing.T) {
 	handoff := analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionHandoff}
 	for name, cfg := range map[string]analyzer.Config{
-		"no configuration": {Provider: &handoffProvider{}, Actions: handoff},
 		"configuration on another action": {Provider: &handoffProvider{},
 			Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
 			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: allFour}}},
 		"provider without tool calls": {Provider: &stubProvider{}, Actions: handoff,
 			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: allFour}}},
-		"no allowed action": {Provider: &handoffProvider{}, Actions: handoff,
-			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {}}},
+		"provider without tool calls, no configuration": {Provider: &stubProvider{}, Actions: handoff},
+		"an empty allowed list": {Provider: &handoffProvider{}, Actions: handoff,
+			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: []analyzer.Action{}}}},
 		"hand-off allowed": {Provider: &handoffProvider{}, Actions: handoff,
 			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: []analyzer.Action{analyzer.ActionHandoff}}}},
 		"unknown approver": {Provider: &handoffProvider{}, Actions: handoff,
@@ -701,6 +701,45 @@ func TestNewRefusesAHandoffItCannotRun(t *testing.T) {
 		if _, err := analyzer.New(cfg); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// A hand-off with no Allowed list, and an ai-handoff level with no Handoffs
+// entry, offer the agent all four tools; no entry also takes the default
+// prompt.
+func TestAnAbsentAllowedListOffersAllFour(t *testing.T) {
+	for name, h := range map[string]*analyzer.Handoff{
+		"nil allowed": {Prompt: "Prefer warn."},
+		"no entry":    nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := &handoffProvider{replies: []decideReply{pick("warn", "ok")}}
+			ev := handoffEvaluator(t, p, analyzer.Handoff{}, func(c *analyzer.Config) {
+				c.Review = &handoffReviewer{}
+				if h == nil {
+					c.Handoffs = nil
+				} else {
+					c.Handoffs[analyzer.RiskMedium] = *h
+				}
+			})
+			if v := ev.Evaluate(deleteStatement()); v.Annotations[analyzer.MetadataHandoffDecision] != "warn" {
+				t.Fatalf("verdict %+v", v)
+			}
+			asks := p.asks()
+			if len(asks) != 1 {
+				t.Fatalf("asked %d time(s)", len(asks))
+			}
+			if got := toolNames(asks[0].tools); !slices.Equal(got, []string{"allow", "warn", "block", "require_approval"}) {
+				t.Errorf("tools = %v, want all four", got)
+			}
+			wantPrompt := analyzer.DefaultHandoffPrompt
+			if h != nil {
+				wantPrompt = h.Prompt
+			}
+			if !strings.HasPrefix(asks[0].system, wantPrompt+"\n\n") {
+				t.Errorf("system prompt:\n%s", asks[0].system)
+			}
+		})
 	}
 }
 
