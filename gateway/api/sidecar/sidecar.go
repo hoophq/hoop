@@ -816,10 +816,14 @@ func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Ha
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return servedDocument{}, err
 	}
-	if err := daemon.CheckServable(composed, hs); err != nil {
+	// A build that does not read approvers gets the held levels under
+	// approval_rule, or a refusal that names the capability. The fingerprint
+	// covers the handshake's capabilities, so the cache keeps this apart.
+	served := daemon.ServeLevelApprovers(composed, hs)
+	if err := daemon.CheckServable(served, hs); err != nil {
 		return servedDocument{}, services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
-	body, err := json.Marshal(servedConfig(models.SidecarConfiguration(composed), licenseData))
+	body, err := json.Marshal(servedConfig(models.SidecarConfiguration(served), licenseData))
 	if err != nil {
 		return servedDocument{}, fmt.Errorf("failed encoding the sidecar configuration: %w", err)
 	}

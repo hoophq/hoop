@@ -693,6 +693,7 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
 		RejectionReason:       r.RejectionReason,
+		RiskLevel:             nullStringPtr(r.RiskLevel),
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
 		Connection:            reviewConnection(r),
