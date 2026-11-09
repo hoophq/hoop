@@ -96,7 +96,7 @@ locals {
   })
 
   config_values = {
-    simple        = yamlencode({ config = local.simple_config })
+    simple = yamlencode({ config = local.simple_config })
     # No admin listener: turn the admin Service off too, or it targets a
     # port nothing binds. Two strings, not one object: the two shapes differ.
     document = local.document_admin_on ? yamlencode({ config = local.document }) : yamlencode({
