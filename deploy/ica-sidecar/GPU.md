@@ -54,6 +54,40 @@ asset root, `HOOP_ICA_GPU_ASSETS` changes that discovery root only; the model
 is discovered at its sibling `models/KnightsAnalytics_distilbert-NER`. Set all
 runtime paths explicitly in YAML too.
 
+## External relay readiness
+
+For an external ICA relay that requires explicit inspection attestation, opt in:
+
+```yaml
+admin:
+  listen: 127.0.0.1:13000
+  ica_readiness_json: true
+```
+
+`GET /readyz` then returns JSON with `status`, `inspection_enabled`,
+`graphics_bypassed` and `protocol_validation_enabled`. A ready response requires
+all ICA endpoints to report an initialized inspecting manager, protocol
+validation enabled and no graphics bypass. Loading, draining, configured capacity
+saturation, missing attestation, zero endpoints or any plain proxy listener
+returns HTTP 503. It does not infer readiness from the configured backend name.
+Without this option the existing plaintext `/readyz` API is unchanged.
+Keep admin bound to loopback for SSH forwarding, or restrict private pod/admin
+network access when Kubernetes probes require a non-loopback listener.
+
+## Deployment admission drain
+
+The optional `POST /v1/drain` admin endpoint stops new ICA admissions while
+keeping admitted desktop sessions alive. Set a host-only secret of at least
+32 characters in `HOOP_ICA_DEPLOY_TOKEN`, then send it as `Authorization: Bearer`.
+Without that variable the endpoint refuses all requests. This secret is separate
+from the license-install secret and does not enable license writes. Keep admin
+loopback/private and never put the token in YAML, Git or command-line arguments.
+The endpoint accepts no body, refuses empty/mixed/unsupported processes, is
+idempotent, and makes initialized ICA managers unready until restart. It does
+not shut down the process or enforce a drain timeout; the deployment controller
+waits for `/stats` active sessions before a controlled restart. Use the strict
+JSON readiness option above when deploying behind the external ICA relay.
+
 ## Prepare one native GPU asset set
 
 The source-build producer and manual GPU workflow are documented in

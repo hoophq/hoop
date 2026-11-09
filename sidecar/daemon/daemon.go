@@ -1242,7 +1242,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
 	} else if strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
 			"hint", "set admin.listen to install a license through the admin API")
@@ -1982,6 +1982,7 @@ func serveAdmin(
 	otel *otelExporter,
 	licenseAPI http.Handler,
 	log *slog.Logger,
+	icaReadinessJSON bool,
 ) {
 	mux := http.NewServeMux()
 
@@ -1990,16 +1991,22 @@ func serveAdmin(
 		fmt.Fprintln(w, "ok")
 	})
 
-	// The one write on this listener. licenseHandler refuses it unless the
+	// License writes require their own secret. ICA deployment drain below has a
+	// separate token and is disabled by default. licenseHandler refuses it unless the
 	// operator set AdminSecretEnv, and then asks for that secret: every
 	// read here is unauthenticated, and a write must not be.
 	mux.Handle("PUT /license", licenseAPI)
+	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
 
 	// An ica lane's engine loads a model and starts OCR workers after the
 	// socket binds, which can take minutes, and the engine refuses
 	// connections until then. /readyz reports that, separate from
 	// /healthz; other lanes are ready once bound, so it returns 200 for them.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if icaReadinessJSON {
+			writeICAReadiness(w, endpoints, len(servers))
+			return
+		}
 		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
