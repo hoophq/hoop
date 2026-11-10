@@ -108,7 +108,7 @@ export default function AwsConnectSetup({ mode = 'create' }) {
           <Title order={1}>AWS Connect</Title>
           <Text size="md">Follow the steps to setup your AWS resources.</Text>
         </Stack>
-        <Stepper active={STEPS.findIndex((s) => s.id === step)}>
+        <Stepper size="xs" iconSize={24} active={STEPS.findIndex((s) => s.id === step)}>
           {STEPS.map((s) => (
             <Stepper.Step key={s.id} label={s.label} />
           ))}
