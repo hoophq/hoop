@@ -4,7 +4,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import { maskingAgentBlockers } from '@/utils/ruleSupport'
 import { DEFAULT_KEEP_LAST, MASK_STRATEGIES, SSH_ONLY_STRATEGY } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
-import { normalizeEntityName, scoreToPercent } from '../helpers'
+import { normalizeEntityName, scoreToPercent, targetProtocols } from '../helpers'
 
 const newKey = () => Math.random().toString(36).slice(2)
 
@@ -106,17 +106,10 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
     stored ? scoreToPercent(stored.score_threshold) : 85,
   )
 
-  const targetProtocols = useMemo(() => {
-    const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    return targets.map((t) => {
-      const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-      return (lane?.protocol ?? '').toLowerCase()
-    })
-  }, [targets, sidecars])
+  const protocols = useMemo(() => targetProtocols(targets, sidecars), [targets, sidecars])
   // An ssh lane masks bytes in place, so only the length-preserving strategy is offered.
-  const sshBound = targetProtocols.includes('ssh')
-  // An mcp lane masks result text by entity; the plane refuses a column rule on it.
-  const mcpBound = targetProtocols.includes('mcp')
+  const sshBound = protocols.includes('ssh')
+  const mcpBound = protocols.includes('mcp')
 
   const strategies = sshBound ? MASK_STRATEGIES.filter((s) => s.value === SSH_ONLY_STRATEGY) : MASK_STRATEGIES
 
