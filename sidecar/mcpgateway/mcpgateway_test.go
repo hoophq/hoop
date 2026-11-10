@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,14 +29,17 @@ import (
 // recSession is the sidecar session a test lane opens: it records what the
 // engine hands it, denies the tools in deny and hides the tools in hide.
 type recSession struct {
-	mu     sync.Mutex
-	id     string
-	deny   map[string]string
-	hide   map[string]bool
-	calls  []string
-	acts   []string
-	seen   []string
-	closed bool
+	mu        sync.Mutex
+	id        string
+	deny      map[string]string
+	hide      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	calls     []string
+	acts      []string
+	seen      []string
+	masked    []string
+	closed    bool
 }
 
 func (s *recSession) ID() string { return s.id }
@@ -74,6 +78,30 @@ func (s *recSession) Record(_ context.Context, activity string, attrs map[string
 	}
 }
 
+func (s *recSession) Mask(text string) (string, []string, int, error) {
+	if s.mask == nil {
+		return text, nil, 0, nil
+	}
+	return s.mask(text)
+}
+
+func (s *recSession) RecordMasked(_ context.Context, entities []string, count int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recordErr != nil {
+		return s.recordErr
+	}
+	sorted := slices.Sorted(slices.Values(entities))
+	s.masked = append(s.masked, fmt.Sprintf("%s:%d", strings.Join(slices.Compact(sorted), ","), count))
+	return nil
+}
+
+func (s *recSession) maskedRecords() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.masked...)
+}
+
 func (s *recSession) Close(context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -95,18 +123,20 @@ func (s *recSession) everything() string {
 
 // testLane opens one recSession per MCP session.
 type testLane struct {
-	mu       sync.Mutex
-	deny     map[string]string
-	hide     map[string]bool
-	sessions []*recSession
-	callers  []daemon.MCPCaller
+	mu        sync.Mutex
+	deny      map[string]string
+	hide      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	sessions  []*recSession
+	callers   []daemon.MCPCaller
 }
 
 func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSession, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callers = append(l.callers, c)
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, mask: l.mask, recordErr: l.recordErr}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -522,14 +552,15 @@ func (r *recRecorder) count(msg string) int {
 // mcpproxy's observer feeds the lane's telemetry by method, tool and
 // decision, and every refusal reaches the lane's denied count, mcpproxy's
 // own included. A tool the upstream did not list, a call refused as invalid
-// params and a method MCP does not define are counted as (other).
+// params and a method MCP does not define are counted as (other). Invalid
+// params are refused before the budget, so they spend none of it.
 func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	rec := &recRecorder{}
 	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
 	t.Cleanup(up.Close)
 	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
-		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 4}, Open: ln.open, Telemetry: rec})
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 3}, Open: ln.open, Telemetry: rec})
 	c := &client{url: url}
 	c.init(t)
 	c.list(t)

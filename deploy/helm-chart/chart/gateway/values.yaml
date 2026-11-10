@@ -150,6 +150,17 @@ config:
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: "0|1|2"
   # ASK_AI_CREDENTIALS: ''
+  # License of the default organization, stored at every boot: the signed
+  # license JSON itself (starts with '{') or the path of a file that holds it.
+  # HOOP_LICENSE: ''
+  # Analytics of the default organization, set at every boot. Without an
+  # enterprise license it is always identified. With one: 'enabled' forces
+  # identified, 'disabled' forces disabled, unset keeps the stored mode (a
+  # new organization starts disabled).
+  # ANALYTICS_TRACKING: ''
+  # UUID the default organization is created with on a fresh database, so
+  # API_KEY can be set before the first boot. It never renames an existing one.
+  # ORG_ID: ''
   # Data masking provider: 'mspresidio' (or dataMasking.enabled above),
   # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
   # (in-process pattern engine on the agent, no extra services or

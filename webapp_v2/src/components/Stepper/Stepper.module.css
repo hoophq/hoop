@@ -16,3 +16,8 @@
 .root {
   --stepper-outline-color: var(--mantine-color-gray-1);
 }
+
+/* Mantine's flex: 1 alone shrinks the rule to 0 when the Stepper is as wide as its steps. */
+.separator {
+  min-width: 2rem;
+}

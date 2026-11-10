@@ -49,6 +49,19 @@ func UpdateOrgLicense(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// VerifyOrgLicense runs the checks an upload goes through, signature, validity
+// window and this gateway's host, and returns the marshaled document, as the
+// upload stores it, so both paths yield the same bytes. An expired document is
+// kept: the gateway reports it as expired instead of refusing to start.
+func VerifyOrgLicense(licenseData []byte) ([]byte, error) {
+	l, err := license.Parse(licenseData, appconfig.Get().ApiHostname())
+	if err != nil && err != license.ErrExpired {
+		return nil, err
+	}
+
+	return json.Marshal(l)
+}
+
 type SignRequest struct {
 	LicenseType  string   `json:"license_type"`
 	AllowedHosts []string `json:"allowed_hosts"`

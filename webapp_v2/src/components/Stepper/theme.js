@@ -5,5 +5,5 @@ import classes from './Stepper.module.css'
 // Why it cannot go through cssVariablesResolver, and why it stops at one
 // variable, is in Stepper.module.css.
 export const StepperTheme = Stepper.extend({
-  classNames: { root: classes.root },
+  classNames: { root: classes.root, separator: classes.separator },
 })
