@@ -627,6 +627,48 @@ describe('POST /resources matches the CLJS wizard: BigQuery', () => {
     expect(payload()).toEqual(fixture('bigquery-manual-then-oauth'))
   })
 
+  describe('gcp_iam over earlier input', () => {
+    const TYPED = '{"type":"service_account","client_email":"typed@p.iam.gserviceaccount.com","private_key":"k1"}'
+    const FED = '{"type":"service_account","client_email":"fed@p.iam.gserviceaccount.com","private_key":"k2"}'
+    const startRecorded = (variant) => {
+      const name = `qa916-bq-pay-${variant}`
+      begin('bigquery', { name, agentId: '43bb5bee-844a-50f7-b9c4-bc68f3e4d862', profile: null })
+      store().setRoleName(role(0).id, `${name}-role`)
+    }
+
+    it('the federation key replaces a typed key', () => {
+      startRecorded('manual-then-iam')
+      type(0, 'GOOGLE_APPLICATION_CREDENTIALS', TYPED)
+      type(0, 'CLOUDSDK_CORE_PROJECT', 'p1')
+      federate(0, { json: FED, project: 'p-fed' })
+      expect(payload()).toEqual(fixture('bigquery-manual-then-iam'))
+    })
+
+    it('manual values replace Secrets Manager references', () => {
+      startRecorded('sm-then-iam')
+      store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+      type(0, 'GOOGLE_APPLICATION_CREDENTIALS', TYPED)
+      type(0, 'CLOUDSDK_CORE_PROJECT', 'secret/bq:project')
+      federate(0, { json: FED, project: 'p-fed' })
+      expect(payload()).toEqual(fixture('bigquery-sm-then-iam'))
+    })
+
+    it('fallback "static": the same POST and PUT', async () => {
+      startRecorded('fed-static')
+      federate(0, { json: FED, project: 'p-fed' })
+      role(0).credentials.getState().setFederationForm({ fallback_policy: 'static' })
+      expect(payload()).toEqual(fixture('bigquery-federation-static'))
+
+      useResourceSetupStore.setState({ roleOptions: 'ready' })
+      resourcesService.create.mockResolvedValueOnce({ data: {} })
+      federationService.save.mockResolvedValueOnce({ data: {} })
+      await store().submit(connections)
+      // CLJS also sends `enabled`; the gateway ignores it.
+      const { enabled: _ignored, ...put } = fixture('bigquery-federation-static.put')
+      expect(federationService.save).toHaveBeenCalledWith('qa916-bq-pay-fed-static-role', put)
+    })
+  })
+
   it('gives each federation role its own form (Q20)', () => {
     start('bq-two')
     store().addRole()
