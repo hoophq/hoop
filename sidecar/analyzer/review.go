@@ -349,10 +349,6 @@ func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
 // pinned request instead of filing: see handoffPins and holdPinned.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
 	mode ReviewMode, source string, pin pinRef) policy.Verdict {
-	if stmt.Protocol == inspect.MCP {
-		// ENG-967: the mcp lane cannot hold a tool call yet, so it files nothing.
-		return e.deny(notes, "call refused because an mcp lane cannot hold a call for approval yet")
-	}
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 

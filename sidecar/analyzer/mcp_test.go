@@ -136,3 +136,41 @@ func TestAHoldOnAnMCPToolCallFilesNothing(t *testing.T) {
 		t.Fatalf("a held tool call was filed: %q", sent)
 	}
 }
+
+const mcpHoldRefusal = "call refused because an mcp lane cannot hold a call for approval yet"
+
+// The approval agent never sees a held tool call: it would approve one the
+// lane cannot hold.
+func TestAnAgentApprovedHoldOnAnMCPToolCallIsRefused(t *testing.T) {
+	p := &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason_code":"in_scope","reason":"ok"}`)}}
+	ev := agentEvaluator(t, p, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
+	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
+	if !v.Denied || v.Message != mcpHoldRefusal {
+		t.Fatalf("verdict %+v", v)
+	}
+	if got := v.Annotations[analyzer.MetadataApprovalDecision]; got != "" {
+		t.Errorf("approval decision %q on a call nothing held", got)
+	}
+	if got := ev.Stats().Calls; got != 1 {
+		t.Errorf("model calls = %d, want the classification only", got)
+	}
+}
+
+// A hand-off that picks the hold is refused the same way, before its approver.
+func TestAHandoffHoldOnAnMCPToolCallIsRefused(t *testing.T) {
+	rev := &handoffReviewer{}
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a check"), approve("bounded")}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent}},
+		func(c *analyzer.Config) { c.Review = rev; c.Trigger = analyzer.Trigger{All: true} })
+	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
+	if !v.Denied || v.Message != mcpHoldRefusal {
+		t.Fatalf("verdict %+v", v)
+	}
+	if asks := p.asks(); len(asks) != 1 {
+		t.Errorf("asked %d time(s), want the hand-off only", len(asks))
+	}
+	if rev.filed() != 0 {
+		t.Errorf("filed %d review(s), want none", rev.filed())
+	}
+}
