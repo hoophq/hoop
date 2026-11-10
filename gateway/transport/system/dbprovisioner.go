@@ -14,8 +14,8 @@ import (
 
 var dbProvisionerTimeoutRequest = time.Minute * 10
 
-func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsystem.DBProvisionerResponse {
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+func RunDBProvisioner(orgID, agentID string, req *pbsystem.DBProvisionerRequest) *pbsystem.DBProvisionerResponse {
+	st := streamclient.GetAgentStream(orgID, streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
 		return pbsystem.NewError(req.SID, "agent stream not found for %v", agentID)
 	}

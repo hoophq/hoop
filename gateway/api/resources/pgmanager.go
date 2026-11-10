@@ -151,6 +151,7 @@ func processSingleHealthCheck(resource *models.Resources) openapi.ResourceHealth
 	}
 
 	resp := transportsystem.BareExecWithTimeout(
+		resource.OrgID,
 		&pbsystem.BareExecRequest{
 			SID:     uuid.NewString(),
 			AgentID: resource.AgentID.String,
@@ -319,7 +320,7 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 		}, http.StatusInternalServerError
 	}
 
-	resp := transportsystem.RunPgManagerPlan(resource.AgentID.String, &pbsystem.PgManagerPlanRequest{
+	resp := transportsystem.RunPgManagerPlan(ctx.OrgID, resource.AgentID.String, &pbsystem.PgManagerPlanRequest{
 		SID:            sess.SID(),
 		RoleName:       roleName,
 		SourceRole:     req.SourceRole,
@@ -520,7 +521,7 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 		}, http.StatusInternalServerError
 	}
 
-	resp := transportsystem.RunPgManagerApply(resource.AgentID.String, &pbsystem.PgManagerApplyRequest{
+	resp := transportsystem.RunPgManagerApply(ctx.OrgID, resource.AgentID.String, &pbsystem.PgManagerApplyRequest{
 		SID:            sess.SID(),
 		StateMigration: stateMigration,
 		PgCredentials:  creds,
