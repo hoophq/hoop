@@ -268,7 +268,9 @@ First wins, not first valid, same as the license sources: an env var holding
 garbage is an error, never a reason to fall through to the file. A token and
 an identity type both set is an error naming both, a credential with no URL
 is an error, and a URL with no credential is an error naming the token and
-the identity type.
+the identity type — for `hoop-inspect`, and for `hoop start sidecar
+--no-login`. A plain `hoop start sidecar` logs in instead; see "Logging in
+instead of a token" below.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
@@ -293,6 +295,9 @@ first run, with a config file or without one, unless the run already has a
 credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
 license, which is not the free plan. `--validate`, `--migrate` and
 `--codec-test` never log in.
+
+Step by step, with screenshots:
+https://hoop.dev/docs/control-plane/connect-sidecar#connect-with-approval-no-token
 
 The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
 `control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
