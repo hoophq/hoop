@@ -99,8 +99,7 @@ func TestConnectionRefusesAgentOfAnotherOrg(t *testing.T) {
 		gin.Param{Key: "nameOrID", Value: "conn-u"})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	{
-		agentID := agentB
+	for _, agentID := range uuidSpellings(agentB) {
 		rec := callAsOrgA(Post, http.MethodPost, "/api/connections", connectionBody("conn-x", agentID))
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 		assert.JSONEq(t, `{"message":"agent not found"}`, rec.Body.String())
@@ -131,4 +130,14 @@ func TestConnectionRefusesAgentOfAnotherOrg(t *testing.T) {
 	rec = callAsOrgA(Patch, http.MethodPatch, "/api/connections/conn-a", `{"agent_id":""}`, nameParam)
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Empty(t, connectionAgentID(t, "conn-a"), "patch still clears the agent")
+}
+
+// uuidSpellings returns id in the spellings Postgres reads as the same uuid.
+func uuidSpellings(id string) []string {
+	hex := strings.ReplaceAll(id, "-", "")
+	var groups []string
+	for i := 0; i < len(hex); i += 4 {
+		groups = append(groups, hex[i:i+4])
+	}
+	return []string{id, strings.ToUpper(id), hex, "{" + id + "}", strings.Join(groups, "-")}
 }

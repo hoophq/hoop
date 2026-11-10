@@ -2,6 +2,7 @@ package models_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,9 +64,11 @@ func TestGetSessionOrgID(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.sessions (id, org_id, connection, connection_type, verb, status)
 		VALUES (?, ?, 'pg', 'database', 'exec', 'open')`, sid, testOrgID).Error)
 
-	orgID, err := models.GetSessionOrgID(models.DB, sid)
-	require.NoError(t, err)
-	assert.Equal(t, testOrgID, orgID)
+	for _, id := range uuidSpellings(sid) {
+		orgID, err := models.GetSessionOrgID(models.DB, id)
+		require.NoError(t, err, "id %q", id)
+		assert.Equal(t, testOrgID, orgID, "id %q", id)
+	}
 
 	for _, id := range []string{"00000000-0000-0000-0000-000000001114", "not-a-uuid"} {
 		_, err := models.GetSessionOrgID(models.DB, id)
@@ -103,12 +106,23 @@ func TestGetAgentOrgID(t *testing.T) {
 	agent, err := models.GetAgentByNameOrID(testOrgID, "_default")
 	require.NoError(t, err)
 
-	orgID, err := models.GetAgentOrgID(models.DB, agent.ID)
-	require.NoError(t, err)
-	assert.Equal(t, testOrgID, orgID)
-
-	for _, id := range []string{"00000000-0000-0000-0000-0000000011ff", "not-a-uuid"} {
+	for _, id := range uuidSpellings(agent.ID) {
+		orgID, err := models.GetAgentOrgID(models.DB, id)
+		require.NoError(t, err, "id %q", id)
+		assert.Equal(t, testOrgID, orgID, "id %q", id)
+	}
+	for _, id := range []string{"00000000-0000-0000-0000-0000000011ff", "not-a-uuid", ""} {
 		_, err := models.GetAgentOrgID(models.DB, id)
 		assert.True(t, errors.Is(err, gorm.ErrRecordNotFound), "id %q: %v", id, err)
 	}
+}
+
+// uuidSpellings returns id in the spellings Postgres reads as the same uuid.
+func uuidSpellings(id string) []string {
+	hex := strings.ReplaceAll(id, "-", "")
+	var groups []string
+	for i := 0; i < len(hex); i += 4 {
+		groups = append(groups, hex[i:i+4])
+	}
+	return []string{id, strings.ToUpper(id), hex, "{" + id + "}", strings.Join(groups, "-")}
 }

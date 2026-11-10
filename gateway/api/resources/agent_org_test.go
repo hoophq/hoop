@@ -59,7 +59,7 @@ func TestResourceRefusesAgentOfAnotherOrg(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype)
 		VALUES (?, 'res-a', 'custom', 'custom')`, resOrgA).Error)
 
-	for _, agentID := range []string{agentB.ID} {
+	for _, agentID := range uuidSpellings(agentB.ID) {
 		bodies := []string{
 			fmt.Sprintf(`{"name":"res-x","type":"custom","env_vars":{},"agent_id":%q}`, agentID),
 			fmt.Sprintf(`{"name":"res-x","type":"custom","env_vars":{},
@@ -93,4 +93,14 @@ func TestResourceRefusesAgentOfAnotherOrg(t *testing.T) {
 		fmt.Sprintf(`{"name":"res-a","type":"custom","subtype":"custom","env_vars":{},"agent_id":%q}`, unknownAgent),
 		gin.Param{Key: "name", Value: "res-a"})
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// uuidSpellings returns id in the spellings Postgres reads as the same uuid.
+func uuidSpellings(id string) []string {
+	hex := strings.ReplaceAll(id, "-", "")
+	var groups []string
+	for i := 0; i < len(hex); i += 4 {
+		groups = append(groups, hex[i:i+4])
+	}
+	return []string{id, strings.ToUpper(id), hex, "{" + id + "}", strings.Join(groups, "-")}
 }
