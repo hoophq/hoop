@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/log/bootstrap"
@@ -107,7 +108,6 @@ func Run() {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
-	services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL
@@ -133,12 +133,51 @@ func Run() {
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
 
-		org, isNewOrg, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
+		// Verified before the organization exists: a refused document must
+		// not leave behind an organization a corrected restart sees as old.
+		bootLicense := appconfig.Get().LicenseData()
+		if bootLicense != nil {
+			bootLicense, err = apiorgs.VerifyOrgLicense(bootLicense)
+			if err != nil {
+				orgStep.Fail(err)
+				log.Fatalf("failed applying HOOP_LICENSE, reason=%v", err)
+			}
+		}
+
+		wantOrgID := appconfig.Get().OrgID()
+		orgID := wantOrgID
+		if orgID == "" {
+			orgID = uuid.NewString()
+		}
+		org, isNewOrg, err := models.CreateOrgGetOrganizationWithID(orgID, proto.DefaultOrgName, nil)
+		if err == nil && wantOrgID != "" && org.ID != wantOrgID {
+			err = fmt.Errorf("ORG_ID=%s cannot rename the default organization, it already exists with id %s", wantOrgID, org.ID)
+		}
 		if err != nil {
 			orgStep.Fail(err)
 			log.Fatal(err)
 		}
 		defaultOrgID = org.ID
+
+		// Both run at every boot, so a rotated env value replaces the stored one.
+		licenseData := org.LicenseData
+		if bootLicense != nil {
+			if err := models.UpdateOrgLicense(org.ID, bootLicense); err != nil {
+				orgStep.Fail(err)
+				log.Fatalf("failed storing HOOP_LICENSE, reason=%v", err)
+			}
+			licenseData = bootLicense
+		}
+
+		enterprise := analytics.IsEnterpriseLicense(licenseData, appconfig.Get().ApiHostname())
+		mode := analytics.ModeAtBoot(appconfig.Get().AnalyticsTracking(), enterprise, org.AnalyticsMode, isNewOrg)
+		if mode != org.AnalyticsMode {
+			if err := models.UpdateOrgAnalyticsMode(org.ID, mode); err != nil {
+				orgStep.Fail(err)
+				log.Fatalf("failed applying the analytics mode, reason=%v", err)
+			}
+			org.AnalyticsMode = mode
+		}
 		analytics.SetMode(org.ID, org.AnalyticsMode)
 
 		if isNewOrg {
@@ -377,6 +416,11 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 		"Gateway": "localhost:8010",
 	}
 	bootstrap.Ready(urls)
+
+	// Put back the sidecar mirrors that fell behind, as after a rollback. In
+	// the background, after the startup reads: its run grows with the sidecar
+	// count, and the embedded database has one connection.
+	go services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	a.StartAPI()
 }

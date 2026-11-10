@@ -3,6 +3,7 @@ package analytics
 import (
 	"sync"
 
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 )
@@ -41,6 +42,40 @@ func SetMode(orgID, mode string) {
 	modeCacheMu.Lock()
 	modeCache[orgID] = mode
 	modeCacheMu.Unlock()
+}
+
+// ModeAtBoot is the mode the default organization gets at every boot.
+//
+// A free organization is always identified. An enterprise one follows
+// ANALYTICS_TRACKING when set; otherwise it keeps the stored mode, starting
+// disabled when the organization was created on this boot.
+func ModeAtBoot(tracking string, enterprise bool, stored string, newOrg bool) string {
+	if !enterprise {
+		if tracking == "disabled" {
+			log.Warnf("analytics: ANALYTICS_TRACKING=disabled ignored, the organization holds no enterprise license")
+		}
+		return models.AnalyticsModeIdentified
+	}
+
+	switch tracking {
+	case "enabled":
+		return models.AnalyticsModeIdentified
+	case "disabled":
+		return models.AnalyticsModeDisabled
+	}
+
+	if newOrg {
+		return models.AnalyticsModeDisabled
+	}
+
+	return stored
+}
+
+// IsEnterpriseLicense reports a license that verifies for this host and is
+// of the enterprise type, the same test EnterpriseLicenseOnly applies.
+func IsEnterpriseLicense(licenseData []byte, hostname string) bool {
+	l, err := license.Parse(licenseData, hostname)
+	return err == nil && l.Payload.Type == license.EnterpriseType
 }
 
 // WarmModeCache hydrates the cache from the orgs table. Called once at

@@ -55,6 +55,15 @@ type Analysis struct {
 
 	// Reason names what defeated the scan. Empty when Complete.
 	Reason string
+
+	// Callees are the procedures every top-level EXEC, EXECUTE or CALL in
+	// the statement names, in order, as the client wrote them: delimiters
+	// and schema parts kept, so a policy normalizes one spelling. A call
+	// that names no procedure (`EXEC ('...')`, `EXECUTE IMMEDIATE`) adds
+	// nothing. Top-level because `SET NOCOUNT ON; EXEC p` runs p as surely
+	// as `EXEC p` does, while a CALL inside a block or a subquery is the
+	// block's business and the block is already unreadable.
+	Callees []string
 }
 
 // Severity returns the most consequential effect, for a caller that needs one
@@ -166,12 +175,25 @@ type analyzer struct {
 	// sparkScriptDML.
 	script bool
 
+	// stmtStart is the index of the first token of the current statement.
+	stmtStart int
+
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
 	// Its INSERT and SELECT follow a relation, not a head position.
 	fromFirst bool
 
 	incomplete string
+
+	// callees are the names every top-level EXEC, EXECUTE or CALL named;
+	// see Analysis.Callees.
+	callees []string
+
+	// tsqlModule marks a T-SQL batch that defines a procedure, function or
+	// trigger. T-SQL requires such a CREATE or ALTER to be the only
+	// statement in its batch, so once seen, every EXEC after it is in the
+	// body: source the server compiles, not a call the client made.
+	tsqlModule bool
 }
 
 // Analyze reports what one SQL statement does.
@@ -344,6 +366,11 @@ func mergeAnalyses(primary, alt Analysis) Analysis {
 			out.Relations[i].Access = Write
 		}
 	}
+	for _, c := range alt.Callees {
+		if !slices.Contains(out.Callees, c) {
+			out.Callees = append(out.Callees, c)
+		}
+	}
 	return out
 }
 
@@ -375,7 +402,7 @@ func (a *analyzer) walk() {
 		if t.Kind == Punct {
 			switch t.Text {
 			case "(":
-				a.push(i)
+				a.push(i, atHead)
 				atHead = a.top().kind == regCTE || a.top().kind == regSub || a.wrapper
 				continue
 			case ")":
@@ -395,8 +422,18 @@ func (a *analyzer) walk() {
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
 				a.inCTEList, a.expectCTEName, a.fromFirst = false, false, false
+				a.stmtStart = i + 1
 				atHead = true
 				continue
+			case ":":
+				// A BigQuery label, in any spelling: the loop or block after
+				// it opens a script wherever it stands.
+				if a.d == GoogleSQL && !a.script && len(a.stack) == 1 && a.googleSQLOpener(i+1) {
+					a.openScript()
+					i++
+					atHead = true
+					continue
+				}
 			case ",":
 				if a.inCTEList && len(a.stack) == 1 {
 					a.expectCTEName = true
@@ -443,6 +480,22 @@ func (a *analyzer) walk() {
 			continue
 		}
 
+		// A label at head is no statement; the colon after it opens the script.
+		if a.d == GoogleSQL && atHead && !a.script && t.isName() && a.puncts(i+1, ":") && a.googleSQLOpener(i+2) {
+			continue
+		}
+
+		// A quoted EXPLAIN option is still an option: PostgreSQL compares
+		// its name verbatim, so `EXPLAIN ("analyze") DELETE` runs the
+		// delete. A quoted name the option table does not know is one
+		// PostgreSQL rejects, an extension's option, or an escape this
+		// scanner does not decode (U&"\0061nalyze"). It counts as ANALYZE:
+		// the worst case refuses a plan, and never lets a write through.
+		if t.Kind == Quoted && a.explainOptionName(i) && (t.Text == "analyze" || !wrapperModifier[t.Text]) &&
+			!a.explainOptionOff(i) {
+			a.analyzeSeen = true
+		}
+
 		if t.Kind != Word {
 			atHead = a.wrapper
 			continue
@@ -483,7 +536,7 @@ func (a *analyzer) walk() {
 		// EXPLAIN and its option list precede the real statement, so the
 		// head position has to survive them.
 		if a.wrapper && wrapperModifier[t.Text] {
-			if t.Text == "analyze" {
+			if (t.Text == "analyze" || t.Text == "analyse") && !a.explainOptionOff(i) {
 				a.analyzeSeen = true
 			}
 			atHead = true
@@ -501,6 +554,13 @@ func (a *analyzer) walk() {
 			a.script = true
 			a.sawStatement = true
 			a.fail("SQL script; control flow decides which of its statements run")
+			continue
+		}
+
+		// BigQuery scripting, read as a Spark script. Split cuts a script at
+		// its semicolons, so each loop or block fragment opens one.
+		if a.d == GoogleSQL && atHead && !a.script && len(a.stack) == 1 && a.googleSQLScriptAt(i) {
+			a.openScript()
 			continue
 		}
 
@@ -547,7 +607,18 @@ func (a *analyzer) walk() {
 			!(a.d == Oracle && a.forUpdate(i)) {
 			column := a.namesAColumn(i)
 			if !column || a.mayBeAClause(i) {
-				if j := a.claimRelations(i); !column {
+				j := a.claimRelations(i)
+				// PostgreSQL's SELECT ... INTO t creates t, and access
+				// already reports t as written. The effect must say so
+				// too: an operation rule sees the effects, and a select
+				// passed a read-only lane while the table was created.
+				// T-SQL's SELECT INTO creates a table as well, and
+				// MySQL's writes a file or a variable; ENG-905 covers
+				// the dialects outside PostgreSQL.
+				if a.d == Postgres && t.Text == "into" && a.top().verb == Select && j != i {
+					a.effects = append(a.effects, Create)
+				}
+				if !column {
 					i = j
 				}
 			}
@@ -563,6 +634,42 @@ func (a *analyzer) walk() {
 	if len(a.stack) != 1 {
 		a.fail("unbalanced parentheses")
 	}
+}
+
+// explainOptionName reports whether the token at i names an option in the
+// parenthesised list right after EXPLAIN: `EXPLAIN (FORMAT JSON, "analyze")`.
+// A name follows the opening parenthesis or a comma; a value follows its
+// name. The list holds no nested parentheses, so the nearest opening one is
+// the list's own. Anywhere else a quoted name is a column or a relation:
+// `EXPLAIN WITH x("analyze") AS (...)` names a CTE column.
+func (a *analyzer) explainOptionName(i int) bool {
+	if !a.wrapper || i == 0 || !a.puncts(i-1, "(") && !a.puncts(i-1, ",") {
+		return false
+	}
+	j := i - 1
+	for j > 0 && !a.puncts(j, "(") {
+		if a.puncts(j, ")") {
+			return false
+		}
+		j--
+	}
+	return j > 0 && a.toks[j-1].isWord("explain")
+}
+
+// explainOptionOff reports whether the value of the EXPLAIN option named at i
+// turns it off: `EXPLAIN (ANALYZE false) DELETE` plans the DELETE and runs
+// nothing. PostgreSQL reads false, off and 0 as off. The value must be the
+// whole value, ended by a comma or the closing parenthesis: the scanner reads
+// `0x1`, `0_1` or `0b1` as 0 and a word, and PostgreSQL 16 reads each as 1.
+// Any other value leaves the option on, a string literal included, whose text
+// the scanner does not keep: that reading refuses a write. One ANALYZE that is
+// on is enough, so a second one that is off cannot hide it.
+func (a *analyzer) explainOptionOff(i int) bool {
+	if !a.explainOptionName(i) || !a.puncts(i+2, ",") && !a.puncts(i+2, ")") {
+		return false
+	}
+	v := a.toks[i+1]
+	return v.isWord("false") || v.isWord("off") || v.Kind == Number && v.Text == "0"
 }
 
 // headFollows reports whether a statement verb may begin after this keyword.
@@ -614,6 +721,15 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 		return sparkScriptDML[word] && !a.plsqlNotDML(i) && !a.sparkNotDML(i)
 	case a.fromFirst:
 		return (word == "insert" || word == "select") && len(a.stack) == 1
+	case a.d == MSSQL:
+		// T-SQL separates statements with whitespace as readily as with
+		// `;`: `SET NOCOUNT ON EXEC dbo.p`, `IF 1=1 EXEC dbo.p` and
+		// `DECLARE @x INT EXEC dbo.p` each run p. EXEC and EXECUTE are
+		// reserved, so one at the top level is a statement wherever it
+		// sits, and it is read as a head there: the batch is then an
+		// unreadable call, not the SET it opened with. Inside a module
+		// definition it is body text; see tsqlModule.
+		return !a.tsqlModule && (word == "exec" || word == "execute") && len(a.stack) == 1
 	}
 	return false
 }
@@ -624,6 +740,39 @@ func (a *analyzer) anywhereDML(word string, i int) bool {
 func (a *analyzer) sparkTransactionAt(i int) bool {
 	return i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text] &&
 		(i+2 == len(a.toks) || a.puncts(i+2, ";"))
+}
+
+// googleSQLOpener reports whether the word at i is a BigQuery loop or block
+// keyword. A bare BEGIN, or BEGIN TRANSACTION, starts a transaction.
+func (a *analyzer) googleSQLOpener(i int) bool {
+	if i >= len(a.toks) || a.toks[i].Kind != Word {
+		return false
+	}
+	end := func(k int) bool { return k == len(a.toks) || a.puncts(k, ";") }
+	switch a.toks[i].Text {
+	case "loop", "repeat", "while", "for":
+		return true
+	case "begin":
+		return !end(i+1) && !(a.toks[i+1].isWord("transaction") && end(i+2))
+	}
+	return false
+}
+
+// googleSQLScriptAt reports whether the opener at i opens a script: first in
+// its statement, or after THEN or ELSE of a script statement. In a CASE
+// expression, `THEN begin` names a column.
+func (a *analyzer) googleSQLScriptAt(i int) bool {
+	if !a.googleSQLOpener(i) {
+		return false
+	}
+	s := a.stmtStart
+	return s == i || a.toks[s].Kind == Word && googleSQLScriptStatement[a.toks[s].Text]
+}
+
+func (a *analyzer) openScript() {
+	a.script = true
+	a.sawStatement = true
+	a.fail("SQL script; control flow decides which of its statements run")
 }
 
 // sparkNotDML reports whether a DML word at i inside a Spark script is not a
@@ -698,7 +847,14 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 }
 
 // push opens a region, labelling it from the token before the parenthesis.
-func (a *analyzer) push(i int) {
+//
+// A parenthesis where a statement may begin, and that a query keyword
+// follows, opens a query: `(SELECT * INTO t FROM s)` and `UNION (SELECT
+// ...)`. Read as an expression group, its SELECT was never a head, the
+// statement reported no verb, and the table that SELECT INTO created passed
+// a read-only lane. Anything else stays an expression: THEN and ELSE are
+// head positions too, and `ELSE (update)` reads a column called update.
+func (a *analyzer) push(i int, head bool) {
 	kind := regParen
 	if prev, ok := a.prevWord(i); ok {
 		switch {
@@ -709,6 +865,9 @@ func (a *analyzer) push(i int) {
 			kind = regSub
 		}
 	}
+	if kind == regParen && head && a.opensQuery(i) {
+		kind = regSub
+	}
 	verb := Unknown
 	if kind == regParen {
 		// An expression group inherits its statement's verb so relations
@@ -716,6 +875,21 @@ func (a *analyzer) push(i int) {
 		verb = a.top().verb
 	}
 	a.stack = append(a.stack, region{kind: kind, verb: verb})
+}
+
+// opensQuery reports whether the parenthesis at i opens a query: a query
+// keyword follows it, or another parenthesis that may open one, as in
+// `((SELECT ...))`. A column that one of these keywords names, where a
+// dialect allows it, reads as a select: never as a write.
+func (a *analyzer) opensQuery(i int) bool {
+	if a.puncts(i+1, "(") {
+		return true
+	}
+	if i+1 >= len(a.toks) {
+		return false
+	}
+	next := a.toks[i+1]
+	return next.isWord("select") || next.isWord("with") || next.isWord("values") || next.isWord("table")
 }
 
 func (a *analyzer) pop() {
@@ -743,6 +917,25 @@ func (a *analyzer) head(t Token, i int) bool {
 
 	if why, bad := a.opaque(t.Text); bad {
 		a.fail(why)
+	}
+
+	// Every top-level call in the statement. `SET NOCOUNT ON; EXEC p` runs
+	// p; a CALL inside a block or a subquery is not what the client asked
+	// to run, and EXPLAIN plans without running. Which words call is the
+	// dialect's: CALL everywhere, EXEC and EXECUTE in T-SQL only. In
+	// PostgreSQL and MySQL `EXECUTE name` runs a prepared statement, and
+	// a rule naming a procedure must not fire on a query that happens to
+	// share its name.
+	if verb == Call && !a.explainSeen && !a.tsqlModule && a.top().kind == regTop {
+		call := t.Text == "call" || a.d == MSSQL && (t.Text == "exec" || t.Text == "execute")
+		if call {
+			if name := a.calleeAt(i + 1); name != "" {
+				a.callees = append(a.callees, name)
+			}
+		}
+	}
+	if a.d == MSSQL && (verb == Create || verb == Alter) && a.tsqlModuleAt(i+1) {
+		a.tsqlModule = true
 	}
 
 	if a.d == Oracle {
@@ -1259,6 +1452,61 @@ func (a *analyzer) tableChanges(j int) (int, Relation, bool) {
 	return j, Relation{}, false
 }
 
+// calleeAt returns the name that starts at token j as the client wrote it:
+// each name token's own source bytes, so brackets, quotes and case survive,
+// joined by dots. Token by token rather than one slice from first to last,
+// because the scanner drops comments and whitespace between the parts and
+// SQL Server does too: `EXEC dbo./**/get_secrets` runs dbo.get_secrets.
+// Empty when j names nothing: a parenthesis (`EXEC ('...')`), a string,
+// IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure, or AS, which
+// makes T-SQL's `EXECUTE AS USER = 'x'` a context switch. T-SQL's
+// `EXEC @status = dbo.proc` is read past its return variable, and its
+// temporary procedures keep their `#` or `##`.
+func (a *analyzer) calleeAt(j int) string {
+	if a.puncts(j, "@") && j+1 < len(a.toks) && a.toks[j+1].isName() && a.puncts(j+2, "=") {
+		j += 3
+	}
+	prefix := ""
+	if a.d == MSSQL {
+		for a.puncts(j, "#") {
+			prefix += "#"
+			j++
+		}
+	}
+	if j >= len(a.toks) || !a.toks[j].isName() || a.toks[j].isWord("immediate") || a.toks[j].isWord("as") {
+		return ""
+	}
+	if a.spans == nil {
+		a.spans = tokenSpans(a.src, a.rules)
+	}
+	// Both come from the same scanner; a stream that differs yields nothing.
+	if len(a.spans) != len(a.toks) {
+		return ""
+	}
+	name := prefix + a.src[a.spans[j][0]:a.spans[j][1]]
+	for a.puncts(j+1, ".") && j+2 < len(a.toks) && a.toks[j+2].isName() {
+		j += 2
+		name += "." + a.src[a.spans[j][0]:a.spans[j][1]]
+	}
+	return name
+}
+
+// tsqlModuleAt reports whether the CREATE or ALTER at i-1 defines a stored
+// module: `CREATE [OR ALTER] PROC[EDURE] | FUNCTION | TRIGGER`.
+func (a *analyzer) tsqlModuleAt(i int) bool {
+	if i+1 < len(a.toks) && a.toks[i].isWord("or") && a.toks[i+1].isWord("alter") {
+		i += 2
+	}
+	if i >= len(a.toks) {
+		return false
+	}
+	switch a.toks[i].Text {
+	case "proc", "procedure", "function", "trigger":
+		return a.toks[i].Kind == Word
+	}
+	return false
+}
+
 // literalName reads the Literal token at k as a relation name: a string
 // whose content is a dotted name, `'c.s.t'` or "`a b`.t". It reports false
 // for any other content and for a string with an escape or an embedded
@@ -1482,6 +1730,7 @@ func (a *analyzer) result() Analysis {
 		Relations: a.rels,
 		Complete:  a.incomplete == "",
 		Reason:    a.incomplete,
+		Callees:   a.callees,
 	}
 }
 

@@ -146,7 +146,7 @@ function Setup() {
   }
 
   return (
-    <Box mih="100vh" bg="gray.1" p="xl" className={classes.shell}>
+    <Box mih="100vh" bg="var(--hoop-surface-strong)" p="xl" className={classes.shell}>
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" w="100%" maw={1080}>
         <LeftPanel />
 
@@ -227,7 +227,7 @@ function Setup() {
               </Button>
 
               <Flex align="center" justify="center" gap="xs" mt="xs">
-                <Lock size={11} color="var(--mantine-color-gray-6)" />
+                <Lock size={11} color="var(--mantine-color-dimmed)" />
                 <Text size="xs" c="dimmed">
                   Runs locally. Credentials never leave this machine.
                 </Text>

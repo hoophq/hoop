@@ -206,7 +206,7 @@ export default function GlobalSettings({ sidecar, editable }) {
             </Row>
             <Row label="Audit" heading>
               {auditEnabled(config) ? (
-                <Badge tag chip variant="light" color="green" c="green.8" icon={<Check size={12} aria-hidden="true" />}>
+                <Badge tag chip variant="light" color="green" c="green" icon={<Check size={12} aria-hidden="true" />}>
                   Active
                 </Badge>
               ) : (

@@ -88,7 +88,7 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
           <Text size="sm" fw={500} c={checked ? 'white' : undefined}>
             {title}
           </Text>
-          <Text size="xs" ta="left" c={checked ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
+          <Text size="xs" ta="left" c={checked ? 'var(--hoop-on-navy-dimmed)' : 'dimmed'}>
             {description}
           </Text>
         </Stack>

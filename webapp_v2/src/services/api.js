@@ -40,6 +40,15 @@ function renew(response) {
   storeRenewedToken(sentToken(response.config), response.headers)
 }
 
+// A 401: save the URL to come back to, log out and go to the login page. The
+// fetch streams call it too: they do not pass through the interceptor.
+export function redirectToLogin() {
+  const authStore = useAuthStore.getState()
+  authStore.saveRedirectUrl(window.location.href)
+  authStore.logout()
+  window.location.href = '/login'
+}
+
 // Response interceptor: store a renewed token; handle 401. A 401 for a token
 // that is no longer the stored one is retried once with the current token
 // (the gateway rejects before any handler), when both name the same account:
@@ -55,9 +64,8 @@ api.interceptors.response.use(
     renew(error.response)
     if (error.response?.status !== 401) return Promise.reject(error)
 
-    const authStore = useAuthStore.getState()
     const sent = sentToken(error.config)
-    const current = authStore.getToken()
+    const current = useAuthStore.getState().getToken()
     if (!current) return Promise.reject(error)
     if (sent && sent !== current) {
       const subject = tokenSubject(sent)
@@ -69,12 +77,7 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // Save current URL for redirect after auth
-    authStore.saveRedirectUrl(window.location.href)
-    // Logout (clears token)
-    authStore.logout()
-    // Redirect to login
-    window.location.href = '/login'
+    redirectToLogin()
     return Promise.reject(error)
   },
 )

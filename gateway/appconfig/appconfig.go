@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/envloader"
+	"github.com/hoophq/hoop/common/license"
 
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 )
@@ -46,6 +48,9 @@ type Config struct {
 	webhookAppURL                   *url.URL
 	licenseSigningKey               *rsa.PrivateKey
 	licenseSignerOrgID              string
+	licenseData                     []byte
+	analyticsTracking               string
+	orgID                           string
 	orgMultitenant                  bool
 	apiURL                          string
 	grpcURL                         string
@@ -132,6 +137,28 @@ func Load() error {
 	allowedOrgID, licensePrivKey, err := loadLicensePrivateKey()
 	if err != nil {
 		return err
+	}
+	licenseData, err := loadLicense()
+	if err != nil {
+		return err
+	}
+	analyticsTracking, err := loadAnalyticsTracking()
+	if err != nil {
+		return err
+	}
+	orgID, err := loadOrgID()
+	if err != nil {
+		return err
+	}
+	orgMultitenant := os.Getenv("ORG_MULTI_TENANT") == "true"
+	if orgMultitenant && licenseData != nil {
+		return fmt.Errorf("HOOP_LICENSE is not supported with ORG_MULTI_TENANT")
+	}
+	if orgMultitenant && analyticsTracking == "disabled" {
+		return fmt.Errorf("ANALYTICS_TRACKING=disabled is not supported with ORG_MULTI_TENANT")
+	}
+	if orgMultitenant && orgID != "" {
+		return fmt.Errorf("ORG_ID is not supported with ORG_MULTI_TENANT")
 	}
 	gcpJsonCred, err := loadGcpDLPCredentials()
 	if err != nil {
@@ -287,8 +314,11 @@ func Load() error {
 		pgCred:                          pgCred,
 		licenseSigningKey:               licensePrivKey,
 		licenseSignerOrgID:              allowedOrgID,
+		licenseData:                     licenseData,
+		analyticsTracking:               analyticsTracking,
+		orgID:                           orgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
-		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
+		orgMultitenant:                  orgMultitenant,
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
 		dlpMode:                         dlpMode,
 		hasRedactCredentials:            hasRedactCredentials,
@@ -451,9 +481,71 @@ func loadLicensePrivateKey() (string, *rsa.PrivateKey, error) {
 	return allowedOrgID, privkey, nil
 }
 
+// loadLicense reads HOOP_LICENSE: the license JSON itself when the value
+// starts with "{", the path of a file holding it otherwise. The signature,
+// window and host are verified at boot, when the document is stored.
+func loadLicense() ([]byte, error) {
+	v := strings.TrimSpace(os.Getenv("HOOP_LICENSE"))
+	if v == "" {
+		return nil, nil
+	}
+	data := []byte(v)
+	if v[0] != '{' {
+		var err error
+		data, err = os.ReadFile(v)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load HOOP_LICENSE, reason=%v", err)
+		}
+	}
+	var l license.License
+	if err := json.Unmarshal(data, &l); err != nil {
+		return nil, fmt.Errorf("unable to load HOOP_LICENSE: it is not a license document, reason=%v", err)
+	}
+	return data, nil
+}
+
+func loadAnalyticsTracking() (string, error) {
+	switch v := os.Getenv("ANALYTICS_TRACKING"); v {
+	case "", "enabled", "disabled":
+		return v, nil
+	default:
+		return "", fmt.Errorf("invalid ANALYTICS_TRACKING %q (want enabled|disabled)", v)
+	}
+}
+
+// loadOrgID reads ORG_ID, the id the default organization is created with.
+// It returns the canonical lowercase form, the one PostgreSQL returns, so the
+// boot check compares like with like.
+func loadOrgID() (string, error) {
+	v := strings.TrimSpace(os.Getenv("ORG_ID"))
+	if v == "" {
+		return "", nil
+	}
+
+	id, err := uuid.Parse(v)
+	if err != nil {
+		return "", fmt.Errorf("invalid ORG_ID %q: it is not a UUID", v)
+	}
+
+	return id.String(), nil
+}
+
 func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
+
+// LicenseData is the HOOP_LICENSE document, nil when unset. The gateway
+// stores it on the default organization at every boot.
+func (c Config) LicenseData() []byte { return c.licenseData }
+
+// AnalyticsTracking is the ANALYTICS_TRACKING value: enabled, disabled or
+// empty. See analytics.ModeAtBoot for what each does to the default
+// organization.
+func (c Config) AnalyticsTracking() string { return c.analyticsTracking }
+
+// OrgID is the ORG_ID the default organization is created with on a fresh
+// database, empty when unset. It never renames an existing organization.
+func (c Config) OrgID() string { return c.orgID }
 
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }

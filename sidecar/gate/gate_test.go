@@ -792,6 +792,118 @@ func TestGateHonorsCodecReassemblyLimit(t *testing.T) {
 	}
 }
 
+// closeDelimitedCodec models libhoop codec/http on a response body with no
+// length and no chunking: it forwards the bytes as they arrive and hands
+// the response statement over only at stream end.
+type closeDelimitedCodec struct {
+	ended   int
+	started bool // what ResponseStarted reports while the body is in flight
+}
+
+func (*closeDelimitedCodec) Protocol() inspect.Protocol { return inspect.HTTP }
+func (*closeDelimitedCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (*closeDelimitedCodec) Rewrite(data []byte, _ func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{}, nil
+}
+func (*closeDelimitedCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+func (c *closeDelimitedCodec) ResponseStarted() bool                  { return c.started && c.ended == 0 }
+func (c *closeDelimitedCodec) EndOfStream(dir inspect.Direction) []inspect.Statement {
+	c.ended++
+	if dir != inspect.FromServer || c.ended > 1 {
+		return nil
+	}
+	return []inspect.Statement{{
+		Protocol: inspect.HTTP, Direction: inspect.FromServer, Text: "HTTP/1.1 200 OK",
+		HTTP: &inspect.HTTPDetail{Method: "GET", Path: "/rows", Resource: "/rows", StatusCode: 200},
+	}}
+}
+
+// A close-delimited response body ends with the connection, so its
+// statement exists only then. EndOfStream asks the codec for it and judges
+// it as inspect would have: the audit trail records the response, and a
+// rule on it is audited as a denial (ENG-946). The denial asks for no
+// frame when the response reached the client in part, and keeps it when
+// the codec still held the response whole.
+func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
+	for name, tc := range map[string]struct {
+		pol     policy.Evaluator
+		started bool
+	}{
+		"allowed":      {nil, true},
+		"denied, sent": {no200(t), true},
+		"denied, held": {no200(t), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pol := tc.pol
+			sink := &recordingSink{}
+			g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
+				Protocol:     inspect.HTTP,
+				Audit:        sink,
+				Policy:       pol,
+				CodecFactory: func() inspect.Codec { return &closeDelimitedCodec{started: tc.started} },
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			ctx := context.Background()
+			if d := g.Response(ctx, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nrow1\nrow2\n")); !d.Allowed || len(d.Statements) != 0 {
+				t.Fatalf("body in flight: %+v", d)
+			}
+			if len(sink.kinds()) != 0 {
+				t.Fatalf("recorded before the body ended: %v", sink.kinds())
+			}
+			d := g.EndOfStream()
+			if d.Allowed != (pol == nil) || len(d.Statements) != 1 || len(d.Payload) != 0 {
+				t.Fatalf("EndOfStream = %+v, want Allowed=%v, one statement, no bytes", d, pol == nil)
+			}
+			if pol != nil && (d.NoFrame != tc.started || d.DeniedStatement == nil || d.Rule == "") {
+				t.Fatalf("a denial at stream end must name its rule and ask for NoFrame=%v: %+v", tc.started, d)
+			}
+			kind := audit.KindStatement
+			if pol != nil {
+				kind = audit.KindViolation
+			}
+			ev := sink.find(kind)
+			if ev == nil {
+				t.Fatalf("the response that ended with the stream left no %s event: %v", kind, sink.kinds())
+			}
+			if ev.Statement != "HTTP/1.1 200 OK" || ev.Allowed != (pol == nil) {
+				t.Fatalf("event = %+v, want the response statement with Allowed=%v", ev, pol == nil)
+			}
+			if statements, denied := g.Stats(); statements != 1 || denied != btoi(pol != nil) {
+				t.Fatalf("Stats = %d/%d, want 1 statement and %d denied", statements, denied, btoi(pol != nil))
+			}
+			// The relay may call it more than once; the codec answers once.
+			if again := g.EndOfStream(); !again.Allowed || len(again.Statements) != 0 {
+				t.Fatalf("second EndOfStream = %+v", again)
+			}
+			if n := len(sink.kinds()); n != 1 {
+				t.Fatalf("recorded %d times: %v", n, sink.kinds())
+			}
+		})
+	}
+}
+
+func no200(t *testing.T) *policy.Rules {
+	t.Helper()
+	r, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-200", Type: policy.MatchHTTPStatus}.WithStatuses("200"),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	return r
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func TestGateFiltersBeforeDecodeAndForward(t *testing.T) {
 	codec := &filteringCodec{}
 	g, err := gate.New(newSession(), gate.Config{
@@ -1381,9 +1493,9 @@ func (*neverCompletesCodec) Decode(inspect.Direction, []byte) ([]inspect.Stateme
 }
 
 // The gate forwards bytes a codec cannot parse unless the codec reports
-// ErrStreamUnsafe. The Oracle codec is fail-closed: a malformed client
-// request is denied, and with masking on so is a malformed server reply,
-// whose rows masking could not attribute.
+// ErrStreamUnsafe or the lane's policy refuses them. The Oracle codec is
+// fail-closed: a malformed client request is denied, and with masking on so
+// is a malformed server reply, whose rows masking could not attribute.
 func TestMalformedOracleTrafficIsDeniedNotForwarded(t *testing.T) {
 	data := func(ttc ...byte) []byte {
 		p := make([]byte, 10, 10+len(ttc))
@@ -1419,5 +1531,85 @@ func TestMalformedOracleTrafficIsDeniedNotForwarded(t *testing.T) {
 				t.Fatalf("malformed Oracle %s forwarded: rule=%q err=%v", tc.name, d.Rule, d.Err)
 			}
 		})
+	}
+}
+
+// decliningReframer stops masking on its first pass and says why, the way
+// the mssql codec does on an unmeasurable column.
+type decliningReframer struct{ closeDelimitedCodec }
+
+func (*decliningReframer) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*decliningReframer) Rewrite(data []byte, _ func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{Declined: "column 0 has type 0x62, which this codec cannot measure"}, nil
+}
+
+// A codec that stops masking reports it once; the gate records it as an
+// activity row. On a lane that refuses to run unrecorded, a sink that
+// cannot take that row refuses the response: the values after it would
+// travel unmasked with nothing in the trail saying so.
+func TestMaskingDeclineIsAuditedAndRefusedWhenTheSinkFails(t *testing.T) {
+	for _, failClosed := range []bool{false, true} {
+		sink := &recordingSink{failOn: audit.KindActivity}
+		g, err := gate.New(newSession(), gate.Config{
+			Protocol:         inspect.Postgres,
+			Audit:            sink,
+			Masker:           stubMasker{find: "x", replace: "y"},
+			FailOnAuditError: failClosed,
+			CodecFactory:     func() inspect.Codec { return &decliningReframer{} },
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		d := g.Response(context.Background(), []byte("rows"))
+		if d.Allowed == failClosed {
+			t.Errorf("FailOnAuditError=%v: Allowed=%v", failClosed, d.Allowed)
+		}
+		if failClosed && (d.Rule != "audit" || d.Err == nil) {
+			t.Errorf("refusal rule = %q err = %v, want audit with the sink's error", d.Rule, d.Err)
+		}
+	}
+
+	// The refusal keeps what the codec already handed the client. A
+	// response in flight goes out as rebuilt with no deny frame inside it;
+	// one not yet started keeps the whole responses before it as
+	// Preceding, so the client does not read the deny frame as their
+	// answer.
+	for _, started := range []bool{true, false} {
+		sink := &recordingSink{failOn: audit.KindActivity}
+		codec := &decliningReframer{}
+		codec.started = started
+		g, _ := gate.New(newSession(), gate.Config{
+			Protocol:         inspect.Postgres,
+			Audit:            sink,
+			Masker:           stubMasker{find: "x", replace: "y"},
+			FailOnAuditError: true,
+			CodecFactory:     func() inspect.Codec { return codec },
+		})
+		d := g.Response(context.Background(), []byte("rows"))
+		if d.Allowed {
+			t.Fatalf("started=%v: allowed", started)
+		}
+		switch {
+		case started && (!d.NoFrame || string(d.Payload) != "rows"):
+			t.Errorf("started response: NoFrame=%v Payload=%q, want the bytes and no frame", d.NoFrame, d.Payload)
+		case !started && (d.NoFrame || string(d.Preceding) != "rows" || d.Payload != nil):
+			t.Errorf("unstarted response: NoFrame=%v Preceding=%q Payload=%q, want the bytes as Preceding", d.NoFrame, d.Preceding, d.Payload)
+		}
+	}
+
+	// And with a working sink the row is there, with the reason.
+	sink := &recordingSink{}
+	g, _ := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		Audit:        sink,
+		Masker:       stubMasker{find: "x", replace: "y"},
+		CodecFactory: func() inspect.Codec { return &decliningReframer{} },
+	})
+	if d := g.Response(context.Background(), []byte("rows")); !d.Allowed {
+		t.Fatalf("response refused with a working sink: %+v", d)
+	}
+	ev := sink.find(audit.KindActivity)
+	if ev == nil || ev.Metadata[audit.MetadataActivity] != "masking_declined" || !strings.Contains(ev.Metadata["reason"], "0x62") {
+		t.Fatalf("activity row = %+v, want masking_declined with the reason", ev)
 	}
 }

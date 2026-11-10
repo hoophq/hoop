@@ -480,7 +480,7 @@ export default function EventRoutingForm() {
                     <Box
                       px="sm"
                       py="xs"
-                      bg="gray.0"
+                      bg="var(--hoop-surface-muted)"
                       style={{
                         borderBottom:
                           "1px solid var(--mantine-color-default-border)",
@@ -508,7 +508,7 @@ export default function EventRoutingForm() {
                       >
                         <Radio value={e.name} mt={4} />
                         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                          <Code bg="indigo.1" c="indigo.9">{e.name}</Code>
+                          <Code variant="accent">{e.name}</Code>
                           <EventDescription text={e.description} size="xs" c="dimmed" />
                         </Stack>
                       </Group>
@@ -545,7 +545,7 @@ export default function EventRoutingForm() {
                   py="sm"
                   wrap="nowrap"
                   gap="md"
-                  bg="gray.0"
+                  bg="var(--hoop-surface-muted)"
                   style={{
                     borderBottom:
                       "1px solid var(--mantine-color-default-border)",
@@ -609,7 +609,7 @@ export default function EventRoutingForm() {
                       </Stack>
                       <ArrowRight
                         size={16}
-                        color="var(--mantine-color-gray-6)"
+                        color="var(--mantine-color-dimmed)"
                         style={{ marginTop: 6 }}
                       />
                       <Box style={{ flex: 1.2, minWidth: 0 }}>

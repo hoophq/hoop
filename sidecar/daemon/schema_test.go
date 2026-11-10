@@ -71,7 +71,12 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 			l["network"] = "unix"
 			l["listen"] = filepath.Join(t.TempDir(), "l.sock")
 		},
-		"upstream":        func(l map[string]any) { l["upstream"] = "h:1" },
+		"upstream": func(l map[string]any) {
+			l["upstream"] = "h:1"
+			if l["protocol"] == "mcp" {
+				l["upstream"] = "https://h:1/mcp"
+			}
+		},
 		"upstream_tls":    func(l map[string]any) { l["upstream_tls"] = map[string]any{} },
 		"downstream_tls":  func(l map[string]any) { l["downstream_tls"] = map[string]any{"cert_file": cert, "key_file": key} },
 		"identity_header": func(l map[string]any) { l["identity_header"] = "x-user" },
@@ -94,6 +99,9 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"spanner":    func(l map[string]any) { l["spanner"] = map[string]any{} },
 		"ssh":        func(l map[string]any) { l["ssh"] = sshBlock },
 		"ica":        func(l map[string]any) { l["ica"] = icaBlock },
+		"mcp_gateway": func(l map[string]any) {
+			l["mcp_gateway"] = map[string]any{"transport": "sse"}
+		},
 	}
 	baseline := func(protocol string) map[string]any {
 		l := map[string]any{"name": "l", "protocol": protocol, "listen": "127.0.0.1:1"}
@@ -105,6 +113,8 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 			// the tenant. TestICAListenerValidation covers CIDR mode.
 			l["upstream"] = "h:1"
 			l["ica"] = icaBlock
+		case "mcp":
+			l["upstream"] = "https://h:1/mcp"
 		default:
 			l["upstream"] = "h:1"
 		}

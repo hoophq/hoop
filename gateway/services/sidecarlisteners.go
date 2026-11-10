@@ -37,16 +37,37 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 }
 
 // ReconcileSidecarListenerConnections writes the mirrors of every sidecar of
-// orgID, one transaction per sidecar, for the rows that fell behind the write
-// path. A sidecar it cannot mirror is skipped and returned, never fatal: its
-// next write answers the same error to the admin.
+// orgID that fell behind the write path, one transaction per sidecar. A
+// sidecar it cannot mirror is skipped and returned, never fatal: its next
+// write answers the same error to the admin.
+//
+// It reads the sidecars and their mirrors in one snapshot, without a lock, and
+// locks only a sidecar whose mirrors differ. A config write after the snapshot
+// syncs its own mirrors in its transaction, so a sidecar in sync at the
+// snapshot needs nothing; the locked path reads a differing one again.
 func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
-	sidecars, err := models.ListSidecars(db, orgID)
+	var sidecars []models.Sidecar
+	var states []models.SidecarMirrorState
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		if sidecars, err = models.ListSidecars(tx, orgID); err != nil {
+			return fmt.Errorf("failed listing sidecars, reason=%v", err)
+		}
+		states, err = models.ListSidecarMirrorStates(tx, orgID)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
-		return []error{fmt.Errorf("failed listing sidecars, reason=%v", err)}
+		return []error{err}
+	}
+	stored := make(map[string][]models.SidecarMirrorState, len(sidecars))
+	for _, s := range states {
+		stored[s.SidecarID] = append(stored[s.SidecarID], s)
 	}
 	var failed []error
 	for _, listed := range sidecars {
+		if mirrorsInSync(&listed, stored[listed.ID]) {
+			continue
+		}
 		err := db.Transaction(func(tx *gorm.DB) error {
 			// Read again under the lock the config writers take: a write that
 			// lands after the listing must not be undone by its older copy.
@@ -66,10 +87,31 @@ func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
 	return failed
 }
 
-// ReconcileAllSidecarListenerConnections runs the reconcile for every org.
-// Called at startup: it covers an org whose mirrors fell behind while this
-// gateway was not running, such as a redeploy after a rollback. It logs and
-// never stops the startup.
+// mirrorsInSync reports whether SyncSidecarListenerConnectionsTx would write
+// nothing for sc: one stored mirror per listener, none extra, each in sync. A
+// sidecar it cannot project is not in sync, so the locked path reports why.
+func mirrorsInSync(sc *models.Sidecar, stored []models.SidecarMirrorState) bool {
+	want, err := ProjectListeners(sc.OrgID, sc)
+	if err != nil || len(want) != len(stored) {
+		return false
+	}
+	byListener := make(map[string]models.SidecarMirrorState, len(stored))
+	for _, s := range stored {
+		byListener[s.Listener] = s
+	}
+	for _, m := range want {
+		s, ok := byListener[m.SidecarListener.String]
+		if !ok || !s.InSync(m) {
+			return false
+		}
+	}
+	return true
+}
+
+// ReconcileAllSidecarListenerConnections runs the reconcile for every org. It
+// covers an org whose mirrors fell behind while this gateway was not running,
+// such as a redeploy after a rollback. It logs and never fails: the gateway
+// runs it in the background, after it starts serving.
 func ReconcileAllSidecarListenerConnections(db *gorm.DB) {
 	orgs, err := models.ListAllOrganizations()
 	if err != nil {
@@ -98,6 +140,7 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 	inspect.GRPC:       {"custom", string(inspect.GRPC)},
 	inspect.Spanner:    {"custom", string(inspect.Spanner)},
 	inspect.ICA:        {"custom", string(inspect.ICA)},
+	inspect.MCP:        {"custom", string(inspect.MCP)},
 }
 
 // ProjectListeners renders the mirror connection of every listener of sc, in

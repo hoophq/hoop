@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 )
 
 // validateFile is the validator the CLI injects, minus the license and the
@@ -100,6 +102,22 @@ func TestAnalyzerDefaultsFollowTheKeyFile(t *testing.T) {
 	if cfg.Analyzer == nil || cfg.Listeners[0].Analyzer == nil {
 		t.Errorf("analyzer missing from the config: %+v", cfg)
 	}
+	// An mcp lane refuses an analyzer, so its defaults leave it off and
+	// nothing tells the person to add one.
+	d, _ = newDraft("mcp", machine{keyDir: dir})
+	if d.an.on {
+		t.Error("analyzer on for an mcp lane")
+	}
+	if err := validateDraft(t, d); err != nil {
+		t.Errorf("mcp defaults with a key file do not validate: %v", err)
+	}
+	d, _ = newDraft("mcp", noMachine())
+	if _, opts, _ := d.config(); len(opts.Footer) > 0 {
+		t.Errorf("the mcp config tells the person to add an analyzer: %q", opts.Footer)
+	}
+	if s := d.analyzerSummary(); strings.Contains(s, "key file") {
+		t.Errorf("the mcp analyzer summary asks for a key file: %q", s)
+	}
 }
 
 // Each rule type's form must produce a rule that validates on the lane it
@@ -111,6 +129,7 @@ func TestEveryRuleTypeFormBuildsAValidRule(t *testing.T) {
 		policy.MatchPattern:      {"pattern": `(?i)password`},
 		policy.MatchOperation:    {"operations": "delete"},
 		policy.MatchTable:        {"tables": "customers"},
+		policy.MatchProcedure:    {"procedures": "get_secrets"},
 		policy.MatchPII:          {"entities": "EMAIL_ADDRESS"},
 		policy.MatchHTTPResource: {"resources": "/admin/*", "methods": "DELETE"},
 		policy.MatchHTTPStatus:   {"statuses": "5xx"},
@@ -141,6 +160,40 @@ func TestEveryRuleTypeFormBuildsAValidRule(t *testing.T) {
 			d.rules = []policy.Rule{r}
 			if err := validateDraft(t, d); err != nil {
 				t.Errorf("%s/%s rule does not validate: %v", protocol, typ, err)
+			}
+		}
+	}
+}
+
+// The wizard offers mcp_tool on an mcp lane only, and its form builds a rule
+// policy accepts from Deny tools or Allow only, never from both or neither.
+func TestTheMCPToolFormBuildsAValidRule(t *testing.T) {
+	if slices.Contains(ruleTypesFor("postgres", false), string(policy.MatchMCPTool)) {
+		t.Error("mcp_tool offered on a postgres lane")
+	}
+	if !slices.Contains(ruleTypesFor("mcp", false), string(policy.MatchMCPTool)) {
+		t.Fatal("mcp_tool not offered on an mcp lane")
+	}
+	for _, c := range []struct {
+		tools, allow string
+		ok           bool
+	}{
+		{"*delete*, run_query", "", true},
+		{"", "get_*, list_*", true},
+		{"*delete*", "get_*", false},
+		{"", "", false},
+	} {
+		f := ruleForm(policy.Rule{Type: policy.MatchMCPTool}, "mcp", false, true)
+		f.byID("name").text = "r"
+		f.byID("tools").text, f.byID("allow").text = c.tools, c.allow
+		r, err := ruleFromForm(f)
+		if (err == nil) != c.ok {
+			t.Errorf("tools %q allow %q: err = %v, want ok=%v", c.tools, c.allow, err, c.ok)
+			continue
+		}
+		if c.ok {
+			if _, err := policy.NewRules([]policy.Rule{r}); err != nil {
+				t.Errorf("tools %q allow %q: policy refuses the rule: %v", c.tools, c.allow, err)
 			}
 		}
 	}

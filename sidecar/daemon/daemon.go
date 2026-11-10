@@ -166,6 +166,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
+	// The file is what runs: standalone, or a plane that delegates to disk.
+	if local != nil && cfg == local {
+		cfg.Deprecations = append(cfg.Deprecations, cfg.fileDeprecations...)
+	}
 	// Retained so a pii drift rebuilds the detector the way startup would,
 	// and so a reload re-reads the config file the way startup would: a
 	// standalone process on every edit, a plane-owned one on a mid-run
@@ -612,6 +616,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkICA(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return nil, err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
@@ -684,6 +691,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err // buildICAServer names the lane
 			}
 			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isMCPGateway(ln.cfg) {
+			srv, _, err := buildMCPGatewayServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, err
+			}
+			notes = append(notes, srv.Notes()...)
+			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
+				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
+			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -892,6 +910,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkICA(cfg); err != nil {
 		return err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
@@ -1079,6 +1100,16 @@ func Run(cfg *Config, det Plugin) error {
 			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
+		case isMCPGateway(ln.cfg):
+			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, msrv)
+			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
+			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
 			if serr != nil {
@@ -1211,7 +1242,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
 	} else if strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
 			"hint", "set admin.listen to install a license through the admin API")
@@ -1396,6 +1427,10 @@ type lane struct {
 	// reach the client.
 	observing bool
 
+	// mcpHide holds an mcp lane's enforcing mcp_tool rules: a tool one of
+	// them denies is left out of tools/list. Nil when none applies.
+	mcpHide *policy.Rules
+
 	// notes are per-lane facts an operator has to know at startup and that
 	// no config file shows, because they are consequences of the resolved
 	// stack rather than of anything written down. A rule that defers on a
@@ -1488,7 +1523,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		// An mcp lane masks nothing yet: inherited rules are accepted and
+		// Validate notes them, so one mask block can serve every lane.
+		var masker gate.Masker
+		if !isMCPGateway(lc) {
+			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		}
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1519,6 +1559,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if opa.enabled() {
 			ln.opaURL = opa.URL
 		}
+		if isMCPGateway(lc) && gc.enforcing() {
+			if ln.mcpHide, err = mcpHideRules(gc.Rules); err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
+		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
 		}
@@ -1543,15 +1589,17 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// Said out loud because it is the one control observe mode
 		// switches OFF rather than records: every other rule still runs
 		// and still writes what it would have done, while a review
-		// nobody filed cannot be approved later either.
+		// nobody filed cannot be approved later either. The approval
+		// agent is not asked either: its call would decide nothing.
 		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
 				"observe mode files no approval request: a held statement is recorded as "+
-					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
+					policy.AnnotationWouldDeny+" and forwarded, and no approver, person or "+
+					"approval agent, is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
-		if !gc.observing() && analyzerHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
+		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
@@ -1561,6 +1609,22 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			ln.notes = append(ln.notes,
 				"defer names a decision this lane has no opa.url for, so a deferred "+
 					"match or risk level denies instead of reporting a finding")
+		}
+		// A strict table rule with no scope refuses every statement whose
+		// relations the scanner could not read, and that set is wider
+		// than a table: a stored procedure call names none, and neither
+		// does the SET or USE a driver sends on connect. Said here, so
+		// the operator learns it from -validate and not from a login that
+		// fails.
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchTable && r.RequireTableMatch && len(r.Operations) == 0 {
+				ln.notes = append(ln.notes, fmt.Sprintf(
+					"table rule %q sets require_table_match with no operations scope, so it "+
+						"also refuses every stored-procedure call and the driver's SET/USE "+
+						"batches, whose relations the scanner cannot read. Scope it with "+
+						"operations: (select, insert, update, delete). A procedure rule names "+
+						"the calls to refuse; it does not change what this rule refuses", r.Name))
+			}
 		}
 		// An omitted trigger on an ungated lane classifies EVERYTHING.
 		// That is what the operator wrote, and it is also a model call
@@ -1918,6 +1982,7 @@ func serveAdmin(
 	otel *otelExporter,
 	licenseAPI http.Handler,
 	log *slog.Logger,
+	icaReadinessJSON bool,
 ) {
 	mux := http.NewServeMux()
 
@@ -1926,16 +1991,22 @@ func serveAdmin(
 		fmt.Fprintln(w, "ok")
 	})
 
-	// The one write on this listener. licenseHandler refuses it unless the
+	// License writes require their own secret. ICA deployment drain below has a
+	// separate token and is disabled by default. licenseHandler refuses it unless the
 	// operator set AdminSecretEnv, and then asks for that secret: every
 	// read here is unauthenticated, and a write must not be.
 	mux.Handle("PUT /license", licenseAPI)
+	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
 
 	// An ica lane's engine loads a model and starts OCR workers after the
 	// socket binds, which can take minutes, and the engine refuses
 	// connections until then. /readyz reports that, separate from
 	// /healthz; other lanes are ready once bound, so it returns 200 for them.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if icaReadinessJSON {
+			writeICAReadiness(w, endpoints, len(servers))
+			return
+		}
 		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))

@@ -22,7 +22,8 @@ import (
 // refusal reaches the operator who wrote the rule, and a silent skip reaches
 // nobody at all.
 //
-//   - table: SSH has no relations. An sftp path is not a table, and reading
+//   - table, procedure: SSH has no relations and no stored procedures. An
+//     sftp path is not a table, and reading
 //     it as one would make `table: /etc` match by accident rather than by
 //     design. Paths are pattern_match's job.
 //   - http_resource, http_status, http_header: there is no request, no
@@ -30,6 +31,7 @@ import (
 //   - grpc_status: there is no RPC.
 var sshRefusedRuleTypes = []MatchType{
 	MatchTable,
+	MatchProcedure,
 	MatchHTTPResource,
 	MatchHTTPStatus,
 	MatchHTTPHeader,
@@ -69,6 +71,8 @@ func sshRefusalReason(t MatchType) string {
 	case MatchTable:
 		return "SSH has no relations, and an sftp path is not a table; " +
 			"match a path with pattern_match scoped to the sftp_* operations"
+	case MatchProcedure:
+		return "SSH has no stored procedures; match a command with pattern_match scoped to exec_line"
 	case MatchHTTPResource:
 		return "there is no request path; match a command or a path with pattern_match"
 	case MatchHTTPStatus:

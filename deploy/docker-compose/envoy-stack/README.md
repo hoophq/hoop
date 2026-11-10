@@ -131,6 +131,11 @@ tokeninfo and Connect Gateway, so nothing touches Google. It shows
 gateway prefix, `kubectl exec` over the HTTP/1.1 route, and the `Via` loop
 refusal when the MITM also catches the sidecar's own egress.
 
+[`mcp/`](mcp/README.md) runs one MCP session through a `protocol: mcp` lane
+in front of a test MCP server: `initialize`, `tools/list` without the tools
+an `mcp_tool` rule hides, an allowed call, a call to a hidden tool and a call
+over the `mcp_gateway` budget, then the audit rows. It runs without Envoy: the lane binds loopback only.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
@@ -262,6 +267,22 @@ descending digit runs as test fixtures. No detector-based rule reaches those
 two, at any budget. The appdb lane carries such a rule commented out in
 `sidecar/config.yaml`, where it doubles as the worked example of a lane
 override REPLACING the default `mask.rules` rather than extending them.
+
+**Bytes the codec cannot decode go to OPA.** The `appdb-opa` lane
+(`hoop-inspect:15433`, compose network only) fronts the same database with
+OPA live. Client bytes the postgres codec cannot decode reach Rego as an
+`unknown` statement with no text and the codec's error in
+`input.metadata.parse_error`; rule `inspect` in `opa/authz.rego` refuses them
+and the connection ends. `./demo.sh` sends a Query message whose length field
+says 2, below pgwire's minimum of 4:
+
+```
+client reads: the relay could not decode this request; refusing it
+DENY  postgres unknown   appuser      parse_error: libhoop/codec/postgres: malformed
+```
+
+A lane with no OPA and no guardrail naming `unknown` still forwards such
+bytes, and the database's own parser answers.
 
 ### Tier 2b: the HTTP response
 

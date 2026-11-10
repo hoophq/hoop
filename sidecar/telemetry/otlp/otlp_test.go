@@ -123,6 +123,41 @@ func TestMetricsReachTheCollector(t *testing.T) {
 	}
 }
 
+// An mcp lane counts each message by method, tool and decision; a response
+// carries no method.
+func TestMCPMessagesCountByToolAndDecision(t *testing.T) {
+	rcv := newReceiver(t)
+	exp := mustNew(t, httpConfig(rcv.srv.URL))
+	lane := exp.Lane("github", "mcp")
+	call := telemetry.MCPMessage{Direction: inspect.FromClient, Method: "tools/call", Tool: "echo", Decision: "allow"}
+	lane.MCPMessage(call)
+	lane.MCPMessage(call)
+	lane.MCPMessage(telemetry.MCPMessage{Direction: inspect.FromClient, Method: "tools/call", Tool: "delete_customer", Decision: "deny"})
+	lane.MCPMessage(telemetry.MCPMessage{Direction: inspect.FromServer, Tool: "echo", Decision: "allow"})
+	shutdown(t, exp)
+
+	got := map[string]float64{}
+	for _, p := range rcv.metric("hoop.sidecar.mcp.messages") {
+		if p.attrs["hoop.lane"] != "github" || p.attrs["hoop.protocol"] != "mcp" {
+			t.Errorf("point without its lane: %+v", p)
+		}
+		got[p.attrs["hoop.direction"]+" "+p.attrs["hoop.mcp.method"]+" "+p.attrs["hoop.mcp.tool"]+" "+p.attrs["hoop.mcp.decision"]] = p.value
+	}
+	want := map[string]float64{
+		"client tools/call echo allow":           2,
+		"client tools/call delete_customer deny": 1,
+		"server  echo allow":                     1,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("points %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%q = %v, want %v (all: %v)", k, got[k], v, got)
+		}
+	}
+}
+
 func logAttrs(r *logspb.LogRecord) map[string]string { return attrMap(r.Attributes) }
 
 func TestEventsAreRedactedByDefault(t *testing.T) {

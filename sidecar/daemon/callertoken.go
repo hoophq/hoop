@@ -2,6 +2,11 @@ package daemon
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,7 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/identity/token"
 )
 
-// CallerTokenConfig is the caller_token block on an http listener: a request
+// CallerTokenConfig is the caller_token block on an http or mcp listener: a request
 // is served only when its header holds a token listed in the file, and is
 // recorded under Name.
 //
@@ -67,7 +72,7 @@ var reservedCallerTokenHeaders = []string{
 // must not be refused over a token file the running lane already handles
 // (see token.File.Poll). The file is read where the lane is built; see
 // openCallerTokens.
-func (c *CallerTokenConfig) validate(lane string, captured *HTTPCodecConfig) []string {
+func (c *CallerTokenConfig) validate(lane string, l ListenerConfig) []string {
 	var problems []string
 	h := c.header()
 	switch {
@@ -77,7 +82,10 @@ func (c *CallerTokenConfig) validate(lane string, captured *HTTPCodecConfig) []s
 		problems = append(problems, fmt.Sprintf(
 			"%s: caller_token.header %q is a header the upstream, HTTP framing or the sidecar already uses; pick another",
 			lane, c.Header))
-	case captured.captures(h):
+	case isMCPGateway(l) && (strings.HasPrefix(h, "mcp-") || h == "last-event-id"):
+		problems = append(problems, fmt.Sprintf(
+			"%s: caller_token.header %q is a header MCP uses; pick another", lane, c.Header))
+	case l.HTTP.captures(h):
 		// The codec would keep it in the captured headers, and those
 		// reach the audit trail, OPA input and the analyzer's prompt.
 		problems = append(problems, fmt.Sprintf(
@@ -134,6 +142,33 @@ func openCallerTokens(lanes []lane, log *slog.Logger) ([]*token.File, error) {
 		files = append(files, f)
 	}
 	return files, nil
+}
+
+// mcpCallerCheck is an mcp lane's caller_token. The key is an HMAC of the
+// token under a key drawn per lane, so mcpproxy binds a session to the token
+// that opened it and holds nothing a token can be tested against.
+func mcpCallerCheck(ln lane) (*MCPCallerCheck, error) {
+	ct := ln.cfg.CallerToken
+	if ct == nil {
+		return nil, nil
+	}
+	if ln.callerTokens == nil {
+		return nil, errors.New("caller_token: the token file was not opened")
+	}
+	r, err := token.NewResolver(ct.Name, ln.callerTokens)
+	if err != nil {
+		return nil, fmt.Errorf("caller_token: %w", err)
+	}
+	secret := []byte(rand.Text())
+	return &MCPCallerCheck{Header: ct.header(), Resolve: func(ctx context.Context, credential string) (string, string, error) {
+		id, err := r.Resolve(ctx, credential)
+		if err != nil {
+			return "", "", err
+		}
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte(strings.TrimSpace(credential)))
+		return id.Subject, hex.EncodeToString(mac.Sum(nil)), nil
+	}}, nil
 }
 
 // watchCallerTokens re-reads the token files on the config file's schedule:

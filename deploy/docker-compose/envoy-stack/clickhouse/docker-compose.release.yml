@@ -1,0 +1,23 @@
+# Overlay: run a published sidecar image instead of the local build.
+# stream-clickhouse.sh adds it when SIDECAR_IMAGE is set.
+#
+#   SIDECAR_IMAGE=hoophq/hoopsidecar:1.285.2 HOOP_LICENSE_FILE=/path/license.json \
+#     docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml \
+#     -f clickhouse/docker-compose.release.yml up -d --wait
+#
+# The image runs `hoop start sidecar`. Without a license it runs only when
+# logged in to a control plane, so --no-login takes the license file. The
+# image has no curl: the healthcheck dials the admin port with bash.
+
+services:
+  hoop-inspect:
+    image: ${SIDECAR_IMAGE:?set SIDECAR_IMAGE, e.g. hoophq/hoopsidecar:1.285.2}
+    # Drop the base file's build: a release that cannot be pulled must fail,
+    # not fall back to building the local tree under the release's tag.
+    build: !reset null
+    command: ["hoop", "start", "sidecar", "--no-login", "--log-format", "json",
+              "--license", "/etc/hoop-inspect/license.json"]
+    volumes:
+      - ${HOOP_LICENSE_FILE:?set HOOP_LICENSE_FILE}:/etc/hoop-inspect/license.json:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/19000 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]

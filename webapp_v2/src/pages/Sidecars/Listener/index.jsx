@@ -44,7 +44,7 @@ function FeatureSettings({ sidecar, listener }) {
   return (
     <Stack gap="md">
       <FeatureAccordions config={sidecar.configuration} boundRules={[]} />
-      <Callout icon={Info} color="indigo.0">
+      <Callout icon={Info} tone="info">
         <Text size="sm">
           This listener inherits the global feature configuration. You can override it per listener after creation.
         </Text>
@@ -127,6 +127,7 @@ function Editor({ sidecar, index, onDone, onLeave }) {
             form={form}
             setField={setField}
             errors={errors}
+            capabilities={sidecar.capabilities ?? null}
             features={<FeatureSettings sidecar={sidecar} listener={isNew ? null : listeners[index]} />}
           />
         </Paper>

@@ -179,20 +179,31 @@ type credentialCodec interface {
 	CredentialHeader() string
 }
 
-// checkCredentialConfig refuses a credential lane whose parts disagree. The
-// relay peeks CredentialHeader on the first request and the codec lifts its
-// own header on every request; if those differ, the first request and the
-// rest resolve different values and the gate rotates sessions on every
-// connection. Checking one codec at startup is enough because the factory
-// builds them all from one option set.
+// checkCredentialConfig refuses a credential lane whose parts disagree.
+//
+// An http lane names the header the relay peeks on the first request and
+// the codec lifts on every request; if those differ, the first request and
+// the rest resolve different values and the gate rotates sessions on every
+// connection. A frame lane names no header: its codec lifts the credential
+// from the frame that carries one (an mssql LOGIN7), and only the resolver
+// is configured. Checking one codec at startup is enough because the
+// factory builds them all from one option set.
 func checkCredentialConfig(cfg Config) error {
-	if (cfg.CredentialHeader == "") != (cfg.RequestIdentity == nil) {
-		return errors.New("sidecar/proxy: CredentialHeader and RequestIdentity are set together or not at all")
+	if cfg.CredentialHeader != "" && cfg.RequestIdentity == nil {
+		return errors.New("sidecar/proxy: CredentialHeader is set without a RequestIdentity to resolve it")
 	}
 	if cfg.AuthenticatesCaller && cfg.CredentialHeader == "" {
 		return errors.New("sidecar/proxy: AuthenticatesCaller needs a CredentialHeader, so nothing would check the caller")
 	}
 	if cfg.CredentialHeader == "" {
+		if cfg.RequestIdentity == nil {
+			return nil
+		}
+		// The gate refuses a RequestIdentity on a codec that lifts nothing
+		// per connection; say it once at startup instead.
+		if _, ok := laneCodec(cfg).(gate.CredentialSource); !ok {
+			return fmt.Errorf("sidecar/proxy: RequestIdentity is set but the %s codec lifts no credential, so every session would stay anonymous", cfg.Protocol)
+		}
 		return nil
 	}
 	if cfg.Protocol != inspect.HTTP {
@@ -242,4 +253,37 @@ func (s *Server) requestIdentity(base session.Identity) gate.RequestIdentity {
 		}
 		return id, nil
 	})
+}
+
+// laneCodec builds one throwaway codec the way every connection will: from
+// the factory, or the registry when the lane has none. Nil when neither
+// can; NewServer has already refused that lane.
+func laneCodec(cfg Config) inspect.Codec {
+	if cfg.CodecFactory != nil {
+		return cfg.CodecFactory()
+	}
+	insp, err := inspect.New(cfg.Protocol)
+	if err != nil {
+		return nil
+	}
+	return insp.Codec()
+}
+
+// LoginIdentity resolves the user name a database codec lifted from its
+// login (an mssql LOGIN7) into the session's principal. The name is the
+// client's claim and the server's verdict: the server refuses a wrong
+// password, so a session that goes on to run statements ran them as this
+// user. A login the codec could not read lifts nothing and never reaches
+// this; an empty name resolves to anonymous, which Server.requestIdentity
+// turns into the connection's own identity. Nothing is refused here: a
+// lane that wants no anonymous sessions says so in policy.
+type LoginIdentity struct{}
+
+// Resolve implements gate.RequestIdentity.
+func (LoginIdentity) Resolve(_ context.Context, user string) (session.Identity, error) {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return session.Identity{}, nil
+	}
+	return session.Identity{Subject: user}, nil
 }

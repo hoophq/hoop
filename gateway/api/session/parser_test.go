@@ -41,3 +41,27 @@ func TestSessionRecordingFormatInAPI(t *testing.T) {
 		t.Fatalf("current session recording_format = %v, want raw", payload["recording_format"])
 	}
 }
+
+// NB12: an older review, or one not run yet, carries no executor and the
+// response has no executed_by key; a run review names its executor.
+func TestReviewExecutedByField(t *testing.T) {
+	encode := func(r *models.SessionReview) map[string]any {
+		t.Helper()
+		raw, err := json.Marshal(topOpenApiReview(r))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if _, ok := encode(&models.SessionReview{ID: "r1", Status: "APPROVED"})["executed_by"]; ok {
+		t.Error("a review with no executor must not send executed_by")
+	}
+	executor := "admin@example.com"
+	if got := encode(&models.SessionReview{ID: "r2", Status: "EXECUTED", ExecutedBy: &executor})["executed_by"]; got != executor {
+		t.Errorf("executed_by = %v, want %s", got, executor)
+	}
+}

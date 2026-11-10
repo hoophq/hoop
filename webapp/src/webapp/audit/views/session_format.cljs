@@ -16,3 +16,9 @@
              (contains? ssh-subtypes (:connection_subtype session))) "ssh"
         (contains? #{"command-line" "application" "custom"} (:type session)) "pty"
         :else "raw")))
+
+(defn mcp-catalog-output?
+  "An mcp lane records output only for a tools/list catalog: a tools/call is input."
+  [session]
+  (and (= "sidecar" (:identity_type session))
+       (= "mcp" (:connection_subtype session))))

@@ -89,6 +89,14 @@ type checkedFlusher interface {
 	FlushChecked(mask func(column string, value []byte) []byte) ([]byte, error)
 }
 
+// streamEnder is a codec that completes a statement only when the server
+// stream ends (libhoop codec/http EndOfStream): a close-delimited HTTP
+// body has no length and no terminator, so its response statement exists
+// only once the upstream closes. Optional; the gate asks in EndOfStream.
+type streamEnder interface {
+	EndOfStream(dir inspect.Direction) []inspect.Statement
+}
+
 // responseStarter is a Reframer that knows whether the response in progress
 // already went out in part (libhoop codec/http ResponseStarted).
 type responseStarter interface {
@@ -841,6 +849,76 @@ func (g *Gate) DiscardResponse() {
 	}
 }
 
+// EndOfStream judges the server statements a codec completes only when the
+// server stream ends (libhoop codec/http EndOfStream: a close-delimited
+// body). Each takes the path a decoded response takes in inspect: the
+// exchange it answers, the request it releases once judged, then policy,
+// audit and the counters through judge. The Decision carries the
+// statements, for the relay's clock, and a denial. Most such bodies have
+// reached the client by then, so the relay cannot withhold them: it
+// discards what the reframer still holds and cuts the response, as for a
+// denial inside one (NoFrame). A body the reframer still holds whole, head
+// included (a short text body with no newline), has not: the relay
+// discards it and answers with its deny frame. No bytes travel in the
+// Decision.
+//
+// The relay calls it on a normal server EOF only, before FlushResponse, so
+// the audit row precedes the last bytes out. After a read error or a reset
+// the body is not whole, and a statement for it would record a reply the
+// client never got; the codec's state goes with the connection.
+func (g *Gate) EndOfStream() Decision {
+	ctx := context.Background()
+	d := Decision{Allowed: true}
+	if g.server == nil {
+		return d
+	}
+	ender, ok := g.server.Codec().(streamEnder)
+	if !ok {
+		return d
+	}
+	// Read before the codec lets go of the response: afterwards it reports
+	// nothing in progress.
+	started := g.responseStarted(nil)
+	stmts := ender.EndOfStream(inspect.FromServer)
+	d.Statements = stmts
+	if len(stmts) == 0 {
+		return d
+	}
+	var finals int
+	if g.creds != nil {
+		defer func() { g.releaseResponses(finals) }()
+	}
+	for _, stmt := range stmts {
+		if isFinalHTTPResponse(stmt) {
+			g.answerExchange(ctx, stmt)
+			if g.creds != nil {
+				finals++
+			}
+		}
+		j := g.judge(ctx, stmt)
+		if j.refusal != nil {
+			r := *j.refusal
+			r.Statements = stmts
+			r.Payload, r.NoFrame = nil, started
+			return r
+		}
+		if j.err != nil {
+			d.Err = errors.Join(d.Err, j.err)
+		}
+		if j.denied {
+			d.Allowed = false
+			d.Message = j.message
+			d.Rule = j.rule
+			d.Review = j.review
+			denied := stmt
+			d.DeniedStatement = &denied
+			d.NoFrame = started
+			return d
+		}
+	}
+	return d
+}
+
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) (out Decision) {
 	// Requests this chunk queued for a settle are not forwarded when the
 	// chunk is refused, so their approvals go back.
@@ -938,11 +1016,19 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		}
 	}
 
+	// unparsed stands for client bytes the codec could not decode. It is
+	// judged after the statements the codec did decode, in stream order.
+	var unparsed *inspect.Statement
 	if err != nil {
-		// A malformed stream falls outside policy. Report it and let the
-		// caller decide whether to tear the connection down; forwarding
-		// bytes the gate could not parse is the honest default, because the
-		// upstream's own parser is the authority on its protocol.
+		// A malformed stream is reported, and policy decides whether its
+		// bytes proceed: the gate turns them into an `unknown` statement
+		// with the reason in parse_error, so an OPA policy or a rule naming
+		// `unknown` can refuse them. A lane with no policy forwards them,
+		// because the upstream's own parser is the authority on its
+		// protocol. A denial ends the connection, which is also the only
+		// safe end: after a decode error the codec no longer tracks the
+		// stream. Response bytes keep that forwarding default, since the
+		// response may already be partly sent.
 		d.Err = fmt.Errorf("inspect: %w", err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.session(), d.Err))
 
@@ -981,6 +1067,14 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			g.mu.Unlock()
 			g.countStatement(true, SourceStream)
 			return d
+		}
+		if dir == inspect.FromClient && g.policy != nil {
+			unparsed = &inspect.Statement{
+				Protocol:  g.cfg.Protocol,
+				Direction: dir,
+				Operation: inspect.OpUnknown,
+				Metadata:  map[string]string{inspect.MetadataParseError: err.Error()},
+			}
 		}
 	}
 
@@ -1065,27 +1159,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				}
 			}
 		}
-		j := g.judge(ctx, stmt)
-		if j.refusal != nil {
-			r := *j.refusal
-			r.Statements = stmts
-			return r
-		}
-		if j.err != nil {
-			d.Err = errors.Join(d.Err, j.err)
-		}
-		if j.denied {
-			d.Allowed = false
-			d.Message = j.message
-			d.Rule = j.rule
-			d.Review = j.review
-			denied := stmt
-			d.DeniedStatement = &denied
-			d.Payload = nil // nothing may be forwarded
+		j, stop := g.joinJudgment(ctx, &d, stmt, stmts)
+		if stop {
 			return d
 		}
 		if isHTTPRequest(stmt) && g.queueExchange(reservedReview(j)) {
 			queued++
+		}
+	}
+	if unparsed != nil {
+		if _, stop := g.joinJudgment(ctx, &d, *unparsed, stmts); stop {
+			return d
 		}
 	}
 
@@ -1104,6 +1188,32 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 
 	return d
+}
+
+// joinJudgment judges stmt and folds the result into d. stop is true when d
+// must be returned now: a refusal replaced it, or a denial emptied its
+// Payload, so nothing may be forwarded.
+func (g *Gate) joinJudgment(ctx context.Context, d *Decision, stmt inspect.Statement, stmts []inspect.Statement) (j judgment, stop bool) {
+	j = g.judge(ctx, stmt)
+	if j.refusal != nil {
+		*d = *j.refusal
+		d.Statements = stmts
+		return j, true
+	}
+	if j.err != nil {
+		d.Err = errors.Join(d.Err, j.err)
+	}
+	if !j.denied {
+		return j, false
+	}
+	d.Allowed = false
+	d.Message = j.message
+	d.Rule = j.rule
+	d.Review = j.review
+	denied := stmt
+	d.DeniedStatement = &denied
+	d.Payload = nil // nothing may be forwarded
+	return j, true
 }
 
 // judgment is the outcome of evaluating one statement: what the caller must
@@ -1377,7 +1487,46 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
+	if auditErr := g.recordDeclined(ctx, res); auditErr != nil && g.cfg.FailOnAuditError {
+		// The one record of a masking gap could not be written, on a
+		// lane that refuses to run unrecorded. The values after it would
+		// travel unmasked with nothing in the trail saying so. The
+		// refusal takes the shape the ErrStreamUnsafe branch above gives
+		// one: what the codec already sent or rebuilt whole stays with
+		// the client, and a deny frame goes only where it can start a
+		// response.
+		d.Err = errors.Join(d.Err, auditErr)
+		d.Allowed = false
+		d.Rule = "audit"
+		d.Message = "audit trail unavailable; response refused"
+		d.Payload = nil
+		if g.responseStarted(nil) {
+			d.Payload = out
+			d.NoFrame = true
+		} else if _, ok := g.reframer.(responseStarter); ok {
+			d.Preceding = out
+		}
+		g.recordMasked(ctx, d, entities, res.Cells)
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceAudit)
+		return
+	}
 	g.recordMasked(ctx, d, entities, res.Cells)
+}
+
+// recordDeclined writes the one record a codec produces when it stops
+// rewriting for the rest of the connection. Values keep travelling after
+// it, unmasked, and the client sees nothing different: this row is the only
+// place the gap shows. It returns the sink's error; the caller decides
+// whether the lane runs unrecorded.
+func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) error {
+	if res.Declined == "" {
+		return nil
+	}
+	return g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
+		map[string]string{"reason": res.Declined}))
 }
 
 // recordMasked counts and audits the cells the codec masked in bytes that

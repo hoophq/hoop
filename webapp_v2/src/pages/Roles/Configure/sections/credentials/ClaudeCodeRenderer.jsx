@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Stack, Title } from '@mantine/core'
 import { Info } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -8,7 +8,7 @@ import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/share
 import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/HttpHeaders'
 import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore, useFormState } from '@/pages/Roles/Configure/sections/credentials/store'
 import { decodeSecretValue, encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 // Claude Code httpproxy connection. Catalog's `httpproxy/claude-code`
@@ -29,6 +29,7 @@ const ANTHROPIC_FIELDS = [
     key: 'remote_url',
     label: 'Anthropic API URL',
     required: true,
+    type: 'text',
     placeholder: 'https://api.anthropic.com',
   },
   {
@@ -47,12 +48,14 @@ const VERTEX_FIELDS = [
     key: 'GCP_REGION',
     label: 'GCP Region',
     required: true,
+    type: 'text',
     placeholder: 'us-east5',
   },
   {
     key: 'GCP_PROJECT_ID',
     label: 'GCP Project ID',
     required: true,
+    type: 'text',
     placeholder: 'my-gcp-project',
   },
   {
@@ -119,8 +122,8 @@ function stageLegacyApiKeyMove(secrets, replaceSecret) {
 // Anthropic header onto a Vertex config would persist junk — but the
 // legacy key itself is dropped either way.
 function useLegacyApiKeyMigration(connection, initialProvider) {
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const migratedRef = useRef(false)
   useEffect(() => {
     if (migratedRef.current) return
@@ -144,14 +147,15 @@ export default function ClaudeCodeRenderer({
     () => (isVertexConnection(connection) ? 'vertex' : 'anthropic'),
     [connection],
   )
-  const [provider, setProvider] = useState(initialProvider)
+  const [provider, setProvider] = useFormState('claudeCodeProvider', initialProvider)
   const flagOn = useUserStore((s) => !!s.featureFlags?.[VERTEX_FLAG])
   const showProviderSelect = flagOn || initialProvider === 'vertex'
 
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const createMode = useCredentialsStore((s) => Boolean(s.createMode))
 
   useLegacyApiKeyMigration(connection, initialProvider)
 
@@ -167,7 +171,8 @@ export default function ClaudeCodeRenderer({
     setProvider(next)
     PROVIDER_SCOPED_KEYS.forEach((key) => cancelSecretChange(key))
     const secrets = connection?.secret || {}
-    if (next === initialProvider) {
+    // The wizard has nothing persisted: back on Anthropic it needs its URL again.
+    if (next === initialProvider && !createMode) {
       // Back to the persisted provider: re-stage the legacy value move
       // the blanket cancel above just dropped (the legacy key's delete
       // lives outside PROVIDER_SCOPED_KEYS and survives).

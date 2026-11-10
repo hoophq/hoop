@@ -51,6 +51,59 @@ type BoundRule struct {
 	Spec         json.RawMessage `gorm:"column:sidecar_spec"`
 }
 
+// SidecarBoundRules is every rule bound to one sidecar, by feature, each in
+// the order its per-feature list function returns it.
+type SidecarBoundRules struct {
+	Guardrails []BoundRule
+	Masking    []BoundRule
+	Analyzers  []BoundRule
+}
+
+// ListBoundRulesForSidecar is the three List*RulesForSidecar reads in one
+// round-trip, for the handshake: it runs once a minute per sidecar, and at
+// thousands of sidecars each trip is a measurable share of the database's
+// load. The order within a feature is the one the per-feature functions
+// use, so the served document (and its revision) does not change with
+// which of them loaded it.
+func ListBoundRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) (SidecarBoundRules, error) {
+	var rows []struct {
+		Kind string
+		BoundRule
+	}
+	err := db.Raw(`
+	SELECT 'guardrail' AS kind, b.listener_name, r.name AS rule_name, r.sidecar_spec, b.position
+	FROM private.guardrail_rules_listeners b
+	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
+	WHERE b.org_id = @org AND b.sidecar_id = @sc
+	UNION ALL
+	SELECT 'datamasking', b.listener_name, r.name, r.sidecar_spec, b.position
+	FROM private.datamasking_rules_listeners b
+	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
+	WHERE b.org_id = @org AND b.sidecar_id = @sc
+	UNION ALL
+	SELECT 'analyzer', b.listener_name, r.name, r.sidecar_spec, b.position
+	FROM private.ai_session_analyzer_rules_listeners b
+	JOIN private.ai_session_analyzer_rules r ON r.org_id = b.org_id AND r.name = b.analyzer_rule_name
+	WHERE b.org_id = @org AND b.sidecar_id = @sc
+	ORDER BY kind, listener_name, position, rule_name`,
+		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&rows).Error
+	var out SidecarBoundRules
+	if err != nil {
+		return out, err
+	}
+	for _, row := range rows {
+		switch row.Kind {
+		case "guardrail":
+			out.Guardrails = append(out.Guardrails, row.BoundRule)
+		case "datamasking":
+			out.Masking = append(out.Masking, row.BoundRule)
+		case "analyzer":
+			out.Analyzers = append(out.Analyzers, row.BoundRule)
+		}
+	}
+	return out, nil
+}
+
 // SidecarRuleBinding names one rule bound to one listener, for the READ side.
 //
 // It carries no spec. The admin pages ask which rules a listener enforces, not

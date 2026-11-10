@@ -16,6 +16,7 @@ const STATE = {
     title: 'Waiting for the sidecar to connect',
     description:
       'This can take up to 5 minutes. The sidecar dials out and nothing dials in, so check outbound HTTPS from the host it runs on.',
+    hint: 'If the sidecar stops with "has no configuration for this sidecar", add a listener to its config file or on the sidecar page, then start it again.',
   },
   connected: {
     title: 'Sidecar connected',
@@ -117,10 +118,16 @@ export default function WaitingStep({ sidecar, onConnected, onGone, onDelete, on
             <Text size="xs" c="dimmed">
               {copy.description}
             </Text>
+            {copy.hint && (
+              <Text size="xs" c="dimmed">
+                {copy.hint}
+              </Text>
+            )}
           </Stack>
 
           {!connected && !gone && (
             <Button
+              size="sm"
               color="red"
               variant="light"
               leftSection={<X size={16} aria-hidden="true" />}

@@ -1,0 +1,31 @@
+{
+  "name": "gw-vault",
+  "type": "httpproxy",
+  "subtype": "mcpproxy",
+  "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "gw-vault-role",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:MCP_TRANSPORT": "X3ZhdWx0a3YxOnN0cmVhbWFibGUtaHR0cA==",
+        "envvar:MCP_AUTH": "X3ZhdWx0a3YxOnN0YXRpYw==",
+        "envvar:INSECURE": "ZmFsc2U=",
+        "envvar:REMOTE_URL": "X3ZhdWx0a3YxOnNlY3JldC9tY3A6VVJM",
+        "envvar:HEADER_Authorization": "X3ZhdWx0a3YxOnNlY3JldC9tY3A6VE9LRU4="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "mcpproxy"
+    }
+  ]
+}

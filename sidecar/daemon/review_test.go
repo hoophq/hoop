@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,7 +108,7 @@ func TestOnlyForwardReleasesTheStatement(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, http.StatusOK, tc.body)
-			res, err := cp.fileReview(context.Background(), "payments", "rule", "DELETE FROM t", false)
+			res, err := cp.fileReview(context.Background(), reviewFiling{listener: "payments", rule: "rule", statement: "DELETE FROM t"})
 			if err != nil {
 				t.Fatalf("fileReview: %v", err)
 			}
@@ -148,7 +149,7 @@ func TestEveryRefusalIsAnError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, tc.code, tc.body)
-			res, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false)
+			res, err := cp.fileReview(context.Background(), reviewFiling{listener: "payments", rule: "x", statement: "DELETE FROM t"})
 			if err == nil {
 				t.Fatalf("the answer was accepted as %+v", res)
 			}
@@ -178,7 +179,7 @@ func TestAReviewNeverFollowsARedirect(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}
-	_, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false)
+	_, err := cp.fileReview(context.Background(), reviewFiling{listener: "payments", rule: "x", statement: "DELETE FROM t"})
 	if err == nil {
 		t.Fatal("a redirect was accepted")
 	}
@@ -202,7 +203,7 @@ func TestAPathPrefixedPlaneKeepsItsPrefix(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cp := &controlPlane{url: srv.URL + "/hoop", cred: tokenCredential("hsc_token")}
-	if _, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false); err != nil {
+	if _, err := cp.fileReview(context.Background(), reviewFiling{listener: "payments", rule: "x", statement: "DELETE FROM t"}); err != nil {
 		t.Fatalf("fileReview: %v", err)
 	}
 	if want := "/hoop" + controlPlaneReviewsPath; path != want {
@@ -236,6 +237,22 @@ func TestAClaimAsksAboutOneReviewByID(t *testing.T) {
 	}
 	if got.payload != "" || got.listen != "" || got.rule != "" {
 		t.Errorf("the claim carried a filing body: %+v", got)
+	}
+}
+
+// The claim route's own 404 is a review the plane does not have, which a
+// pinned hand-off reads as over; Gin's plain 404 is an older plane, and is
+// not.
+func TestAClaimOnAMissingReviewIsNotFound(t *testing.T) {
+	cp, _ := reviewPlane(t, http.StatusNotFound, `{"message":"approval request not found"}`)
+	_, err := cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
+	if !errors.Is(err, analyzer.ErrReviewNotFound) {
+		t.Errorf("the route's 404 read as %v", err)
+	}
+	cp, _ = reviewPlane(t, http.StatusNotFound, `404 page not found`)
+	_, err = cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
+	if err == nil || errors.Is(err, analyzer.ErrReviewNotFound) || !strings.Contains(err.Error(), "older than this sidecar") {
+		t.Errorf("an old plane's 404 read as %v", err)
 	}
 }
 

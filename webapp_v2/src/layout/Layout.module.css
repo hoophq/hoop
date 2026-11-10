@@ -5,7 +5,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
-  background: var(--mantine-color-indigo-6);
+  background: var(--mantine-primary-color-filled);
   color: var(--mantine-color-white);
   font-size: var(--mantine-font-size-sm);
   font-weight: 600;
@@ -18,8 +18,8 @@
 .skipLink:focus {
   top: 50%;
   outline: none;
-  /* Focus ring derived from the link's own background rather than a copy of
-     indigo-6 as a literal, so retheming moves both together. */
+  /* Focus ring derived from the link's own background, so retheming moves
+     both together. */
   box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--mantine-color-indigo-6) 40%, transparent);
+    color-mix(in srgb, var(--mantine-primary-color-filled) 40%, transparent);
 }

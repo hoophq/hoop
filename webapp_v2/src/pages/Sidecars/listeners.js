@@ -13,8 +13,15 @@ import { LISTENER_FIELDS, PROTOCOLS, appliesTo, listenerAccepts } from './schema
 
 const str = (v) => (typeof v === 'string' ? v : '')
 
-export function protocolOptions(current) {
-  const options = PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))
+// Protocols only some builds link. The plane refuses one to a sidecar whose
+// handshake did not report it, and accepts any for a sidecar that never
+// handshaked (CheckSidecarCapabilities); `capabilities` is null then.
+const LINKED_PROTOCOLS = ['ica', 'mcp']
+
+export function protocolOptions(current, capabilities = null) {
+  const offered = (p) =>
+    p.value === current || !capabilities || !LINKED_PROTOCOLS.includes(p.value) || capabilities.includes(`protocol:${p.value}`)
+  const options = PROTOCOLS.filter(offered).map((p) => ({ value: p.value, label: p.label }))
   // A Select whose value matches no option renders blank, one keystroke from
   // rewriting a working lane.
   if (current && !PROTOCOLS.some((p) => p.value === current)) {

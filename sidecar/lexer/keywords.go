@@ -109,6 +109,7 @@ var statementVerb = map[string]Verb{
 	"savepoint": Other,
 	"explain":   Explain,
 	"analyze":   Other,
+	"analyse":   Other, // PostgreSQL's British spelling of ANALYZE
 	"vacuum":    Other,
 	"comment":   Other,
 	"prepare":   Other,
@@ -306,6 +307,12 @@ var sparkScriptHeadAfter = map[string]bool{
 	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
 }
 
+// googleSQLScriptStatement are the first words of a BigQuery script statement
+// that can nest a loop or a block after its THEN or ELSE.
+var googleSQLScriptStatement = map[string]bool{
+	"if": true, "elseif": true, "else": true, "when": true, "case": true, "exception": true,
+}
+
 // sparkScriptDML are the verbs recognised ANYWHERE inside a Spark SQL
 // script, as plsqlDML is inside PL/SQL: a handler puts its statement after a
 // condition list no keyword closes, `DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -460,9 +467,10 @@ var headAfter = map[string]bool{
 //
 // They exist so head position survives `EXPLAIN (ANALYZE, BUFFERS) DELETE`.
 // Without them the DELETE is not recognised as a statement head and an
-// executing command reports no effects at all.
+// executing command reports no effects at all. ANALYSE is PostgreSQL's
+// British spelling of ANALYZE, in both the bare and the parenthesised form.
 var wrapperModifier = map[string]bool{
-	"analyze": true, "verbose": true, "costs": true, "settings": true,
+	"analyze": true, "analyse": true, "verbose": true, "costs": true, "settings": true,
 	"buffers": true, "wal": true, "timing": true, "summary": true,
 	"format": true, "generic_plan": true, "memory": true, "serialize": true,
 	"on": true, "off": true, "true": true, "false": true,

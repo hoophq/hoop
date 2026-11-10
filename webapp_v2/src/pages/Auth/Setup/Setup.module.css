@@ -4,8 +4,8 @@
   justify-content: center;
 }
 
-/* Dark gradient marketing panel — branded surface that cannot be
-   expressed via Mantine palette tokens (mirrors the legacy CLJS design). */
+/* theme-exception: the dark gradient marketing panel of the first-run screen,
+   a branded surface no theme token expresses (mirrors the legacy CLJS design). */
 .leftPanel {
   position: relative;
   overflow: hidden;
@@ -18,6 +18,7 @@
   justify-content: space-between;
 }
 
+/* theme-exception: the brand panel of the first-run screen, drawn once. */
 .leftPanel::before {
   content: '';
   position: absolute;
@@ -112,7 +113,7 @@
 /* Right-hand form panel */
 .rightPanel {
   border-radius: var(--mantine-radius-lg);
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--hoop-border-strong);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -128,10 +129,10 @@
   flex: 1;
   height: 2px;
   border-radius: var(--mantine-radius-xs);
-  background: var(--mantine-color-gray-3);
+  background: var(--hoop-border-strong);
   transition: background 150ms ease;
 }
 
 .strengthBar[data-active='true'] {
-  background: var(--mantine-color-gray-9);
+  background: var(--mantine-color-dimmed);
 }

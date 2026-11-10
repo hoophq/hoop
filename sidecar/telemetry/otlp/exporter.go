@@ -97,8 +97,14 @@ const (
 	attrAnalyzer   = "hoop.analyzer"
 	attrProvider   = "hoop.provider"
 	attrModel      = "hoop.model"
+	attrCallKind   = "hoop.analyzer.kind"
 	attrStatus     = "hoop.status"
 	attrAction     = "hoop.action"
+
+	// mcp lane messages. The engine bounds the method and the tool.
+	attrMCPMethod   = "hoop.mcp.method"
+	attrMCPTool     = "hoop.mcp.tool"
+	attrMCPDecision = "hoop.mcp.decision"
 
 	// Spans and log records only. Never on a metric: principal and session
 	// id are unbounded, and a metric series per user is a cardinality bomb.
@@ -160,6 +166,7 @@ type Exporter struct {
 	analyzerDuration   metric.Float64Histogram
 	analyzerRetries    metric.Int64Counter
 	analyzerStatements metric.Int64Counter
+	mcpMessages        metric.Int64Counter
 	connections        metric.Int64ObservableCounter
 	active             metric.Int64ObservableGauge
 	sessionSent        metric.Int64ObservableCounter
@@ -292,6 +299,9 @@ func (e *Exporter) buildInstruments() error {
 	e.analyzerStatements, err = m.Int64Counter("hoop.sidecar.analyzer.statements",
 		metric.WithDescription("Statements the analyzer classified, by status and action."), metric.WithUnit("{statement}"))
 	collect(err)
+	e.mcpMessages, err = m.Int64Counter("hoop.sidecar.mcp.messages",
+		metric.WithDescription("Messages an mcp lane judged, by method, tool and decision."), metric.WithUnit("{message}"))
+	collect(err)
 	e.connections, err = m.Int64ObservableCounter("hoop.sidecar.connections",
 		metric.WithDescription("Connections accepted since start."), metric.WithUnit("{connection}"))
 	collect(err)
@@ -345,6 +355,7 @@ func (e *Exporter) AnalyzerCall(c telemetry.AnalyzerCall) {
 		attribute.String(attrAnalyzer, c.Analyzer),
 		attribute.String(attrProvider, c.Provider),
 		attribute.String(attrModel, c.Model),
+		attribute.String(attrCallKind, c.Kind),
 	}
 	e.analyzerDuration.Record(context.Background(), c.Duration.Seconds(),
 		metric.WithAttributeSet(attribute.NewSet(append(ident, attribute.String(attrOutcome, c.Outcome))...)))

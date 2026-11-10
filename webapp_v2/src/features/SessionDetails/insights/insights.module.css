@@ -1,0 +1,24 @@
+/* The insight cards' layout; their surfaces are Paper variants (theme). */
+.header {
+  width: 100%;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--mantine-color-dimmed);
+  transition: transform 150ms ease;
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.trace {
+  max-height: 256px;
+  overflow-y: auto;
+}
+
+.preWrap {
+  white-space: pre-wrap;
+}

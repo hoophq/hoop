@@ -7,17 +7,17 @@
   border-color: transparent;
 }
 
-/* Gray pill, matching the Figma: gray-1 fill (#e5e5e5) with gray-9 text
-   (#4d4d60). Mantine's `default` variant would paint it white with a border,
-   and its default text colour is near-black. */
+/* Gray pill, matching the Figma: a strong surface with dimmed text. Mantine's
+   `default` variant would paint it white with a border, and its default text
+   colour is near-black. */
 .nativeButton {
-  background-color: var(--mantine-color-gray-1);
-  color: var(--mantine-color-gray-9);
+  background-color: var(--hoop-surface-strong);
+  color: var(--mantine-color-dimmed);
   border: none;
 }
 
 .nativeButton:hover {
-  background-color: var(--mantine-color-gray-2);
+  background-color: var(--hoop-surface-strong-hover);
 }
 
 .userButton {
@@ -29,7 +29,7 @@
 }
 
 .userButton:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-5);
+  outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 1px;
 }
 
@@ -40,7 +40,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-strong);
   color: var(--mantine-color-text);
   display: flex;
   align-items: center;

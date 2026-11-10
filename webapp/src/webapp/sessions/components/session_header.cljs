@@ -8,8 +8,35 @@
    [webapp.components.loaders :as loaders]
    [webapp.routes :as routes]))
 
+(def ^:private redacted-param-prefix
+  ;; the gateway writes this in place of a password or file input
+  ;; (encodeRequestParams in gateway/api/runbooks/runbooksV2.go)
+  "[param redacted. type = ")
+
+(defn redacted-params?
+  "True when the runbookParameters label holds a redacted value: a re-run
+  cannot send it back, the user must enter the value again in the form."
+  [params-json]
+  (let [params (try (js->clj (js/JSON.parse params-json)) (catch :default _ nil))]
+    (boolean (some #(and (string? %) (cs/starts-with? % redacted-param-prefix))
+                   (when (map? params) (vals params))))))
+
+(defn- open-runbook-form [labels]
+  (rf/dispatch [:modal->close])
+  (rf/dispatch [:navigate :runbooks {:runbook (:runbookFile labels)
+                                     :repository (:runbookRepository labels)}])
+  (rf/dispatch [:show-snackbar {:level :info
+                                :text "Enter the hidden inputs again"
+                                :description (str "This runbook has password or file inputs. "
+                                                  "Their values are not stored, so the run starts from its form.")}]))
+
 (defn- re-run-session [session]
-  (if (-> session :labels :runbookFile)
+  (cond
+    (and (-> session :labels :runbookFile)
+         (redacted-params? (-> session :labels :runbookParameters)))
+    (open-runbook-form (:labels session))
+
+    (-> session :labels :runbookFile)
     (do
       (let [labels (:labels session)
             file-name (:runbookFile labels)
@@ -30,6 +57,8 @@
                                       :on-success on-success
                                       :on-failure on-failure}]))
       (rf/dispatch [:audit->clear-session-details-state {:status :loading}]))
+
+    :else
     (do
       (rf/dispatch [:jira-integration->get])
       (rf/dispatch [:audit->re-run-session session]))))

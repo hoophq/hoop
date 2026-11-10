@@ -110,19 +110,39 @@ func RiskForTool(name string) (RiskLevel, bool) {
 	return "", false
 }
 
-// ToolSpec describes one risk-reporting tool in a provider-neutral shape.
-// Each provider renders these into its own schema dialect.
+// ToolSpec describes one tool in a provider-neutral shape. Each provider
+// renders these into its own schema dialect, for the risk tools and for any
+// caller-supplied set (see ToolCaller).
 type ToolSpec struct {
 	Name        string
 	Description string
+
+	// Input is the tool's argument object.
+	Input ToolInput
+}
+
+// riskToolInput is the argument object every risk tool takes. The wording is
+// part of the request every deployed provider sends; change it knowingly.
+var riskToolInput = ToolInput{
+	Properties: map[string]ToolProperty{
+		"title": {
+			Type:        "string",
+			Description: "Under 80 characters. Shown to the user when the statement is blocked. Never quote a value from the statement.",
+		},
+		"explanation": {
+			Type:        "string",
+			Description: "Why the statement carries this risk. Never quote a value from the statement.",
+		},
+	},
+	Required: []string{"title", "explanation"},
 }
 
 // ToolSpecs are the three tools every provider offers the model.
 func ToolSpecs() []ToolSpec {
 	return []ToolSpec{
-		{Name: toolLow, Description: "Report that the statement is low risk."},
-		{Name: toolMedium, Description: "Report that the statement is medium risk."},
-		{Name: toolHigh, Description: "Report that the statement is high risk."},
+		{Name: toolLow, Description: "Report that the statement is low risk.", Input: riskToolInput},
+		{Name: toolMedium, Description: "Report that the statement is medium risk.", Input: riskToolInput},
+		{Name: toolHigh, Description: "Report that the statement is high risk.", Input: riskToolInput},
 	}
 }
 

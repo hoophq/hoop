@@ -38,6 +38,7 @@ type lane struct {
 	statementOpts sync.Map // statementKey -> []metric.AddOption
 	stageOpts     sync.Map // stageKey -> []metric.RecordOption
 	upstreamOpts  sync.Map // telemetry.Pairing -> []metric.RecordOption
+	mcpOpts       sync.Map // telemetry.MCPMessage -> []metric.AddOption
 }
 
 type statementKey struct {
@@ -269,4 +270,23 @@ func (l *lane) Masked(values int) {
 
 func (l *lane) AuditError() {
 	l.e.auditErrors.Add(context.Background(), 1, l.laneOpt...)
+}
+
+func (l *lane) MCPMessage(m telemetry.MCPMessage) {
+	opt := cached(&l.mcpOpts, m, func(m telemetry.MCPMessage) []metric.AddOption {
+		attrs := make([]attribute.KeyValue, 0, 6)
+		attrs = append(attrs, l.spanAttrs...)
+		attrs = append(attrs,
+			attribute.String(attrDirection, string(m.Direction)),
+			attribute.String(attrMCPDecision, m.Decision),
+		)
+		if m.Method != "" {
+			attrs = append(attrs, attribute.String(attrMCPMethod, m.Method))
+		}
+		if m.Tool != "" {
+			attrs = append(attrs, attribute.String(attrMCPTool, m.Tool))
+		}
+		return []metric.AddOption{metric.WithAttributeSet(attribute.NewSet(attrs...))}
+	})
+	l.e.mcpMessages.Add(context.Background(), 1, opt...)
 }

@@ -1,7 +1,9 @@
 package inspect_test
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
@@ -402,6 +404,88 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 	}
 }
 
+// A read-only lane is one operation rule naming every write, the rule the
+// GCP Marketplace read-only preset and the agents-cli template ship. These
+// statements got past it and changed the database (ENG-803): the EXPLAIN
+// forms ran their DELETE and were audited as an allowed select, and
+// SELECT ... INTO created its table the same way, in parentheses as an
+// allowed unknown. ANALYSE ran, while the rule refuses ANALYZE as other.
+//
+// The plans stay allowed. EXPLAIN without ANALYZE, or with ANALYZE false,
+// runs nothing, and a quoted FORMAT value is not the ANALYZE option.
+func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
+	readOnly := rulesFor(t, "read-only",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpCreate,
+		inspect.OpDrop, inspect.OpAlter, inspect.OpTruncate, inspect.OpGrant,
+		inspect.OpRevoke, inspect.OpCall, inspect.OpOther)
+
+	for _, tc := range []struct {
+		name, sql  string
+		wantDenied bool
+		wantOp     inspect.Operation
+	}{
+		{"EXPLAIN ANALYSE, the British spelling, is refused as the delete it runs",
+			`EXPLAIN ANALYSE DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"EXPLAIN (ANALYSE) is refused as the delete it runs",
+			`EXPLAIN (ANALYSE) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option is refused as the delete it runs",
+			`EXPLAIN ("analyze") DELETE FROM customers WHERE id = 3`, true, inspect.OpDelete},
+		{"a quoted analyze option after another option is refused as the delete it runs",
+			`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers WHERE id = 4`, true, inspect.OpDelete},
+		{"SELECT INTO is refused as the create it is",
+			`SELECT * INTO customers_copy FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO TEMP is refused as the create it is",
+			`SELECT * INTO TEMP t1 FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO in parentheses is refused as the create it is",
+			`(SELECT * INTO t6 FROM customers)`, true, inspect.OpCreate},
+		{"SELECT INTO in two pairs of parentheses is refused as the create it is",
+			`((SELECT * INTO t30 FROM customers))`, true, inspect.OpCreate},
+		{"ANALYSE, the British spelling, is refused as ANALYZE is",
+			`ANALYSE customers`, true, inspect.OpOther},
+		{"a second ANALYZE turned off does not hide the first",
+			`EXPLAIN (ANALYZE, ANALYZE false) DELETE FROM customers`, true, inspect.OpDelete},
+		{"ANALYZE 0x1, a hexadecimal 1, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0x1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"ANALYZE 0_1, a 1 with a separator, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0_1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option with an octal 1 is refused as the delete it runs",
+			`EXPLAIN ("analyze" 0o1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+
+		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
+		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
+		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
+		{"EXPLAIN with ANALYZE turned off passes", `EXPLAIN (ANALYZE false) DELETE FROM customers`, false, ""},
+		{"a quoted analyze option turned off passes", `EXPLAIN ("analyze" off) DELETE FROM customers`, false, ""},
+		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
+		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
+		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},
+		// A privilege table names its columns after the statements, and a
+		// CASE branch in parentheses reads them. They are expressions.
+		{"a parenthesized column called update in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN true ELSE (update) END AS can_update FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized column called delete in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN (delete) ELSE false END AS can_delete FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized expression of columns called insert and update passes",
+			`SELECT CASE WHEN owner THEN true ELSE (insert OR update) END FROM privs`, false, inspect.OpSelect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmts := inspectOne(t, tc.sql)
+			if len(stmts) == 0 {
+				t.Fatalf("no statements for %q", tc.sql)
+			}
+			for _, s := range stmts {
+				if denied := readOnly.Evaluate(s).Denied; denied != tc.wantDenied {
+					t.Errorf("denied = %v, want %v: operation %q, effects %v, relations %v",
+						denied, tc.wantDenied, s.Operation, s.Effects, s.Relations)
+				}
+				if tc.wantOp != "" && s.Operation != tc.wantOp {
+					t.Errorf("Operation = %q, want %q", s.Operation, tc.wantOp)
+				}
+			}
+		})
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...inspect.Operation) *policy.Rules {
 	t.Helper()
@@ -738,5 +822,68 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		if r.Access == inspect.AccessWrite {
 			t.Errorf("a parameter spelled into wrote %q", r.Name)
 		}
+	}
+}
+
+// BigQuery SQL as an mcp lane reads a SQL tool argument: split, then each
+// statement under GoogleSQL. Before the script rows, a FOR loop read as a
+// select and a BEGIN block as a begin, so their DELETE passed both rules.
+// The comment cases are what a JSON escape decodes to. Not checked on BigQuery.
+func TestBigQueryIsAnalyzedWithTheGoogleSQLDialect(t *testing.T) {
+	noWrites := rulesFor(t, "no-writes", inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpDrop)
+	unreadable := rulesFor(t, "unreadable", inspect.OpUnknown)
+	for _, tc := range []struct {
+		name, sql  string
+		rules      *policy.Rules
+		wantDenied bool
+	}{
+		{"an UPDATE is refused", "UPDATE ds.t SET a = 1 WHERE true", noWrites, true},
+		{"a SELECT passes", "SELECT a FROM ds.t", noWrites, false},
+		{"a DELETE after a SELECT is refused", "SELECT 1; DELETE FROM ds.t WHERE true", noWrites, true},
+		{"a DELETE in a LOOP is refused", "LOOP DELETE FROM t WHERE true; END LOOP", noWrites, true},
+		{"a DELETE in a FOR loop is refused", "FOR r IN (SELECT 1) DO DELETE FROM t WHERE true; END FOR", noWrites, true},
+		{"a DELETE in a WHILE loop is refused", "WHILE true DO DELETE FROM t WHERE true; END WHILE", noWrites, true},
+		{"a DELETE in a REPEAT loop is refused", "REPEAT DELETE FROM t WHERE true; UNTIL true END REPEAT", noWrites, true},
+		{"a DELETE in a BEGIN block is refused", "BEGIN DELETE FROM t WHERE true; END", noWrites, true},
+		{"a DELETE in a LOOP inside an IF is refused", "IF true THEN LOOP DELETE FROM t WHERE true; END LOOP; END IF", noWrites, true},
+		{"a column called begin after THEN passes", "SELECT CASE WHEN a THEN begin ELSE 0 END FROM t", unreadable, false},
+		{"a column called loop after ELSE passes", "SELECT CASE WHEN a THEN 1 ELSE loop END FROM t", unreadable, false},
+		{"a DELETE in a labelled LOOP is refused", "outer: LOOP DELETE FROM t WHERE true; END LOOP outer", noWrites, true},
+		{"a DELETE in a LOOP with a backquoted label is refused", "`outer`: LOOP DELETE FROM t WHERE true; END LOOP outer", noWrites, true},
+		{"an UPDATE in a labelled BEGIN block is refused", "lbl: BEGIN UPDATE ds.t SET a = 1 WHERE true; END lbl", noWrites, true},
+		{"an UPDATE in a BEGIN block with a backquoted label is refused", "`lbl`: BEGIN UPDATE ds.t SET a = 1 WHERE true; END lbl", noWrites, true},
+		{"a DELETE in a labelled LOOP after THEN is refused", "IF true THEN lbl: LOOP DELETE FROM t WHERE true; END LOOP; END IF", noWrites, true},
+		{"a DELETE behind a label the lexer does not read is refused", "`a`.`b`: LOOP DELETE FROM t WHERE true; END LOOP", noWrites, true},
+		{"a DELETE behind a parameter used as a label is refused", "@x: BEGIN DELETE FROM t WHERE true; END", noWrites, true},
+		{"a DELETE in an exception handler is refused", "BEGIN SELECT 1/0; EXCEPTION WHEN ERROR THEN DELETE FROM t WHERE true; END", noWrites, true},
+		{"a DELETE in a transaction is refused", "BEGIN TRANSACTION; DELETE FROM t WHERE true; COMMIT TRANSACTION", noWrites, true},
+		{"a read-only FOR loop is refused as unreadable", "FOR r IN (SELECT 1) DO SELECT r; END FOR", unreadable, true},
+		{"a read-only FOR loop passes a rule refusing writes", "FOR r IN (SELECT 1) DO SELECT r; END FOR", noWrites, false},
+		{"a bare BEGIN passes as a transaction", "BEGIN", unreadable, false},
+		{"BEGIN TRANSACTION passes", "BEGIN TRANSACTION", unreadable, false},
+		{"EXPORT DATA is refused as unreadable", "EXPORT DATA OPTIONS(uri='gs://b/*.csv', format='CSV') AS SELECT * FROM t", unreadable, true},
+		{"EXECUTE IMMEDIATE is refused as unreadable", "EXECUTE IMMEDIATE 'DELETE FROM t WHERE true'", unreadable, true},
+		{"a DELETE after a dash comment and a carriage return is refused as unreadable", "--x\rDELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a dash comment and U+2028 is refused as unreadable", "--x\u2028DELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a dash comment and U+0085 is refused as unreadable", "--x\u0085DELETE FROM t WHERE true", unreadable, true},
+		{"a DELETE after a raw string is refused", `SELECT r'\'; DELETE FROM t WHERE true; --'`, noWrites, true},
+		{"a DELETE in a double-quoted string passes", `SELECT "a\"; DELETE FROM t; --"`, noWrites, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			denied := false
+			var read []string
+			for _, part := range lexer.Split(tc.sql, lexer.GoogleSQL) {
+				a := inspect.AnalyzeSQLIn(part, lexer.GoogleSQL)
+				stmt := inspect.Statement{
+					Protocol: inspect.MCP, Direction: inspect.FromClient, Text: part,
+					Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+				}
+				denied = denied || tc.rules.Evaluate(stmt).Denied
+				read = append(read, fmt.Sprintf("%q: %s %v", part, a.Operation, a.Effects))
+			}
+			if denied != tc.wantDenied {
+				t.Errorf("denied = %v, want %v: %s", denied, tc.wantDenied, strings.Join(read, "; "))
+			}
+		})
 	}
 }

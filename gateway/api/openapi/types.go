@@ -434,6 +434,9 @@ type SidecarResponse struct {
 	ReportedConfiguration *daemon.Config `json:"reported_configuration,omitempty" swaggertype:"object"`
 	// When the sidecar last reported ReportedConfiguration.
 	ReportedConfigurationAt *time.Time `json:"reported_configuration_at,omitempty"`
+	// Capabilities from the last handshake, such as protocol:mcp. Null: the
+	// sidecar never connected. Empty: an old build that reports none.
+	Capabilities []string `json:"capabilities" readonly:"true" example:"protocol:mcp,rule:mcp_tool" extensions:"x-nullable"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -544,10 +547,13 @@ type SidecarSessionEventsResponse struct {
 	Duplicates int `json:"duplicates" example:"0"`
 }
 
-// SidecarReviewRequest registers a statement a sidecar held for human approval.
+// SidecarReviewRequest registers a statement a sidecar held for approval.
 //
 // The sidecar is not in the body and must not be: the token identifies it, so a
 // field here would let one sidecar file an approval request as another.
+//
+// It names the approval rule (approval_rule), or the risk level of the
+// listener's analyzer block that held the statement (risk_level), never both.
 type SidecarReviewRequest struct {
 	// The sidecar listener the statement arrived on, at most 1024 bytes
 	ListenerName string `json:"listener_name" binding:"required" example:"appdb"`
@@ -558,10 +564,18 @@ type SidecarReviewRequest struct {
 	// It must be the rule the sidecar's stored configuration names for this
 	// listener. The rule carries the approver groups, the approval count and
 	// the force-approval list; the sidecar holds none of that policy and only
-	// names it.
+	// names it. Required without risk_level, refused with it.
 	//
 	// Bounded at 254 to match what a rule name may be.
-	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
+	ApprovalRule string `json:"approval_rule,omitempty" binding:"max=254" example:"payments-approvers"`
+	// The analyzer risk level that held the statement, when the listener's
+	// analyzer block names a human approver for that level (approvers). The
+	// control plane reads the level's approval groups in the listener's
+	// stored configuration
+	RiskLevel string `json:"risk_level,omitempty" enums:"high,medium,low" example:"high"`
+	// The hand-off agent of the level selected the hold. The level must be ai-handoff, allow
+	// require_approval, and name a human approver for that level (approvers). Read only with risk_level
+	Handoff bool `json:"handoff,omitempty" example:"false"`
 	// Reserve an approved request instead of spending it
 	//
 	// The review moves to PROCESSING, and the sidecar settles it with what
@@ -623,8 +637,12 @@ type SidecarReviewStatus struct {
 	Status ReviewStatusType `json:"status" readonly:"true"`
 	// The sidecar listener this approval request is bound to
 	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
-	// The access request rule the approval request was filed under
+	// The access request rule the approval request was filed under. Empty on one filed under a risk level
 	ApprovalRule string `json:"approval_rule" readonly:"true" example:"payments-approvers"`
+	// The analyzer risk level the approval request was filed under, in place of an approval rule
+	RiskLevel string `json:"risk_level,omitempty" readonly:"true" enums:"high,medium,low" example:"high"`
+	// The hand-off agent of an ai-handoff level selected the hold
+	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
 	// The time the approval request was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time of the last approver decision. Null while the approval request is pending
@@ -1663,6 +1681,15 @@ type SessionReview struct {
 	// The sidecar listener this approval request is bound to. Absent on an approval request that came from a connection.
 	// Only GET /sessions/{session_id} returns it
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
+	// The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.
+	// Only GET /sessions/{session_id} returns it
+	RiskLevel *string `json:"risk_level,omitempty" readonly:"true" enums:"high,medium,low" example:"high"`
+	// The hand-off agent of an ai-handoff level selected the hold that filed this approval request.
+	// Only GET /sessions/{session_id} returns it
+	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
+	// The email of the user who ran the approved request. Absent before it runs, and on older requests.
+	// Only GET /sessions/{session_id} returns it
+	ExecutedBy *string `json:"executed_by,omitempty" readonly:"true" example:"alice@example.com"`
 }
 
 type ReviewCount struct {
@@ -1725,6 +1752,10 @@ type Review struct {
 	// The time a sidecar approval lasts, in seconds, copied from the rule at
 	// filing. Absent with no limit or on an approval request from a connection
 	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" readonly:"true" example:"600"`
+	// The analyzer risk level a sidecar filed the approval request under, in place of an approval rule
+	RiskLevel *string `json:"risk_level,omitempty" readonly:"true" enums:"high,medium,low" example:"high"`
+	// The hand-off agent of an ai-handoff level selected the hold that filed this approval request
+	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
 }
 
 type ReviewOwner struct {
@@ -4240,11 +4271,14 @@ type AISessionAnalyzerRuleRequest struct {
 	// this rule holds for approval. Absent keeps the groups already set; with
 	// none set the admin group approves.
 	//
-	// Read only while sidecar_spec holds a statement.
+	// Read only while sidecar_spec holds a statement, directly or through an
+	// ai-handoff level that allows require_approval. Ignored when
+	// sidecar_spec has approvers and names its own approval rule: the groups
+	// every human level shares apply, else the admin group.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
 	// Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec
-	// holds under its own approval rule. Absent keeps, 0 clears
+	// holds under its own approval rule, directly or through an ai-handoff level. Absent keeps, 0 clears
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds an approval lasts from the approval, 60 to 604800. The same rules as pending_ttl_sec
 	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`

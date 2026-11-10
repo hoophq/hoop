@@ -3,6 +3,7 @@
 #   envoy :8443 --cluster hoop_inspect_http------> :18080  lane "httpbin"
 #   envoy :5432 --cluster hoop_inspect_pg--------> :15432  lane "appdb"
 #   envoy :8446 --cluster hoop_inspect_ch_http---> :18123  lane "clickhouse-http"    http codec
+#   envoy :8448 --cluster hoop_inspect_ch_http_stream> :18124  lane "clickhouse-http-stream"  http codec, no mask
 #   envoy :9000 --cluster hoop_inspect_ch_native> :19006  lane "clickhouse-native"  clickhouse codec
 #   envoy :9004 --cluster hoop_inspect_ch_mysql--> :19004  lane "clickhouse-mysql"   mysql codec
 #   envoy :9005 --cluster hoop_inspect_ch_pg-----> :19005  lane "clickhouse-pg"      postgres codec
@@ -104,6 +105,25 @@ listeners:
     protocol: http
     listen: 0.0.0.0:18123
     upstream: clickhouse:8123
+    http:
+      capture_body: true
+      max_body_bytes: 65536
+      headers:
+        - X-ClickHouse-User
+        - X-ClickHouse-Database
+        - X-ClickHouse-Format
+        - X-ClickHouse-Query-Id
+
+  # ClickHouse's HTTP interface again, for large results: the shape of a
+  # lane that masks nothing. `rules: []` opts out of the inherited mask rule,
+  # so the codec forwards each body piece as it arrives and holds no unit
+  # whole. stream-clickhouse.sh pulls a multi-GiB result through it.
+  - name: clickhouse-http-stream
+    protocol: http
+    listen: 0.0.0.0:18124
+    upstream: clickhouse:8123
+    mask:
+      rules: []
     http:
       capture_body: true
       max_body_bytes: 65536

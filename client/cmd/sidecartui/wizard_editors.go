@@ -79,6 +79,7 @@ var defaultUpstream = map[string]string{
 	"postgres": "127.0.0.1:5432", "mysql": "127.0.0.1:3306", "mssql": "127.0.0.1:1433",
 	"oracle": "127.0.0.1:1521", "mongodb": "127.0.0.1:27017", "clickhouse": "127.0.0.1:8123",
 	"http": "127.0.0.1:8080", "grpc": "127.0.0.1:50051", "spanner": "spanner.googleapis.com:443",
+	"mcp": "http://127.0.0.1:8000/mcp",
 }
 
 // ---- operations and rule types per protocol ----------------------------------
@@ -117,12 +118,14 @@ var ruleTypeLabel = map[string]string{
 	string(policy.MatchPattern):      "Regex pattern",
 	string(policy.MatchOperation):    "Operations",
 	string(policy.MatchTable):        "Tables",
+	string(policy.MatchProcedure):    "Stored procedures",
 	string(policy.MatchPII):          "Sensitive data in the statement",
 	string(policy.MatchHTTPResource): "HTTP resources",
 	string(policy.MatchHTTPStatus):   "HTTP status",
 	string(policy.MatchHTTPHeader):   "HTTP headers",
 	string(policy.MatchGRPCStatus):   "gRPC status",
 	string(policy.MatchMetadata):     "Statement metadata",
+	string(policy.MatchMCPTool):      "MCP tools",
 }
 
 // ruleTypesFor lists the rule types a lane of protocol can evaluate, in
@@ -141,7 +144,7 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			if rpc && !captures {
 				continue
 			}
-		case policy.MatchTable:
+		case policy.MatchTable, policy.MatchProcedure:
 			if protocol == "http" || protocol == "ssh" || (rpc && !captures) {
 				continue
 			}
@@ -151,6 +154,10 @@ func ruleTypesFor(protocol string, captures bool) []string {
 			}
 		case policy.MatchGRPCStatus:
 			if protocol != "grpc" && protocol != "spanner" {
+				continue
+			}
+		case policy.MatchMCPTool:
+			if protocol != "mcp" {
 				continue
 			}
 		}
@@ -218,6 +225,9 @@ func newDraft(id string, m machine) (*draft, error) {
 			prefill["listen"] = l
 		} else if protocol == "ssh" {
 			prefill["listen"] = "127.0.0.1:12222"
+		} else if protocol == "mcp" {
+			// An mcp upstream is a URL, which StarterListen does not read.
+			prefill["listen"] = "127.0.0.1:18000"
 		}
 		// The suggested port moves when another program holds it, so the
 		// default boots on this machine as it is.
@@ -252,14 +262,19 @@ func newDraft(id string, m machine) (*draft, error) {
 		// A gRPC lane reads operations, tables and data only from decoded
 		// payloads, which need descriptors no default can name; the person
 		// adds a rule once the listener captures them.
+	case "mcp":
+		r := policy.Rule{Name: "no-delete-tools", Type: policy.MatchMCPTool,
+			Message: "delete tools are not allowed through the sidecar"}
+		r.Tools = []string{"*delete*"}
+		d.rules = []policy.Rule{r}
 	default:
 		d.rules = []policy.Rule{{Name: "no-destructive-statements", Type: policy.MatchOperation, Operations: ops("drop", "truncate"),
 			Message: "DROP and TRUNCATE are not allowed through the sidecar"}}
 	}
 	// grpc and spanner mask only through grpc.descriptors, which no
-	// default can supply.
+	// default can supply. An mcp lane does not mask yet.
 	switch d.protocol {
-	case "grpc", "spanner":
+	case "grpc", "spanner", "mcp":
 	case "ssh":
 		// An ssh lane rewrites bytes in place, so the replacement must be
 		// as long as the value: mask is the one strategy it carries.
@@ -289,7 +304,8 @@ func newDraft(id string, m machine) (*draft, error) {
 	default:
 		d.an.trigger = []string{"delete", "update"}
 	}
-	d.an.on = provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	// An mcp lane refuses an analyzer.
+	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
 	return d, nil
 }
 
@@ -441,7 +457,8 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		}
 		o.Extensions = []configyaml.Extension{{Key: key, Value: d.demoPorts.API}}
 	}
-	if !d.an.on {
+	// An mcp lane refuses an analyzer, so the hint would lead to an invalid config.
+	if !d.an.on && d.protocol != "mcp" {
 		o.Footer = analyzerHint(d.an, l.Name)
 	}
 	return o
@@ -498,6 +515,9 @@ func (d *draft) masksSummary() string {
 
 func (d *draft) analyzerSummary() string {
 	if !d.an.on {
+		if d.protocol == "mcp" {
+			return "off · an mcp listener does not take one yet"
+		}
 		if d.an.provider != "vertex" && keyFileStatus(d.an.keyFile) != nil {
 			return "off · needs a key file for " + d.an.provider
 		}
@@ -528,6 +548,8 @@ func ruleDetail(r policy.Rule) string {
 		return strings.Join(opStrings(r.Operations), ", ")
 	case policy.MatchTable:
 		return strings.Join(r.Tables, ", ")
+	case policy.MatchProcedure:
+		return strings.Join(r.Procedures, ", ")
 	case policy.MatchPII:
 		return strings.Join(r.Entities, ", ")
 	case policy.MatchHTTPResource:
@@ -538,6 +560,11 @@ func ruleDetail(r policy.Rule) string {
 		return headerText(r.Headers)
 	case policy.MatchMetadata:
 		return headerText(r.Metadata)
+	case policy.MatchMCPTool:
+		if len(r.Allow) > 0 {
+			return "only " + strings.Join(r.Allow, ", ")
+		}
+		return strings.Join(r.Tools, ", ")
 	}
 	return ""
 }
@@ -597,6 +624,8 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 			optLabel: map[string]string{"": "read and write"}, help: "Match only reads, only writes, or both.", hidden: is(policy.MatchTable)},
 		{id: "require", label: "Require table match", kind: fBool, on: r.RequireTableMatch,
 			help: "Also match statements whose tables could not be read.", hidden: is(policy.MatchTable)},
+		{id: "procedures", label: "Procedures", kind: fText, text: strings.Join(r.Procedures, ", "), placeholder: "get_secrets, dbo.delete_customer",
+			help: "Stored procedures called by name, in any spelling (dbo.x, [dbo].[x], appdb.dbo.x). Comma-separated.", hidden: is(policy.MatchProcedure)},
 		{id: "entities", label: "Data types", kind: fMulti, multi: r.Entities, options: entities, placeholder: "pick at least one",
 			help: "A statement carrying one of these is matched.", hidden: is(policy.MatchPII)},
 		{id: "resources", label: "Resources", kind: fText, text: strings.Join(r.Resources, ", "), placeholder: "/admin/*, /users/{id}",
@@ -613,6 +642,10 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 		{id: "metadata", label: "Metadata", kind: fText, text: headerText(r.Metadata), placeholder: "grpc.method=DeleteUser|DropTable",
 			help:   "Match when every key has one of its values; keys come from the codec (grpc.*, mongodb.command, <plug-in>.verb). key=v1|v2, comma-separated.",
 			hidden: is(policy.MatchMetadata)},
+		{id: "tools", label: "Deny tools", kind: fText, text: strings.Join(r.Tools, ", "), placeholder: "*delete*, run_query",
+			help: "Tools the rule denies and hides from tools/list. * matches anything; comma-separated.", hidden: is(policy.MatchMCPTool)},
+		{id: "allow", label: "Allow only", kind: fText, text: strings.Join(r.Allow, ", "), placeholder: "get_*, list_*",
+			help: "The only tools the rule lets through. Set this or Deny tools, not both.", hidden: is(policy.MatchMCPTool)},
 		{id: "message", label: "Message", kind: fText, text: r.Message, placeholder: "not allowed through the sidecar",
 			help: "What the client is told when the rule refuses a statement."},
 		{id: "action", label: "On match", kind: fEnum, options: []string{"", "defer"}, text: r.Action,
@@ -687,6 +720,10 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		if r.Tables = g("tables").list(); len(r.Tables) == 0 {
 			empty = "Tables"
 		}
+	case policy.MatchProcedure:
+		if r.Procedures = g("procedures").list(); len(r.Procedures) == 0 {
+			empty = "Procedures"
+		}
 	case policy.MatchPII:
 		if r.Entities = g("entities").multi; len(r.Entities) == 0 {
 			empty = "Data types"
@@ -718,6 +755,14 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		}
 		if len(r.Metadata) == 0 {
 			empty = "Metadata"
+		}
+	case policy.MatchMCPTool:
+		r.Tools, r.Allow = g("tools").list(), g("allow").list()
+		if len(r.Tools) > 0 && len(r.Allow) > 0 {
+			return r, errors.New("set Deny tools or Allow only, not both")
+		}
+		if len(r.Tools) == 0 && len(r.Allow) == 0 {
+			empty = "Deny tools"
 		}
 	}
 	if empty != "" {

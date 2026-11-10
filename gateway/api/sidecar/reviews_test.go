@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
 	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
@@ -106,7 +107,7 @@ func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.AccessRequestRuleName,
 		"without the rule name the review needs every group and ignores its force approval list")
@@ -118,7 +119,7 @@ func TestNewSidecarReviewCarriesTheStatementHash(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.True(t, rev.StatementHash.Valid, "a NULL hash is excluded from the unique index")
 	assert.Equal(t, testStatementHash, rev.StatementHash.String)
@@ -239,6 +240,81 @@ func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
 }
 
+// A risk level filing is authorized only for a level that holds and whose
+// approvers entry names a human. An ai_agent level is decided in the
+// sidecar and never files.
+func TestListenerHoldsForHuman(t *testing.T) {
+	block := func(high string, approvers *daemon.LevelApprovers) []daemon.ListenerConfig {
+		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: &daemon.LaneAnalyzerConfig{
+			HighRisk: high, MediumRisk: "warn", ApprovalRule: "payments-approvers", Approvers: approvers}}}
+	}
+	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
+	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
+
+	got := listenerHoldsForHuman(block("require_approval", human), "appdb", analyzer.RiskHigh, false)
+	require.NotNil(t, got, "a held human level")
+	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
+	assert.NotNil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh, false), "either spelling")
+
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", agent), "appdb", analyzer.RiskHigh, false), "ai_agent level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", nil), "appdb", analyzer.RiskHigh, false),
+		"a bare hold files under approval_rule, not by level")
+	assert.Nil(t, listenerHoldsForHuman(block("block", human), "appdb", analyzer.RiskHigh, false), "a level that does not hold")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskMedium, false), "another level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "reporting", analyzer.RiskHigh, false), "another listener")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh, true),
+		"a direct hold is not a hand-off hold")
+
+	dup := append(block("require_review", human), block("require_review", human)...)
+	assert.Nil(t, listenerHoldsForHuman(dup, "appdb", analyzer.RiskHigh, false), "a duplicate listener name authorizes nothing")
+}
+
+// A hand-off filing is authorized only for an ai-handoff level that allows
+// require_approval and whose approvers entry names a human.
+func TestListenerHoldsForHumanThroughAHandoff(t *testing.T) {
+	block := func(high string, allowed []string, approvers *daemon.LevelApprovers) []daemon.ListenerConfig {
+		la := &daemon.LaneAnalyzerConfig{HighRisk: high, ApprovalRule: "payments-approvers", Approvers: approvers}
+		if allowed != nil {
+			la.Handoffs = &daemon.LevelHandoffs{High: &daemon.LevelHandoff{AllowedActions: allowed}}
+		}
+		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: la}}
+	}
+	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
+	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
+	holds := []string{"allow", "require_approval"}
+
+	got := listenerHoldsForHuman(block("ai-handoff", holds, human), "appdb", analyzer.RiskHigh, true)
+	require.NotNil(t, got, "a hand-off level that may hold for a human")
+	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
+	assert.NotNil(t, listenerHoldsForHuman(block("ai-handoff", []string{"require_review"}, human), "appdb",
+		analyzer.RiskHigh, true), "either spelling")
+
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, human), "appdb", analyzer.RiskHigh, false),
+		"a hand-off level files only through its hand-off")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", []string{"allow", "block"}, human), "appdb",
+		analyzer.RiskHigh, true), "a hand-off that cannot hold")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, agent), "appdb", analyzer.RiskHigh, true),
+		"the approval agent decides in the sidecar")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, nil), "appdb", analyzer.RiskHigh, true),
+		"no approvers entry files under approval_rule")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", holds, human), "appdb", analyzer.RiskHigh, true),
+		"a level that does not hand off")
+	assert.NotNil(t, listenerHoldsForHuman(block("ai-handoff", nil, human), "appdb", analyzer.RiskHigh, true),
+		"a hand-off level with no handoffs entry allows all four, the hold included")
+	absent := block("ai-handoff", nil, human)
+	absent[0].Analyzer.Handoffs = &daemon.LevelHandoffs{High: &daemon.LevelHandoff{Prompt: "Prefer warn"}}
+	assert.NotNil(t, listenerHoldsForHuman(absent, "appdb", analyzer.RiskHigh, true),
+		"a hand-off entry with no allowed_actions allows all four, the hold included")
+}
+
+// handoff names how a level held, so it means nothing under a rule.
+func TestCheckFilingFieldsReadsHandoffOnlyWithARiskLevel(t *testing.T) {
+	assert.NoError(t, checkFilingFields(openapi.SidecarReviewRequest{RiskLevel: "high", Handoff: true}))
+	assert.EqualError(t, checkFilingFields(openapi.SidecarReviewRequest{ApprovalRule: "r", Handoff: true}),
+		"handoff is read only with risk_level")
+	assert.NoError(t, checkFilingFields(openapi.SidecarReviewRequest{ApprovalRule: "r"}))
+}
+
 // The control plane stores a sidecar rule without checking these fields, so a
 // review filed against one would be unsettleable or would enforce a policy
 // other than the one it records.
@@ -330,7 +406,7 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
 	rule := ruleWithTTLs(ptr.Int(900), ptr.Int(600))
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	require.NotNil(t, rev.ExpiresAt)
 	assert.Equal(t, now.Add(15*time.Minute), *rev.ExpiresAt, "the decision deadline counts from filing")
 	require.NotNil(t, rev.ApprovalTTLSec, "the approval clock starts at the approval, so the limit is kept")
@@ -340,12 +416,12 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	assert.Equal(t, 600, *rev.ApprovalTTLSec, "a copy, not the rule's pointer")
 
 	rule = ruleWithTTLs(nil, ptr.Int(600))
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt, "no pending limit is no decision deadline")
 	require.NotNil(t, rev.ApprovalTTLSec)
 
 	rule = approvalRule()
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt)
 	assert.Nil(t, rev.ApprovalTTLSec)
 }
@@ -671,7 +747,7 @@ func TestReviewDecidedAt(t *testing.T) {
 func TestNewSlackReviewRequest(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -704,7 +780,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.Nil(t, req.ExpiresAt, "a rule with no limit shows no deadline")
 
 	rule = ruleWithTTLs(ptr.Int(900), nil)
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	req = newSlackReviewRequest(sc, rev, "appdb", statement)
 	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
 	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)

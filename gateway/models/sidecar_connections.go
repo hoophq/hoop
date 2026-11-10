@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -186,6 +187,70 @@ func updateSidecarConnection(tx *gorm.DB, name string, m Connection) error {
 		return fmt.Errorf("failed updating connection %q, reason=%v", name, err)
 	}
 	return nil
+}
+
+// SidecarMirrorState is a stored mirror with the columns updateSidecarConnection
+// writes, on the connection and on the resource under its name.
+type SidecarMirrorState struct {
+	SidecarID          string         `gorm:"column:sidecar_id"`
+	Listener           string         `gorm:"column:sidecar_listener"`
+	Name               string         `gorm:"column:name"`
+	ResourceName       string         `gorm:"column:resource_name"`
+	Type               string         `gorm:"column:type"`
+	SubType            sql.NullString `gorm:"column:subtype"`
+	ManagedBy          sql.NullString `gorm:"column:managed_by"`
+	AgentID            sql.NullString `gorm:"column:agent_id"`
+	AccessModeRunbooks string         `gorm:"column:access_mode_runbooks"`
+	AccessModeExec     string         `gorm:"column:access_mode_exec"`
+	AccessModeConnect  string         `gorm:"column:access_mode_connect"`
+	AccessSchema       string         `gorm:"column:access_schema"`
+	// Null when no resource has the mirror's name.
+	ResourceType    sql.NullString `gorm:"column:resource_type"`
+	ResourceSubType sql.NullString `gorm:"column:resource_subtype"`
+	ResourceAgentID sql.NullString `gorm:"column:resource_agent_id"`
+	// How many connections use the resource under the mirror's name.
+	ResourceUsers int64 `gorm:"column:resource_users"`
+}
+
+// ListSidecarMirrorStates reads every mirror of orgID. It takes no lock, and it
+// counts the users of each resource in one pass: connections has no index on
+// resource_name.
+func ListSidecarMirrorStates(db *gorm.DB, orgID string) ([]SidecarMirrorState, error) {
+	var rows []SidecarMirrorState
+	err := db.Raw(`SELECT c.sidecar_id, c.sidecar_listener, c.name, c.resource_name, c.type, c.subtype,
+		c.managed_by, c.agent_id, c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		r.type AS resource_type, r.subtype AS resource_subtype, r.agent_id AS resource_agent_id,
+		COALESCE(u.users, 0) AS resource_users
+	FROM private.connections c
+	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.name
+	LEFT JOIN (SELECT resource_name, COUNT(*) AS users FROM private.connections
+	           WHERE org_id = ? GROUP BY resource_name) u ON u.resource_name = c.name
+	WHERE c.org_id = ? AND c.sidecar_id IS NOT NULL`, orgID, orgID).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed listing sidecar mirrors, reason=%v", err)
+	}
+	return rows, nil
+}
+
+// InSync reports whether updateSidecarConnection, given m, leaves every column
+// it writes as stored. Keep both in step: a column this does not compare is
+// drift the startup reconcile does not repair.
+func (s SidecarMirrorState) InSync(m Connection) bool {
+	if s.ResourceName != s.Name || s.Type != m.Type || s.SubType != m.SubType ||
+		s.ManagedBy != m.ManagedBy || s.AgentID.Valid ||
+		s.AccessModeRunbooks != m.AccessModeRunbooks || s.AccessModeExec != m.AccessModeExec ||
+		s.AccessModeConnect != m.AccessModeConnect || s.AccessSchema != m.AccessSchema {
+		return false
+	}
+	if !s.ResourceType.Valid {
+		return false
+	}
+	// A resource with an agent or another connection is the admin's; the
+	// update leaves it as it is.
+	if s.ResourceAgentID.Valid || s.ResourceUsers > 1 {
+		return true
+	}
+	return s.ResourceType.String == m.Type && s.ResourceSubType == m.SubType
 }
 
 // insertSidecarConnection creates a mirror under m.Name, or under its

@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Hourglass, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Hourglass, TriangleAlert, X } from 'lucide-react'
 import Button from '@/components/Button'
 import classes from './Toast.module.css'
 
 const ICON_FOR_TYPE = {
   success: { Icon: CheckCircle, className: classes.iconSuccess },
   error: { Icon: AlertCircle, className: classes.iconError },
+  warning: { Icon: TriangleAlert, className: classes.iconWarning },
   info: { Icon: Clock, className: classes.iconInfo },
   approval: { Icon: Hourglass, className: classes.iconApproval },
 }

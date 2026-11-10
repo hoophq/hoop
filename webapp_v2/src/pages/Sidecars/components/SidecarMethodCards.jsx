@@ -22,7 +22,7 @@ const METHODS = [
     id: 'create',
     icon: CirclePlus,
     title: 'Create and deploy a new Sidecar',
-    description: 'Generate the config and deploy a new sidecar with Docker or Kubernetes. Takes about 5 minutes.',
+    description: 'Generate the config and deploy a new sidecar with Kubernetes, Docker or the CLI.',
     action: 'Create',
     path: CREATE_PATH,
   },
@@ -31,9 +31,9 @@ const METHODS = [
 function MethodCard({ method, onPick, disabled }) {
   const Icon = method.icon
   return (
-    <Paper bg="gray.0" radius="xl" p="md">
+    <Paper variant="muted" radius="xl" p="md">
       <Stack gap="sm" align="flex-start">
-        <ThemeIcon size={48} radius="lg" variant="white" color="dark">
+        <ThemeIcon size={48} radius="lg" variant="default">
           <Icon size={18} aria-hidden="true" />
         </ThemeIcon>
         <Stack gap={4}>
@@ -44,7 +44,7 @@ function MethodCard({ method, onPick, disabled }) {
             {method.description}
           </Text>
         </Stack>
-        <Button size="xs" disabled={disabled} onClick={() => onPick(method)}>
+        <Button size="sm" disabled={disabled} onClick={() => onPick(method)}>
           {method.action}
         </Button>
       </Stack>

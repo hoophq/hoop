@@ -13,15 +13,15 @@
 }
 
 .item[data-feature='ai-analyzer'] {
-  --fa-tint: var(--mantine-color-pink-0);
+  --fa-tint: var(--hoop-tint-pink);
 }
 
 .item[data-feature='data-masking'] {
-  --fa-tint: var(--mantine-color-violet-0);
+  --fa-tint: var(--hoop-tint-violet);
 }
 
 .item[data-feature='guardrails'] {
-  --fa-tint: var(--mantine-color-indigo-0);
+  --fa-tint: var(--hoop-tint-indigo);
 }
 
 .control,

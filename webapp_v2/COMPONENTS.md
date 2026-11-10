@@ -19,7 +19,7 @@ Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
 |---|---|---|
 | *(none)* / `md` | 40px | **Default — do not pass a size prop** |
 | `xs` | 24px | Micro affordances in dense chrome |
-| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons. |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. A list's filter bar (`/resources`) takes `sm` on every control, search included, and `ConfirmDialog` takes `sm` on its buttons, as do "Add New Role" in the Configure Resource header and Done in `TestConnectionModal`. |
 | `lg` | 48px | Prominent/hero actions |
 
 Rules:
@@ -139,6 +139,14 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 ```
 Props: `href` (string), `text` (string).
 
+### `SetupDocsHint`
+Inline "Learn more about `<topic>` setup in our Docs ↗" line under a setup choice, as the CLJS wizard shows it.
+```jsx
+import SetupDocsHint from '@/components/SetupDocsHint'
+
+<SetupDocsHint topic="HashiCorp Vault" href={docsUrl.setup.configuration.secretsManager} />
+```
+
 ### `MethodCard`
 Selectable card for picking an installation/deployment method (icon + label + description).
 ```jsx
@@ -169,7 +177,7 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
-Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
+The icon sits in a rounded square on every page. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
 ```jsx
 <SelectionCard
   image="/images/anthropic-logo.svg"
@@ -312,8 +320,34 @@ Global resting border color **and height scale** for every Input-based component
 ### `Paper` (theme-level, no wrapper)
 Global border color for `Paper` — and `Card`, which renders through Paper — via `Paper.extend()` in `src/components/Paper/theme.js` (registered in `src/theme.js`). Same story as `Input`: Mantine declares `--paper-border-color` per color scheme directly on the Paper root, out of reach of `cssVariablesResolver`, so a co-located CSS Module rule overrides it on the element. Only visible on instances using `withBorder`; the value matches the app-wide input resting border. To change it, edit `src/components/Paper/Paper.module.css`.
 
+
+Surfaces by role, set in `Paper.module.css` from the theme tokens. Pick a
+`variant` instead of a color:
+
+| `variant` | Use | Border with `withBorder` |
+|-----------|-----|---------------|
+| `subtle` | a card in a page or modal (insight cards) | soft |
+| `outline` | a framed viewer (live tail, RDP player) | soft |
+| `muted` | a gray strip, a "preview not available" card | — |
+| `strong` | a chip or a notice on a subtle surface | — |
+| `accent`, `accent-strong` | AI features (Figma "AI Data Masking") | — |
+| `info`, `warning` | a tinted note (the sidecar `Callout`) | — |
+
+```jsx
+<Paper withBorder variant="subtle" radius="md" p="sm">…</Paper>
+```
+
+### `Code` variants
+`components/Code/theme.js`: `variant="accent"` marks an identifier such as an
+event name (`accent-outline` adds a border); `variant="terminal"` is a dark
+payload block (`<Code block variant="terminal">`).
+
+### `Divider` (theme-level, no wrapper)
+`components/Divider/theme.js` gives every `Divider` the soft border color
+(Mantine's default is `gray-3`, too dark in this theme). A `color` prop still
+overrides it.
 ### `Pill` (theme-level, no wrapper)
-Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. The managed protection-profile pill is `variant="managed"` (indigo), set in the same theme: its styles are inline, so a page class cannot override them.
 
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
@@ -338,7 +372,7 @@ import Avatar from '@/components/Avatar'
 
 <Avatar.Group>
   <Avatar size={24} color="pink" variant="light"><Sparkles size={14} /></Avatar>
-  <Avatar size={24} bg="gray.0" color="gray" variant="light">+2</Avatar>
+  <Avatar size={24} color="gray" variant="light">+2</Avatar>
 </Avatar.Group>
 ```
 `radius` defaults to `xl`; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
@@ -367,7 +401,7 @@ and `ActionMenu.Divider` are re-exported. The header's user menu is the `target`
 > bundles. Revisit if a third drawer appears.
 
 ### `Modal`
-Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
+Application modal dialog wrapping Mantine `Modal` with centered + radius defaults. Every Mantine modal dims the page at 40%, as the CLJS dialogs do (`components/Modal/theme.js`).
 ```jsx
 import Modal from '@/components/Modal'
 import { useDisclosure } from '@mantine/hooks'
@@ -488,6 +522,8 @@ import SourcedInput from '@/components/SourcedInput'
 <SourcedInput size="sm" {...props} />
 ```
 Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+`tooltip` adds a help icon next to the label that shows the text on hover (the resource setup wizard passes the catalog field description).
+The picker keeps the width of its longest option, so inputs line up. The label reads `--input-label-size` and its gap `--input-label-gap`, so a page that resizes Mantine labels resizes these too.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -622,7 +658,7 @@ import NumberInput from '@/components/NumberInput'
 ```
 
 ### `TagsInput`
-Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit. Mantine splits on `,` and drops repeated tags by default; command arguments turn both off.
 ```jsx
 import TagsInput from '@/components/TagsInput'
 
@@ -630,7 +666,8 @@ import TagsInput from '@/components/TagsInput'
   label="Command Arguments"
   value={args}
   onChange={setArgs}
-  splitChars={[',']}
+  splitChars={[]}
+  allowDuplicates
 />
 ```
 
@@ -824,17 +861,26 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
-> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
-> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
-> protection-profile attributes render as indigo award pills (removable and
-> re-addable like any other — removing one detaches the role from the
-> profile on save), user attributes as plain pills. Deliberately NOT built on
-> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
-> individual selected pills) nor on `components/PaginatedMultiSelect` (its
-> contract is pagination/server-search specific, and it also only renders
-> uniform pills). When the React resource-creation wizard needs the same
-> control, graduate this to `src/components/` and consider extracting a
-> shared PillsInput base with `PaginatedMultiSelect`.
+> **The credential renderers read `useCredentialsStore`**
+> (`sections/credentials/store.js`), not `useConfigureRoleStore`. With no
+> provider it is the Configure Role store. The resource setup wizard wraps each
+> role in `CredentialsStoreProvider` with a store of its own
+> (`pages/Resources/Setup/roleCredentials.js`); `createMode: true` there makes
+> `PredefinedFields` render every field as a new, masked input. The secret
+> actions both stores share are `utils/credentialsSlice.js`.
+
+### `AttributesSelect`
+Role attributes picker (Configure Role, resource setup wizard). Hoop-managed
+protection-profile attributes (`managed: true`) render as indigo award pills,
+removable and re-addable like any other; user attributes as plain pills.
+`onCreate(name)` adds a "Create" option for a search that matches nothing.
+```jsx
+import AttributesSelect from '@/components/AttributesSelect'
+
+<AttributesSelect options={options} value={selected} onChange={setSelected} onCreate={createAttribute} />
+```
+Not built on `MultiSelect` (it cannot render one pill differently) nor on
+`PaginatedMultiSelect` (its contract is server search and paging).
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -990,7 +1036,7 @@ Non-obvious notes only:
   from `X-New-Access-Token`; a 401 with the current token → saved URL + logout,
   one with a stale token of the same account → retried once). Every other
   service imports it; never call axios directly.
-- `analytics.js` — Segment (`identify()` only today), not a gateway API
+- `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
 - `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no
@@ -1179,6 +1225,7 @@ import { showSnackbar } from '@/utils/snackbar'
 showSnackbar({ level: 'success', text: 'Agent deleted.' })
 showSnackbar({ level: 'error',   text: 'Failed to delete agent.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
+showSnackbar({ level: 'warning', text: 'Saved, with a caveat.', description: reason })
 
 // Error toasts can expand to show a `details` panel (object → key/value lines)
 showSnackbar({

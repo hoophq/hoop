@@ -210,6 +210,24 @@ type Config struct {
 	// Actions maps risk to enforcement.
 	Actions ActionMap
 
+	// Approvals names the approver of each held level that has one. A held
+	// level absent here files under the lane's approval rule. A level here
+	// must map to ActionRequireReview; an ai_agent one needs a Provider
+	// that is a ToolCaller.
+	Approvals map[RiskLevel]Approval
+
+	// Listener is the connection name the approval agent reads.
+	Listener string
+
+	// Observing is set on an observe-mode lane. The approval agent is then
+	// not called: its hold denies, and policy.Observe records would_deny.
+	Observing bool
+
+	// RecordRedact rewrites the approval agent's and the hand-off agent's
+	// reasons before the audit record keeps them, with the build's detector
+	// whatever the send mode. Nil keeps no free text from either agent.
+	RecordRedact func(string) string
+
 	// Trigger narrows what is classified. A zero Trigger classifies
 	// nothing, which makes a misconfigured rule silent rather than
 	// expensive.
@@ -325,6 +343,11 @@ type Config struct {
 	// daemon supplies it because this package does not know which tools
 	// the process serves. Empty keeps the plain retry message.
 	ReturnNext string
+
+	// Handoffs configures each risk level whose action is ActionHandoff.
+	// Such a level needs an entry here and a Provider that is a
+	// ToolCaller; an entry for a level with another action is refused.
+	Handoffs map[RiskLevel]Handoff
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -347,6 +370,17 @@ type Evaluator struct {
 	// their change to take effect would see nothing.
 	promptKey string
 
+	// agentPrompts is the approval agent's system prompt per ai_agent
+	// level, built once like prompt.
+	agentPrompts map[RiskLevel]string
+
+	// handoffs is the runtime form of Config.Handoffs, per ai-handoff
+	// level.
+	handoffs map[RiskLevel]*handoffLevel
+
+	// pins keeps the hand-off decisions whose hold was filed.
+	pins *handoffPins
+
 	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
 	// constants read directly, so a test can shorten them; nothing outside
 	// the package can.
@@ -357,7 +391,8 @@ type Evaluator struct {
 	retryBase time.Duration
 	retryCap  time.Duration
 
-	// holds reports that some risk level on this lane waits for a human.
+	// holds reports that some risk level on this lane holds for approval,
+	// by a human or by the approval agent.
 	//
 	// It is read where a statement could NOT be classified (a spent
 	// budget, a provider that did not answer), because on a holding lane
@@ -429,22 +464,56 @@ func New(cfg Config) (*Evaluator, error) {
 		actions[level] = action
 	}
 	cfg.Actions = actions
+	var agentPrompts map[RiskLevel]string
+	for level, ap := range cfg.Approvals {
+		if actions.actionFor(level) != ActionRequireReview {
+			return nil, fmt.Errorf("sidecar/analyzer: risk %q names approver %q and does not hold", level, ap.Approver)
+		}
+		switch ap.Approver {
+		case ApproverHuman:
+		case ApproverAIAgent:
+			if _, ok := cfg.Provider.(ToolCaller); !ok {
+				return nil, fmt.Errorf("sidecar/analyzer: provider %q cannot run the approval agent "+
+					"that risk %q names", cfg.Provider.Name(), level)
+			}
+			if agentPrompts == nil {
+				agentPrompts = map[RiskLevel]string{}
+			}
+			agentPrompts[level] = BuildApprovalPrompt(ap.Prompt)
+		default:
+			return nil, fmt.Errorf("sidecar/analyzer: unknown approver %q for risk %q", ap.Approver, level)
+		}
+	}
+	handoffs, err := newHandoffs(cfg, actions)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range handoffs {
+		// A level whose agent can select a hold holds, for the reasons
+		// the field gives.
+		if slices.Contains(h.allowed, ActionRequireReview) {
+			holds = true
+		}
+	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
 	budget := cfg.Budget
 	if budget == nil {
 		budget = new(Budget)
 	}
 	return &Evaluator{
-		cfg:        cfg,
-		cache:      newCache(cfg.CacheSize, cfg.CacheTTL),
-		prompt:     prompt,
-		promptKey:  fingerprint(prompt),
-		holds:      holds,
-		budget:     budget,
-		reviewWait: ReviewWait,
-		reviewPoll: reviewPoll,
-		retryBase:  retryBase,
-		retryCap:   retryCap,
+		cfg:          cfg,
+		cache:        newCache(cfg.CacheSize, cfg.CacheTTL),
+		prompt:       prompt,
+		promptKey:    fingerprint(prompt),
+		agentPrompts: agentPrompts,
+		handoffs:     handoffs,
+		pins:         newHandoffPins(),
+		holds:        holds,
+		budget:       budget,
+		reviewWait:   ReviewWait,
+		reviewPoll:   reviewPoll,
+		retryBase:    retryBase,
+		retryCap:     retryCap,
 	}, nil
 }
 
@@ -485,7 +554,8 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	if ec != nil && ec.ConnCtx != nil {
 		ctx = context.WithoutCancel(ec.ConnCtx)
 	}
-	res, status, err := e.classify(ctx, stmt, ec)
+	c := e.classify(ctx, stmt, ec)
+	status, res := c.status, c.res
 	if status == "" {
 		// Not eligible: a response frame, a protocol with no builder.
 		// Reporting would put a finding on rows where no analyzer could
@@ -498,9 +568,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		level = res.RiskLevel
 		action = e.cfg.Actions.actionFor(level)
 	}
-	if status == StatusRefused {
+	switch {
+	case status == StatusRefused:
 		e.observe(status, "", ActionBlock)
-	} else {
+	case action == ActionHandoff:
+		// Observed below, with the action the hand-off resolved to.
+	default:
 		e.observe(status, level, action)
 	}
 	e.report(ec, status, level)
@@ -531,7 +604,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// failure() decides whether this denies. Either way the status
 		// travels, so a decide-phase policy can refuse a statement the
 		// model never saw instead of reading a missing level as low.
-		v := e.failure(err)
+		v := e.failure(c.err)
 		v.Annotations = e.notes(trail, "", "")
 		return v
 
@@ -570,18 +643,30 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// statement back would write the value into the record verbatim.
 	notes := e.notes(trail, string(level), string(action))
 
+	if action == ActionHandoff {
+		// risk_action stays ai-handoff; the decision and its reason ride
+		// beside it. The outcome reports the decision, the agent's or the
+		// fail-safe. A cached decision is reused, but a hold it selects
+		// still runs for this statement.
+		//
+		// The agent runs here, not deferred through ec.RequestReview like
+		// the approval agent, so a statement a later rule denies still
+		// spends its call. Its decision selects whether a hold exists at
+		// all: the decide phase must see that hold as input.review, and a
+		// hold asked for from inside a Resolve is never run, which would
+		// forward a statement the agent held.
+		d := e.handoff(ctx, stmt, ec, level, c, false)
+		e.observe(status, level, d.action)
+		return e.applyHandoff(ctx, stmt, ec, notes, level, c, d)
+	}
+
 	if action == ActionRequireReview {
 		// A CACHED verdict reaches here like any other. The cache
 		// collapses classifications, not approvals: the statement in
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
-		ctx := withHoldDetail(connContext(ec), HoldDetail{
-			Rule:        e.cfg.Rule,
-			RiskLevel:   level,
-			Title:       res.Title,
-			Explanation: res.Explanation,
-		})
-		return e.requestHold(ctx, stmt, ec, notes)
+		return e.requestApproval(stmt, ec, notes, level, c, e.cfg.Approvals[level].Approver,
+			e.agentPrompts[level], false, pinRef{})
 	}
 
 	if action != ActionBlock {
@@ -603,6 +688,30 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	v.Source = policy.SourceAnalyzer
 	v.Annotations = notes
 	return v
+}
+
+// requestApproval holds a statement under its approver: the approval agent
+// with agentPrompt, a person who approves the level (human), or a person
+// under the lane's approval rule (""). handoff marks a hold the hand-off
+// agent selected, and pin is what its filing pins.
+func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
+	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
+	ctx := withHoldDetail(connContext(ec), HoldDetail{
+		Rule:        e.cfg.Rule,
+		RiskLevel:   level,
+		Title:       c.res.Title,
+		Explanation: c.res.Explanation,
+	})
+	if handoff {
+		ctx = withViaHandoff(ctx)
+	}
+	switch approver {
+	case ApproverAIAgent:
+		return e.requestAgentApproval(ctx, stmt, ec, notes, level, c.res, c.text, agentPrompt)
+	case ApproverHuman:
+		ctx = withFiledLevel(ctx, level)
+	}
+	return e.requestHold(ctx, stmt, ec, notes, pin)
 }
 
 // connContext returns the context of the connection the statement arrived on,
@@ -716,37 +825,54 @@ func (e *Evaluator) wanted(stmt inspect.Statement, ec *policy.EvalContext) bool 
 	return e.cfg.Trigger.matches(stmt)
 }
 
+// classified is what classify found for one statement.
+type classified struct {
+	res Result
+
+	// text is the content that was (or would have been) sent, after
+	// redaction. The agents read it.
+	text string
+
+	status string
+	err    error
+
+	// key is the cache key of an ok or cached classification. The
+	// hand-off decisions live on its entry.
+	key string
+}
+
 // classify runs the trigger, cache, budget and provider for one statement.
 //
 // It returns what happened as one of the policy.AIStatus values. Only ok and
-// cached come with a usable Result; only error comes with a non-nil error. An
-// empty status means the analyzer was never eligible to look at this
-// statement, which is different from having looked and declined.
+// cached come with a usable Result and the content text that was (or would
+// have been) sent; the agents read that text. Only error comes with a
+// non-nil error. An empty status means the analyzer was never eligible to
+// look at this statement, which is different from having looked and declined.
 func (e *Evaluator) classify(
 	ctx context.Context,
 	stmt inspect.Statement,
 	ec *policy.EvalContext,
-) (Result, string, error) {
+) classified {
 	// Requests only. A response verdict cannot prevent anything: for a
 	// write the damage is already done, and read-side exposure is masking's
 	// job, which is cheaper and already runs.
 	if stmt.Direction != inspect.FromClient {
-		return Result{}, "", nil
+		return classified{}
 	}
 	builder, ok := BuilderFor(stmt.Protocol)
 	if !ok {
-		return Result{}, "", nil
+		return classified{}
 	}
 
 	// The trigger runs before the builder, because building content
 	// normalizes and truncates the whole statement and the common case on a
 	// database lane is a trigger that does not match.
 	if !e.wanted(stmt, ec) {
-		return Result{}, StatusSkipped, nil
+		return classified{status: StatusSkipped}
 	}
 	content, ok := builder.Build(stmt, e.cfg.MaxInputBytes)
 	if !ok {
-		return Result{}, StatusSkipped, nil
+		return classified{status: StatusSkipped}
 	}
 
 	// Redaction runs BEFORE the cache, deliberately. The cache keys on the
@@ -761,13 +887,13 @@ func (e *Evaluator) classify(
 	if e.cfg.Redact != nil {
 		text = e.cfg.Redact(text)
 		if text == RefuseSentinel {
-			return Result{}, StatusRefused, nil
+			return classified{status: StatusRefused}
 		}
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
 	if cached, hit := e.cache.get(cacheKey); hit {
-		return cached, StatusCached, nil
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//
@@ -790,10 +916,10 @@ func (e *Evaluator) classify(
 				e.onBudget()
 			}
 		})
-		return Result{}, StatusBudget, nil
+		return classified{status: StatusBudget}
 	case StatusRateLimited:
 		e.rateLimited.Add(1)
-		return Result{}, StatusRateLimited, nil
+		return classified{status: StatusRateLimited}
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
@@ -802,11 +928,11 @@ func (e *Evaluator) classify(
 	res, err := e.call(callCtx, text)
 	if err != nil {
 		e.errs.Add(1)
-		return Result{}, StatusError, err
+		return classified{status: StatusError, err: err}
 	}
 
 	e.cache.put(cacheKey, *res)
-	return *res, StatusOK, nil
+	return classified{res: *res, text: text, status: StatusOK, key: cacheKey}
 }
 
 // failure renders a classification error according to the fail mode.

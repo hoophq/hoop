@@ -58,22 +58,22 @@ grants := {
 
 # One listener, one service. The base stack has a single ext_authz caller
 # (:8443 -> httpbin); the grpc/ overlay adds :8444 -> ledger, the spanner/
-# overlay :8445 -> spanner, the clickhouse/ overlay :8446 -> clickhouse and
-# the kubernetes/ overlay :8447 -> kubernetes, and keying on the destination
-# port keeps this file the one policy all five stacks load. A port none of
-# the rules name yields an undefined service, and the grant check fails
-# closed on it.
+# overlay :8445 -> spanner, the clickhouse/ overlay :8446 and :8448 ->
+# clickhouse and the kubernetes/ overlay :8447 -> kubernetes, and keying on
+# the destination port keeps this file the one policy all five stacks load.
+# A port none of the rules name yields an undefined service, and the grant
+# check fails closed on it.
 listener_port := input.attributes.destination.address.socketAddress.portValue
 
 service := "ledger" if listener_port == 8444
 
 service := "spanner" if listener_port == 8445
 
-service := "clickhouse" if listener_port == 8446
+service := "clickhouse" if listener_port in {8446, 8448}
 
 service := "kubernetes" if listener_port == 8447
 
-service := "httpbin" if not listener_port in {8444, 8445, 8446, 8447}
+service := "httpbin" if not listener_port in {8444, 8445, 8446, 8447, 8448}
 
 allow if {
 	some svc in grants[user]
@@ -139,18 +139,19 @@ result["body"] := body
 # The same OPA, a different caller.
 #
 # Everything above answers Envoy over ext_authz gRPC. Everything below answers
-# hoop-inspect over the Data API at /v1/data/envoy/authz/inspect, which is
-# where the sidecar's policy.opa.url points once the marked block in
-# sidecar/config.yaml is uncommented. One package because compose loads
-# one policy file, and a second rule name is cheaper than a second mount.
+# hoop-inspect over the Data API at /v1/data/envoy/authz/inspect. The
+# appdb-opa lane in sidecar/config.yaml queries it on every statement; the
+# appdb lane does once its marked opa block is uncommented. One package
+# because compose loads one policy file, and a second rule name is cheaper
+# than a second mount.
 #
 # `input` here is a parsed statement (protocol, operation, tables, statement
 # text) rather than an Envoy CheckRequest, and the answer is {"allow": true}
 # or {"denied": true, "message": ...}. Envoy cannot produce that input; it has
 # no pgwire parser.
 #
-# Nothing queries these rules until that config block is uncommented, so they
-# cost the default stack nothing. ./run.sh needs no model credential.
+# None of this needs a model credential: the producers it reads stay off
+# until their blocks in sidecar/config.yaml are uncommented.
 
 # The tables worth spending a model call on. One exists in this stack's
 # schema; add names here rather than widening the rules below.
@@ -224,7 +225,13 @@ inspect_pii_protected := {"US_SSN", "CREDIT_CARD", "IBAN_CODE"}
 
 inspect_pii_hits := {e | some e in inspect_pii_entities; e in inspect_pii_protected}
 
-inspect_decide := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
+inspect_decide := {"denied": true, "rule": "parse-error", "message": msg} if {
+	# Client bytes the relay's codec could not decode arrive as an unknown
+	# statement with no text and the codec's error in parse_error. Nothing
+	# judged them, so refuse them; the connection ends with the refusal.
+	input.metadata.parse_error
+	msg := "the relay could not decode this request; refusing it"
+} else := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
 	# Fail closed on protected data nobody classified. A level-only
 	# contract cannot express this case, which is why status exists.
 	# Naming inspect_ai.status is also the presence check: with no analyzer

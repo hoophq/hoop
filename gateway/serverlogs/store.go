@@ -58,21 +58,22 @@ func AppendAgentLogs(orgID, agentID, agentName string, entries []log.TailEntry) 
 	}
 }
 
-// visible reports whether an entry may be served to orgID. Gateway entries
-// are process-wide and visible to any requester (the endpoints are
-// admin-only); agent entries are org-scoped, with an empty stored OrgID
-// (self-hosted, single-tenant) visible to all.
-func visible(e Entry, orgID string) bool {
+// Gateway entries carry no org, so a multi-tenant gateway serves only the
+// requester's own agent entries.
+func visible(e Entry, orgID string, multiTenant bool) bool {
+	if multiTenant {
+		return e.Source == SourceAgent && e.OrgID != "" && e.OrgID == orgID
+	}
 	return e.Source != SourceAgent || e.OrgID == "" || e.OrgID == orgID
 }
 
 // Snapshot returns the buffered entries visible to orgID in chronological
 // order.
-func Snapshot(orgID string) []Entry {
+func Snapshot(orgID string, multiTenant bool) []Entry {
 	entries := ring.Snapshot()
 	out := entries[:0:0]
 	for _, e := range entries {
-		if visible(e, orgID) {
+		if visible(e, orgID, multiTenant) {
 			out = append(out, e)
 		}
 	}
@@ -82,11 +83,11 @@ func Snapshot(orgID string) []Entry {
 // Since returns the entries newer than seq visible to orgID, along with the
 // latest sequence number observed. The returned cursor advances past
 // filtered-out entries too.
-func Since(orgID string, seq uint64) ([]Entry, uint64) {
+func Since(orgID string, seq uint64, multiTenant bool) ([]Entry, uint64) {
 	entries, latest := ring.Since(seq)
 	var out []Entry
 	for _, e := range entries {
-		if visible(e, orgID) {
+		if visible(e, orgID, multiTenant) {
 			out = append(out, e)
 		}
 	}

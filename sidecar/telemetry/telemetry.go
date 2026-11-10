@@ -31,7 +31,7 @@ import (
 // resource attribute and in SchemaURL. An attribute or instrument added
 // bumps the minor; one renamed or removed bumps the major, because a
 // dashboard written against the old name goes dark.
-const SchemaVersion = "1.0"
+const SchemaVersion = "1.1"
 
 // SchemaURL identifies the schema on the Resource, the OpenTelemetry way
 // of saying which vocabulary a producer speaks.
@@ -183,6 +183,25 @@ type LaneRecorder interface {
 
 	// AuditError records one audit event a sink could not write.
 	AuditError()
+
+	// MCPMessage counts one JSON-RPC message an mcp lane's engine judged.
+	MCPMessage(MCPMessage)
+}
+
+// MCPOther replaces a method MCP does not define and a tool the upstream did
+// not advertise: a client must not mint a series per name.
+const MCPOther = "(other)"
+
+// MCPMessage is one message through an mcp lane's checks. Every field is a
+// bounded value; the engine maps the rest to MCPOther.
+type MCPMessage struct {
+	Direction inspect.Direction
+	// Method is empty on a response.
+	Method string
+	// Tool is the tool a tools/call names, or the one its response answers.
+	Tool string
+	// Decision is allow, deny, hold or kill.
+	Decision string
 }
 
 // AnalyzerCall is one provider call, as analyzer.Call reports it. Declared
@@ -193,6 +212,8 @@ type AnalyzerCall struct {
 	// the deprecated rule form.
 	Analyzer        string
 	Provider, Model string
+	// Kind is classify or decide.
+	Kind string
 	// Outcome is ok, error or timeout.
 	Outcome  string
 	Duration time.Duration

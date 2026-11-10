@@ -623,7 +623,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 
 	identity := base
 	var requestIdentity gate.RequestIdentity
-	if s.cfg.CredentialHeader != "" {
+	switch {
+	case s.cfg.CredentialHeader != "":
 		requestIdentity = s.requestIdentity(base)
 		// Before session.New on purpose: the gate writes session_start
 		// from the identity it is handed, so a first caller learned later
@@ -650,6 +651,13 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		} else {
 			s.log.Debug("first request's credential did not resolve", "peer", base.PeerAddr, "error", rerr)
 		}
+	case s.cfg.RequestIdentity != nil:
+		// A frame lane: the codec lifts the credential from the frame that
+		// carries it (an mssql LOGIN7), which comes after a handshake the
+		// relay has to forward first, so there is nothing to peek here. The
+		// session opens as the connection and the gate rotates it to the
+		// named caller when the login frame is decoded.
+		requestIdentity = s.requestIdentity(base)
 	}
 
 	sess := session.New(s.cfg.Protocol, identity)
@@ -916,12 +924,36 @@ func (s *Server) pump(
 	// them when the server stream ends normally. A response denial writes a
 	// protocol error instead, so held rows must be discarded: appending them
 	// after the error leaks denied data and corrupts the client stream.
+	//
+	// A statement that completes only with the stream (a close-delimited
+	// body) is judged on a normal EOF only: after a reset or a timeout the
+	// body is not whole, and the trail must not record it as a reply.
 	discardResponse := false
+	serverEOF := false
 	if dir == inspect.FromServer {
 		defer func() {
 			if discardResponse {
 				g.DiscardResponse()
 				return
+			}
+			if serverEOF {
+				d := g.EndOfStream()
+				clock.answered(ctx, finalAnswers(d.Statements))
+				if d.Err != nil {
+					log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
+				}
+				if !d.Allowed {
+					// What the reframer still holds is dropped. A body that
+					// reached the client in part is cut, as for a denial
+					// inside one; one held whole gets the deny frame.
+					s.denied.Add(1)
+					log.Info("statement denied", "direction", string(dir), "rule", d.Rule, "message", d.Message)
+					g.DiscardResponse()
+					if !d.NoFrame {
+						s.writeDenyFrame(g, dst, dir, d, log)
+					}
+					return
+				}
 			}
 			tail, err := g.FlushResponseChecked()
 			if err != nil {
@@ -1068,6 +1100,7 @@ func (s *Server) pump(
 		}
 
 		if readErr != nil {
+			serverEOF = readErr == io.EOF
 			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)

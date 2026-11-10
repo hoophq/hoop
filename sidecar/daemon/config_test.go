@@ -724,6 +724,19 @@ func TestSpannerSQLRulesRequirePayloadCapture(t *testing.T) {
 	if !strings.Contains(err.Error(), "grpc.capture_payload") {
 		t.Fatalf("error does not name the missing capture setting: %v", err)
 	}
+
+	// A procedure rule reads the SQL's CALL the same way.
+	p = writeConfig(t, `{
+	  "listeners": [{
+	    "name":"sp","protocol":"spanner","listen":":1","upstream":"h:1",
+	    "guardrails":{"rules":[{
+	      "name":"no-purge","type":"procedure","procedures":["purge"]
+	    }]}
+	  }]
+	}`)
+	if _, err := LoadConfig(p); err == nil || !strings.Contains(err.Error(), "grpc.capture_payload") {
+		t.Fatalf("a spanner procedure rule without payload capture: err=%v, want the capture refusal", err)
+	}
 }
 
 // The same rules on a lane that CAN extract the SQL are the supported
