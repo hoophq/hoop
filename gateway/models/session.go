@@ -1011,15 +1011,15 @@ var ErrSessionOfAnotherOrg = errors.New("the session id belongs to another org")
 
 // GetSessionOrgID returns gorm.ErrRecordNotFound when no session has this id.
 func GetSessionOrgID(db *gorm.DB, sessionID string) (string, error) {
-	if _, err := uuid.Parse(sessionID); err != nil {
-		return "", gorm.ErrRecordNotFound
-	}
 	var orgID string
 	err := db.Table("private.sessions").
 		Select("org_id").
 		Where("id = ?", sessionID).
 		Take(&orgID).
 		Error
+	if isInvalidUUIDText(err) {
+		return "", gorm.ErrRecordNotFound
+	}
 	return orgID, err
 }
 
