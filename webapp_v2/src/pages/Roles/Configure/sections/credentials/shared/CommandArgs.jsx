@@ -10,7 +10,7 @@ export default function CommandArgs() {
   const setDraft = useCredentialsStore((s) => s.setDraft)
 
   return (
-    <Stack gap="xs">
+    <Stack gap="xsAlt">
       <Title order={4}>Additional command</Title>
       <Text size="sm" c="dimmed">
         Each argument should be entered separately. Press Enter after

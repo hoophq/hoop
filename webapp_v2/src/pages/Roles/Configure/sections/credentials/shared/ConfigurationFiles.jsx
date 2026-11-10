@@ -124,7 +124,7 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
 
   return (
     <Stack gap="xl">
-      <Stack gap="xs">
+      <Stack gap="xsAlt">
         <Title order={4}>Configuration files</Title>
         <Text size="sm" c="dimmed">
           Add values from your configuration file and use them as an

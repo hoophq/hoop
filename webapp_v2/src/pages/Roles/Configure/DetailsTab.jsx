@@ -69,7 +69,7 @@ export default function DetailsTab({ connection }) {
       </Stack>
 
       <Stack gap="md">
-        <Stack gap="xs">
+        <Stack gap="xsAlt">
           <Title order={4}>Tags</Title>
           <Text size="sm" c="dimmed">
             Labels for filtering, searching, and grouping resource roles in
