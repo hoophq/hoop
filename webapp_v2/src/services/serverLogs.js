@@ -12,6 +12,7 @@ export const serverLogsService = {
    */
   async stream({ backlog = 500, signal, onOpen, onEntry }) {
     const token = useAuthStore.getState().getToken()
+    if (!token) throw new Error('server-logs stream: no token')
     const res = await fetch(`${api.defaults.baseURL}/server-logs/stream?backlog=${backlog}`, {
       headers: {
         Authorization: `Bearer ${token}`,

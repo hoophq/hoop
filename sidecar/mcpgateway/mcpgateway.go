@@ -142,7 +142,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	// The hoop check runs after mcpproxy's own (budgets, overrides) and
 	// before the terminal audit tap.
 	last := len(pipeline) - 1
-	pipeline = append(pipeline[:last:last], &hoopCheck{s: s}, pipeline[last])
+	own := []inspect.Check{&hoopCheck{s: s}}
+	if lane.MaskResults {
+		own = append(own, &maskCheck{s: s})
+	}
+	pipeline = append(append(pipeline[:last:last], own...), pipeline[last])
 
 	gw, err := mcpgw.New(mcpgw.Options{
 		Backends:           map[string]backend.Factory{lane.Name: factory},
@@ -844,3 +848,52 @@ func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms i
 	}
 	return inspect.AllowAll
 }
+
+// maskCheck masks results with mcpproxy's redactor. Hooks.Redact gets no
+// session, so a redactor is built per message around the session's masker.
+type maskCheck struct{ s *server }
+
+func (c *maskCheck) Name() string { return checks.NameRedact }
+
+func (c *maskCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
+	if m == nil || m.Env == nil || m.Dir != inspect.S2C || !m.Env.IsResponse() {
+		return inspect.AllowAll
+	}
+	ls, err := c.s.laneSession(ctx, ms)
+	if err != nil {
+		return inspect.Decision{Verdict: inspect.Kill, Reason: err.Error(), Rule: checkName}
+	}
+	var entities []string
+	var recordErr error
+	hooks := inspect.Hooks{Redact: func(_ context.Context, text string) (string, int, error) {
+		out, names, n, err := ls.Mask(text)
+		if err != nil {
+			c.s.log.Warn("mcp result withheld: masking failed", "error", err)
+			return "", 0, err
+		}
+		entities = append(entities, names...)
+		return out, n, nil
+	}}
+	sink := sinkFunc(func(ctx context.Context, ev audit.Event) {
+		if ev.Type != audit.EventRedacted {
+			c.s.Emit(ctx, ev)
+			return
+		}
+		n, ok := ev.Fields["redactions"].(int)
+		if !ok {
+			recordErr = errors.New("the redacted event carries no count")
+			return
+		}
+		recordErr = ls.RecordMasked(ctx, entities, n)
+	})
+	d := checks.NewRedactor(hooks, sink).Inspect(ctx, ms, m)
+	if d.Verdict == inspect.Allow && recordErr != nil {
+		c.s.log.Warn("mcp result withheld: masked values not recorded", "error", recordErr)
+		return inspect.Denyf(m.Env, jsonrpc.CodePolicyDenied, checks.NameRedact, "result withheld: audit trail unavailable")
+	}
+	return d
+}
+
+type sinkFunc func(context.Context, audit.Event)
+
+func (f sinkFunc) Emit(ctx context.Context, ev audit.Event) { f(ctx, ev) }

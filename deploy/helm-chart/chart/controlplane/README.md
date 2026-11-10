@@ -276,7 +276,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `WEBAPP_USERS_MANAGEMENT`, `DISABLE_SESSIONS_DOWNLOAD`, `DISABLE_CLIPBOARD_COPY_CUT` | web app toggles |
 | `AUTH_METHOD` | inferred: any `IDP_*` key selects OIDC, none leaves local. SAML is configured in the database and cannot be selected by environment |
 | `STATIC_UI_PATH` | the web UI is compiled into the binary; any path here serves API-only with a 404 at `/` while the pod stays ready. Setting it through `extraSecret` breaks the UI |
-| `ANALYTICS_TRACKING`, `PGREST_ROLE`, `ADMIN_USERNAME` | dead keys in the gateway chart. Nothing reads the first two by those names; `ADMIN_USERNAME` is a constant default in `gateway/storagev2/types/const.go` |
+| `PGREST_ROLE`, `ADMIN_USERNAME` | dead keys in the gateway chart. Nothing reads the first by that name; `ADMIN_USERNAME` is a constant default in `gateway/storagev2/types/const.go` |
 
 ## Values
 
@@ -298,6 +298,9 @@ are rendered by the gateway chart and not by this one; naming one under
 | `config.LOG_ENCODING` / `config.LOG_LEVEL` | `json` / `info` | |
 | `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 9. Outside that range falls back to 3 |
 | `config.TLS_CERT` / `config.TLS_KEY` | `''` | Both set = HTTPS, both empty = plaintext |
+| `config.HOOP_LICENSE` | `''` | The signed license JSON or the path of a file that holds it, stored on the default organization at every boot after the signature, window and `API_URL` host are verified |
+| `config.ANALYTICS_TRACKING` | `''` | Without an enterprise license the default organization is always `identified`. With one: `enabled` forces `identified`, `disabled` forces `disabled`, unset keeps the mode set in Settings (a new organization starts `disabled`) |
+| `config.ORG_ID` | `''` | UUID the default organization is created with on a fresh database, so `API_KEY` can be written before the first boot. An existing organization with another id stops startup |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |
 | `replicas` | `1` | See Replicas |

@@ -20,6 +20,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/analytics"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -95,7 +96,6 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"mcp_gateway":{"approval_tools":["x"]}}`, "unknown field"},
 		{`{` + ok + `,"mcp_gateway":{"denied_tools":["x"]}}`, "unknown field"},
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
-		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "mask block"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"https://user:token@h/mcp"}`, "carries no user"},
@@ -117,6 +117,9 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 	}
 	if p := mcpProblems(t, `{`+ok+`,"guardrails":{"rules":[{"name":"risky","type":"ai_analysis","high":"block"}]}}`); p != "" {
 		t.Fatalf("an ai_analysis rule refused on an mcp lane: %s", p)
+	}
+	if p := mcpProblems(t, `{`+ok+`,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`); p != "" {
+		t.Fatalf("a mask block refused on an mcp lane: %s", p)
 	}
 }
 
@@ -227,22 +230,200 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 	}
 }
 
-// Mask rules inherited from the top level reach an mcp lane, so one file
-// serves every lane and the README example validates; Validate notes that
-// they do not apply to this lane yet.
-func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
-	cfg, err := LoadConfigBytes([]byte(`{"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]},"listeners":[` + mcpLane + `]}`))
+// recordingPlugin keeps the rules each masker is built from.
+type recordingPlugin struct {
+	stubPlugin
+	rules *[]string
+}
+
+func (p recordingPlugin) BuildMasker(raw []byte) (gate.Masker, error) {
+	*p.rules = append(*p.rules, string(raw))
+	return p.stubPlugin.BuildMasker(raw)
+}
+
+// A mask rule that names columns never fires on an mcp lane. Validate refuses
+// one in the lane's own mask block. An inherited one passes, as on 1.290, but
+// the lane's masker never gets it, and -validate and the startup log note it.
+func TestAnMCPLaneRefusesColumnMaskRules(t *testing.T) {
+	const columnRule = `{"name":"by-column","columns":["email"]}`
+	const entityRule = `{"name":"pii","entities":["EMAIL_ADDRESS"]}`
+	open := strings.TrimSuffix(mcpLane, "}")
+	for name, doc := range map[string]string{
+		"own":         `{"listeners":[` + open + `,"mask":{"rules":[` + columnRule + `]}}]}`,
+		"own labeled": `{"listeners":[` + open + `,"mask":{"rules":[{"name":"labeled","entities":["US_SSN"],"columns":["ssn"]}]}}]}`,
+	} {
+		if _, err := LoadConfigBytes([]byte(doc)); err == nil || !strings.Contains(err.Error(), "names columns") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, c := range map[string]struct {
+		doc, applied, note string
+	}{
+		"inherited":       {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + mcpLane + `]}`, "", "by-column"},
+		"inherited mixed": {`{"mask":{"rules":[` + columnRule + `,` + entityRule + `]},"listeners":[` + mcpLane + `]}`, `[` + entityRule + `]`, "by-column"},
+		"opted out":       {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + open + `,"mask":{"rules":[]}}]}`, "", ""},
+		"own replaces":    {`{"mask":{"rules":[` + columnRule + `]},"listeners":[` + open + `,"mask":{"rules":[` + entityRule + `]}}]}`, `[` + entityRule + `]`, ""},
+	} {
+		cfg, err := LoadConfigBytes([]byte(c.doc))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		cfg.lic = licensed(t)
+		build, built := fakeMCPEngine()
+		withMCPGatewayEngine(t, build)
+		var seen []string
+		info, err := Validate(cfg, recordingPlugin{stubPlugin{entities: []string{"EMAIL_ADDRESS"}}, &seen})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		masks := c.applied != ""
+		if got := (*built)[0].lane.MaskResults; got != masks || info[0].Masking != masks {
+			t.Errorf("%s: MaskResults %v, Masking %v, want %v", name, got, info[0].Masking, masks)
+		}
+		var want []string
+		if masks {
+			want = []string{c.applied}
+		}
+		if !slices.Equal(seen, want) {
+			t.Errorf("%s: maskers built from %q, want %q", name, seen, want)
+		}
+		// Run logs a lane's notes as warnings at startup.
+		lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"EMAIL_ADDRESS"}}, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		note := `top-level mask rule "by-column" names columns and does not apply to lane "github"`
+		for _, notes := range [][]string{info[0].Notes, lanes[0].notes} {
+			if got := slices.ContainsFunc(notes, func(n string) bool { return strings.Contains(n, note) }); got != (c.note != "") {
+				t.Errorf("%s: notes %q", name, notes)
+			}
+		}
+	}
+}
+
+// An mcp lane masks results with the mask rules it resolves, its own or the
+// top-level ones; mask: {rules: []} opts out.
+func TestAnMCPLaneMasksWithItsMaskRules(t *testing.T) {
+	const rules = `{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`
+	open := strings.TrimSuffix(mcpLane, "}")
+	for name, c := range map[string]struct {
+		doc  string
+		want bool
+	}{
+		"inherited": {`{"mask":` + rules + `,"listeners":[` + mcpLane + `]}`, true},
+		"own":       {`{"listeners":[` + open + `,"mask":` + rules + `}]}`, true},
+		"opted out": {`{"mask":` + rules + `,"listeners":[` + open + `,"mask":{"rules":[]}}]}`, false},
+		"none":      {`{"listeners":[` + mcpLane + `]}`, false},
+	} {
+		cfg, err := LoadConfigBytes([]byte(c.doc))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		build, built := fakeMCPEngine()
+		withMCPGatewayEngine(t, build)
+		info, err := Validate(cfg, stubPlugin{entities: []string{"EMAIL_ADDRESS"}})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := (*built)[0].lane.MaskResults; got != c.want || info[0].Masking != c.want {
+			t.Errorf("%s: MaskResults %v, Masking %v, want %v", name, got, info[0].Masking, c.want)
+		}
+	}
+}
+
+// dictMasker masks each of its values as its entity.
+type dictMasker map[string]string
+
+func (d dictMasker) Mask(data []byte) ([]byte, []string, int) {
+	out, n := string(data), 0
+	var entities []string
+	for value, entity := range d {
+		if c := strings.Count(out, value); c > 0 {
+			out = strings.ReplaceAll(out, value, "<"+entity+">")
+			n += c
+			entities = append(entities, entity)
+		}
+	}
+	return []byte(out), entities, n
+}
+
+func (d dictMasker) MaskCell(_ string, v []byte) ([]byte, []string, int) { return d.Mask(v) }
+
+// The session masks a result string with its lane's masker and records the
+// count as a masked row without the value. A closed session refuses both.
+func TestMCPLaneSessionMasksAndRecordsTheCount(t *testing.T) {
+	ln := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
+	ln.masker = dictMasker{"jane@example.com": "EMAIL_ADDRESS"}
+	sink := audit.NewMemorySink(16)
+	ctx := context.Background()
+	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), sink, true, MCPCaller{Subject: "alice", MCPSessionID: "m1"}, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
-	build, _ := fakeMCPEngine()
-	withMCPGatewayEngine(t, build)
-	info, err := Validate(cfg, nil)
-	if err != nil {
+	out, entities, n, err := ls.Mask("mail jane@example.com")
+	if err != nil || out != "mail <EMAIL_ADDRESS>" || n != 1 || !slices.Equal(entities, []string{"EMAIL_ADDRESS"}) {
+		t.Fatalf("Mask: %q %v %d %v", out, entities, n, err)
+	}
+	if err := ls.RecordMasked(ctx, entities, n); err != nil {
 		t.Fatal(err)
 	}
-	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "mask rules reach this lane") {
-		t.Fatalf("notes lack the mask note: %s", notes)
+	ls.Close(ctx)
+	if _, _, _, err := ls.Mask("jane@example.com"); err == nil {
+		t.Fatal("a closed session masked a result")
+	}
+	if err := ls.RecordMasked(ctx, entities, n); err == nil {
+		t.Fatal("a closed session recorded a masked result")
+	}
+	var masked []audit.Event
+	for _, r := range sink.Events() {
+		if r.Kind == audit.KindMasked {
+			masked = append(masked, r)
+		}
+	}
+	if len(masked) != 1 || masked[0].MaskedCount != 1 || !slices.Equal(masked[0].MaskedEntities, []string{"EMAIL_ADDRESS"}) ||
+		masked[0].Protocol != inspect.MCP || masked[0].Principal != "alice" {
+		t.Fatalf("masked rows: %+v", masked)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", sink.Events()), "jane@example.com") {
+		t.Fatal("the masked value reached the audit trail")
+	}
+}
+
+// 1.290.0 refuses a mask block on an mcp lane and ignores inherited mask
+// rules, so the plane serves mask rules there only to a build that masks.
+func TestAnMCPLaneWithMaskRulesNeedsTheCapability(t *testing.T) {
+	old := Handshake{Version: "1.290.0", Capabilities: []string{"protocol:mcp", "protocol:http", "address_url", CapabilityMCPCallerToken}}
+	current := Handshake{Capabilities: append(slices.Clone(old.Capabilities), CapabilityMCPMask)}
+	rules := &MaskConfig{Rules: json.RawMessage(`[{"name":"pii","entities":["EMAIL_ADDRESS"]}]`)}
+	mcp := ListenerConfig{Name: "tools", Protocol: "mcp", Listen: "127.0.0.1:18901", Upstream: "https://h/mcp"}
+	own, optedOut := mcp, mcp
+	own.Mask = rules
+	optedOut.Mask = &MaskConfig{Rules: json.RawMessage(`[]`)}
+	web := ListenerConfig{Name: "web", Protocol: "http", Listen: "127.0.0.1:18902", Upstream: "h:80"}
+	for name, cfg := range map[string]Config{
+		"own":       {Listeners: []ListenerConfig{own}},
+		"inherited": {Mask: rules, Listeners: []ListenerConfig{mcp}},
+	} {
+		if err := CheckServable(cfg, old); err == nil || !strings.Contains(err.Error(), CapabilityMCPMask) {
+			t.Errorf("%s: an older build was served mask rules on an mcp lane: %v", name, err)
+		}
+		if err := CheckServable(cfg, current); err != nil {
+			t.Errorf("%s: a build that masks was refused: %v", name, err)
+		}
+	}
+	columns := &MaskConfig{Rules: json.RawMessage(`[{"name":"by-column","columns":["email"]}]`)}
+	for name, cfg := range map[string]Config{
+		"opted out":         {Mask: rules, Listeners: []ListenerConfig{optedOut, web}},
+		"no rules":          {Listeners: []ListenerConfig{mcp}},
+		"inherited columns": {Mask: columns, Listeners: []ListenerConfig{mcp}},
+	} {
+		if err := CheckServable(cfg, old); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+	if !slices.Contains(SidecarCapabilities(), CapabilityMCPMask) {
+		t.Fatalf("the header lacks %s: %v", CapabilityMCPMask, SidecarCapabilities())
 	}
 }
 

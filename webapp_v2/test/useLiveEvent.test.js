@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 // The hook runs outside React here: an effect runs at once.
 vi.mock('react', () => ({ useRef: (value) => ({ current: value }), useEffect: (fn) => { fn() } }))
-vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => {} } }))
+vi.mock('@/stores/useAuthStore', () => ({
+  useAuthStore: { subscribe: () => {}, getState: () => ({ getToken: () => 'token-1' }) },
+}))
 vi.mock('@/stores/useUserStore', () => ({
   useUserStore: { subscribe: () => {}, getState: () => ({ user: { id: 'u1' } }) },
 }))

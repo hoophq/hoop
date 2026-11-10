@@ -123,6 +123,21 @@ config:
   # TLS_CERT: ''
   # TLS_KEY: ''
 
+  ## Boot-time organization settings, applied to the default organization at
+  ## every boot, so a rotated value replaces the stored one.
+  # The signed license JSON itself (starts with '{') or the path of a file
+  # that holds it, such as one mounted by extraVolumes. A bad document stops
+  # startup.
+  # HOOP_LICENSE: ''
+  # Analytics of the default organization, set at every boot. Without an
+  # enterprise license it is always identified. With one: 'enabled' forces
+  # identified, 'disabled' forces disabled, unset keeps the stored mode (a
+  # new organization starts disabled).
+  # ANALYTICS_TRACKING: ''
+  # UUID the default organization is created with on a fresh database, so
+  # API_KEY can be set before the first boot. It never renames an existing one.
+  # ORG_ID: ''
+
 # -- Define extra secret as environment variables.
 #
 # Also the way through for any key this chart declines to render: the exclusion

@@ -699,9 +699,6 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
-			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
-				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
-			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -1523,12 +1520,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		// An mcp lane masks nothing yet: inherited rules are accepted and
-		// Validate notes them, so one mask block can serve every lane.
-		var masker gate.Masker
-		if !isMCPGateway(lc) {
-			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		var skippedMask []string
+		if isMCPGateway(lc) {
+			mc, skippedMask = mcpMask(lc, mc)
 		}
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1544,6 +1540,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+		}
+		for _, rule := range skippedMask {
+			ln.notes = append(ln.notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, name))
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1848,7 +1847,7 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchem
 					"cannot rebuild a response; remove the rules from this lane, or set "+
 					"mask: {rules: []} on it", proto)
 		}
-	case !gate.MaskSupported(proto):
+	case !maskSupported(proto):
 		return nil, fmt.Errorf(
 			"mask.rules is set but masking is not supported on %s; remove the rules from "+
 				"this lane, or set mask: {rules: []} on it", proto)
@@ -2160,7 +2159,7 @@ func serveAdmin(
 			// A plug-in lane's answer is its module's; the view does not
 			// build a codec to ask, so it says nothing, since a guess could
 			// be wrong.
-			if !v.Masking && !isPluginLane(ln.cfg) && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
+			if !v.Masking && !isPluginLane(ln.cfg) && !maskSupported(inspect.Protocol(ln.cfg.Protocol)) {
 				v.MaskNote = "masking is not supported on this protocol"
 			}
 			out = append(out, v)

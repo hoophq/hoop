@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { agentsService } from '@/services/agents'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 export const useAgentStore = create((set, get) => ({
   agents: [],
@@ -11,13 +12,16 @@ export const useAgentStore = create((set, get) => ({
   // every key/value in use, as [{ key, value }].
   tagsPool: [],
 
+  // Resolves to the request error, or null, for a caller that shows the gateway's message.
   fetchAgents: async () => {
     set({ loading: true, error: null })
     try {
       const { data } = await agentsService.list()
       set({ agents: data, loading: false })
+      return null
     } catch (error) {
       set({ error: error.message, loading: false })
+      return error
     }
   },
 
@@ -75,3 +79,10 @@ export const useAgentStore = create((set, get) => ({
 
   clearAgentKey: () => set({ agentKey: null }),
 }))
+
+// The next account in this tab must not see these agents while its own request runs or fails.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useAgentStore.setState({ agents: [], loading: false, error: null, agentKey: null, tagsPool: [] })
+  }
+})

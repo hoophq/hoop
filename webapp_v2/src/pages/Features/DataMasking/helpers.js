@@ -155,6 +155,26 @@ export function normalizeEntityName(name) {
     .replace(/[^A-Z0-9_]/g, '')
 }
 
+// The protocol of each target listener, '' for one its sidecar does not list.
+export function targetProtocols(targets, sidecars) {
+  const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
+  return targets.map((t) => {
+    const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
+    return (lane?.protocol ?? '').toLowerCase()
+  })
+}
+
+export const MATCHES = [
+  { value: 'entities', label: 'Detected entities' },
+  { value: 'columns', label: 'Result-set columns' },
+]
+
+export const NO_COLUMNS_ON_MCP = 'An MCP listener has no result-set columns, so it masks by detected entities only.'
+
+// The plane refuses a column rule bound to an mcp listener.
+export const matchOptions = (mcpBound) =>
+  mcpBound ? MATCHES.map((m) => (m.value === 'columns' ? { ...m, disabled: true } : m)) : MATCHES
+
 export function scoreToPercent(scoreThreshold) {
   if (scoreThreshold === null || scoreThreshold === undefined) return ''
   return Math.round(scoreThreshold * 100)
