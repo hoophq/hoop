@@ -688,18 +688,24 @@ func managedConnectionMessage(managedBy string) string {
 	return "unable to update a connection managed by its agent"
 }
 
-// ErrAgentNotFound is the answer for an unknown agent and for an agent of another org.
 var ErrAgentNotFound = errors.New("agent not found")
 
+// ValidateAgentID refuses an agent of another org. An unknown id passes, as
+// before: agent dispatch is org scoped and fails closed for it.
 func ValidateAgentID(orgID, agentID string) error {
-	_, err := models.GetAgentByID(models.DB, orgID, agentID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	agentOrgID, err := models.GetAgentOrgID(models.DB, agentID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	case err != nil:
+		return err
+	case agentOrgID != orgID:
 		return ErrAgentNotFound
 	}
-	return err
+	return nil
 }
 
-// AbortOnInvalidAgent answers status when agentID is not an agent of orgID.
+// AbortOnInvalidAgent answers status when agentID is an agent of another org.
 func AbortOnInvalidAgent(c *gin.Context, status int, orgID, agentID string) bool {
 	err := ValidateAgentID(orgID, agentID)
 	switch {

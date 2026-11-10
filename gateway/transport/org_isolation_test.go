@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,7 +124,16 @@ func TestConnectRefusesForeignSessionID(t *testing.T) {
 		VALUES (?, ?, 'pg', 'database', 'connect', 'open')`, storedSID, isoOrgB).Error)
 	newIsolationProxy(t, isoOrgB, liveSID, "00000000-0000-0000-0000-0000000011b1")
 
-	for _, sid := range []string{storedSID, liveSID} {
+	for _, sid := range []string{
+		storedSID,
+		liveSID,
+		strings.ToUpper(storedSID),
+		strings.ReplaceAll(storedSID, "-", ""),
+		"{" + storedSID + "}",
+		"urn:uuid:" + storedSID,
+		"0000-0000-0000-0000-0000-0000-0000-11b2",
+		"not-a-uuid",
+	} {
 		ctx := context.WithValue(t.Context(), authinterceptor.GatewayContextKey{}, &authinterceptor.GatewayContext{
 			UserContext: models.Context{OrgID: isoOrgA, UserID: "user-a"},
 			Connection:  types.ConnectionInfo{Name: "pg-a", AccessModeExec: "enabled", AccessModeConnect: "enabled"},
@@ -145,7 +155,6 @@ func TestConnectRefusesForeignSessionID(t *testing.T) {
 		{isoOrgB, storedSID},
 		{isoOrgB, liveSID},
 		{isoOrgA, "00000000-0000-0000-0000-0000000011a9"},
-		{isoOrgA, "not-a-uuid"},
 		{isoOrgA, ""},
 	} {
 		assert.NoError(t, refuseForeignSession(tc.orgID, tc.sid), "org %v, session %q", tc.orgID, tc.sid)

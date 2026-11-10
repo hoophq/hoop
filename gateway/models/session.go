@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // indicates the blob is stored in database wire protocol
@@ -982,15 +983,31 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 		GuardRailsInfo:       sess.GuardRailsInfo,
 	}
 	// Save would update by id alone and move another org's session to this org.
+	update := func() (int64, error) {
+		res := tx.Table("private.sessions").
+			Where("org_id = ?", sess.OrgID).
+			Select("*").
+			Updates(&row)
+		return res.RowsAffected, res.Error
+	}
+	if updated, err := update(); err != nil || updated > 0 {
+		return err
+	}
 	res = tx.Table("private.sessions").
-		Where("org_id = ?", sess.OrgID).
-		Select("*").
-		Updates(&row)
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
+		Create(&row)
 	if res.Error != nil || res.RowsAffected > 0 {
 		return res.Error
 	}
-	return tx.Table("private.sessions").Create(&row).Error
+	// A concurrent upsert inserted the row first.
+	updated, err := update()
+	if err == nil && updated == 0 {
+		err = ErrSessionOfAnotherOrg
+	}
+	return err
 }
+
+var ErrSessionOfAnotherOrg = errors.New("the session id belongs to another org")
 
 // GetSessionOrgID returns gorm.ErrRecordNotFound when no session has this id.
 func GetSessionOrgID(db *gorm.DB, sessionID string) (string, error) {

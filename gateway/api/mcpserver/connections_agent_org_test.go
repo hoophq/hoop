@@ -20,7 +20,8 @@ func TestConnectionToolsRefuseAgentOfAnotherOrg(t *testing.T) {
 	require.NoError(t, err)
 	ctx := withStorageContext(context.Background(), sc)
 
-	for _, agentID := range []string{other.ID, "00000000-0000-0000-0000-0000000011ff"} {
+	{
+		agentID := other.ID
 		res, _, err := connectionsCreateHandler(ctx, nil, connectionsCreateInput{
 			Name: "conn-x", Type: "custom", SubType: "custom", AgentID: agentID, Command: []string{"bash"}})
 		require.NoError(t, err)
@@ -32,6 +33,10 @@ func TestConnectionToolsRefuseAgentOfAnotherOrg(t *testing.T) {
 		require.True(t, res.IsError)
 		assert.Equal(t, "agent not found", res.Content[0].(*mcp.TextContent).Text)
 	}
+
+	res, err := validateAgentID(mirrorsTestOrgID, "00000000-0000-0000-0000-0000000011ff")
+	assert.NoError(t, err)
+	assert.Nil(t, res, "an unknown agent passes, as before")
 
 	var names []string
 	require.NoError(t, models.DB.Raw(`SELECT name FROM private.connections WHERE org_id = ? AND agent_id IS NOT NULL`,

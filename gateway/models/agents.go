@@ -99,20 +99,18 @@ func GetAgentByNameOrID(orgID, nameOrID string) (*Agent, error) {
 	return &agent, err
 }
 
-// GetAgentByID returns gorm.ErrRecordNotFound when id is not an agent of orgID.
-func GetAgentByID(db *gorm.DB, orgID, id string) (*Agent, error) {
+// GetAgentOrgID returns gorm.ErrRecordNotFound when no agent has this id.
+func GetAgentOrgID(db *gorm.DB, id string) (string, error) {
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, gorm.ErrRecordNotFound
+		return "", gorm.ErrRecordNotFound
 	}
-	var agent Agent
+	var orgID string
 	err := db.Table("private.agents").
-		Where("org_id = ? AND id = ?", orgID, id).
-		Take(&agent).
+		Select("org_id").
+		Where("id = ?", id).
+		Take(&orgID).
 		Error
-	if err != nil {
-		return nil, err
-	}
-	return &agent, nil
+	return orgID, err
 }
 
 func GetAgentByToken(token string) (*Agent, error) {
