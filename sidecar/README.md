@@ -296,6 +296,9 @@ credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
 license, which is not the free plan. `--validate`, `--migrate` and
 `--codec-test` never log in.
 
+Step by step, with screenshots:
+https://hoop.dev/docs/control-plane/connect-sidecar#connect-with-approval-no-token
+
 The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
 `control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
 an Enterprise deployment, and its own web app approves the code. The login
