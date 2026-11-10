@@ -22,6 +22,7 @@ function AllowedActions({ allowed, onAllowed, mcpBound }) {
       </Stack>
       {HANDOFF_CHOICES.map(({ value, label, description }) => {
         const checked = allowed.includes(value)
+        const noHold = mcpBound && value === HANDOFF_HOLD
         return (
           <Checkbox
             key={value}
@@ -30,9 +31,10 @@ function AllowedActions({ allowed, onAllowed, mcpBound }) {
                 {label}
               </Text>
             }
-            description={mcpBound && value === HANDOFF_HOLD ? NO_HOLD_ON_MCP : description}
+            description={noHold && !checked ? NO_HOLD_ON_MCP : description}
+            error={noHold && checked ? NO_HOLD_ON_MCP : undefined}
             checked={checked}
-            disabled={checked && last}
+            disabled={(checked && last) || (noHold && !checked)}
             onChange={(e) => onAllowed(value, e.currentTarget.checked)}
           />
         )

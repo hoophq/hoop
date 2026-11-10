@@ -192,7 +192,12 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const fresh = holds(action) && !holds(f[level])
       const keep = f.approval[level].approver !== APPROVER_RULE
       const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
-      return { ...f, [level]: action, approval }
+      let handoff = f.handoff
+      if (mcpBound && isHandoffAction(action) && !isHandoffAction(f[level])) {
+        const allowed = f.handoff[level].allowed.filter((v) => v !== HANDOFF_HOLD)
+        if (allowed.length > 0) handoff = { ...f.handoff, [level]: { ...f.handoff[level], allowed } }
+      }
+      return { ...f, [level]: action, approval, handoff }
     })
   // Levels turned to a person before the groups loaded: they get every group
   // once the list arrives, unless the editor picks groups first.
@@ -300,7 +305,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     form.trigger_resources.length === 0 &&
     form.trigger_any.length === 0
 
-  const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => isHoldAction(form[level]))
+  const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => canHold(form, level))
   const canSubmit = name.trim() !== '' && !submitting && !holdOnMcp
   // Plus the level's stored ones, so a removed group can still be unselected.
   const groupOptionsFor = (level) => [...new Set([...groupOptions, ...form.approval[level].groups])].sort()

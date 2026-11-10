@@ -309,6 +309,7 @@ type mcpLaneSession struct {
 	sql     map[string]MCPSQLTool
 	log     *slog.Logger
 	closed  bool
+	done    chan struct{}
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -337,7 +338,7 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log, done: make(chan struct{})}
 	if ln.cfg.MCPGateway != nil {
 		ls.sql = ln.cfg.MCPGateway.SQL
 	}
@@ -454,14 +455,20 @@ func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[
 	}
 }
 
+// Close is safe to call more than once; a later call waits for the first.
 func (s *mcpLaneSession) Close(ctx context.Context) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
+		select {
+		case <-s.done:
+		case <-ctx.Done():
+		}
 		return
 	}
 	s.closed = true
 	s.mu.Unlock()
+	defer close(s.done)
 	s.calls.Wait()
 	if err := s.g.Close(ctx); err != nil {
 		s.log.Warn("mcp session close reported an error", "error", err)

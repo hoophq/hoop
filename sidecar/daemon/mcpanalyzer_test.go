@@ -249,19 +249,22 @@ func TestMCPLaneAnalyzerCallsOfOneSessionRunTogether(t *testing.T) {
 		}
 	}
 
-	closed := make(chan struct{})
-	go func() {
-		ls.Close(ctx)
-		close(closed)
-	}()
+	closed := make(chan struct{}, 2)
+	for range 2 {
+		go func() {
+			ls.Close(ctx)
+			closed <- struct{}{}
+		}()
+	}
 	select {
 	case <-closed:
 		close(p.release)
-		t.Fatal("Close returned while two calls were in flight")
+		t.Fatal("a Close returned while two calls were in flight")
 	case <-time.After(100 * time.Millisecond):
 	}
 	close(p.release)
 	wg.Wait()
+	<-closed
 	<-closed
 	for i, v := range verdicts {
 		if !v.Allowed {
