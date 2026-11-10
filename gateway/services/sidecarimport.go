@@ -174,6 +174,11 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 			mcp[l.Name] = isMCPListener(*l)
 			continue
 		}
+		if isMCPListener(*l) {
+			if problems := daemon.ValidateMCPMasking(*l.Mask, l.Name); len(problems) > 0 {
+				return nil, errors.New(strings.Join(problems, "; "))
+			}
+		}
 		if disabled(l.Mask) || isEmptyList(l.Mask.Rules) {
 			continue
 		}

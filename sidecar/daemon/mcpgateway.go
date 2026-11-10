@@ -30,6 +30,12 @@ func isMCPGateway(lc ListenerConfig) bool {
 	return inspect.Protocol(lc.Protocol) == inspect.MCP
 }
 
+// maskSupported adds the mcp lane, which has no codec: mcpproxy's redactor
+// rewrites the decoded JSON.
+func maskSupported(p inspect.Protocol) bool {
+	return p == inspect.MCP || gate.MaskSupported(p)
+}
+
 // MCPGatewayConfig is a listener's mcp_gateway block: the upstream transport
 // and mcpproxy's session policy. Tool allow and deny are guardrail rules of
 // type mcp_tool.

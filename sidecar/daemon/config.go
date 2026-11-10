@@ -1879,7 +1879,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
 						"or set mask: {rules: []} on this lane.", name))
 			}
-		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !maskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
 			// capability), and buildMasker asks it through the factory; the
 			// config alone cannot say, and the plane never loads one.

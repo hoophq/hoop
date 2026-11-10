@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -315,5 +316,20 @@ func TestImportDoesNotBindAColumnMaskRuleToAnMCPLane(t *testing.T) {
 		if err := daemon.CheckConfigBytes(served); err != nil {
 			t.Errorf("%s: the sidecar refuses the served document: %v", name, err)
 		}
+	}
+}
+
+// The sidecar refuses a column rule in an mcp lane's own block, and
+// composition would drop it, so the import refuses it instead of storing it.
+func TestImportRefusesAColumnMaskRuleInAnMCPLaneBlock(t *testing.T) {
+	file := []byte(`{"listeners":[{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://h/mcp",` +
+		`"mask":{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}}]}`)
+	cfg, err := ParseSidecarConfiguration(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, items, err := SplitSidecarConfiguration("sc", cfg, func(SidecarRuleKind, string) (bool, error) { return false, nil })
+	if err == nil || !strings.Contains(err.Error(), "names columns") || items != nil {
+		t.Fatalf("want a names-columns refusal and no items, got %v, %d items", err, len(items))
 	}
 }

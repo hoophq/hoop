@@ -1847,7 +1847,7 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchem
 					"cannot rebuild a response; remove the rules from this lane, or set "+
 					"mask: {rules: []} on it", proto)
 		}
-	case !gate.MaskSupported(proto):
+	case !maskSupported(proto):
 		return nil, fmt.Errorf(
 			"mask.rules is set but masking is not supported on %s; remove the rules from "+
 				"this lane, or set mask: {rules: []} on it", proto)
@@ -2159,7 +2159,7 @@ func serveAdmin(
 			// A plug-in lane's answer is its module's; the view does not
 			// build a codec to ask, so it says nothing, since a guess could
 			// be wrong.
-			if !v.Masking && !isPluginLane(ln.cfg) && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
+			if !v.Masking && !isPluginLane(ln.cfg) && !maskSupported(inspect.Protocol(ln.cfg.Protocol)) {
 				v.MaskNote = "masking is not supported on this protocol"
 			}
 			out = append(out, v)
