@@ -61,15 +61,8 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 		return nil
 	}
 	var problems []string
-	if _, ok := httpSQLDialects[s.Dialect]; !ok {
-		names := make([]string, 0, len(httpSQLDialects))
-		for n := range httpSQLDialects {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		problems = append(problems, fmt.Sprintf(
-			"listener %q: http.sql.dialect %q is not one of %s; the dialect decides what a comment or a string is, so it is never guessed",
-			lane, s.Dialect, strings.Join(names, ", ")))
+	if p := sqlDialectProblem("http.sql.dialect", s.Dialect); p != "" {
+		problems = append(problems, fmt.Sprintf("listener %q: %s", lane, p))
 	}
 	if len(s.Fields) == 0 {
 		problems = append(problems, fmt.Sprintf(
@@ -122,6 +115,21 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 			"listener %q: http.sql.refuse_message is empty; tell a refused client what to ask for instead", lane))
 	}
 	return problems
+}
+
+// sqlDialectProblem refuses a dialect name httpSQLDialects lacks; field is
+// its config key.
+func sqlDialectProblem(field, name string) string {
+	if _, ok := httpSQLDialects[name]; ok {
+		return ""
+	}
+	names := make([]string, 0, len(httpSQLDialects))
+	for n := range httpSQLDialects {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return fmt.Sprintf("%s %q is not one of %s; the dialect decides what a comment or a string is, so it is never guessed",
+		field, name, strings.Join(names, ", "))
 }
 
 // parseRefuse splits one refuse entry at its first "=".

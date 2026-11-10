@@ -18,9 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analytics"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // withMCPGatewayEngine installs an engine builder for one test, as
@@ -41,14 +44,15 @@ func withMCPGatewayEngine(t *testing.T, build MCPGatewayBuilder) {
 }
 
 type fakeMCPServer struct {
-	lane  MCPGatewayLane
-	ended []string
+	lane                  MCPGatewayLane
+	ended                 []string
+	active, total, denied int64
 }
 
 func (f *fakeMCPServer) Serve(ctx context.Context) error { <-ctx.Done(); return nil }
 func (f *fakeMCPServer) Close() error                    { return nil }
 func (f *fakeMCPServer) Addr() net.Addr                  { return nil }
-func (f *fakeMCPServer) Stats() (int64, int64, int64)    { return 0, 0, 0 }
+func (f *fakeMCPServer) Stats() (int64, int64, int64)    { return f.active, f.total, f.denied }
 func (f *fakeMCPServer) Notes() []string                 { return []string{"engine: fake"} }
 func (f *fakeMCPServer) EndSessions(reason string)       { f.ended = append(f.ended, reason) }
 
@@ -418,6 +422,86 @@ func TestMCPLaneHidesToolsAnMCPToolRuleDenies(t *testing.T) {
 				t.Errorf("hidden %v, want %v", hidden, c.hidden)
 			}
 		})
+	}
+}
+
+// guardrails.mode observe allows a call a rule would deny, and the call's
+// statement names the rule in guardrails.would_deny.
+func TestMCPLaneObserveAllowsACallAndRecordsWouldDeny(t *testing.T) {
+	ctx := context.Background()
+	ln := mcpTestLane(t, `{"guardrails":{"mode":"observe","rules":[{"name":"no-delete","type":"mcp_tool","tools":["*delete*"]},{"name":"no-prod","type":"deny_words_list","words":["prod-db"]}]},"listeners":[`+mcpLane+`]}`)
+	sink := audit.NewMemorySink(16)
+	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), sink, true, MCPCaller{Subject: "alice", MCPSessionID: "m1"}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := []struct{ tool, args, wouldDeny string }{
+		{"delete_customer", `{"id":"7"}`, "no-delete"},
+		{"run_query", `{"db":"prod-db"}`, "no-prod"},
+		{"echo", `{"message":"hi"}`, ""},
+	}
+	for _, c := range calls {
+		if v := ls.ToolCall(ctx, c.tool, []byte(c.args)); !v.Allowed {
+			t.Errorf("%s denied on an observing lane: %+v", c.tool, v)
+		}
+	}
+	ls.Close(ctx)
+	var rows []audit.Event
+	for _, r := range sink.Events() {
+		if r.Kind == audit.KindViolation {
+			t.Fatalf("an observing lane wrote a violation: %+v", r)
+		}
+		if r.Kind == audit.KindStatement && r.Metadata[inspect.MetadataMCPTool] != "" {
+			rows = append(rows, r)
+		}
+	}
+	if len(rows) != len(calls) {
+		t.Fatalf("%d call rows, want %d", len(rows), len(calls))
+	}
+	for i, c := range calls {
+		if r := rows[i]; !r.Allowed || r.Metadata[inspect.MetadataMCPTool] != c.tool || r.Metadata[policy.AnnotationWouldDeny] != c.wouldDeny {
+			t.Errorf("%s row: allowed=%v %s=%q, want %q", c.tool, r.Allowed, policy.AnnotationWouldDeny, r.Metadata[policy.AnnotationWouldDeny], c.wouldDeny)
+		}
+	}
+}
+
+type nopRecorder struct{ telem.LaneRecorder }
+
+// The engine gets the lane's telemetry recorder, so mcpproxy's observer
+// reports into the lane's telemetry block.
+func TestTheMCPEngineGetsTheLaneRecorder(t *testing.T) {
+	build, built := fakeMCPEngine()
+	withMCPGatewayEngine(t, build)
+	ln := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
+	rec := &nopRecorder{}
+	ln.telemetry = rec
+	if _, _, err := buildMCPGatewayServer(ln, AuditConfig{}, nil, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*built)[0].lane.Telemetry; got != rec {
+		t.Fatalf("engine recorder %v, want the lane's", got)
+	}
+}
+
+// Usage analytics count an mcp lane under mcp: sessions and refusals from
+// its server, tool calls from its gate. No event of its own.
+func TestUsageCountsTheMCPLaneUnderMCP(t *testing.T) {
+	ctx := context.Background()
+	tel := &telemetry{client: &analytics.Client{}, counters: analytics.NewCounters(), conns: map[string]connSnapshot{}}
+	ln := mcpTestLane(t, `{"guardrails":{"rules":[{"name":"no-delete","type":"mcp_tool","tools":["*delete*"]}]},"listeners":[`+mcpLane+`]}`)
+	ln.metrics = tel.laneMetrics(ln.cfg.Protocol)
+	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls.ToolCall(ctx, "echo", []byte(`{}`))
+	ls.ToolCall(ctx, "delete_customer", []byte(`{}`))
+	ls.Close(ctx)
+	srv := &fakeMCPServer{total: 1, denied: 2}
+	byProto, _ := tel.usageProperties([]statSource{{ln.cfg.Protocol, srv}}, nil)["by-protocol"].(map[string]protoUsage)
+	want := protoUsage{Statements: 2, Denied: 1, Connections: 1, ConnectionsDenied: 2}
+	if len(byProto) != 1 || byProto["mcp"] != want {
+		t.Fatalf("by-protocol %+v, want mcp %+v", byProto, want)
 	}
 }
 

@@ -2706,8 +2706,8 @@ the block is the configuration, so `-validate` and the plane can check it.
 Every signal carries the resource `service.name=hoop-sidecar` (override it
 under `resource`), `service.version`, `service.instance.id` (the same
 install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
-and `hoop.schema.version=1.0`, with the schema URL
-`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+and `hoop.schema.version=1.1`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.1`. An attribute or series
 added bumps the minor; one renamed or removed bumps the major, because a
 dashboard written against the old name goes dark.
 
@@ -2721,6 +2721,7 @@ dashboard written against the old name goes dark.
 | `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
 | `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.mcp.messages` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.mcp.method`, `hoop.mcp.tool`, `hoop.mcp.decision` (`allow`, `deny`, `kill`). An mcp lane only; see "mcp lane metrics" |
 | `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.analyzer.kind` (`classify`, `decide`), `hoop.outcome` |
 | `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.analyzer.kind` |
 | `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
@@ -2777,7 +2778,9 @@ for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
 `hoop.statement` per judged statement and, under it, one span per stage
 (`policy`, `analyzer`, `review`). The upstream measurement is an event on
 the enclosing span. The sampling decision is taken once, at the exchange, so
-every statement of a sampled connection is in and a 1% ratio costs 1%. A
+every statement of a sampled connection is in and a 1% ratio costs 1%. An
+mcp lane opens no exchange span: each judged tool call is a trace of its own,
+`hoop.statement` with its stages, sampled on its own. A
 denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
 `hoop.rule` and an error status naming the rule. The OPA decision and the
 analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
@@ -3717,6 +3720,7 @@ rule only to a sidecar that reports the type.
 | `max_calls_per_session` | `0`: no limit | The tool calls one MCP session may attempt. A refused call counts too. | Past the limit: `-32012`, `session tool-call budget exhausted (N calls)` |
 | `tool_rate_limits` | none | Tool glob to calls per minute, per session. When several globs match a tool, the lowest limit applies. | Over the limit: `-32012`, `tool "x" rate limit exceeded (N calls/min)` |
 | `max_result_kb` | `0`: no limit | The text of a tool result is cut to this size and ends with `[truncated by gateway]`. | The cut result |
+| `sql` | none | The tools whose calls carry SQL. See "SQL tools". | |
 
 `tool_rate_limits` globs work as in `mcp_tool`.
 
@@ -3729,7 +3733,8 @@ session as activities: `mcp.tool_denied`, `mcp.budget_exceeded`,
 
 Each `tools/call` is one statement: `operation: call`, `tables: [<tool>]`,
 the text `<tool>` and its arguments JSON on the next line, and the metadata
-`mcp.method`, `mcp.tool` and `mcp.session`. These rule types read it:
+`mcp.method`, `mcp.tool` and `mcp.session`. A call to a SQL tool adds one
+statement per SQL statement; see "SQL tools". These rule types read it:
 
 ```yaml
 guardrails:
@@ -3772,6 +3777,87 @@ sessions: a session read its rules when it opened, so the next message on
 it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
+
+#### SQL tools: `mcp_gateway.sql`
+
+`sql` names the tools whose calls carry SQL. The rules then read that SQL as
+on a SQL lane.
+
+```yaml
+listeners:
+  - name: bigquery
+    protocol: mcp
+    listen: 127.0.0.1:18902
+    upstream: https://bigquery.googleapis.com/mcp   # needs a credential; see Auth
+    guardrails:
+      rules:
+        - {name: read-only, type: operation, operations: [insert, update, delete, drop, unknown]}
+    mcp_gateway:
+      sql:
+        "execute_sql*": {argument: query, dialect: googlesql}
+```
+
+| Key | Effect |
+|---|---|
+| the key | A tool glob, as in `mcp_tool`. It reads the real tool name. When several globs match, the longest wins. |
+| `argument` | The top-level argument that holds the SQL. Required. |
+| `dialect` | `postgres`, `mysql`, `mssql`, `clickhouse`, `googlesql`, `oracle` or `spark`. Required. BigQuery is `googlesql`. |
+
+A call to a SQL tool is 1 + N statements, judged in order. The first deny
+stops the call.
+
+- The call statement, as for every tool, with `mcp.sql_statements: N`.
+- One statement per SQL statement in the argument: the SQL as text, the
+  operation, effects and tables from the lexer, and the metadata
+  `mcp.method`, `mcp.tool`, `mcp.session`, `mcp.sql_argument`,
+  `mcp.sql_dialect` and `mcp.sql_index` (from 1).
+
+`mcp_tool` rules read only the call statement. A `table` rule reads the
+tables of the SQL, and `require_table_match` denies a SQL statement that
+names none. To scope a rule to one tool, use OPA or a `metadata` rule on
+`mcp.tool`. Observe mode records all 1 + N.
+
+SQL the lexer cannot read is `operation: unknown`, as on a SQL lane:
+`EXECUTE IMMEDIATE`, a script loop or block, `EXPORT DATA`. `sql.incomplete`
+holds the reason when the lexer has one. Name `unknown` in the rule to
+refuse it.
+
+The lane refuses a call before any rule, also in observe mode, when it
+cannot read the argument: `arguments` absent or not an object; the argument
+absent, not a string, blank or with no statement; the argument two times,
+after JSON unescape or in another case; invalid UTF-8 or a lone surrogate
+escape in it; two globs of the same length that disagree. The client gets
+`denied by the hoop sidecar (rule mcp_gateway.sql): <reason>`, and the
+session records `mcp_sql_unreadable` with `tool`, `argument` and `reason`.
+
+A control plane serves `sql` only to a sidecar that reports `mcp_sql`.
+
+#### mcp lane metrics
+
+`GET /stats` lists the lane. `active` and `total` count MCP sessions.
+`denied` counts messages the lane refused, not refused connections: in both
+directions, by a rule or OPA, as invalid params, and by `mcp_gateway` (a
+budget, a rate limit, a tool the server did not list, a rug pull).
+
+```json
+{"name": "github-mcp", "addr": "127.0.0.1:18901", "active": 1, "total": 3, "denied": 2}
+```
+
+With a `telemetry` block, `hoop.sidecar.mcp.messages` counts every message
+by direction, method, tool and decision. A response has no method; it names
+the tool of the call it answers. `hoop.mcp.tool` is the real tool name, for
+the first 1024 tools the server listed; any other tool is `(other)`, and so
+is a method MCP does not define, and a call refused as invalid params, so a
+client cannot add series. Each call is
+also a `hoop.statement` in `hoop.sidecar.statements` and, with traces on, a
+trace of its own (see "OpenTelemetry").
+
+```
+sum by (hoop_mcp_tool, hoop_mcp_decision) (rate(hoop_sidecar_mcp_messages_total{hoop_mcp_method="tools/call"}[5m]))
+```
+
+Usage analytics count the lane under `mcp`: `connections` are MCP sessions,
+and `connections-denied` is the `denied` count above.
 
 #### Auth
 
@@ -3835,7 +3921,8 @@ own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
 What the lane refuses at validate, and why: a `listen` off loopback
 without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
-requests, not connections); a `mask` block on
+requests, not connections); an `mcp_gateway.sql` entry without a glob, an
+argument or a known dialect (the dialect is never guessed); a `mask` block on
 the lane (ENG-965) and an `analyzer` block (ENG-964) until those land; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
@@ -4427,6 +4514,18 @@ their table as read, and so does `table_changes('t', 1)`, whose string names
 the table it reads; any other first argument makes the statement `unknown`.
 `Split` keeps the text whole, as for Oracle: Spark runs one statement or one
 script per call.
+
+#### BigQuery scripts (GoogleSQL)
+
+`lexer.GoogleSQL` reads a BigQuery script as a Spark script. `Split` cuts
+it at each `;`, so a part that starts with `LOOP`, `WHILE`, `REPEAT`, `FOR`
+or a `BEGIN` block is `unknown` with its writes as effects. So is one of
+these after THEN or ELSE of an `IF`, a `CASE` statement or an exception
+handler, and one after a top-level colon, which covers a label in any
+spelling (`lbl:`, `` `lbl`: ``). Before, `FOR r IN (SELECT 1) DO DELETE
+FROM t` read as a select and `BEGIN DELETE FROM t` as a begin. A bare
+`BEGIN`, `BEGIN TRANSACTION` and a column called `begin` in a CASE
+expression stay what they were. Not checked on BigQuery.
 
 ### The ceiling
 

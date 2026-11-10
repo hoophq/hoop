@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/lexer"
 )
@@ -2518,6 +2519,37 @@ func TestSparkRulesDoNotLeakIntoOtherDialects(t *testing.T) {
 			if a.Severity() == spark.Severity() && a.Complete == spark.Complete && slices.Equal(writes(a), writes(spark)) {
 				t.Errorf("%s reads %q as Spark does (%q, complete = %v)", d, sql, a.Severity(), a.Complete)
 			}
+		}
+	}
+}
+
+func TestDialectNamedReadsEveryDialectByItsName(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		if got, ok := lexer.DialectNamed(d.String()); !ok || got != d {
+			t.Errorf("DialectNamed(%q) = %v, %v", d.String(), got, ok)
+		}
+	}
+	if _, ok := lexer.DialectNamed("bigquery"); ok {
+		t.Error("DialectNamed accepted bigquery")
+	}
+}
+
+// An mcp lane reads up to 16 MiB of SQL, so crafted script text must cost
+// linear time. 32 times the input costs about 32x when linear and 900x when
+// quadratic; the bound of 160 leaves room for a noisy runner.
+func TestGoogleSQLScriptsAnalyzeInLinearTime(t *testing.T) {
+	for _, unit := range []string{"LOOP ", "WHILE x DO ", "lbl: LOOP ", "`lbl`: BEGIN ", "SELECT CASE WHEN a THEN loop ELSE begin END "} {
+		in := [2]string{strings.Repeat(unit, 2000), strings.Repeat(unit, 64000)}
+		best := [2]time.Duration{1 << 62, 1 << 62}
+		for range 5 {
+			for i, sql := range in {
+				start := time.Now()
+				lexer.Analyze(sql, lexer.GoogleSQL)
+				best[i] = min(best[i], time.Since(start))
+			}
+		}
+		if r := float64(best[1]) / float64(max(best[0], time.Microsecond)); r > 160 {
+			t.Errorf("%q: 32x the input took %.0fx the time (%v, %v)", unit, r, best[0], best[1])
 		}
 	}
 }

@@ -17,6 +17,16 @@ audit:
   memory_buffer: 256
   query_sessions: 100
 
+# Metrics, and one trace per tool call, to the collector beside the lane.
+telemetry:
+  otlp:
+    endpoint: 127.0.0.1:4317
+    insecure: true
+  metrics:
+    interval_sec: 5
+  traces:
+    sample_ratio: 1
+
 guardrails:
   rules:
     - name: no-destructive-tools
