@@ -1,0 +1,31 @@
+{
+  "name": "gw-c7",
+  "type": "httpproxy",
+  "subtype": "mcpproxy",
+  "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "gw-c7-role",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:MCP_TRANSPORT": "c3RyZWFtYWJsZS1odHRw",
+        "envvar:MCP_AUTH": "c3RhdGlj",
+        "envvar:INSECURE": "ZmFsc2U=",
+        "envvar:REMOTE_URL": "aHR0cHM6Ly9tY3AuY29udGV4dDcuY29tL21jcA==",
+        "envvar:HEADER_CONTEXT7_API_KEY": "Yzc="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "mcpproxy"
+    }
+  ]
+}

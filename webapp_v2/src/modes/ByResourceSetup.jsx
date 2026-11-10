@@ -26,6 +26,15 @@ export default function ByResourceSetup({ react, cljs }) {
     if (catalogId) load()
   }, [catalogId, load])
 
+  // The MCP OAuth popup returns here without ?type=; its opener reads this URL.
+  if (searchParams.get('mcp_oauth')) {
+    return (
+      <EmptyState
+        title="MCP authorization"
+        description="Return to the resource setup window. You can close this one."
+      />
+    )
+  }
   if (!catalogId) return <Navigate to="/resource-catalog" replace />
   // A mapped CLJS type needs no metadata, so a failed load does not block it.
   const config = setupConfigFor(catalogId, metadata?.connections)

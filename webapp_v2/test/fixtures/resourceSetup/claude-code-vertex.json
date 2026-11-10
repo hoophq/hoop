@@ -1,0 +1,31 @@
+{
+  "name": "cc-vertex",
+  "type": "httpproxy",
+  "subtype": "claude-code",
+  "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "cc-vertex-role",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:REMOTE_URL": "aHR0cHM6Ly9ldXJvcGUtd2VzdDEtYWlwbGF0Zm9ybS5nb29nbGVhcGlzLmNvbQ==",
+        "envvar:GCP_SERVICE_ACCOUNT_JSON": "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=",
+        "envvar:GCP_PROJECT_ID": "cDE=",
+        "envvar:GCP_REGION": "ZXVyb3BlLXdlc3Qx",
+        "envvar:INSECURE": "ZmFsc2U="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "claude-code"
+    }
+  ]
+}
