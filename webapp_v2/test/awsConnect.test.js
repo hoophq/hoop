@@ -9,8 +9,10 @@ const awsConnectService = {
   createJob: vi.fn(),
 }
 const showSnackbar = vi.fn()
+const agentsService = { list: vi.fn() }
 
 vi.mock('@/services/awsConnect', () => ({ awsConnectService }))
+vi.mock('@/services/agents', () => ({ agentsService }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar }))
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => () => {} } }))
 
@@ -261,6 +263,22 @@ describe('setup store', () => {
     awsConnectService.saveCredentials.mockRejectedValue(apiError('unable to parse request body'))
     await store().saveCredentials()
     expect(store()).toMatchObject({ step: 'credentials', busy: null, credentialsError: 'unable to parse request body' })
+  })
+
+  it('loads the agents once and says so when it fails', async () => {
+    agentsService.list.mockRejectedValueOnce(new Error('Request failed with status code 500'))
+    await store().loadAgents()
+    expect(agentsService.list).toHaveBeenCalledTimes(1)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to load agents',
+      description: 'Request failed with status code 500',
+    })
+
+    agentsService.list.mockResolvedValueOnce({ data: [{ id: 'a1', name: 'default' }] })
+    showSnackbar.mockClear()
+    await store().loadAgents()
+    expect(showSnackbar).not.toHaveBeenCalled()
   })
 
   it('keeps a describe failure on the Accounts step (Q31)', async () => {

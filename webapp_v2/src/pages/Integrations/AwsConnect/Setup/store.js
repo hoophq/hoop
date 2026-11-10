@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { awsConnectService } from '@/services/awsConnect'
+import { useAgentStore } from '@/stores/useAgentStore'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { errorMessage } from '../utils'
@@ -53,6 +54,13 @@ export const useAwsConnectSetupStore = create((set, get) => {
     update: (patch) => set(patch),
     setCredential: (field, value) => set((s) => ({ credentials: { ...s.credentials, [field]: value } })),
     setMapValue: (map, id, value) => set((s) => ({ [map]: { ...s[map], [id]: value } })),
+
+    loadAgents: async () => {
+      const live = current()
+      await useAgentStore.getState().fetchAgents()
+      const { error } = useAgentStore.getState()
+      if (live() && error) showSnackbar({ level: 'error', text: 'Failed to load agents', description: error })
+    },
 
     saveCredentials: async () => {
       const live = current()

@@ -6,7 +6,6 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import Stepper from '@/components/Stepper'
-import { useAgentStore } from '@/stores/useAgentStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useAwsJobsStore } from '../store'
 import { JOBS_PATH, limitReached } from '../utils'
@@ -38,7 +37,6 @@ const BODY = {
 export default function AwsConnectSetup({ mode = 'create' }) {
   const navigate = useNavigate()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const fetchAgents = useAgentStore((s) => s.fetchAgents)
   const jobsLoaded = useAwsJobsStore((s) => s.loaded)
   const jobs = useAwsJobsStore((s) => s.jobs)
   const fetchJobs = useAwsJobsStore((s) => s.fetchJobs)
@@ -53,9 +51,9 @@ export default function AwsConnectSetup({ mode = 'create' }) {
     if (mounted.current) return
     mounted.current = true
     useAwsConnectSetupStore.getState().reset()
-    fetchAgents()
+    useAwsConnectSetupStore.getState().loadAgents()
     fetchJobs().finally(() => setStarted(true))
-  }, [fetchAgents, fetchJobs])
+  }, [fetchJobs])
 
   const limit = started && jobsLoaded && isFreeLicense && limitReached(jobs)
   useEffect(() => {
