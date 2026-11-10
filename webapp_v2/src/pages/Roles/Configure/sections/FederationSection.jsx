@@ -10,7 +10,7 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import Tooltip from '@/components/Tooltip'
 import { showSnackbar } from '@/utils/snackbar'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 import FederationTestModal from '@/pages/Roles/Configure/sections/FederationTestModal'
 import {
@@ -47,13 +47,13 @@ function Section({ title, help, children }) {
 }
 
 function AdminCredentialsField({ oauth }) {
-  const form = useConfigureRoleStore((s) => s.federation.form)
-  const stored = useConfigureRoleStore((s) =>
+  const form = useCredentialsStore((s) => s.federation.form)
+  const stored = useCredentialsStore((s) =>
     hasUsableStoredCredentials(s.federation.config, s.federation.form),
   )
-  const editing = useConfigureRoleStore((s) => s.federation.credentialsEditing)
-  const setFederationForm = useConfigureRoleStore((s) => s.setFederationForm)
-  const setEditing = useConfigureRoleStore((s) => s.setFederationCredentialsEditing)
+  const editing = useCredentialsStore((s) => s.federation.credentialsEditing)
+  const setFederationForm = useCredentialsStore((s) => s.setFederationForm)
+  const setEditing = useCredentialsStore((s) => s.setFederationCredentialsEditing)
   const label = oauth ? 'OAuth client credentials (JSON)' : 'Service account JSON'
 
   if (stored && !editing && !form.admin_credentials_json) {
@@ -87,8 +87,8 @@ function AdminCredentialsField({ oauth }) {
 }
 
 function IdentityMapping() {
-  const form = useConfigureRoleStore((s) => s.federation.form)
-  const setFederationForm = useConfigureRoleStore((s) => s.setFederationForm)
+  const form = useCredentialsStore((s) => s.federation.form)
+  const setFederationForm = useCredentialsStore((s) => s.setFederationForm)
   return (
     <Stack gap="md">
       <TextInput
@@ -123,16 +123,28 @@ function IdentityMapping() {
 }
 
 function OAuthConsent() {
-  const savedAsOAuth = useConfigureRoleStore(
+  const savedAsOAuth = useCredentialsStore(
     (s) => s.federation.config?.builtin_provider === FEDERATION_PROVIDERS.GCP_OAUTH,
   )
-  const status = useConfigureRoleStore((s) => s.federation.oauthStatus)
-  const statusError = useConfigureRoleStore((s) => s.federation.oauthStatusError)
-  const loadFederationOAuthStatus = useConfigureRoleStore((s) => s.loadFederationOAuthStatus)
+  if (!savedAsOAuth) {
+    return (
+      <Alert color="blue" variant="light" icon={<Info size={16} />}>
+        Save the role with GCP OAuth first. Then each user — including you — connects their own
+        Google account from this screen before running a session.
+      </Alert>
+    )
+  }
+  return <OAuthConsentControls />
+}
+
+function OAuthConsentControls() {
+  const status = useCredentialsStore((s) => s.federation.oauthStatus)
+  const statusError = useCredentialsStore((s) => s.federation.oauthStatusError)
+  const loadFederationOAuthStatus = useCredentialsStore((s) => s.loadFederationOAuthStatus)
   // Connecting leaves the page for Google, which drops unsaved edits.
-  const dirty = useConfigureRoleStore((s) => s.hasPendingChanges())
-  const startFederationOAuth = useConfigureRoleStore((s) => s.startFederationOAuth)
-  const disconnectFederationOAuth = useConfigureRoleStore((s) => s.disconnectFederationOAuth)
+  const dirty = useCredentialsStore((s) => s.hasPendingChanges())
+  const startFederationOAuth = useCredentialsStore((s) => s.startFederationOAuth)
+  const disconnectFederationOAuth = useCredentialsStore((s) => s.disconnectFederationOAuth)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
@@ -173,15 +185,6 @@ function OAuthConsent() {
     } finally {
       setDisconnecting(false)
     }
-  }
-
-  if (!savedAsOAuth) {
-    return (
-      <Alert color="blue" variant="light" icon={<Info size={16} />}>
-        Save the role with GCP OAuth first. Then each user — including you — connects their own
-        Google account from this screen before running a session.
-      </Alert>
-    )
   }
 
   return (
@@ -261,16 +264,18 @@ function testBlocker(form, { stored, testCredentials }, agentId) {
   return null
 }
 
-export default function FederationSection() {
-  const form = useConfigureRoleStore((s) => s.federation.form)
-  const stored = useConfigureRoleStore((s) =>
+// The wizard passes the agent it picked; Configure Role picks it here.
+export default function FederationSection({ agentId: wizardAgentId }) {
+  const form = useCredentialsStore((s) => s.federation.form)
+  const stored = useCredentialsStore((s) =>
     hasUsableStoredCredentials(s.federation.config, s.federation.form),
   )
-  const secrets = useConfigureRoleStore((s) => s.connection?.secret)
-  const hideRoleInfo = useConfigureRoleStore((s) => s.hideRoleInfo)
-  const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)
-  const setFederationProvider = useConfigureRoleStore((s) => s.setFederationProvider)
-  const setFederationProjectId = useConfigureRoleStore((s) => s.setFederationProjectId)
+  const secrets = useCredentialsStore((s) => s.connection?.secret)
+  const hideRoleInfo = useCredentialsStore((s) => s.hideRoleInfo)
+  const draftAgentId = useCredentialsStore((s) => s.drafts.agent_id)
+  const agentId = wizardAgentId === undefined ? draftAgentId : wizardAgentId
+  const setFederationProvider = useCredentialsStore((s) => s.setFederationProvider)
+  const setFederationProjectId = useCredentialsStore((s) => s.setFederationProjectId)
   const [testOpened, { open: openTest, close: closeTest }] = useDisclosure(false)
 
   const oauth = form.builtin_provider === FEDERATION_PROVIDERS.GCP_OAUTH
@@ -347,9 +352,9 @@ export default function FederationSection() {
         <OutputPreview />
       </Section>
 
-      <AgentSelector />
+      {wizardAgentId === undefined && <AgentSelector />}
 
-      {testOpened && <FederationTestModal opened onClose={closeTest} />}
+      {testOpened && <FederationTestModal opened onClose={closeTest} agentId={agentId} />}
     </Stack>
   )
 }

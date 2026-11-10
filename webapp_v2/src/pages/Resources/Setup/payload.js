@@ -1,4 +1,6 @@
 import { decodeForDisplay } from '@/pages/Roles/Configure/utils/secretsCodec'
+import { staticSecretsMirror } from '@/pages/Roles/Configure/utils/federation'
+import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { ENV, isStdio } from '@/pages/Roles/Configure/utils/mcpGateway'
 import { metadataForSubtype } from './catalog'
 import { secretOf } from './roleCredentials'
@@ -28,6 +30,14 @@ function mcpStdio(subtype, stagedSecrets) {
   return subtype === 'mcpproxy' && isStdio(decodeForDisplay(stagedSecrets[ENV.transport]?.value))
 }
 
+// The federation project, and the gcp_iam key, override typed values as the
+// static fallback secret (inject-federation-fallback-secret in process_form.cljs).
+function roleSecret(role) {
+  const secret = secretOf(role.credentials)
+  if (role.method !== CONNECTION_METHODS.IAM_FEDERATION) return secret
+  return { ...secret, ...staticSecretsMirror(role.credentials.getState().federation.form) }
+}
+
 // POST /resources body, the same as process-payload in
 // webapp/src/webapp/resources/setup/events/process_form.cljs for these types.
 // The typed linux-vm arguments replace the catalog command; with none, linux-vm
@@ -47,7 +57,7 @@ export function buildCreatePayload({ name, setup, agentId, roles, connections, p
       const { drafts, stagedSecrets, mcpOAuthFlowId } = role.credentials.getState()
       const stdio = mcpStdio(setup.subtype, stagedSecrets)
       const typedCommand = setup.subtype !== 'mcpproxy' || stdio ? drafts.command : []
-      const secret = secretOf(role.credentials)
+      const secret = roleSecret(role)
       if (stdio) delete secret[ENV.insecure]
       return {
         name: role.name,

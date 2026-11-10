@@ -7,7 +7,7 @@ import Code from '@/components/Code'
 import Modal from '@/components/Modal'
 import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
@@ -55,12 +55,12 @@ function TestFailure({ result }) {
   )
 }
 
-export default function FederationTestModal({ opened, onClose }) {
+export default function FederationTestModal({ opened, onClose, agentId }) {
   const userEmail = useUserStore((s) => s.user?.email)
-  const ttlSeconds = useConfigureRoleStore((s) => s.federation.form.token_ttl_seconds)
-  const test = useConfigureRoleStore((s) => s.federationTest)
-  const runFederationTest = useConfigureRoleStore((s) => s.runFederationTest)
-  const resetFederationTest = useConfigureRoleStore((s) => s.resetFederationTest)
+  const ttlSeconds = useCredentialsStore((s) => s.federation.form.token_ttl_seconds)
+  const test = useCredentialsStore((s) => s.federationTest)
+  const runFederationTest = useCredentialsStore((s) => s.runFederationTest)
+  const resetFederationTest = useCredentialsStore((s) => s.resetFederationTest)
   const [email, setEmail] = useState(userEmail || '')
 
   const loading = test.status === 'loading'
@@ -117,7 +117,7 @@ export default function FederationTestModal({ opened, onClose }) {
             <>
               <Button variant="default" onClick={close} disabled={loading}>Cancel</Button>
               <Button
-                onClick={() => runFederationTest(email)}
+                onClick={() => runFederationTest(email, agentId)}
                 disabled={!EMAIL_RE.test(email) || loading}
               >
                 Run test
