@@ -3795,10 +3795,11 @@ The model reads the tool name and the arguments JSON, cut to
 - `block` refuses the one call as a tool error,
   `denied by the hoop sidecar (rule <listener>): <message>`. The session
   stays open.
-- A hold (`require_approval`) refuses the call and files no approval
-  request: the lane cannot hold a tool call yet (ENG-967). A sidecar with a
-  hold still needs a control plane and an `approval_rule`, or a person
-  running `hoop start sidecar` in a terminal, to start.
+- A hold (`require_approval`) refuses the call before any approver, the AI
+  agent included, and files no approval request: the lane cannot hold a
+  tool call yet (ENG-967). A hold that a person approves still needs a
+  control plane and an `approval_rule`, or a person running
+  `hoop start sidecar` in a terminal, to start, as on the other lanes.
 - A provider failure follows `fail_open`, as on the other lanes.
 - The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
   and `ai_status`.
