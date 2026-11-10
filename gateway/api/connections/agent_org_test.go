@@ -82,8 +82,9 @@ func connectionAgentID(t *testing.T, name string) string {
 	return agentID
 }
 
-// An agent of another org gets the same answer as an unknown agent, and
-// nothing is written.
+// An agent of another org is refused and nothing is written. An unknown
+// agent passes, as before: a single-org gateway can hold one after the agent
+// is deleted.
 func TestConnectionRefusesAgentOfAnotherOrg(t *testing.T) {
 	agentA, agentB := startAgentOrgDB(t)
 	const unknownAgent = "00000000-0000-0000-0000-0000000011ff"
@@ -92,7 +93,14 @@ func TestConnectionRefusesAgentOfAnotherOrg(t *testing.T) {
 	rec := callAsOrgA(Post, http.MethodPost, "/api/connections", connectionBody("conn-a", agentA))
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
-	for _, agentID := range []string{agentB, unknownAgent} {
+	rec = callAsOrgA(Post, http.MethodPost, "/api/connections", connectionBody("conn-u", unknownAgent))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	rec = callAsOrgA(Put, http.MethodPut, "/api/connections/conn-u", connectionBody("conn-u", unknownAgent),
+		gin.Param{Key: "nameOrID", Value: "conn-u"})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	{
+		agentID := agentB
 		rec := callAsOrgA(Post, http.MethodPost, "/api/connections", connectionBody("conn-x", agentID))
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 		assert.JSONEq(t, `{"message":"agent not found"}`, rec.Body.String())
@@ -117,7 +125,7 @@ func TestConnectionRefusesAgentOfAnotherOrg(t *testing.T) {
 
 	var count int64
 	require.NoError(t, models.DB.Raw(`SELECT count(*) FROM private.connections WHERE org_id = ?`, agentOrgA).Scan(&count).Error)
-	assert.EqualValues(t, 1, count)
+	assert.EqualValues(t, 2, count)
 	assert.Equal(t, agentA, connectionAgentID(t, "conn-a"))
 
 	rec = callAsOrgA(Patch, http.MethodPatch, "/api/connections/conn-a", `{"agent_id":""}`, nameParam)

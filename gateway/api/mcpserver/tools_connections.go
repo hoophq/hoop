@@ -385,7 +385,6 @@ func textResult(msg string) *mcp.CallToolResult {
 	}
 }
 
-// errResult returns a plain text MCP error result.
 func validateAgentID(orgID, agentID string) (*mcp.CallToolResult, error) {
 	err := apiconnections.ValidateAgentID(orgID, agentID)
 	switch {
@@ -398,6 +397,7 @@ func validateAgentID(orgID, agentID string) (*mcp.CallToolResult, error) {
 	}
 }
 
+// errResult returns a plain text MCP error result.
 func errResult(msg string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: msg}},

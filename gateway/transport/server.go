@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
@@ -229,13 +230,17 @@ func refuseConnection(clientVerb, clientOrigin string, connInfo types.Connection
 	return validateConnectionAccessMode(clientVerb, clientOrigin, connInfo)
 }
 
-// refuseForeignSession refuses a client session-id that another org owns,
-// live or stored.
+// refuseForeignSession refuses a client session-id that is not a canonical
+// uuid, or that another org owns, live or stored.
 func refuseForeignSession(orgID, sessionID string) error {
 	if sessionID == "" {
 		return nil
 	}
 	errForeign := status.Error(codes.InvalidArgument, "invalid session id")
+	// Postgres reads other spellings of a uuid as the same id.
+	if sid, err := uuid.Parse(sessionID); err != nil || sid.String() != sessionID {
+		return errForeign
+	}
 	if st := streamclient.GetProxyStream(sessionID); st != nil && st.PluginContext().OrgID != orgID {
 		return errForeign
 	}

@@ -39,8 +39,8 @@ func callResourceAsOrgA(handler gin.HandlerFunc, method, target, body string, pa
 	return rec
 }
 
-// A resource or a resource role with an agent of another org gets the same
-// answer as an unknown agent, and nothing is written.
+// A resource or a resource role with an agent of another org is refused and
+// nothing is written. An unknown agent passes, as before.
 func TestResourceRefusesAgentOfAnotherOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
@@ -59,7 +59,7 @@ func TestResourceRefusesAgentOfAnotherOrg(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype)
 		VALUES (?, 'res-a', 'custom', 'custom')`, resOrgA).Error)
 
-	for _, agentID := range []string{agentB.ID, "00000000-0000-0000-0000-0000000011ff"} {
+	for _, agentID := range []string{agentB.ID} {
 		bodies := []string{
 			fmt.Sprintf(`{"name":"res-x","type":"custom","env_vars":{},"agent_id":%q}`, agentID),
 			fmt.Sprintf(`{"name":"res-x","type":"custom","env_vars":{},
@@ -87,4 +87,10 @@ func TestResourceRefusesAgentOfAnotherOrg(t *testing.T) {
 	require.NoError(t, models.DB.Raw(`SELECT agent_id::TEXT FROM private.resources WHERE org_id = ? AND name = 'res-a'`,
 		resOrgA).Scan(&agentID).Error)
 	assert.Nil(t, agentID)
+
+	const unknownAgent = "00000000-0000-0000-0000-0000000011ff"
+	rec := callResourceAsOrgA(UpdateResource, http.MethodPut, "/api/resources/res-a",
+		fmt.Sprintf(`{"name":"res-a","type":"custom","subtype":"custom","env_vars":{},"agent_id":%q}`, unknownAgent),
+		gin.Param{Key: "name", Value: "res-a"})
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
