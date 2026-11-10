@@ -163,15 +163,17 @@ func (s *ProxyStream) Close(errMsg error) error {
 }
 
 func (s *ProxyStream) SendToAgent(pkt *pb.Packet) error {
-	if agentStream := GetAgentStream(s.StreamAgentID()); agentStream != nil {
+	if agentStream := GetAgentStream(s.pluginCtx.OrgID, s.StreamAgentID()); agentStream != nil {
 		return agentStream.Send(pkt)
 	}
 	return pb.ErrAgentOffline
 }
 
-func (s *ProxyStream) IsAgentOnline() bool { return IsAgentOnline(s.StreamAgentID()) }
-func (s *ProxyStream) isReviewed() bool    { return s.isSessionReviewed.Load() }
-func (s *ProxyStream) SetReviewed()        { s.isSessionReviewed.Store(true) }
+func (s *ProxyStream) IsAgentOnline() bool {
+	return IsAgentOnline(s.pluginCtx.OrgID, s.StreamAgentID())
+}
+func (s *ProxyStream) isReviewed() bool { return s.isSessionReviewed.Load() }
+func (s *ProxyStream) SetReviewed()     { s.isSessionReviewed.Store(true) }
 
 // If the agent is a multi connection type, it returns a deterministic uuid
 // based on the agent id and the id of the connection, otherwise it returns the

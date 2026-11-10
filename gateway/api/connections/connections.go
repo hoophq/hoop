@@ -57,6 +57,9 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if AbortOnInvalidAgent(c, http.StatusUnprocessableEntity, ctx.OrgID, req.AgentId) {
+		return
+	}
 	existingConn, err := models.GetConnectionByNameOrID(ctx, req.Name)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing connection: %v", err)
@@ -71,7 +74,7 @@ func Post(c *gin.Context) {
 
 	req.ID = uuid.NewString()
 	req.Status = models.ConnectionStatusOffline
-	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
+	if streamclient.IsAgentOnline(ctx.OrgID, streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
@@ -175,6 +178,9 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if AbortOnInvalidAgent(c, http.StatusUnprocessableEntity, ctx.OrgID, req.AgentId) {
+		return
+	}
 
 	setConnectionDefaults(&req)
 
@@ -182,7 +188,7 @@ func Put(c *gin.Context) {
 	req.ID = conn.ID
 	req.Name = conn.Name
 	req.Status = models.ConnectionStatusOffline
-	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
+	if streamclient.IsAgentOnline(ctx.OrgID, streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
@@ -301,6 +307,10 @@ func Patch(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if req.AgentId != nil && *req.AgentId != "" &&
+		AbortOnInvalidAgent(c, http.StatusUnprocessableEntity, ctx.OrgID, *req.AgentId) {
+		return
+	}
 
 	// Apply patches from request (only non-nil values override)
 	if req.Command != nil {
@@ -366,7 +376,7 @@ func Patch(c *gin.Context) {
 
 	// Update status
 	conn.Status = models.ConnectionStatusOffline
-	if streamclient.IsAgentOnline(streamtypes.NewStreamID(conn.AgentID.String, "")) {
+	if streamclient.IsAgentOnline(ctx.OrgID, streamtypes.NewStreamID(conn.AgentID.String, "")) {
 		conn.Status = models.ConnectionStatusOnline
 	}
 

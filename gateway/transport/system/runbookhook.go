@@ -25,8 +25,8 @@ const hookTimeoutRequest = 15 * time.Second
 // The gateway's only caller today is processEventOpenSessionHook, which
 // dispatches in a goroutine and treats the response as a log line — the
 // blocking behavior is therefore not user-visible.
-func RunRunbookHook(agentID string, req *pbsystem.RunbookHookRequest) *pbsystem.RunbookHookResponse {
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+func RunRunbookHook(orgID, agentID string, req *pbsystem.RunbookHookRequest) *pbsystem.RunbookHookResponse {
+	st := streamclient.GetAgentStream(orgID, streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
 		return newRunbookHookErr(req.SID, "agent stream not found for %v", agentID)
 	}

@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
@@ -682,4 +686,29 @@ func managedConnectionMessage(managedBy string) string {
 		return "unable to update a connection managed by a sidecar"
 	}
 	return "unable to update a connection managed by its agent"
+}
+
+// ErrAgentNotFound is the answer for an unknown agent and for an agent of another org.
+var ErrAgentNotFound = errors.New("agent not found")
+
+func ValidateAgentID(orgID, agentID string) error {
+	_, err := models.GetAgentByID(models.DB, orgID, agentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrAgentNotFound
+	}
+	return err
+}
+
+// AbortOnInvalidAgent answers status when agentID is not an agent of orgID.
+func AbortOnInvalidAgent(c *gin.Context, status int, orgID, agentID string) bool {
+	err := ValidateAgentID(orgID, agentID)
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, ErrAgentNotFound):
+		c.JSON(status, gin.H{"message": err.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed validating agent: %v", err)
+	}
+	return true
 }

@@ -239,6 +239,9 @@ func TestFederationConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
 		return
 	}
+	if AbortOnInvalidAgent(c, http.StatusBadRequest, ctx.GetOrgID(), req.Connection.AgentID) {
+		return
+	}
 
 	// ConnectionID is left empty: the resolver does not read it and the
 	// endpoint is connection-agnostic by design (no DB lookup).
@@ -322,7 +325,7 @@ func TestFederationConfig(c *gin.Context) {
 		Command: req.Connection.Command,
 		EnvVars: probeEnvs,
 	}
-	probeResp := transportsystem.BareExecWithTimeout(probeReq, federationTestTimeout)
+	probeResp := transportsystem.BareExecWithTimeout(ctx.GetOrgID(), probeReq, federationTestTimeout)
 
 	envKeys := make([]string, 0, len(res.EnvVars))
 	for k := range res.EnvVars {

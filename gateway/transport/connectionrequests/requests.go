@@ -70,7 +70,7 @@ func AgentPreConnect(orgID string, agentID string, req *proto.PreConnectRequest)
 
 	// only release it if has an agent online or it returned error from sync process
 	streamAgentID := streamtypes.NewStreamID(agentID, req.Name)
-	if streamclient.IsAgentOnline(streamAgentID) || syncErr != nil {
+	if streamclient.IsAgentOnline(orgID, streamAgentID) || syncErr != nil {
 		_ = AcceptProxyConnection(orgID, streamAgentID, syncErr)
 	}
 

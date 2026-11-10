@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -85,7 +86,7 @@ func registerConnectionTools(server *mcp.Server) {
 	}, connectionsGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "connections_create",
+		Name: "connections_create",
 		Description: "Create a new connection. Requires admin access. " +
 			"Required envs by subtype (keys must use the 'envvar:' prefix, values base64-encoded): " +
 			"postgres/mysql/mssql -> HOST, USER, PASS, PORT, DB; " +
@@ -179,6 +180,11 @@ func connectionsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if existingConn != nil {
 		return errResult("connection already exists"), nil, nil
 	}
+	if args.AgentID != "" {
+		if res, err := validateAgentID(sc.GetOrgID(), args.AgentID); res != nil || err != nil {
+			return res, nil, err
+		}
+	}
 
 	conn := &models.Connection{
 		ID:                      uuid.NewString(),
@@ -246,6 +252,11 @@ func connectionsUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 	// Apply updates to existing connection
 	if args.AgentID != nil {
+		if *args.AgentID != "" {
+			if res, err := validateAgentID(sc.GetOrgID(), *args.AgentID); res != nil || err != nil {
+				return res, nil, err
+			}
+		}
 		existing.AgentID = sql.NullString{String: *args.AgentID, Valid: *args.AgentID != ""}
 	}
 	if args.Command != nil {
@@ -375,6 +386,18 @@ func textResult(msg string) *mcp.CallToolResult {
 }
 
 // errResult returns a plain text MCP error result.
+func validateAgentID(orgID, agentID string) (*mcp.CallToolResult, error) {
+	err := apiconnections.ValidateAgentID(orgID, agentID)
+	switch {
+	case err == nil:
+		return nil, nil
+	case errors.Is(err, apiconnections.ErrAgentNotFound):
+		return errResult(err.Error()), nil
+	default:
+		return nil, fmt.Errorf("failed validating agent: %w", err)
+	}
+}
+
 func errResult(msg string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: msg}},

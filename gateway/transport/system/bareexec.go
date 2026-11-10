@@ -15,13 +15,13 @@ import (
 var bareExecTimeout = time.Minute * 5
 
 // BareExec executes a bare exec request with the default 5-minute timeout.
-func BareExec(req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
-	return BareExecWithTimeout(req, bareExecTimeout)
+func BareExec(orgID string, req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
+	return BareExecWithTimeout(orgID, req, bareExecTimeout)
 }
 
 // BareExecWithTimeout executes a bare exec request with a custom timeout.
-func BareExecWithTimeout(req *pbsystem.BareExecRequest, timeout time.Duration) *pbsystem.BareExecResponse {
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(req.AgentID, ""))
+func BareExecWithTimeout(orgID string, req *pbsystem.BareExecRequest, timeout time.Duration) *pbsystem.BareExecResponse {
+	st := streamclient.GetAgentStream(orgID, streamtypes.NewStreamID(req.AgentID, ""))
 	if st == nil {
 		return &pbsystem.BareExecResponse{
 			SessionID: req.SID,
