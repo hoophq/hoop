@@ -1,5 +1,5 @@
 import { authService } from '@/services/auth'
-import { useAuthStore } from '@/stores/useAuthStore'
+import { tokenSubject, useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 
 // Spread, like the live events stream, so tabs do not retry at once.
@@ -7,17 +7,6 @@ const retryDelay = () => 3000 + Math.random() * 5000
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const storedToken = () => localStorage.getItem('jwt-token')
-
-// The account a JWT names (`sub`), or null for an opaque token: some OIDC
-// providers hand the browser one.
-function tokenSubject(token) {
-  try {
-    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    return JSON.parse(atob(payload)).sub || null
-  } catch {
-    return null
-  }
-}
 
 // The id of the user `token` belongs to, by the gateway. A failure that is not
 // a refusal (the network) is tried again while `token` is still the stored
