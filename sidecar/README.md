@@ -3844,7 +3844,9 @@ The model reads the tool name and the arguments JSON, cut to
   `held for approval by the hoop sidecar (rule <listener>): ... (approval <id>)`,
   and the same call after the approval runs it. A shorter
   `pending_ttl_sec` ends the wait first. A client that drops the call
-  sooner ends the wait without spending the approval.
+  sooner ends the wait without spending the approval. So does the end of
+  the MCP session: a `DELETE`, `idle_timeout_sec`, a rules reload or a
+  shutdown.
 - `review_mode: return` answers a pending call at once with the approval
   id, and names `approval_wait` when the sidecar has the `mcp:` block. The
   agent waits there, then sends the same call again. Use it when reviews

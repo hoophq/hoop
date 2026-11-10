@@ -412,6 +412,9 @@ type mcpLaneSession struct {
 	closed   bool
 	done     chan struct{}
 	holdWait time.Duration
+	// ended is cancelled by Close, so a held call ends with its session.
+	ended context.Context
+	end   context.CancelFunc
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -440,8 +443,9 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
+	ended, end := context.WithCancel(context.Background())
 	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log,
-		done: make(chan struct{}), holdWait: mcpHoldWait}
+		done: make(chan struct{}), holdWait: mcpHoldWait, ended: ended, end: end}
 	if ln.cfg.MCPGateway != nil {
 		ls.sql = ln.cfg.MCPGateway.SQL
 	}
@@ -535,7 +539,9 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 		return MCPVerdict{Message: "session closed"}
 	}
 	defer s.calls.Done()
-	ctx = analyzer.WithHoldWait(ctx, s.holdWait)
+	ctx, cancel := context.WithCancel(analyzer.WithHoldWait(ctx, s.holdWait))
+	defer cancel()
+	defer context.AfterFunc(s.ended, cancel)()
 	var v MCPVerdict
 	for _, stmt := range stmts {
 		d := s.g.EvaluateStatement(ctx, stmt)
@@ -598,6 +604,7 @@ func (s *mcpLaneSession) Close(ctx context.Context) {
 	s.closed = true
 	s.mu.Unlock()
 	defer close(s.done)
+	s.end()
 	s.calls.Wait()
 	if err := s.g.Close(ctx); err != nil {
 		s.log.Warn("mcp session close reported an error", "error", err)

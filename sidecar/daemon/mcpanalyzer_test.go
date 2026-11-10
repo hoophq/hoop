@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -199,6 +200,60 @@ func TestMCPLaneHoldAnswersAPendingCallWithTheApproval(t *testing.T) {
 func TestMCPLaneHoldEndsBeforeTheRequest(t *testing.T) {
 	if mcpHoldWait <= 0 || MCPRequestTimeout-mcpHoldWait < time.Minute || mcpHoldWait > analyzer.ReviewWait {
 		t.Fatalf("hold %s, request %s", mcpHoldWait, MCPRequestTimeout)
+	}
+}
+
+// Close ends a hold at once, so a DELETE, an idle reap, a reload or a
+// shutdown does not wait for the approver, and a later approval is not spent
+// on a gone session.
+func TestMCPLaneHoldEndsWithTheSession(t *testing.T) {
+	filed := make(chan struct{}, 64)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		filed <- struct{}{}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}
+	ls, _ := openMCPAnalyzerSession(t, heldCallBlock, "", &toolRiskProvider{}, cp, nil)
+	ls.(*mcpLaneSession).holdWait = 10 * time.Second
+	verdict := make(chan MCPVerdict, 1)
+	go func() { verdict <- ls.ToolCall(context.Background(), "delete_customer", []byte(`{"id":"7"}`)) }()
+	<-filed
+	start := time.Now()
+	ls.Close(context.Background())
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("Close waited %s for the hold", d)
+	}
+	if v := <-verdict; v.Allowed || !strings.Contains(v.Message, "ended while waiting for approval") {
+		t.Fatalf("verdict %+v", v)
+	}
+}
+
+// The idle note compares against the mcp hold, not the 30-minute review wait.
+func TestAnIdleTimeoutShorterThanTheMCPHoldIsNoted(t *testing.T) {
+	cp, _ := reviewPlane(t, http.StatusCreated, `{}`)
+	for _, c := range []struct {
+		idle int
+		want bool
+	}{{60, true}, {600, false}} {
+		cfg, err := LoadConfigBytes([]byte(`{"analyzer":{"provider":"stub","model":"m"},"listeners":[{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","idle_timeout_sec":` +
+			strconv.Itoa(c.idle) + `,"analyzer":` + heldCallBlock + `}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.lic = licensed(t)
+		lanes, err := buildLanes(cfg, nil, &analyzerDeps{cfg: cfg.Analyzer, provider: &toolRiskProvider{}, cp: cp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, n := range lanes[0].notes {
+			found = found || strings.Contains(n, "before the "+mcpHoldWait.String())
+		}
+		if found != c.want {
+			t.Errorf("idle_timeout_sec %d: noted %v, want %v: %v", c.idle, found, c.want, lanes[0].notes)
+		}
 	}
 }
 

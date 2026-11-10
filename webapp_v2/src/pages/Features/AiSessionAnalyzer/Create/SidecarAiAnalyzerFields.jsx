@@ -230,7 +230,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
       {waits && (
         <SectionRow
           title="While held for approval"
-          description="A person has up to 30 minutes to decide, unless a time limit ends it sooner. A client that times out first ends the wait; running the statement again after approval lets it through. On an SSH listener, drop the shell capability first."
+          description="A person has up to 30 minutes to decide, 4 on an MCP listener, unless a time limit ends it sooner. A client that times out first ends the wait; running the statement again after approval lets it through. On an SSH listener, drop the shell capability first."
         >
           <Stack gap="md">
             <Select
