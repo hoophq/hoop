@@ -99,6 +99,9 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"spanner":    func(l map[string]any) { l["spanner"] = map[string]any{} },
 		"ssh":        func(l map[string]any) { l["ssh"] = sshBlock },
 		"ica":        func(l map[string]any) { l["ica"] = icaBlock },
+		"mcp_gateway": func(l map[string]any) {
+			l["mcp_gateway"] = map[string]any{"transport": "sse"}
+		},
 	}
 	baseline := func(protocol string) map[string]any {
 		l := map[string]any{"name": "l", "protocol": protocol, "listen": "127.0.0.1:1"}

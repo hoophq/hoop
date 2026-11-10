@@ -26,16 +26,20 @@ require any gateway configuration).`,
 }
 
 func runSync() error {
+	conf, err := clientconfig.GetClientConfig()
+	if err != nil {
+		return fmt.Errorf("%v; run `hoop login` first", err)
+	}
+	return Sync(conf)
+}
+
+// Sync installs and activates the CLI version that the gateway in conf reports.
+func Sync(conf *clientconfig.Config) error {
 	// The version-mismatch warning would otherwise fire right before
 	// the "Installing <new>..." banner we print below. Silence it for
 	// this process so the user only sees the upgrade story we're
 	// actually telling them.
 	upgrade.SuppressVersionWarning()
-
-	conf, err := clientconfig.GetClientConfig()
-	if err != nil {
-		return fmt.Errorf("%v; run `hoop login` first", err)
-	}
 
 	gw, err := upgrade.FetchGatewayInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 	if err != nil {

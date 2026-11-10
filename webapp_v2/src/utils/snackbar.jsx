@@ -14,6 +14,7 @@ import Toast from '@/components/Snackbar/Toast'
  *
  *   showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
  *   showSnackbar({ level: 'error',   text: 'Failed to load.', description: err.message })
+ *   showSnackbar({ level: 'warning', text: 'Saved, with a caveat.', description: reason })
  *   showSnackbar({ level: 'error',   text: 'Validation failed.', details: { field: 'name', reason: 'required' } })
  *   showSnackbar({ level: 'approval', text: 'Approval request', actions: [{ label: 'Open', onClick: open }], duration: Infinity })
  *   showSnackbar({ id, text: 'Updated in place' })  // pass a returned id to replace that toast

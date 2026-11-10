@@ -1,3 +1,10 @@
+import {
+  APPROVER_HUMAN,
+  isHandoffAction,
+  isHoldAction,
+  readLevelApprover,
+  readLevelHandoff,
+} from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -24,6 +31,7 @@ const RULE_TYPE_LABELS = {
   http_resource: 'HTTP resource',
   http_status: 'HTTP status',
   grpc_status: 'gRPC status',
+  mcp_tool: 'MCP tool',
 }
 
 // LaneAnalyzerConfig.HighRisk/MediumRisk/LowRisk (sidecar/daemon/analyzer.go).
@@ -33,6 +41,30 @@ const RISK_ACTIONS = {
   warn: 'warns',
   block: 'blocks',
   defer: 'reports',
+}
+
+// Who approves a hold: the block's approval rule, the AI agent, or the members
+// of some groups. `sep` follows "Human": ": " in a level, " " inside a hand-off
+// list.
+function approverDetail(read, sep) {
+  if (!read) return 'approval rule'
+  if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
+}
+
+// A held level names its approver in `approvers.<level>` (ENG-680). A hold
+// with no entry is decided through the block's approval rule. A hand-off
+// lists in `handoffs.<level>` the actions its agent may select (ENG-661).
+function riskDetail(spec, level) {
+  const action = spec[level]
+  const read = readLevelApprover(spec, level)
+  if (isHandoffAction(action)) {
+    const { allowed } = readLevelHandoff(spec, level)
+    const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
+    return `hand-off (${parts.join(', ')})`
+  }
+  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  return `hold (${approverDetail(read, ': ')})`
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -72,6 +104,9 @@ function ruleMatcher(rule) {
     case 'http_status':
     case 'grpc_status':
       return [join(rule.methods), join(rule.statuses)].filter(Boolean).join(' ') || null
+    case 'mcp_tool':
+      if (join(rule.allow)) return `allow only ${join(rule.allow)}`
+      return join(rule.tools) ? `deny ${join(rule.tools)}` : null
     default:
       return null
   }
@@ -102,7 +137,7 @@ function analyzerDetail(spec) {
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
     .filter((level) => spec[level])
-    .map((level) => `${level} ${RISK_ACTIONS[spec[level]] ?? spec[level]}`)
+    .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
   return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')

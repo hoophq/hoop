@@ -34,14 +34,15 @@ func isMCPGateway(lc ListenerConfig) bool {
 // and mcpproxy's session policy. Tool allow and deny are guardrail rules of
 // type mcp_tool.
 type MCPGatewayConfig struct {
-	Transport          string                     `json:"transport,omitempty"`
-	BlockSampling      *bool                      `json:"block_sampling,omitempty"`
-	BlockElicitation   *bool                      `json:"block_elicitation,omitempty"`
-	OnRugPull          string                     `json:"on_rug_pull,omitempty"`
-	MaxCallsPerSession int                        `json:"max_calls_per_session,omitempty"`
-	MaxResultKB        int                        `json:"max_result_kb,omitempty"`
-	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty"`
-	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty"`
+	Transport string `json:"transport,omitempty" label:"Transport" help:"How the sidecar reaches the MCP server." enum:"streamable-http,sse" default:"streamable-http"`
+	// Out of the form: they default to true, and the form writes a switch only when it is on.
+	BlockSampling      *bool                      `json:"block_sampling,omitempty" ui:"-"`
+	BlockElicitation   *bool                      `json:"block_elicitation,omitempty" ui:"-"`
+	OnRugPull          string                     `json:"on_rug_pull,omitempty" label:"On a rug pull" help:"A later tools/list that changes the description or input schema of a listed tool. kill ends the session; alert records it and goes on." enum:"kill,alert" default:"kill"`
+	MaxCallsPerSession int                        `json:"max_calls_per_session,omitempty" label:"Max tool calls per session" help:"A refused call counts too. 0 is unlimited."`
+	MaxResultKB        int                        `json:"max_result_kb,omitempty" label:"Max result size (KiB)" help:"Cuts the text of a tool result to this size. 0 is unlimited."`
+	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty" ui:"-"`
+	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty" ui:"-"`
 	SQL                map[string]MCPSQLTool      `json:"sql,omitempty" cap:"mcp_sql" ui:"-"`
 }
 

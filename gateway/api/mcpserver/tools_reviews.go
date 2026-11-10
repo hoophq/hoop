@@ -483,6 +483,10 @@ func reviewToMap(r *models.Review) map[string]any {
 	if r.AccessRequestRuleName != nil {
 		m["access_request_rule_name"] = *r.AccessRequestRuleName
 	}
+	// A review filed by risk level has no rule; the level names its approvers.
+	if r.RiskLevel.Valid && r.RiskLevel.String != "" {
+		m["risk_level"] = r.RiskLevel.String
+	}
 	if r.MinApprovals != nil {
 		m["min_approvals"] = *r.MinApprovals
 	}

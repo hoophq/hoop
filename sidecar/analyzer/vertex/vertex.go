@@ -320,32 +320,9 @@ func (p *Provider) url() string {
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	ts, err := p.tokenSource()
+	resp, err := p.send(ctx, systemPrompt, content, nil)
 	if err != nil {
 		return nil, err
-	}
-	token, err := ts.Token()
-	if err != nil {
-		// Distinguished from an API failure on purpose: an IAM or clock
-		// problem and a model outage need different people.
-		return nil, fmt.Errorf("analyzer/vertex: minting GCP access token: %w", err)
-	}
-
-	body, err := p.encode(systemPrompt, content)
-	if err != nil {
-		return nil, fmt.Errorf("analyzer/vertex: encoding request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url(), strings.NewReader(string(body)))
-	if err != nil {
-		return nil, fmt.Errorf("analyzer/vertex: building request: %w", err)
-	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("authorization", "Bearer "+token.AccessToken)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("analyzer/vertex: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -362,22 +339,80 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	}
 }
 
-// encode renders the request body for the configured publisher.
+// Decide implements analyzer.ToolCaller with the publisher's own encoder and
+// parser, like Classify.
+func (p *Provider) Decide(ctx context.Context, systemPrompt, content string, tools []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
+	if tools == nil {
+		tools = []analyzer.ToolSpec{}
+	}
+	resp, err := p.send(ctx, systemPrompt, content, tools)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	switch p.publisher {
+	case PublisherGoogle:
+		return gemini.ParseToolCalls("analyzer/"+Name, resp)
+	case PublisherOpenAPI:
+		return openai.ParseToolCalls("analyzer/"+Name, resp)
+	default:
+		return anthropic.ParseToolCalls("analyzer/"+Name, resp)
+	}
+}
+
+// send mints a token and posts one request. tools nil sends the risk tools.
+// The caller closes the response body.
+func (p *Provider) send(ctx context.Context, systemPrompt, content string, tools []analyzer.ToolSpec) (*http.Response, error) {
+	ts, err := p.tokenSource()
+	if err != nil {
+		return nil, err
+	}
+	token, err := ts.Token()
+	if err != nil {
+		// Distinguished from an API failure on purpose: an IAM or clock
+		// problem and a model outage need different people.
+		return nil, fmt.Errorf("analyzer/vertex: minting GCP access token: %w", err)
+	}
+
+	body, err := p.encode(systemPrompt, content, tools)
+	if err != nil {
+		return nil, fmt.Errorf("analyzer/vertex: encoding request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url(), strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("analyzer/vertex: building request: %w", err)
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("authorization", "Bearer "+token.AccessToken)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("analyzer/vertex: %w", err)
+	}
+	return resp, nil
+}
+
+// encode renders the request body for the configured publisher. tools nil
+// renders the risk tools.
 //
 // forVertex=true on the Anthropic encoder moves the model out of the body and
 // the API version into it. The Gemini encoder never carries the model: every
 // Gemini URL names it in the path. forVertex=true on the OpenAI encoder
 // spells the output limit max_tokens, the only name Vertex documents.
-func (p *Provider) encode(systemPrompt, content string) ([]byte, error) {
+func (p *Provider) encode(systemPrompt, content string, tools []analyzer.ToolSpec) ([]byte, error) {
+	if tools == nil {
+		tools = analyzer.ToolSpecs()
+	}
 	switch p.publisher {
 	case PublisherGoogle:
-		req := gemini.BuildRequest(p.gen, systemPrompt, content)
+		req := gemini.BuildToolRequest(p.gen, systemPrompt, content, tools)
 		req.Labels = p.labels
 		return json.Marshal(req)
 	case PublisherOpenAPI:
-		return json.Marshal(openai.BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, true))
+		return json.Marshal(openai.BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, true))
 	default:
-		return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, true))
+		return json.Marshal(anthropic.BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, true))
 	}
 }
 

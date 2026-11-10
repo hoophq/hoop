@@ -840,6 +840,36 @@ func (s *server) Ready() bool {
 	return !s.closed && s.manager != nil && !s.manager.Draining() && s.manager.Ready() && (!s.rt.ReadinessCapacity || !s.manager.Saturated(s.rt.ReadinessHeadroom))
 }
 
+// BeginICADrain refuses new sessions while keeping admitted desktops alive.
+// It is idempotent; restart the sidecar after a completed drain to admit again.
+func (s *server) BeginICADrain() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.manager == nil {
+		return false
+	}
+	s.manager.BeginDrain()
+	return true
+}
+
+// ICAInspectionState attests the actual manager, rather than a configured
+// backend name. A loading, draining or capacity-full engine is not ready.
+func (s *server) ICAInspectionState() daemon.ICAInspectionState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.manager == nil {
+		return daemon.ICAInspectionState{}
+	}
+	return daemon.ICAInspectionState{
+		Ready: !s.manager.Draining() && s.manager.Ready() &&
+			(!s.rt.ReadinessCapacity || !s.manager.Saturated(s.rt.ReadinessHeadroom)),
+		InspectionEnabled: s.manager.InspectionEnabled(),
+		GraphicsBypassed:  s.manager.GraphicsBypassed(),
+		// Every Manager uses the engine's validating ICA/CGP pipeline.
+		ProtocolValidationEnabled: true,
+	}
+}
+
 // GPU bundles have a fixed relative layout shared by Docker and native installs.
 const defaultGPUAssets = "/opt/libhoop-ica/current/gpu"
 

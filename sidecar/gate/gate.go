@@ -1016,11 +1016,19 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		}
 	}
 
+	// unparsed stands for client bytes the codec could not decode. It is
+	// judged after the statements the codec did decode, in stream order.
+	var unparsed *inspect.Statement
 	if err != nil {
-		// A malformed stream falls outside policy. Report it and let the
-		// caller decide whether to tear the connection down; forwarding
-		// bytes the gate could not parse is the honest default, because the
-		// upstream's own parser is the authority on its protocol.
+		// A malformed stream is reported, and policy decides whether its
+		// bytes proceed: the gate turns them into an `unknown` statement
+		// with the reason in parse_error, so an OPA policy or a rule naming
+		// `unknown` can refuse them. A lane with no policy forwards them,
+		// because the upstream's own parser is the authority on its
+		// protocol. A denial ends the connection, which is also the only
+		// safe end: after a decode error the codec no longer tracks the
+		// stream. Response bytes keep that forwarding default, since the
+		// response may already be partly sent.
 		d.Err = fmt.Errorf("inspect: %w", err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.session(), d.Err))
 
@@ -1059,6 +1067,14 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			g.mu.Unlock()
 			g.countStatement(true, SourceStream)
 			return d
+		}
+		if dir == inspect.FromClient && g.policy != nil {
+			unparsed = &inspect.Statement{
+				Protocol:  g.cfg.Protocol,
+				Direction: dir,
+				Operation: inspect.OpUnknown,
+				Metadata:  map[string]string{inspect.MetadataParseError: err.Error()},
+			}
 		}
 	}
 
@@ -1143,27 +1159,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				}
 			}
 		}
-		j := g.judge(ctx, stmt)
-		if j.refusal != nil {
-			r := *j.refusal
-			r.Statements = stmts
-			return r
-		}
-		if j.err != nil {
-			d.Err = errors.Join(d.Err, j.err)
-		}
-		if j.denied {
-			d.Allowed = false
-			d.Message = j.message
-			d.Rule = j.rule
-			d.Review = j.review
-			denied := stmt
-			d.DeniedStatement = &denied
-			d.Payload = nil // nothing may be forwarded
+		j, stop := g.joinJudgment(ctx, &d, stmt, stmts)
+		if stop {
 			return d
 		}
 		if isHTTPRequest(stmt) && g.queueExchange(reservedReview(j)) {
 			queued++
+		}
+	}
+	if unparsed != nil {
+		if _, stop := g.joinJudgment(ctx, &d, *unparsed, stmts); stop {
+			return d
 		}
 	}
 
@@ -1182,6 +1188,32 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 
 	return d
+}
+
+// joinJudgment judges stmt and folds the result into d. stop is true when d
+// must be returned now: a refusal replaced it, or a denial emptied its
+// Payload, so nothing may be forwarded.
+func (g *Gate) joinJudgment(ctx context.Context, d *Decision, stmt inspect.Statement, stmts []inspect.Statement) (j judgment, stop bool) {
+	j = g.judge(ctx, stmt)
+	if j.refusal != nil {
+		*d = *j.refusal
+		d.Statements = stmts
+		return j, true
+	}
+	if j.err != nil {
+		d.Err = errors.Join(d.Err, j.err)
+	}
+	if !j.denied {
+		return j, false
+	}
+	d.Allowed = false
+	d.Message = j.message
+	d.Rule = j.rule
+	d.Review = j.review
+	denied := stmt
+	d.DeniedStatement = &denied
+	d.Payload = nil // nothing may be forwarded
+	return j, true
 }
 
 // judgment is the outcome of evaluating one statement: what the caller must

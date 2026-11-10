@@ -271,6 +271,11 @@ type SessionReview struct {
 	RejectionReason       *string           `json:"rejection_reason"`
 	// Set on a sidecar review only. GetSessionByID reads it; the list does not.
 	ListenerName *string `json:"listener_name"`
+	// The analyzer risk level a sidecar filed the review under. Like
+	// ListenerName, GetSessionByID reads it; the list does not.
+	RiskLevel *string `json:"risk_level"`
+	// ViaHandoff marks a review filed for a hold the hand-off agent selected.
+	ViaHandoff bool `json:"via_handoff"`
 	// The email of who ran the approved review. GetSessionByID reads it; the list does not.
 	ExecutedBy *string `json:"executed_by"`
 }
@@ -366,6 +371,8 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'force_approval_groups', rv.force_approval_groups,
 				'rejection_reason', rv.rejection_reason,
 				'listener_name', rv.listener_name,
+				'risk_level', rv.risk_level,
+				'via_handoff', rv.via_handoff,
 				'executed_by', rv.executed_by,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
@@ -808,9 +815,11 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			LIMIT @page_limit
 			OFFSET @offset
 		)
+		-- metadata.sidecar.ai_decisions holds up to 256 KiB per session and only
+		-- the details page shows it, so the list leaves it out.
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.recording_format, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata #- '{sidecar,ai_decisions}' AS metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 			s.machine_identity_id, s.identity_type, s.correlation_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,

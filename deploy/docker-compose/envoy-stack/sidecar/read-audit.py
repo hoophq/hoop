@@ -33,14 +33,17 @@ def main() -> int:
             proto = e.get("protocol", "")
             op = e.get("operation", "")
             who = e.get("principal", "")[:12]
-            stmt = (e.get("statement") or "")[:46]
+            stmt = e.get("statement") or ""
+            if not stmt and (e.get("metadata") or {}).get("parse_error"):
+                stmt = "parse_error: " + e["metadata"]["parse_error"]
+            stmt = stmt[:46]
             print(f"  {mark} {proto:<9}{op:<10}{who:<13}{stmt}")
         elif kind == "masked":
             ents = ",".join(e.get("masked_entities") or [])
             print(f"  MASK  entities={ents} count={e.get('masked_count', 0)}")
         elif kind == "session_end":
             print(
-                f"  END   {e.get('connection', ''):<9}"
+                f"  END   {e.get('connection', ''):<10}"
                 f"statements={e.get('statement_count', 0)} "
                 f"denied={e.get('denied_count', 0)}"
             )
