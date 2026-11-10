@@ -104,3 +104,11 @@ func TestSetAll(t *testing.T) {
 		t.Fatal("SetAll should filter out unknown flags")
 	}
 }
+
+// Released CLIs read a missing experimental.cli_contexts as a gateway that
+// predates `hoop context`, and refuse to switch. Graduate it with Default: true.
+func TestCLIContextsStaysInCatalog(t *testing.T) {
+	if _, ok := Lookup(FlagCLIContexts); !ok {
+		t.Fatalf("%s left the catalog: every released `hoop context use` would refuse this gateway", FlagCLIContexts)
+	}
+}

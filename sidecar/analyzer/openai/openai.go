@@ -87,7 +87,27 @@ func (p *Provider) Name() string { return p.name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
+	resp, err := p.send(ctx, BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseResponse("analyzer/"+p.name, resp)
+}
+
+// Decide implements analyzer.ToolCaller.
+func (p *Provider) Decide(ctx context.Context, systemPrompt, content string, tools []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
+	resp, err := p.send(ctx, BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, false))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseToolCalls("analyzer/"+p.name, resp)
+}
+
+// send posts one request body. The caller closes the response body.
+func (p *Provider) send(ctx context.Context, request Request) (*http.Response, error) {
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/%s: encoding request: %w", p.name, err)
 	}
@@ -103,9 +123,7 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/%s: %w", p.name, err)
 	}
-	defer resp.Body.Close()
-
-	return ParseResponse("analyzer/"+p.name, resp)
+	return resp, nil
 }
 
 // --- wire format, shared with Vertex ---------------------------------------
@@ -160,8 +178,9 @@ type Parameters struct {
 
 // Property is one schema field.
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Enum        []string `json:"enum,omitempty"`
 }
 
 // UnsupportedSampling names the sampling parameters Chat Completions has no
@@ -176,28 +195,29 @@ var UnsupportedSampling = []string{"top_k"}
 // Vertex returns empty text when the request has no limit it reads, and
 // empty text carries no verdict.
 func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string, forVertex bool) Request {
-	specs := analyzer.ToolSpecs()
+	return BuildToolRequest(model, maxTokens, s, systemPrompt, content, analyzer.ToolSpecs(), forVertex)
+}
+
+// BuildToolRequest renders a request that offers tools and requires a call.
+// BuildRequest is this with the risk tools.
+func BuildToolRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string,
+	specs []analyzer.ToolSpec, forVertex bool) Request {
 	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
+		props := make(map[string]Property, len(s.Input.Properties))
+		for name, p := range s.Input.Properties {
+			props[name] = Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+		}
+		required := s.Input.Required
+		if required == nil {
+			required = []string{}
+		}
 		tools = append(tools, Tool{
 			Type: "function",
 			Function: FunctionSpec{
 				Name:        s.Name,
 				Description: s.Description,
-				Parameters: Parameters{
-					Type: "object",
-					Properties: map[string]Property{
-						"title": {
-							Type:        "string",
-							Description: "Under 80 characters. Shown to the user when the statement is blocked. Never quote a value from the statement.",
-						},
-						"explanation": {
-							Type:        "string",
-							Description: "Why the statement carries this risk. Never quote a value from the statement.",
-						},
-					},
-					Required: []string{"title", "explanation"},
-				},
+				Parameters:  Parameters{Type: "object", Properties: props, Required: required},
 			},
 		})
 	}
@@ -234,7 +254,13 @@ type response struct {
 					Arguments string `json:"arguments"`
 				} `json:"function"`
 			} `json:"tool_calls"`
+
+			// Refusal is set when the model declined to answer.
+			Refusal string `json:"refusal"`
 		} `json:"message"`
+
+		// FinishReason "content_filter" means a safety stop.
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Type    string `json:"type"`
@@ -252,16 +278,9 @@ type response struct {
 // propagated: these APIs echo the offending request often enough that
 // forwarding the body would copy the statement into the relay's logs.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, analyzer.ResponseError(provider, resp)
-	}
-
-	var out response
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("%s: decoding response: %w", provider, err)
-	}
-	if out.Error != nil {
-		return nil, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, choice := range out.Choices {
@@ -286,4 +305,53 @@ func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, erro
 		}
 	}
 	return nil, fmt.Errorf("%s: model called no risk tool", provider)
+}
+
+// decodeResponse reads a 2xx reply, or reports the failure without the body.
+func decodeResponse(provider string, resp *http.Response) (response, error) {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return response{}, analyzer.ResponseError(provider, resp)
+	}
+	var out response
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return response{}, fmt.Errorf("%s: decoding response: %w", provider, err)
+	}
+	if out.Error != nil {
+		return response{}, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
+	}
+	return out, nil
+}
+
+// ParseToolCalls returns every tool call of a reply, in order. Arguments
+// arrive as a JSON string; one that is not JSON comes back with nil Args.
+// A refusal, a content filter or a reply cut off at the token limit is an
+// error, with or without calls; a reply with no call is not. Exported so
+// analyzer/vertex reuses it.
+func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, error) {
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
+	}
+	// A refusal or a content filter on any choice wins over any call:
+	// a tool call beside one is not a decision.
+	for _, choice := range out.Choices {
+		if choice.Message.Refusal != "" || choice.FinishReason == "content_filter" {
+			return nil, fmt.Errorf("%s: model refused to answer", provider)
+		}
+		// A choice cut off at the limit may end inside a call: no decision.
+		if choice.FinishReason == "length" {
+			return nil, fmt.Errorf("%s: model reply was cut off (finish_reason %q)", provider, choice.FinishReason)
+		}
+	}
+	var calls []analyzer.ToolCall
+	for _, choice := range out.Choices {
+		for _, call := range choice.Message.ToolCalls {
+			c := analyzer.ToolCall{Name: call.Function.Name}
+			if args := []byte(call.Function.Arguments); json.Valid(args) {
+				c.Args = args
+			}
+			calls = append(calls, c)
+		}
+	}
+	return calls, nil
 }

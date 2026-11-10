@@ -16,7 +16,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -201,7 +204,8 @@ func Lookup(v any, path string) any {
 }
 
 // Member reads the string member key of the JSON object doc by its exact key.
-// It refuses a key that repeats, in any case, and text Go decoded to U+FFFD.
+// It refuses a key that repeats, in any case, and a value with invalid UTF-8
+// or a lone surrogate escape.
 func Member(doc []byte, key string) (string, error) {
 	notObject := errors.New("not a JSON object")
 	dec := json.NewDecoder(bytes.NewReader(doc))
@@ -247,10 +251,42 @@ func Member(doc []byte, key string) (string, error) {
 		return "", fmt.Errorf("member %q is not a string", key)
 	case strings.TrimSpace(s) == "":
 		return "", fmt.Errorf("member %q is blank", key)
-	case strings.ContainsRune(s, utf8.RuneError):
+	case !wellFormed(raw):
 		return "", fmt.Errorf("member %q holds invalid UTF-8 or a lone surrogate escape", key)
 	}
 	return s, nil
+}
+
+// wellFormed reports whether the JSON string raw holds valid UTF-8 and no
+// lone surrogate escape: the two inputs Go decodes to U+FFFD.
+func wellFormed(raw []byte) bool {
+	if !utf8.Valid(raw) || !json.Valid(raw) {
+		return false
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		i++
+		if raw[i] != 'u' {
+			continue
+		}
+		r := hexRune(raw[i+1 : i+5])
+		i += 4
+		if !utf16.IsSurrogate(r) {
+			continue
+		}
+		if !bytes.HasPrefix(raw[i+1:], []byte(`\u`)) || utf16.DecodeRune(r, hexRune(raw[i+3:i+7])) == unicode.ReplacementChar {
+			return false
+		}
+		i += 6
+	}
+	return true
+}
+
+func hexRune(h []byte) rune {
+	n, _ := strconv.ParseUint(string(h), 16, 32)
+	return rune(n)
 }
 
 // ValidPath accepts a dotted path of member names with no empty or blank

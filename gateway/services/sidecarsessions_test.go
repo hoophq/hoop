@@ -1186,6 +1186,149 @@ func TestPlanSidecarSessionReviewIDs(t *testing.T) {
 	assert.Equal(t, []string{"review-session-0"}, plan.ReviewSessions)
 }
 
+func TestPlanSidecarSessionAIDecisions(t *testing.T) {
+	rated := func(seq int64, kind audit.Kind, md map[string]string) daemon.SessionEvent {
+		return sidecarEvent(seq, kind, time.Duration(seq)*time.Second, func(e *audit.Event) {
+			e.Statement = "UPDATE t SET x = 1"
+			e.Metadata = md
+		})
+	}
+	reviewID := uuid.NewString()
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1), []daemon.SessionEvent{
+		rated(1, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "high"}),
+		rated(2, audit.KindStatement, map[string]string{
+			analyzer.MetadataRiskLevel: "medium", analyzer.MetadataAction: "ai-handoff",
+			analyzer.MetadataHandoffDecision: "block", analyzer.MetadataHandoffReason: "no\x00 where [REDACTED]",
+			analyzer.MetadataReviewID: strings.ToUpper(reviewID),
+		}),
+		rated(3, audit.KindViolation, map[string]string{
+			analyzer.MetadataRiskLevel: "high", analyzer.MetadataApprover: "ai_agent",
+			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReasonCode: "destructive",
+			analyzer.MetadataApprovalReason: "drops",
+			analyzer.MetadataReviewID: "not-a-uuid",
+		}),
+		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataAIStatus: "skipped"}),
+		rated(5, audit.KindError, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+		rated(5, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []sidecarAIDecision{
+		{Seq: 2, Timestamp: "2026-10-01T12:00:02Z", RiskLevel: "medium", RiskAction: "ai-handoff",
+			HandoffDecision: "block", HandoffReason: "no where [REDACTED]", ReviewID: reviewID},
+		{Seq: 3, Timestamp: "2026-10-01T12:00:03Z", RiskLevel: "high", Approver: "ai_agent",
+			ApprovalDecision: "rejected", ApprovalReasonCode: "destructive", ApprovalReason: "drops"},
+	}, plan.AIDecisions, "seq 1 and the repeated seq 5 were applied before; an unrated or error event adds none")
+	assert.NotContains(t, plan.Sidecar, "ai_decisions_dropped")
+
+	raw, err := json.Marshal(plan.AIDecisions[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"seq":3,"timestamp":"2026-10-01T12:00:03Z","risk_level":"high","approver":"ai_agent",
+		"approval_decision":"rejected","approval_reason_code":"destructive","approval_reason":"drops"}`, string(raw),
+		"empty fields are left out")
+
+	// Past the cap the rest are counted, on top of what was dropped before.
+	prior := existingSidecarSession(1)
+	prior.AIDecisions = maxSidecarAIDecisions - 1
+	prior.AIDecisionsDropped = 4
+	plan, err = planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{
+		rated(2, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+		rated(3, audit.KindViolation, map[string]string{analyzer.MetadataRiskLevel: "high"}),
+		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.AIDecisions, 1, "one entry of room left")
+	assert.EqualValues(t, 2, plan.AIDecisions[0].Seq)
+	assert.EqualValues(t, 6, plan.Sidecar["ai_decisions_dropped"], "4 before, 2 now")
+}
+
+// Only the reasons are free text. Every other field keeps a value of the
+// sidecar's vocabulary, so an entry stays small whatever a token holder sends.
+func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
+	huge := strings.Repeat("x", 1<<20)
+	rated := func(seq int64, md map[string]string) daemon.SessionEvent {
+		return sidecarEvent(seq, audit.KindStatement, time.Second, func(e *audit.Event) {
+			e.Statement = "SELECT 1"
+			e.Metadata = md
+		})
+	}
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1), []daemon.SessionEvent{
+		rated(2, map[string]string{
+			analyzer.MetadataRiskLevel: "high", analyzer.MetadataAction: huge,
+			analyzer.MetadataHandoffDecision: huge, analyzer.MetadataApprover: huge,
+			analyzer.MetadataApprovalDecision: huge, analyzer.MetadataReviewID: huge,
+			analyzer.MetadataApprovalReasonCode: huge,
+			analyzer.MetadataHandoffReason: huge, analyzer.MetadataApprovalReason: huge,
+		}),
+		// An unknown risk level is not a rating: no entry.
+		rated(3, map[string]string{analyzer.MetadataRiskLevel: huge}),
+		rated(4, map[string]string{analyzer.MetadataRiskLevel: "High"}),
+		// Both spellings of the hold.
+		rated(5, map[string]string{analyzer.MetadataRiskLevel: "medium", analyzer.MetadataAction: "require_approval",
+			analyzer.MetadataHandoffDecision: "require_review", analyzer.MetadataApprover: "human",
+			analyzer.MetadataApprovalDecision: "approved"}),
+		rated(6, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "require_review",
+			analyzer.MetadataHandoffDecision: "require_approval", analyzer.MetadataApprover: "ai_agent",
+			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReasonCode: "unbounded_scope"}),
+		rated(7, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "ai-handoff",
+			analyzer.MetadataHandoffDecision: "ai-handoff"}),
+		rated(8, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "defer",
+			analyzer.MetadataHandoffDecision: "defer"}),
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.AIDecisions, 5)
+	first := plan.AIDecisions[0]
+	assert.Equal(t, sidecarAIDecision{Seq: 2, Timestamp: first.Timestamp, RiskLevel: "high",
+		HandoffReason: huge[:maxSidecarAIDecisionReasonChars], ApprovalReason: huge[:maxSidecarAIDecisionReasonChars]},
+		first, "unknown values are dropped and the reasons are cut")
+	assert.Equal(t, sidecarAIDecision{Seq: 5, Timestamp: first.Timestamp, RiskLevel: "medium",
+		RiskAction: "require_approval", HandoffDecision: "require_review", Approver: "human", ApprovalDecision: "approved"},
+		plan.AIDecisions[1])
+	assert.Equal(t, sidecarAIDecision{Seq: 6, Timestamp: first.Timestamp, RiskLevel: "low",
+		RiskAction: "require_review", HandoffDecision: "require_approval", Approver: "ai_agent", ApprovalDecision: "rejected",
+		ApprovalReasonCode: "unbounded_scope"},
+		plan.AIDecisions[2])
+	assert.Equal(t, sidecarAIDecision{Seq: 7, Timestamp: first.Timestamp, RiskLevel: "low", RiskAction: "ai-handoff"},
+		plan.AIDecisions[3], "the hand-off agent never selects ai-handoff")
+	assert.Equal(t, sidecarAIDecision{Seq: 8, Timestamp: first.Timestamp, RiskLevel: "low", RiskAction: "defer"},
+		plan.AIDecisions[4], "nor defer")
+	assert.NotContains(t, plan.Sidecar, "ai_decisions_dropped")
+}
+
+// The list has a byte ceiling as well as a count: an entry that would pass it
+// is counted, across batches.
+func TestPlanSidecarSessionCapsAIDecisionBytes(t *testing.T) {
+	reason := strings.Repeat("é", maxSidecarAIDecisionReasonChars)
+	rated := func(seq int64) daemon.SessionEvent {
+		return sidecarEvent(seq, audit.KindStatement, time.Second, func(e *audit.Event) {
+			e.Statement = "SELECT 1"
+			e.Metadata = map[string]string{analyzer.MetadataRiskLevel: "high",
+				analyzer.MetadataHandoffReason: reason, analyzer.MetadataApprovalReason: reason}
+		})
+	}
+	size := sidecarAIDecisionSize(sidecarAIDecision{Seq: 2, Timestamp: "2026-10-01T12:00:01Z", RiskLevel: "high",
+		HandoffReason: reason, ApprovalReason: reason})
+	require.Greater(t, size, 4*maxSidecarAIDecisionReasonChars)
+
+	// Room for two entries and a bit.
+	prior := existingSidecarSession(1)
+	prior.AIDecisions = 3
+	prior.AIDecisionsBytes = maxSidecarAIDecisionsBytes - 2*size - size/2
+	prior.AIDecisionsDropped = 1
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior,
+		[]daemon.SessionEvent{rated(2), rated(3), rated(4), rated(5)})
+	require.NoError(t, err)
+	assert.Len(t, plan.AIDecisions, 2)
+	assert.EqualValues(t, 3, plan.Sidecar["ai_decisions_dropped"], "1 before, 2 now")
+
+	// A full list takes nothing more.
+	prior = existingSidecarSession(5)
+	prior.AIDecisionsBytes = maxSidecarAIDecisionsBytes - size + 1
+	plan, err = planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{rated(6)})
+	require.NoError(t, err)
+	assert.Empty(t, plan.AIDecisions)
+	assert.EqualValues(t, 1, plan.Sidecar["ai_decisions_dropped"])
+}
+
 func TestMergeReviewSessions(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, mergeReviewSessions([]string{"a", "b"}, []string{"b", "c"}))
 	assert.Equal(t, []string{"a"}, mergeReviewSessions(nil, []string{"a"}))

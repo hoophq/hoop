@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -245,9 +246,13 @@ type Reviewer interface {
 	File(ctx context.Context, statement string) (ReviewResult, error)
 
 	// Claim answers about one review by id, spending it when it is
-	// approved. It never files.
+	// approved. It never files. A review the backend does not have
+	// answers an error wrapping ErrReviewNotFound.
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
 }
+
+// ErrReviewNotFound is a Claim about a review the backend does not have.
+var ErrReviewNotFound = errors.New("the approval request was not found")
 
 // Settler is a Reviewer whose release can be a reservation: the backend
 // answers PROCESSING with Forward, and the approval is spent only once the
@@ -310,9 +315,9 @@ const (
 // With no Chain to hand it to, it holds at once: nothing runs after a bare
 // evaluator, so here is already last.
 func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
-	ec *policy.EvalContext, notes map[string]string) policy.Verdict {
+	ec *policy.EvalContext, notes map[string]string, pin pinRef) policy.Verdict {
 	mode, source := e.reviewMode(ctx, stmt)
-	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source) }
+	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source, pin) }
 	if ec.RequestReview(policy.ReviewRequest{
 		Mode: string(mode), ModeSource: source, Resolve: resolve,
 	}) {
@@ -338,8 +343,12 @@ func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
 //
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
+//
+// A hold the hand-off agent selected pins the request it files while that
+// request is pending, in any mode. A statement that hit a pin claims the
+// pinned request instead of filing: see handoffPins and holdPinned.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
-	mode ReviewMode, source string) policy.Verdict {
+	mode ReviewMode, source string, pin pinRef) policy.Verdict {
 	if stmt.Protocol == inspect.MCP {
 		// ENG-967: the mcp lane cannot hold a tool call yet, so it files nothing.
 		return e.deny(notes, "call refused because an mcp lane cannot hold a call for approval yet")
@@ -360,6 +369,9 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// that can no longer run is noise.
 		return e.denyEnded(ctx, notes, "", "", "the connection ended before the approval request was filed")
 	}
+	if pin.reviewID != "" {
+		return e.holdPinned(ctx, stmt, notes, mode, source, pin)
+	}
 
 	text, ignored, err := reviewText(stmt, e.cfg.MatchIgnore)
 	if err != nil {
@@ -368,9 +380,22 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	if ignored > 0 {
 		notes[MetadataReviewMatchIgnored] = strconv.Itoa(ignored)
 	}
+	// A filing that may pin takes its number first: a late answer must
+	// not replace the pin of a filing that started after it. The deferred
+	// finish ends a filing that never answered (a panicking File) without
+	// publishing; after the finish below it does nothing.
+	var gen uint64
+	if pin.key != "" {
+		gen = e.pins.begin(pin.key)
+		defer e.pins.finish(pin.key, gen, "", "", false)
+	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
 	})
+	if pin.key != "" {
+		live := err == nil && res.ID != "" && (res.Status == reviewPending || res.Status == reviewProcessing)
+		e.pins.finish(pin.key, gen, res.ID, pin.reason, live)
+	}
 	if err != nil {
 		e.errs.Add(1)
 		v := e.denyHold(notes, res.ID, res.Status, "the approval request could not be filed")

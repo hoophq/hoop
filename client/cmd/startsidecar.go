@@ -98,13 +98,33 @@ Every capability is decided by the config file, so turning on PII detection
 does not require a different binary. The file may be YAML or JSON; the
 extension picks the parser.
 
-Run with nothing at all — no config, no flags — and a built-in default
-starts instead: one loopback URL that forwards to the getting-started
-guide. It inspects no traffic; it exists so the first run after the
-install works. Write a config to replace it. On an interactive terminal it
-draws a setup screen instead of the banner: set up a config (the demo or a
-protocol), open one, or connect to a Control Plane, then boot it without
-restarting.
+The free plan runs logged in. On its first run hoop start sidecar logs in,
+with a config file or without one. It prints a link and a code; an admin
+approves the code in the web app, and the sidecar joins that admin's
+organization. The login goes to HOOP_CONTROL_PLANE_URL, then the config
+file's "control_plane_url", else https://use.hoop.dev; any other URL is an
+Enterprise plane. The login is saved in ~/.hoop/sidecar/credentials.json,
+one per control plane (HOOP_SIDECAR_STATE_DIR moves the folder), and the
+next run reuses it. --login logs in again. See hoop sidecar status and
+hoop sidecar logout. A run with a token, a platform identity, a license or
+HOOP_SIDECAR_FREE_STANDALONE does not log in. --no-login runs standalone
+and needs a license; --validate and --migrate never log in.
+
+Headless (a container, CI): get a token from the web app or from
+hoop sidecar status --token, and set HOOP_SIDECAR_TOKEN. With no plane
+named, the token goes to https://use.hoop.dev. A headless run with no
+credential logs in by itself and writes sidecar_login_required (the link
+and the code) and then sidecar_login_approved as JSON lines on stdout.
+Keep HOOP_SIDECAR_STATE_DIR on a volume, or a restart logs in again.
+
+Run with nothing at all — no config, no flags — and on an interactive
+terminal it asks first: Managed by hoop (free), which logs in and then sets
+up the config there, or Enterprise, which connects to your own Control
+Plane with a token or a license. Without a terminal it logs in, as above.
+A bare run that does not log in (a license, HOOP_SIDECAR_FREE_STANDALONE)
+starts a built-in default: one loopback URL that forwards to the
+getting-started guide. It inspects no traffic; it exists so the first run
+after the install works. Write a config to replace it.
 
 To start without the screen, pass --log-format text or json: with no config
 it prints the banner, and with a config it writes plain logs instead of the

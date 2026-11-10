@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -89,7 +90,8 @@ func reviewersOrDefault(groups []string) []string {
 }
 
 // AnalyzerRuleHolds reports whether a stored analyzer spec asks to hold a
-// statement for a human on any risk level.
+// statement for a human on any risk level, directly or through an
+// ai-handoff level whose agent may select require_approval.
 //
 // It reads the same field the sidecar reads. A spec that does not decode is
 // not a hold: the write gate refuses it separately, with a message about the
@@ -100,12 +102,38 @@ func AnalyzerRuleHolds(spec json.RawMessage) bool {
 	if err := decodeSpec(spec, &block); err != nil {
 		return false
 	}
-	for _, action := range []string{block.HighRisk, block.MediumRisk, block.LowRisk} {
-		if holdsAction(action) {
+	return blockHolds(&block)
+}
+
+// blockHolds reports whether any level of block can hold a statement.
+func blockHolds(block *daemon.LaneAnalyzerConfig) bool {
+	for _, level := range []analyzer.RiskLevel{analyzer.RiskHigh, analyzer.RiskMedium, analyzer.RiskLow} {
+		if holdsAction(LevelAction(block, level)) || HandoffCanHold(block, level) {
 			return true
 		}
 	}
 	return false
+}
+
+// LevelAction returns the action block sets for level, "" when unset.
+func LevelAction(block *daemon.LaneAnalyzerConfig, level analyzer.RiskLevel) string {
+	switch level {
+	case analyzer.RiskHigh:
+		return block.HighRisk
+	case analyzer.RiskMedium:
+		return block.MediumRisk
+	case analyzer.RiskLow:
+		return block.LowRisk
+	}
+	return ""
+}
+
+// HandoffCanHold reports whether level is ai-handoff and its hand-off agent
+// may select require_approval, in either spelling. A level with no handoffs
+// entry, or an entry with no allowed_actions, allows all four, the hold
+// included, as the sidecar reads it.
+func HandoffCanHold(block *daemon.LaneAnalyzerConfig, level analyzer.RiskLevel) bool {
+	return slices.Contains(block.HandoffActions(level), analyzer.ActionRequireReview)
 }
 
 // specApprovalRule reads the approval_rule a spec names, empty when it does
@@ -131,7 +159,8 @@ func holdsAction(action string) bool {
 // reviewers are the groups the request names. nil means the request said
 // nothing about them: a new rule gets the admin group and an existing one
 // keeps what it has, so an edit that only touches the prompt, from a script or
-// another page, does not reset the reviewers someone chose.
+// another page, does not reset the reviewers someone chose. A spec with
+// approvers ignores them: ManagedRuleReviewers derives the groups.
 //
 // Called inside the caller's transaction, so the two rules commit together. A
 // rule that held statements and lost its approval rule halfway would deny
@@ -140,9 +169,60 @@ func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spe
 	// Only a hold that names this rule's own approval rule is ours to keep.
 	// One naming another rule leaves that rule alone, as an admin wrote it.
 	if AnalyzerRuleHolds(spec) && specApprovalRule(spec) == ruleName {
-		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, reviewers)
+		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, ManagedRuleReviewers(spec, ruleName, reviewers))
 	}
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
+}
+
+// ManagedRuleReviewers returns the groups the rule's own approval rule gets.
+//
+// A sidecar that does not read approvers files every held level under that
+// rule. So when the spec has approvers and names the rule's own approval
+// rule, the groups come from the human levels, never from the request: their
+// common group set when every human level has the same non-empty one, else
+// none (the admin group). Then no group approves a level on an old build that
+// it cannot approve on a new one. A human level holds directly, or is
+// ai-handoff with require_approval allowed. ai_agent levels do not change the
+// result. Any other spec returns requested.
+func ManagedRuleReviewers(spec json.RawMessage, ruleName string, requested *[]string) *[]string {
+	var block daemon.LaneAnalyzerConfig
+	if err := decodeSpec(spec, &block); err != nil || block.ApprovalRule != ruleName ||
+		block.Approvers == nil || block.Approvers.High == nil && block.Approvers.Medium == nil && block.Approvers.Low == nil {
+		return requested
+	}
+	groups := []string{}
+	var common []string
+	for _, risk := range []analyzer.RiskLevel{analyzer.RiskHigh, analyzer.RiskMedium, analyzer.RiskLow} {
+		a := block.LevelApprover(risk)
+		held := holdsAction(LevelAction(&block, risk)) || HandoffCanHold(&block, risk)
+		if !held || a == nil || a.Type != analyzer.ApproverHuman {
+			continue
+		}
+		g := NormalizeReviewerGroups(a.Groups)
+		switch {
+		case len(g) == 0, common != nil && !sameGroupSet(common, g):
+			return &groups
+		case common == nil:
+			common = g
+		}
+	}
+	if common != nil {
+		groups = common
+	}
+	return &groups
+}
+
+// sameGroupSet reports two normalized lists that hold the same groups.
+func sameGroupSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, g := range a {
+		if !slices.Contains(b, g) {
+			return false
+		}
+	}
+	return true
 }
 
 // AnalyzerApprovalRule returns the approval rule an analyzer rule manages, or

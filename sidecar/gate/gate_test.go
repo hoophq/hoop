@@ -1493,9 +1493,9 @@ func (*neverCompletesCodec) Decode(inspect.Direction, []byte) ([]inspect.Stateme
 }
 
 // The gate forwards bytes a codec cannot parse unless the codec reports
-// ErrStreamUnsafe. The Oracle codec is fail-closed: a malformed client
-// request is denied, and with masking on so is a malformed server reply,
-// whose rows masking could not attribute.
+// ErrStreamUnsafe or the lane's policy refuses them. The Oracle codec is
+// fail-closed: a malformed client request is denied, and with masking on so
+// is a malformed server reply, whose rows masking could not attribute.
 func TestMalformedOracleTrafficIsDeniedNotForwarded(t *testing.T) {
 	data := func(ttc ...byte) []byte {
 		p := make([]byte, 10, 10+len(ttc))

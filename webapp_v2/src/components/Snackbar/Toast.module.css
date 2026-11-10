@@ -42,6 +42,10 @@
   color: var(--mantine-color-red-9);
 }
 
+.iconWarning {
+  color: var(--mantine-color-amber-9);
+}
+
 .iconInfo {
   color: var(--mantine-color-sky-9);
 }

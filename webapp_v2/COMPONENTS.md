@@ -1224,6 +1224,7 @@ import { showSnackbar } from '@/utils/snackbar'
 showSnackbar({ level: 'success', text: 'Agent deleted.' })
 showSnackbar({ level: 'error',   text: 'Failed to delete agent.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
+showSnackbar({ level: 'warning', text: 'Saved, with a caveat.', description: reason })
 
 // Error toasts can expand to show a `details` panel (object → key/value lines)
 showSnackbar({

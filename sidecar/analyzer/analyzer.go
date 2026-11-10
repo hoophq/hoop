@@ -105,6 +105,17 @@ const (
 	// package needs to understand it: the analyzer folds its own findings,
 	// so policy.Chain never has to rank a status it cannot interpret.
 	MetadataAIStatus = "ai_status"
+
+	// MetadataHandoffDecision is the action the hand-off agent selected on
+	// an ai-handoff level: allow, warn, block or require_approval.
+	// MetadataAction stays ai-handoff.
+	MetadataHandoffDecision = "handoff_decision"
+
+	// MetadataHandoffReason is the hand-off agent's reason, or the fixed
+	// reason of a fail-safe decision. The agent's reason is model prose
+	// under the same exception as MetadataApprovalReason: kept only after
+	// Config.RecordRedact ran on it, bounded by maxAgentReasonBytes.
+	MetadataHandoffReason = "handoff_reason"
 )
 
 // Source is the key this producer's findings appear under in a policy's
@@ -221,12 +232,18 @@ const (
 	// require_review, every released sidecar decodes it, and the audit
 	// record keeps one value for one behaviour.
 	ActionRequireApproval Action = "require_approval"
+
+	// ActionHandoff asks a second model turn, the hand-off agent, to
+	// select the action from the level's allowed actions (Config.Handoffs).
+	// The agent can never select ActionHandoff.
+	ActionHandoff Action = "ai-handoff"
 )
 
 // Valid reports whether a is a known action.
 func (a Action) Valid() bool {
 	switch a {
-	case ActionAllow, ActionWarn, ActionBlock, ActionDefer, ActionRequireReview, ActionRequireApproval:
+	case ActionAllow, ActionWarn, ActionBlock, ActionDefer, ActionRequireReview, ActionRequireApproval,
+		ActionHandoff:
 		return true
 	}
 	return false

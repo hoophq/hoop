@@ -1,3 +1,5 @@
+import { decodeForDisplay } from '@/pages/Roles/Configure/utils/secretsCodec'
+import { ENV, isStdio } from '@/pages/Roles/Configure/utils/mcpGateway'
 import { metadataForSubtype } from './catalog'
 import { secretOf } from './roleCredentials'
 
@@ -20,6 +22,12 @@ function roleAttributes(role, profileAttribute) {
   return [...new Set([...role.attributes, ...withProfile])]
 }
 
+// A stdio MCP Gateway role runs its typed command and sends no INSECURE; a
+// remote one keeps the catalog command (the stdio carve-outs of process_form.cljs).
+function mcpStdio(subtype, stagedSecrets) {
+  return subtype === 'mcpproxy' && isStdio(decodeForDisplay(stagedSecrets[ENV.transport]?.value))
+}
+
 // POST /resources body, the same as process-payload in
 // webapp/src/webapp/resources/setup/events/process_form.cljs for these types.
 // The typed linux-vm arguments replace the catalog command; with none, linux-vm
@@ -36,16 +44,21 @@ export function buildCreatePayload({ name, setup, agentId, roles, connections, p
     agent_id: agentId,
     env_vars: {},
     roles: roles.map((role) => {
-      const { drafts } = role.credentials.getState()
+      const { drafts, stagedSecrets, mcpOAuthFlowId } = role.credentials.getState()
+      const stdio = mcpStdio(setup.subtype, stagedSecrets)
+      const typedCommand = setup.subtype !== 'mcpproxy' || stdio ? drafts.command : []
+      const secret = secretOf(role.credentials)
+      if (stdio) delete secret[ENV.insecure]
       return {
         name: role.name,
         type: setup.type,
         subtype: drafts.subtype,
         agent_id: agentId,
-        secret: secretOf(role.credentials),
-        command: drafts.command.length > 0 ? drafts.command : catalogCommand,
+        secret,
+        command: typedCommand.length > 0 ? typedCommand : catalogCommand,
         attributes: roleAttributes(role, profileAttribute),
         ...ROLE_DEFAULTS,
+        ...(setup.subtype === 'mcpproxy' && mcpOAuthFlowId ? { mcp_oauth_flow_id: mcpOAuthFlowId } : {}),
       }
     }),
   }

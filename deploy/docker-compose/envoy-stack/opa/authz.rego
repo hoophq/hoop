@@ -139,18 +139,19 @@ result["body"] := body
 # The same OPA, a different caller.
 #
 # Everything above answers Envoy over ext_authz gRPC. Everything below answers
-# hoop-inspect over the Data API at /v1/data/envoy/authz/inspect, which is
-# where the sidecar's policy.opa.url points once the marked block in
-# sidecar/config.yaml is uncommented. One package because compose loads
-# one policy file, and a second rule name is cheaper than a second mount.
+# hoop-inspect over the Data API at /v1/data/envoy/authz/inspect. The
+# appdb-opa lane in sidecar/config.yaml queries it on every statement; the
+# appdb lane does once its marked opa block is uncommented. One package
+# because compose loads one policy file, and a second rule name is cheaper
+# than a second mount.
 #
 # `input` here is a parsed statement (protocol, operation, tables, statement
 # text) rather than an Envoy CheckRequest, and the answer is {"allow": true}
 # or {"denied": true, "message": ...}. Envoy cannot produce that input; it has
 # no pgwire parser.
 #
-# Nothing queries these rules until that config block is uncommented, so they
-# cost the default stack nothing. ./run.sh needs no model credential.
+# None of this needs a model credential: the producers it reads stay off
+# until their blocks in sidecar/config.yaml are uncommented.
 
 # The tables worth spending a model call on. One exists in this stack's
 # schema; add names here rather than widening the rules below.
@@ -224,7 +225,13 @@ inspect_pii_protected := {"US_SSN", "CREDIT_CARD", "IBAN_CODE"}
 
 inspect_pii_hits := {e | some e in inspect_pii_entities; e in inspect_pii_protected}
 
-inspect_decide := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
+inspect_decide := {"denied": true, "rule": "parse-error", "message": msg} if {
+	# Client bytes the relay's codec could not decode arrive as an unknown
+	# statement with no text and the codec's error in parse_error. Nothing
+	# judged them, so refuse them; the connection ends with the refusal.
+	input.metadata.parse_error
+	msg := "the relay could not decode this request; refusing it"
+} else := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
 	# Fail closed on protected data nobody classified. A level-only
 	# contract cannot express this case, which is why status exists.
 	# Naming inspect_ai.status is also the presence check: with no analyzer

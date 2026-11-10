@@ -35,6 +35,14 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 	return composeSidecarConfiguration(db, sc, "", "")
 }
 
+// ComposeSidecarConfigurationFrom is ComposeSidecarConfiguration over bound
+// rules the caller already read, for the handshake: it reads them once, to
+// decide whether the document it served last time still stands, and folds
+// them only when it does not.
+func ComposeSidecarConfigurationFrom(sc *models.Sidecar, bound models.SidecarBoundRules) (daemon.Config, error) {
+	return foldSidecarRules(daemon.Config(sc.Configuration), bound.Guardrails, bound.Masking, bound.Analyzers)
+}
+
 // ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,
 // as opposed to one the rules make impossible.
 //
@@ -68,18 +76,11 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 		return cfg, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
 	}
 
-	guardrails, err := models.ListGuardrailRulesForSidecar(db, orgID, sc.ID)
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
-	masking, err := models.ListDataMaskingRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
-	analyzers, err := models.ListAnalyzerRulesForSidecar(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
-	}
+	guardrails, masking, analyzers := bound.Guardrails, bound.Masking, bound.Analyzers
 	if skipName != "" {
 		switch skipKind {
 		case SidecarRuleGuardrail:
@@ -272,6 +273,7 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	// would make a rule unable to widen what it narrowed.
 	out.Trigger = rule.Trigger
 	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
+	out.Approvers, out.Handoffs = rule.Approvers, rule.Handoffs
 	out.Prompt, out.Message = rule.Prompt, rule.Message
 
 	// The overrides, kept from the listener unless the rule names one. The
@@ -375,13 +377,15 @@ type ErrSidecarCapabilityMissing struct{ Reason string }
 func (e ErrSidecarCapabilityMissing) Error() string { return e.Reason }
 
 // CheckSidecarCapabilities refuses a composed document that the sidecar's last
-// handshake says it cannot decode. A sidecar that never handshaked passes: its
+// handshake says it cannot decode, as the handshake serves it
+// (daemon.ServeLevelApprovers). A sidecar that never handshaked passes: its
 // support is unknown, and the handshake refuses to serve it instead.
 func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error {
 	if sc.Capabilities == nil {
 		return nil
 	}
-	if err := daemon.CheckServable(composed, daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}); err != nil {
+	hs := daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}
+	if err := daemon.CheckServable(daemon.ServeLevelApprovers(composed, hs), hs); err != nil {
 		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
 	}
 	return nil

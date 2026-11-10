@@ -1033,14 +1033,19 @@ func appendUnique(dst []string, add ...string) []string {
 // messageOr is the operator's Message, or a generated one naming the rule
 // and the operation. An `unknown` operation alone tells a user nothing they
 // can act on, so the generated form carries the scanner's reason (`stored
-// procedure; body is in the catalog`): the statement was refused for what
-// it is, not for what it does.
+// procedure; body is in the catalog`) or the codec's decode error: the
+// statement was refused for what it is, not for what it does.
 func (r Rule) messageOr(stmt inspect.Statement) string {
 	if r.Message != "" {
 		return r.Message
 	}
-	if why := stmt.Metadata[inspect.MetadataSQLIncomplete]; stmt.Operation == inspect.OpUnknown && why != "" {
-		return fmt.Sprintf("statement denied by policy rule %q (operation=unknown: %s)", r.Name, why)
+	if stmt.Operation == inspect.OpUnknown {
+		if why := stmt.Metadata[inspect.MetadataSQLIncomplete]; why != "" {
+			return fmt.Sprintf("statement denied by policy rule %q (operation=unknown: %s)", r.Name, why)
+		}
+		if why := stmt.Metadata[inspect.MetadataParseError]; why != "" {
+			return fmt.Sprintf("statement denied by policy rule %q (operation=unknown: parse error: %s)", r.Name, why)
+		}
 	}
 	return fmt.Sprintf("statement denied by policy rule %q (operation=%s)", r.Name, stmt.Operation)
 }

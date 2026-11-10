@@ -185,7 +185,8 @@ func (r *Reviewer) claim(id string) (analyzer.ReviewResult, error) {
 	r.expireLocked()
 	rv, ok := r.reviews[id]
 	if !ok {
-		return analyzer.ReviewResult{}, fmt.Errorf("no local approval %s", id)
+		// Pruned or never filed here: a pinned hand-off reads it as over.
+		return analyzer.ReviewResult{}, fmt.Errorf("%w: no local approval %s", analyzer.ErrReviewNotFound, id)
 	}
 	if rv.Status == statusApproved {
 		return r.spend(rv), nil

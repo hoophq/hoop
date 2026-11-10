@@ -11558,7 +11558,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.",
+                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the groups of the listener's analyzer approvers entry for that level decide who approves. With handoff, the level is ai-handoff and its hand-off agent selected require_approval.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13634,12 +13634,12 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule. Absent keeps, 0 clears",
+                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule, directly or through an ai-handoff level. Absent keeps, 0 clears",
                     "type": "integer",
                     "example": 900
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement, directly or through an\nai-handoff level that allows require_approval. Ignored when\nsidecar_spec has approvers and names its own approval rule: the groups\nevery human level shares apply, else the admin group.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -19182,6 +19182,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
+                },
                 "session": {
                     "description": "The id of session",
                     "type": "string",
@@ -19225,6 +19236,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold that filed this approval request",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
@@ -21643,6 +21660,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
+                },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - The resource is waiting for approval\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The approval request is being executed\n* EXECUTED - The approval request was executed\n* UNKNOWN - Unable to know the status of the approval request",
                     "allOf": [
@@ -21672,6 +21700,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold that filed this approval request.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
@@ -21745,6 +21779,19 @@ const docTemplate = `{
                 "bound_rules_unavailable": {
                     "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
                     "type": "boolean"
+                },
+                "capabilities": {
+                    "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true,
+                    "readOnly": true,
+                    "example": [
+                        "protocol:mcp",
+                        "rule:mcp_tool"
+                    ]
                 },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
@@ -22075,6 +22122,19 @@ const docTemplate = `{
                     "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
                     "type": "boolean"
                 },
+                "capabilities": {
+                    "description": "Capabilities from the last handshake, such as protocol:mcp. Null: the\nsidecar never connected. Empty: an old build that reports none.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true,
+                    "readOnly": true,
+                    "example": [
+                        "protocol:mcp",
+                        "rule:mcp_tool"
+                    ]
+                },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
                     "type": "string",
@@ -22180,16 +22240,20 @@ const docTemplate = `{
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
-                "approval_rule",
                 "listener_name",
                 "payload"
             ],
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it. Required without risk_level, refused with it.\n\nBounded at 254 to match what a rule name may be.",
                     "type": "string",
                     "maxLength": 254,
                     "example": "payments-approvers"
+                },
+                "handoff": {
+                    "description": "The hand-off agent of the level selected the hold. The level must be ai-handoff, allow\nrequire_approval, and name a human approver for that level (approvers). Read only with risk_level",
+                    "type": "boolean",
+                    "example": false
                 },
                 "listener_name": {
                     "description": "The sidecar listener the statement arrived on, at most 1024 bytes",
@@ -22205,6 +22269,16 @@ const docTemplate = `{
                     "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
                     "type": "boolean",
                     "example": false
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level that held the statement, when the listener's\nanalyzer block names a human approver for that level (approvers). The\ncontrol plane reads the level's approval groups in the listener's\nstored configuration",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "example": "high"
                 }
             }
         },
@@ -22243,7 +22317,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule the approval request was filed under",
+                    "description": "The access request rule the approval request was filed under. Empty on one filed under a risk level",
                     "type": "string",
                     "readOnly": true,
                     "example": "payments-approvers"
@@ -22285,6 +22359,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "Not during business hours."
                 },
+                "risk_level": {
+                    "description": "The analyzer risk level the approval request was filed under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
+                },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - Waiting for an approver\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement\n* EXPIRED - The approval request passed its deadline; it never releases the statement",
                     "allOf": [
@@ -22293,6 +22378,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
