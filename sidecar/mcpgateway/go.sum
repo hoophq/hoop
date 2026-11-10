@@ -26,8 +26,6 @@ github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRn
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c h1:GQpTSl4SHNSZAQ0URjFDL/emIGx7h5cdn2dol4KuMQ8=
-github.com/hoophq/mcpproxy v0.1.8-0.20261106180426-7d089fd0460c/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/hoophq/mcpproxy v0.2.0 h1:q+mYWb24o1FNSLWEOSQqfPB4WMecD5j65JMI41y3c84=
 github.com/hoophq/mcpproxy v0.2.0/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
