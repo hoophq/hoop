@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -125,7 +126,17 @@ type MCPVerdict struct {
 	Allowed bool
 	Message string
 	Rule    string
+	// Held is a refusal that waits on an approval Message names: the same
+	// call runs once it is approved.
+	Held bool
 }
+
+// MCPRequestTimeout ends one MCP request on a lane: a held call, and its
+// upstream call after the approval.
+const MCPRequestTimeout = 5 * time.Minute
+
+// mcpHoldWait leaves an approved call a minute of MCPRequestTimeout to run.
+const mcpHoldWait = MCPRequestTimeout - time.Minute
 
 // MCPToolInfo is one tool of a tools/list answer.
 type MCPToolInfo struct {
@@ -174,6 +185,8 @@ type MCPGatewayLane struct {
 	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
+	// RequestTimeout is MCPRequestTimeout.
+	RequestTimeout time.Duration
 	// Telemetry is the lane's recorder; nil without a telemetry block.
 	Telemetry telem.LaneRecorder
 	// Open starts the sidecar session for one MCP session. Nil on a
@@ -267,6 +280,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		DownstreamTLS:      downstream,
 		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		RequestTimeout:     MCPRequestTimeout,
 		Telemetry:          ln.telemetry,
 		Log:                laneLog,
 	}
@@ -300,16 +314,17 @@ func (r mcpLaneRules) swapLane(ln lane, drained func()) {
 }
 
 type mcpLaneSession struct {
-	mu      sync.Mutex
-	calls   sync.WaitGroup
-	g       *gate.Gate
-	release func()
-	mcpSID  string
-	hide    *policy.Rules
-	sql     map[string]MCPSQLTool
-	log     *slog.Logger
-	closed  bool
-	done    chan struct{}
+	mu       sync.Mutex
+	calls    sync.WaitGroup
+	g        *gate.Gate
+	release  func()
+	mcpSID   string
+	hide     *policy.Rules
+	sql      map[string]MCPSQLTool
+	log      *slog.Logger
+	closed   bool
+	done     chan struct{}
+	holdWait time.Duration
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -338,7 +353,8 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log, done: make(chan struct{})}
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log,
+		done: make(chan struct{}), holdWait: mcpHoldWait}
 	if ln.cfg.MCPGateway != nil {
 		ls.sql = ln.cfg.MCPGateway.SQL
 	}
@@ -432,13 +448,16 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 		return MCPVerdict{Message: "session closed"}
 	}
 	defer s.calls.Done()
+	ctx = analyzer.WithHoldWait(ctx, s.holdWait)
 	var v MCPVerdict
 	for _, stmt := range stmts {
 		d := s.g.EvaluateStatement(ctx, stmt)
 		if d.Err != nil {
 			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
 		}
-		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
+		v = MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule,
+			Held: d.Review != nil && ReviewNext(d.Review.Status) == ReviewNextWait}
+		if !v.Allowed {
 			break
 		}
 	}

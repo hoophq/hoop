@@ -192,12 +192,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const fresh = holds(action) && !holds(f[level])
       const keep = f.approval[level].approver !== APPROVER_RULE
       const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
-      let handoff = f.handoff
-      if (mcpBound && isHandoffAction(action) && !isHandoffAction(f[level])) {
-        const allowed = f.handoff[level].allowed.filter((v) => v !== HANDOFF_HOLD)
-        if (allowed.length > 0) handoff = { ...f.handoff, [level]: { ...f.handoff[level], allowed } }
-      }
-      return { ...f, [level]: action, approval, handoff }
+      return { ...f, [level]: action, approval }
     })
   // Levels turned to a person before the groups loaded: they get every group
   // once the list arrives, unless the editor picks groups first.
@@ -285,19 +280,17 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     }
   }, [])
 
-  const protocols = useMemo(() => {
+  const protocol = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    return targets.map((t) => {
-      const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-      return lane?.protocol ?? ''
-    })
+    const first = targets[0]
+    if (!first) return ''
+    const lane = byId.get(first.sidecar_id)?.configuration?.listeners?.find((l) => l.name === first.listener_name)
+    return lane?.protocol ?? ''
   }, [targets, sidecars])
-  const protocol = protocols[0] ?? ''
-  const mcpBound = protocols.some((p) => p.toLowerCase() === 'mcp')
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
-  const actions = useMemo(() => analyzerActionsFor(mcpBound), [mcpBound])
+  const actions = useMemo(() => analyzerActionsFor(), [])
   // Exclude alone selects nothing, so it does not count as a trigger.
   const noTrigger =
     form.trigger_operations.length === 0 &&
@@ -305,8 +298,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     form.trigger_resources.length === 0 &&
     form.trigger_any.length === 0
 
-  const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => canHold(form, level))
-  const canSubmit = name.trim() !== '' && !submitting && !holdOnMcp
+  const canSubmit = name.trim() !== '' && !submitting
   // Plus the level's stored ones, so a removed group can still be unselected.
   const groupOptionsFor = (level) => [...new Set([...groupOptions, ...form.approval[level].groups])].sort()
   const approvers = holdApprovers(form)
@@ -386,7 +378,6 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     isHTTP,
     operations,
     actions,
-    mcpBound,
     noTrigger,
     canSubmit,
     submitting,

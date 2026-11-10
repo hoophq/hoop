@@ -308,6 +308,21 @@ const (
 	reviewPoll = 5 * time.Second
 )
 
+type holdWaitKey struct{}
+
+// WithHoldWait shortens the wait of a hold on ctx to d, so a lane whose
+// caller ends the request sooner answers with the approval id first.
+func WithHoldWait(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, holdWaitKey{}, d)
+}
+
+func (e *Evaluator) holdWait(ctx context.Context) time.Duration {
+	if d, ok := ctx.Value(holdWaitKey{}).(time.Duration); ok && d > 0 && d < e.reviewWait {
+		return d
+	}
+	return e.reviewWait
+}
+
 // requestHold hands the hold to the Chain that owns ec, which runs it after
 // every evaluator placed after this one allowed (ADR-0030). Holding here
 // would file and spend the approval before a decide-phase OPA could deny.
@@ -458,8 +473,9 @@ func reviewText(stmt inspect.Statement, ignore []MatchIgnore) (string, int, erro
 // at the deadline may already have spent the approval, so its answer is
 // honored.
 func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]string) policy.Verdict {
-	deadline := time.Now().Add(e.reviewWait)
-	timer := time.NewTimer(e.reviewPoll)
+	budget := e.holdWait(ctx)
+	deadline := time.Now().Add(budget)
+	timer := time.NewTimer(min(e.reviewPoll, budget))
 	defer timer.Stop()
 	for {
 		select {
@@ -492,7 +508,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 		if left <= 0 {
 			return e.denyHold(notes, reviewID, reviewPending, fmt.Sprintf(
 				"still waiting for approval after %s; run the statement again once it is approved",
-				e.reviewWait))
+				budget))
 		}
 		timer.Reset(min(e.reviewPoll, left))
 	}

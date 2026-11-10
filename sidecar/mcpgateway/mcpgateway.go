@@ -151,6 +151,7 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		Observer:           s,
 		Logger:             s.log,
 		SessionIdleTimeout: lane.SessionIdleTimeout,
+		RequestTimeout:     lane.RequestTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
 			id := inspect.Identity{Claims: map[string]any{"peer": r.RemoteAddr}}
 			switch {
@@ -808,6 +809,9 @@ func unreadableCatalog(ctx context.Context, ls daemon.MCPLaneSession, err error)
 // isError set: MCP reports a failed call as a result, so the model sees it.
 func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decision {
 	msg := "denied by the hoop sidecar"
+	if v.Held {
+		msg = "held for approval by the hoop sidecar"
+	}
 	if v.Rule != "" {
 		msg += " (rule " + v.Rule + ")"
 	}

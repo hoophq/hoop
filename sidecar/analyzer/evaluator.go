@@ -713,10 +713,6 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 // agent selected, and pin is what its filing pins.
 func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
 	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
-	if stmt.Protocol == inspect.MCP {
-		// ENG-967: the mcp lane cannot hold a tool call yet, so no approver sees it.
-		return e.deny(notes, "call refused because an mcp lane cannot hold a call for approval yet")
-	}
 	ctx := withHoldDetail(connContext(ec), HoldDetail{
 		Rule:        e.cfg.Rule,
 		RiskLevel:   level,

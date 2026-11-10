@@ -104,10 +104,8 @@ describe('an mcp lane', () => {
     expect(addBlocked(noSection, mcp, 'ai-analyzer')).toBeTruthy()
   })
 
-  it('offers no hold for an analyzer rule bound to an mcp listener', () => {
-    const hold = (mcpBound) => analyzerActionsFor(mcpBound).find((a) => a.value === REVIEW_ACTION)
-    expect(hold(true).disabled).toBe(true)
-    expect(hold(false).disabled).toBeFalsy()
-    expect(analyzerActionsFor(true).filter((a) => a.disabled)).toHaveLength(1)
+  it('offers the hold for an analyzer rule, an mcp listener included', () => {
+    expect(analyzerActionsFor().find((a) => a.value === REVIEW_ACTION)).toBeTruthy()
+    expect(analyzerActionsFor().filter((a) => a.disabled)).toHaveLength(0)
   })
 })

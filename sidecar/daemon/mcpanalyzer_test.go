@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -124,26 +125,85 @@ func TestMCPLaneAnalyzerRefusesOneCall(t *testing.T) {
 	}
 }
 
-// ENG-967: a hold refuses the call and files nothing, with a plane that
-// would accept the review. The session goes on.
-func TestMCPLaneAnalyzerHoldRefusesTheCall(t *testing.T) {
-	cp, calls := reviewPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"9f97","status":"REJECTED"}}`)
-	ls, sink := openMCPAnalyzerSession(t, `{"high":"require_approval","approval_rule":"tool-approvers"}`, "", &toolRiskProvider{}, cp, nil)
-	ctx := context.Background()
-	if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Rule != "tools" ||
-		v.Message != "call refused because an mcp lane cannot hold a call for approval yet" {
-		t.Fatalf("held call verdict: %+v", v)
-	}
-	if len(*calls) != 0 {
-		t.Fatalf("the plane saw %d review requests, want none", len(*calls))
-	}
-	if v := ls.ToolCall(ctx, "echo", []byte(`{}`)); !v.Allowed {
-		t.Fatalf("the call after a hold was refused: %+v", v)
-	}
-	if r := judged(sink)[0]; r.Allowed || r.Metadata[policy.AnnotationRiskAction] != string(analyzer.ActionRequireReview) {
-		t.Fatalf("held row: %+v", r)
-	}
+const heldCallBlock = `{"high":"require_approval","approval_rule":"tool-approvers"}`
 
+// A hold files the call with the plane under the lane and its approval rule.
+// An approval the plane spends lets the call through, and the row names the
+// review.
+func TestMCPLaneHoldReleasesAnApprovedCall(t *testing.T) {
+	cp, calls := reviewPlane(t, http.StatusCreated, `{"forward":true,"review":{"id":"9f97","status":"EXECUTED"}}`)
+	ls, sink := openMCPAnalyzerSession(t, heldCallBlock, "", &toolRiskProvider{}, cp, nil)
+	if v := ls.ToolCall(context.Background(), "delete_customer", []byte(`{"id":"7"}`)); !v.Allowed || v.Held {
+		t.Fatalf("approved call verdict: %+v", v)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("the plane saw %d review requests, want 1", len(*calls))
+	}
+	c := (*calls)[0]
+	if c.path != "/api/sidecars/reviews" || c.listen != "tools" || c.rule != "tool-approvers" ||
+		c.payload != base64.StdEncoding.EncodeToString([]byte("delete_customer\n{\"id\":\"7\"}")) {
+		t.Fatalf("review request: %+v", c)
+	}
+	if r := judged(sink)[0]; !r.Allowed || r.Metadata[analyzer.MetadataReviewID] != "9f97" || r.Metadata[analyzer.MetadataReviewMode] != "hold" {
+		t.Fatalf("released row: %+v", r)
+	}
+}
+
+// A rejected or expired review refuses the one call with the plane's reason,
+// and the session goes on.
+func TestMCPLaneHoldRefusesARejectedCall(t *testing.T) {
+	for status, want := range map[string]string{
+		"REJECTED": `the approval request was rejected: "not on a friday" (approval 9f97)`,
+		"EXPIRED":  "the approval request expired",
+	} {
+		cp, _ := reviewPlane(t, http.StatusCreated,
+			`{"forward":false,"review":{"id":"9f97","status":"`+status+`","rejection_reason":"not on a friday"}}`)
+		ls, _ := openMCPAnalyzerSession(t, heldCallBlock, "", &toolRiskProvider{}, cp, nil)
+		ctx := context.Background()
+		if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Held || v.Rule != "tools" || !strings.Contains(v.Message, want) {
+			t.Fatalf("%s: verdict %+v", status, v)
+		}
+		if v := ls.ToolCall(ctx, "echo", []byte(`{}`)); !v.Allowed {
+			t.Fatalf("%s: the call after a refusal was refused: %+v", status, v)
+		}
+	}
+}
+
+// A pending review is a held refusal: at once in return mode, at the lane's
+// hold limit otherwise. Both name the approval.
+func TestMCPLaneHoldAnswersAPendingCallWithTheApproval(t *testing.T) {
+	for _, c := range []struct {
+		name, block, want string
+		claims            int
+	}{
+		{"return", `{"high":"require_approval","approval_rule":"tool-approvers","review_mode":"return"}`, "approval 9f97", 0},
+		{"hold", heldCallBlock, "still waiting for approval after 30ms", 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cp, calls := reviewPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`)
+			ls, _ := openMCPAnalyzerSession(t, c.block, "", &toolRiskProvider{}, cp, nil)
+			ls.(*mcpLaneSession).holdWait = 30 * time.Millisecond
+			v := ls.ToolCall(context.Background(), "delete_customer", []byte(`{"id":"7"}`))
+			if v.Allowed || !v.Held || !strings.Contains(v.Message, c.want) || !strings.Contains(v.Message, "9f97") {
+				t.Fatalf("verdict %+v", v)
+			}
+			if claims := len(*calls) - 1; claims != c.claims {
+				t.Fatalf("%d claims, want %d: %+v", claims, c.claims, *calls)
+			}
+		})
+	}
+}
+
+// The hold ends before the request does, and leaves the approved call time
+// to run.
+func TestMCPLaneHoldEndsBeforeTheRequest(t *testing.T) {
+	if mcpHoldWait <= 0 || MCPRequestTimeout-mcpHoldWait < time.Minute || mcpHoldWait > analyzer.ReviewWait {
+		t.Fatalf("hold %s, request %s", mcpHoldWait, MCPRequestTimeout)
+	}
+}
+
+// A hold needs somewhere to file.
+func TestMCPLaneHoldNeedsAPlane(t *testing.T) {
 	cfg, err := LoadConfigBytes([]byte(`{"analyzer":{"provider":"stub","model":"m"},"listeners":[{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","analyzer":{"high":"require_approval"}}]}`))
 	if err != nil {
 		t.Fatal(err)
