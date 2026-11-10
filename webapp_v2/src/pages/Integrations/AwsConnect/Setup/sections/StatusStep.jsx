@@ -7,8 +7,8 @@ import { statusRows } from '../wizard'
 
 const STATUS = {
   pending: { color: 'indigo', label: 'Starting...', icon: <Loader size="xs" /> },
-  success: { color: 'green', label: 'Started', icon: <Check size={18} color="var(--mantine-color-green-6)" aria-hidden /> },
-  failure: { color: 'red', label: 'Failed', icon: <X size={18} color="var(--mantine-color-red-6)" aria-hidden /> },
+  success: { color: 'green', label: 'Started', icon: <Check size={18} color="var(--mantine-color-green-filled)" aria-hidden /> },
+  failure: { color: 'red', label: 'Failed', icon: <X size={18} color="var(--mantine-color-red-filled)" aria-hidden /> },
 }
 
 function JobStatus({ status }) {

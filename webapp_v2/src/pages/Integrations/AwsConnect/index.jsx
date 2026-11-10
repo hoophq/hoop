@@ -70,7 +70,7 @@ export default function AwsConnect() {
       <Paper withBorder p="xl">
         <Stack gap="md" align="flex-start">
           <Group gap="xs">
-            <Cloud size={24} color="var(--mantine-color-indigo-6)" aria-hidden />
+            <Cloud size={24} color="var(--mantine-primary-color-filled)" aria-hidden />
             <Title order={2} size="h3">
               Automatic AWS Database Discovery
             </Title>

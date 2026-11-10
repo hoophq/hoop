@@ -36,7 +36,7 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
       const checked = selection ? selection.checked(row) : false
       return (
         <Fragment key={row.id}>
-          <Table.Tr bg={row.error ? 'red.0' : checked === true ? 'indigo.0' : undefined}>
+          <Table.Tr bg={row.error ? 'var(--mantine-color-red-light)' : checked === true ? 'var(--mantine-primary-color-light)' : undefined}>
             {selection && (
               <Table.Td w={40}>
                 {selection.selectable(row) && (
@@ -78,14 +78,14 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
             ))}
             {errors && (
               <Table.Td w={40}>
-                {row.error && <AlertCircle size={16} color="var(--mantine-color-red-6)" aria-label="Error" />}
+                {row.error && <AlertCircle size={16} color="var(--mantine-color-red-filled)" aria-label="Error" />}
               </Table.Td>
             )}
           </Table.Tr>
           {row.error && isOpen && (
             <Table.Tr>
               <Table.Td colSpan={span}>
-                <Text size="sm" c="red.8">
+                <Text size="sm" c="var(--mantine-color-red-light-color)">
                   {row.error}
                 </Text>
               </Table.Td>
