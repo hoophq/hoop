@@ -93,6 +93,23 @@ note "redacted while ssn and iban come back in the clear. sidecar/config.yaml"
 note "carries the rules that would cover them commented out, over the limit."
 $PG -c 'SELECT name, email, ssn, iban FROM customers;' 2>&1 | head -8
 
+h "POSTGRES / malformed -- bytes the codec cannot decode go to OPA"
+note "A pgwire Query message whose length field says 2, below the protocol's"
+note "minimum of 4. The postgres codec cannot decode it, so the relay hands OPA"
+note "an unknown statement with no text and the codec's error in"
+note "input.metadata.parse_error. Rule inspect in opa/authz.rego refuses it, and"
+note "the client reads the reason as a pgwire ErrorResponse. The bytes never"
+note "reach appdb. It runs on the appdb-opa lane, the one with OPA live, sent"
+note "straight from the client container: Envoy would carry it as opaque TCP."
+# StartupMessage (37 bytes, protocol 3.0, user appuser, database appdb), then
+# the malformed Query. busybox printf reads \NNN as octal.
+STARTUP='\0\0\0\045\0\3\0\0user\0appuser\0database\0appdb\0\0'
+BAD='Q\0\0\0\2'
+REPLY=$(docker compose exec -T client sh -c \
+    "(printf '$STARTUP'; sleep 1; printf '$BAD'; sleep 2) | nc -w 3 hoop-inspect 15433" \
+    | tr '\0' '\n' | grep '^M' | cut -c2-)
+printf '  client reads: %s\n' "${REPLY:-(no ErrorResponse -- the bytes were not refused)}"
+
 # -------------------------------------------------------------------- http
 h "HTTP / denied on the REQUEST -- one guardrail, both protocols"
 note "no-cpf-in-query is a top-level default, so the rule that refused the"
@@ -177,7 +194,8 @@ cat <<'EOF'
                     status, and the PII in both directions.
 
   The postgres DELETE was refused before the database ever received it,
-  and the developer got a readable reason in their psql session.
+  and the developer got a readable reason in their psql session. Bytes the
+  codec could not decode went to OPA as well, and OPA refused them.
 
   Each http session above names its caller from X-Hoop-User, and the one
   request sent without it ran as anonymous. See the Identity section of

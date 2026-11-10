@@ -97,6 +97,11 @@ const DefaultMaxBuffer = 8 << 20
 // budget. The stream cannot be resynchronized; close the connection.
 var ErrBufferOverflow = errors.New("sidecar: message exceeds max buffer")
 
+// MetadataParseError names the metadata key carrying why the codec could not
+// decode a client's bytes. The gate sets it on the `unknown` statement it
+// builds for those bytes, so policy judges them instead of never seeing them.
+const MetadataParseError = "parse_error"
+
 // New returns an Inspector for the given protocol. It returns
 // ErrUnsupportedProtocol if no codec is registered.
 //
