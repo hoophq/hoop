@@ -300,7 +300,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     form.trigger_resources.length === 0 &&
     form.trigger_any.length === 0
 
-  const canSubmit = name.trim() !== '' && !submitting
+  const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => isHoldAction(form[level]))
+  const canSubmit = name.trim() !== '' && !submitting && !holdOnMcp
   // Plus the level's stored ones, so a removed group can still be unselected.
   const groupOptionsFor = (level) => [...new Set([...groupOptions, ...form.approval[level].groups])].sort()
   const approvers = holdApprovers(form)

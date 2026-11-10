@@ -96,6 +96,7 @@ describe('an mcp lane', () => {
     expect(addBlocked(sidecar, mcp, 'data-masking')).toBe(laneFeatureBlocked('mcp', 'data-masking'))
     expect(addBlocked(sidecar, mcp, 'ai-analyzer')).toBeNull()
     expect(addBlocked(sidecar, mcp, 'guardrails')).toBeNull()
+    expect(addBlocked(sidecar, null, 'data-masking')).toBeNull()
     expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['appdb'])
     expect(targetLanes(sidecar, null, 'ai-analyzer')).toEqual(['tools', 'appdb'])
     expect(targetLanes(sidecar, null, 'guardrails')).toEqual(['tools', 'appdb'])

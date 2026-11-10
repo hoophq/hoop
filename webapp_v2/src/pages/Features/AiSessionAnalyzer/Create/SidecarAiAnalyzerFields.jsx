@@ -228,6 +228,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
                   onApprover={(approver) => setApprover(level, approver)}
                   onApproval={(patch) => setApproval(level, patch)}
+                  mcpBound={mcpBound}
                 />
               )}
             </Stack>
