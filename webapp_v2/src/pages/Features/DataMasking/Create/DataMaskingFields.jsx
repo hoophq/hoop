@@ -22,9 +22,11 @@ import { ENTITY_TYPES, SSH_ONLY_STRATEGY, maskPreview } from '@/pages/sidecarRul
 import { useDataMaskingStore } from '../store'
 import {
   ENTITY_OPTIONS,
+  NO_COLUMNS_ON_MCP,
   PRESET_OPTIONS,
   RULE_DRIVEN_PROVIDERS,
   getPresetValues,
+  matchOptions,
   normalizeEntityName,
   presetFor,
 } from '../helpers'
@@ -40,17 +42,13 @@ const listenerBlocked = (_sidecar, listener) => laneFeatureBlocked(listener.prot
 const AGENT_PROVIDER_REQUIRED =
   'Needs a rule-driven DLP provider (Microsoft Presidio or alcatraz). Sidecars mask without one.'
 
-const MATCHES = [
-  { value: 'entities', label: 'Detected entities' },
-  { value: 'columns', label: 'Result-set columns' },
-]
-
 const MatchOption = ({ option }) => <TaggedOption option={option} tagged={option.value === 'columns'} side="sidecar" />
 // The sidecar's detector loads ENTITY_TYPES; the rest is the agent's DLP provider.
 const EntityOption = ({ option }) => <TaggedOption option={option} tagged={!ENTITY_TYPES.includes(option.value)} side="agent" />
 
-function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound, maxEntities }) {
+function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound, mcpBound, maxEntities }) {
   const set = (patch) => onChange({ ...rule, ...patch })
+  const matches = matchOptions(mcpBound)
   const value = sshBound ? SSH_ONLY_STRATEGY : rule.strategy
   const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
@@ -79,11 +77,12 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
           />
           <Select
             label="Match by"
-            data={MATCHES}
+            data={matches}
             value={rule.match}
             onChange={(v) => set({ match: v ?? 'entities' })}
             renderOption={MatchOption}
             allowDeselect={false}
+            error={mcpBound && rule.match === 'columns' ? NO_COLUMNS_ON_MCP : undefined}
             w={220}
           />
         </Group>
@@ -156,6 +155,11 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
             An SSH listener masks bytes in place, so Mask is its only strategy.
           </Text>
         )}
+        {mcpBound && rule.match !== 'columns' && (
+          <Text size="sm" c="dimmed">
+            {NO_COLUMNS_ON_MCP}
+          </Text>
+        )}
       </Stack>
     </Paper>
   )
@@ -208,6 +212,7 @@ export default function DataMaskingFields({ editor }) {
     setScoreThreshold,
     strategies,
     sshBound,
+    mcpBound,
     agentBlocked,
     agentBound,
     agentHalfDiffers,
@@ -325,6 +330,7 @@ export default function DataMaskingFields({ editor }) {
               index={i}
               strategies={strategies}
               sshBound={sshBound}
+              mcpBound={mcpBound}
               maxEntities={isFreeLicense ? 1 : undefined}
               removable={rules.length > 1}
               onChange={(next) => setRules(rules.map((r, j) => (j === i ? next : r)))}

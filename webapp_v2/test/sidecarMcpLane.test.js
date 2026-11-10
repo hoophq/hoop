@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { matchOptions, targetProtocols } from '@/pages/Features/DataMasking/helpers'
 import { laneFeatureBlocked, protocolInfo } from '@/pages/Sidecars/config'
 import { featureList } from '@/pages/Sidecars/features'
 import { formToListener, listenerToForm, protocolOptions } from '@/pages/Sidecars/listeners'
@@ -80,18 +81,36 @@ describe('an mcp lane', () => {
     expect(detail({ allow: ['get_*', 'list_*'] })).toBe('MCP tool · allow only get_*, list_*')
   })
 
-  it('takes no mask or analyzer rule, and a mixed sidecar binds them to its other lanes', () => {
-    expect(laneFeatureBlocked('mcp', 'data-masking')).toBeTruthy()
+  it('takes mask rules but no analyzer rule, and a mixed sidecar binds the analyzer to its other lanes', () => {
+    expect(laneFeatureBlocked('mcp', 'data-masking')).toBeNull()
     expect(laneFeatureBlocked('mcp', 'ai-analyzer')).toBeTruthy()
     expect(laneFeatureBlocked('mcp', 'guardrails')).toBeNull()
     const mcp = { name: 'tools', protocol: 'mcp' }
     const pg = { name: 'appdb', protocol: 'postgres' }
     const sidecar = { configuration: { listeners: [mcp, pg], analyzer: { provider: 'anthropic' } } }
-    expect(addBlocked(sidecar, mcp, 'data-masking')).toBe(laneFeatureBlocked('mcp', 'data-masking'))
+    expect(addBlocked(sidecar, mcp, 'data-masking')).toBeNull()
     expect(addBlocked(sidecar, mcp, 'ai-analyzer')).toBe(laneFeatureBlocked('mcp', 'ai-analyzer'))
     expect(addBlocked(sidecar, mcp, 'guardrails')).toBeNull()
-    expect(addBlocked(sidecar, null, 'data-masking')).toBeNull()
-    expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['appdb'])
+    expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['tools', 'appdb'])
+    expect(targetLanes(sidecar, null, 'ai-analyzer')).toEqual(['appdb'])
     expect(targetLanes(sidecar, null, 'guardrails')).toEqual(['tools', 'appdb'])
+  })
+
+  it('offers no column match for a mask rule bound to an mcp listener', () => {
+    const sidecars = [
+      { id: 's1', configuration: { listeners: [{ name: 'tools', protocol: 'MCP' }, { name: 'appdb', protocol: 'postgres' }] } },
+    ]
+    const protocols = targetProtocols(
+      [
+        { sidecar_id: 's1', listener_name: 'tools' },
+        { sidecar_id: 's1', listener_name: 'appdb' },
+        { sidecar_id: 's2', listener_name: 'gone' },
+      ],
+      sidecars,
+    )
+    expect(protocols).toEqual(['mcp', 'postgres', ''])
+    const disabled = (mcpBound) => matchOptions(mcpBound).filter((m) => m.disabled).map((m) => m.value)
+    expect(disabled(true)).toEqual(['columns'])
+    expect(disabled(false)).toEqual([])
   })
 })
