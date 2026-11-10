@@ -280,17 +280,19 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     }
   }, [])
 
-  const protocol = useMemo(() => {
+  const protocols = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    const first = targets[0]
-    if (!first) return ''
-    const lane = byId.get(first.sidecar_id)?.configuration?.listeners?.find((l) => l.name === first.listener_name)
-    return lane?.protocol ?? ''
+    return targets.map((t) => {
+      const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
+      return lane?.protocol ?? ''
+    })
   }, [targets, sidecars])
+  const protocol = protocols[0] ?? ''
+  const mcpBound = protocols.some((p) => p.toLowerCase() === 'mcp')
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
-  const actions = useMemo(() => analyzerActionsFor(), [])
+  const actions = useMemo(() => analyzerActionsFor(mcpBound), [mcpBound])
   // Exclude alone selects nothing, so it does not count as a trigger.
   const noTrigger =
     form.trigger_operations.length === 0 &&
@@ -378,6 +380,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     isHTTP,
     operations,
     actions,
+    mcpBound,
     noTrigger,
     canSubmit,
     submitting,

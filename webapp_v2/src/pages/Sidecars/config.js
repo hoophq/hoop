@@ -37,10 +37,10 @@ export function protocolInfo(protocol) {
 }
 
 // The features a lane of a protocol cannot carry, and why. The sidecar refuses
-// a mask block and an analyzer on an mcp lane (validateLane, sidecar/daemon/config.go).
+// a mask block on an mcp lane (validateLane, sidecar/daemon/config.go).
 const NOT_ON_MCP = 'Not on MCP listeners yet'
 const LANE_FEATURE_BLOCKS = {
-  mcp: { 'data-masking': NOT_ON_MCP, 'ai-analyzer': NOT_ON_MCP },
+  mcp: { 'data-masking': NOT_ON_MCP },
 }
 
 export const laneFeatureBlocked = (protocol, featureKey) => LANE_FEATURE_BLOCKS[protocol]?.[featureKey] ?? null

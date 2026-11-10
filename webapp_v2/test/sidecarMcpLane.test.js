@@ -4,7 +4,13 @@ import { featureList } from '@/pages/Sidecars/features'
 import { formToListener, listenerToForm, protocolOptions } from '@/pages/Sidecars/listeners'
 import { addBlocked, targetLanes } from '@/pages/Sidecars/rules'
 import { listenerAccepts } from '@/pages/Sidecars/schema'
-import { GUARDRAIL_RULE_TYPES, operationsFor, ruleTypesFor } from '@/pages/sidecarRuleVocabulary'
+import {
+  GUARDRAIL_RULE_TYPES,
+  REVIEW_ACTION,
+  analyzerActionsFor,
+  operationsFor,
+  ruleTypesFor,
+} from '@/pages/sidecarRuleVocabulary'
 
 // rules.js names the rule services; these tests call none of them.
 vi.mock('@/services/aiSessionAnalyzer', () => ({ aiSessionAnalyzerService: {} }))
@@ -80,18 +86,27 @@ describe('an mcp lane', () => {
     expect(detail({ allow: ['get_*', 'list_*'] })).toBe('MCP tool · allow only get_*, list_*')
   })
 
-  it('takes no mask or analyzer rule, and a mixed sidecar binds them to its other lanes', () => {
+  it('takes analyzer rules but no mask rule, and a mixed sidecar binds the mask to its other lanes', () => {
     expect(laneFeatureBlocked('mcp', 'data-masking')).toBeTruthy()
-    expect(laneFeatureBlocked('mcp', 'ai-analyzer')).toBeTruthy()
+    expect(laneFeatureBlocked('mcp', 'ai-analyzer')).toBeNull()
     expect(laneFeatureBlocked('mcp', 'guardrails')).toBeNull()
     const mcp = { name: 'tools', protocol: 'mcp' }
     const pg = { name: 'appdb', protocol: 'postgres' }
     const sidecar = { configuration: { listeners: [mcp, pg], analyzer: { provider: 'anthropic' } } }
     expect(addBlocked(sidecar, mcp, 'data-masking')).toBe(laneFeatureBlocked('mcp', 'data-masking'))
-    expect(addBlocked(sidecar, mcp, 'ai-analyzer')).toBe(laneFeatureBlocked('mcp', 'ai-analyzer'))
+    expect(addBlocked(sidecar, mcp, 'ai-analyzer')).toBeNull()
     expect(addBlocked(sidecar, mcp, 'guardrails')).toBeNull()
-    expect(addBlocked(sidecar, null, 'data-masking')).toBeNull()
     expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['appdb'])
+    expect(targetLanes(sidecar, null, 'ai-analyzer')).toEqual(['tools', 'appdb'])
     expect(targetLanes(sidecar, null, 'guardrails')).toEqual(['tools', 'appdb'])
+    const noSection = { configuration: { listeners: [mcp] } }
+    expect(addBlocked(noSection, mcp, 'ai-analyzer')).toBeTruthy()
+  })
+
+  it('offers no hold for an analyzer rule bound to an mcp listener', () => {
+    const hold = (mcpBound) => analyzerActionsFor(mcpBound).find((a) => a.value === REVIEW_ACTION)
+    expect(hold(true).disabled).toBe(true)
+    expect(hold(false).disabled).toBeFalsy()
+    expect(analyzerActionsFor(true).filter((a) => a.disabled)).toHaveLength(1)
   })
 })
