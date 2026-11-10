@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { agentsService } from '@/services/agents'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 export const useAgentStore = create((set, get) => ({
   agents: [],
@@ -78,3 +79,10 @@ export const useAgentStore = create((set, get) => ({
 
   clearAgentKey: () => set({ agentKey: null }),
 }))
+
+// The next account in this tab must not see these agents while its own request runs or fails.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useAgentStore.setState({ agents: [], loading: false, error: null, agentKey: null, tagsPool: [] })
+  }
+})

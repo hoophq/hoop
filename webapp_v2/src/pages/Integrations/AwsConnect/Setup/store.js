@@ -142,17 +142,17 @@ export const useAwsConnectSetupStore = create((set, get) => {
       )
       set({ rootPasswords: null, step: 'status', jobs })
 
-      const finish = (id, patch) => {
-        if (live()) set((s) => ({ jobs: { ...s.jobs, [id]: { ...s.jobs[id], ...patch } } }))
-      }
+      const finish = (id, patch) => set((s) => ({ jobs: { ...s.jobs, [id]: { ...s.jobs[id], ...patch } } }))
       await Promise.all(
         resources.map(async (resource) => {
           const name = jobs[resource.id].name
           try {
             await awsConnectService.createJob(jobPayload(resource, state))
+            if (!live()) return
             finish(resource.id, { status: 'success' })
             showSnackbar({ level: 'success', text: `Job started for ${name}.` })
           } catch (err) {
+            if (!live()) return
             const message = errorMessage(err, 'Failed to start the job')
             finish(resource.id, { status: 'failure', error: message })
             showSnackbar({ level: 'error', text: `Failed to start the job for ${name}`, description: message })

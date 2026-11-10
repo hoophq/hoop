@@ -12,9 +12,9 @@ export function isRunning(job) {
   return !job.completed_at
 }
 
-// The free plan imports one resource: the gateway refuses a job after one that did not fail.
+// The gateway's free-plan rule: a job counts once it has a status that is not failed.
 export function limitReached(jobs) {
-  return jobs.some((job) => job.status?.phase !== 'failed')
+  return jobs.some((job) => job.status && job.status.phase !== 'failed')
 }
 
 function lastSegment(value, separator) {

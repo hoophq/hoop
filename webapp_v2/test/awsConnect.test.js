@@ -10,16 +10,26 @@ const awsConnectService = {
 }
 const showSnackbar = vi.fn()
 const agentsService = { list: vi.fn() }
+const authListeners = []
+const logout = () => authListeners.forEach((fn) => fn({ isAuthenticated: false }, { isAuthenticated: true }))
 
 vi.mock('@/services/awsConnect', () => ({ awsConnectService }))
 vi.mock('@/services/agents', () => ({ agentsService }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar }))
-vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => () => {} } }))
+vi.mock('@/stores/useAuthStore', () => ({
+  useAuthStore: {
+    subscribe: (fn) => {
+      authListeners.push(fn)
+      return () => {}
+    },
+  },
+}))
 
 const { errorMessage, isRunning, limitReached, toJobRows } = await import('@/pages/Integrations/AwsConnect/utils')
 const { useAwsJobsStore } = await import('@/pages/Integrations/AwsConnect/store')
 const { useAwsConnectSetupStore } = await import('@/pages/Integrations/AwsConnect/Setup/store')
 const wizard = await import('@/pages/Integrations/AwsConnect/Setup/wizard')
+const { useAgentStore } = await import('@/stores/useAgentStore')
 
 const apiError = (message, status = 400) => Object.assign(new Error('Request failed'), { response: { status, data: { message } } })
 
@@ -97,6 +107,10 @@ describe('jobs', () => {
   it('reaches the free limit with one job that did not fail', () => {
     expect(limitReached([{ status: { phase: 'failed' } }])).toBe(false)
     expect(limitReached([{ status: { phase: 'failed' } }, { status: { phase: 'running' } }])).toBe(true)
+  })
+
+  it('does not count a job without a status, as the gateway does', () => {
+    expect(limitReached([{ status: null }, { status: { phase: 'failed' } }])).toBe(false)
   })
 
   it('reads an empty list from items: null', async () => {
@@ -324,5 +338,27 @@ describe('setup store', () => {
     await run
     expect(awsConnectService.listAccounts).not.toHaveBeenCalled()
     expect(store()).toMatchObject({ step: 'credentials', busy: null })
+  })
+
+  it('shows no job toast for a job that answers after a reset', async () => {
+    const { tree } = wizard.buildResourceTree(INSTANCES, ACCOUNTS, true)
+    const pgA = tree[0].children[0]
+    store().update({ tree, selectedResources: [pgA.id], agentAssignments: { [pgA.id]: 'agent-1' } })
+    const pending = deferred()
+    awsConnectService.createJob.mockReturnValue(pending.promise)
+    const run = store().startJobs()
+    store().reset()
+    pending.resolve({ status: 202, data: { job_id: 'j1' } })
+    await run
+    expect(showSnackbar).not.toHaveBeenCalled()
+    expect(store().jobs).toEqual({})
+  })
+
+  it('drops the agents of the previous account on logout', async () => {
+    agentsService.list.mockResolvedValueOnce({ data: [{ id: 'a1', name: 'default' }] })
+    await store().loadAgents()
+    expect(useAgentStore.getState().agents).toHaveLength(1)
+    logout()
+    expect(useAgentStore.getState().agents).toEqual([])
   })
 })
