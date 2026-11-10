@@ -59,3 +59,37 @@ func TestGetMode(t *testing.T) {
 		}
 	})
 }
+
+func TestModeAtBoot(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		tracking   string
+		enterprise bool
+		stored     string
+		newOrg     bool
+		want       string
+	}{
+		{"free is identified", "", false, models.AnalyticsModeDisabled, false, models.AnalyticsModeIdentified},
+		{"free ignores disabled", "disabled", false, models.AnalyticsModeAnonymous, true, models.AnalyticsModeIdentified},
+		{"enterprise enabled wins", "enabled", true, models.AnalyticsModeDisabled, false, models.AnalyticsModeIdentified},
+		{"enterprise disabled wins", "disabled", true, models.AnalyticsModeIdentified, false, models.AnalyticsModeDisabled},
+		{"new enterprise org starts disabled", "", true, models.AnalyticsModeIdentified, true, models.AnalyticsModeDisabled},
+		{"existing enterprise org keeps its choice", "", true, models.AnalyticsModeAnonymous, false, models.AnalyticsModeAnonymous},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ModeAtBoot(tc.tracking, tc.enterprise, tc.stored, tc.newOrg); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A signed document needs the trusted key, which common/license's own tests
+// hold; an unsigned enterprise document must not pass.
+func TestIsEnterpriseLicense(t *testing.T) {
+	unsigned := []byte(`{"payload":{"type":"enterprise"},"signature":"x"}`)
+
+	if IsEnterpriseLicense(nil, "localhost") || IsEnterpriseLicense(unsigned, "localhost") {
+		t.Fatal("an absent or unverified license must not count as enterprise")
+	}
+}

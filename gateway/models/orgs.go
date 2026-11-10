@@ -115,10 +115,16 @@ func UpdateOrgDefaultProtectionProfile(db *gorm.DB, orgID string, profile *strin
 }
 
 func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, bool, error) {
+	return CreateOrgGetOrganizationWithID(uuid.NewString(), name, licenseDataJSON)
+}
+
+// CreateOrgGetOrganizationWithID returns the organization named name, or
+// creates it with the given id. An existing organization keeps its id.
+func CreateOrgGetOrganizationWithID(id, name string, licenseDataJSON []byte) (*Organization, bool, error) {
 	org, err := GetOrganizationByNameOrID(name)
 	switch err {
 	case ErrNotFound:
-		org, err = CreateOrganization(name, licenseDataJSON)
+		org, err = CreateOrganizationWithID(id, name, licenseDataJSON)
 		return org, true, err
 	case nil:
 		return org, false, nil
@@ -127,8 +133,12 @@ func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organizatio
 }
 
 func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, error) {
+	return CreateOrganizationWithID(uuid.NewString(), name, licenseDataJSON)
+}
+
+func CreateOrganizationWithID(id, name string, licenseDataJSON []byte) (*Organization, error) {
 	org := Organization{
-		ID:            uuid.NewString(),
+		ID:            id,
 		Name:          name,
 		LicenseData:   licenseDataJSON,
 		AnalyticsMode: AnalyticsModeIdentified,
