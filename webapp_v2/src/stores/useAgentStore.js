@@ -11,13 +11,16 @@ export const useAgentStore = create((set, get) => ({
   // every key/value in use, as [{ key, value }].
   tagsPool: [],
 
+  // Resolves to the request error, or null, for a caller that shows the gateway's message.
   fetchAgents: async () => {
     set({ loading: true, error: null })
     try {
       const { data } = await agentsService.list()
       set({ agents: data, loading: false })
+      return null
     } catch (error) {
       set({ error: error.message, loading: false })
+      return error
     }
   },
 

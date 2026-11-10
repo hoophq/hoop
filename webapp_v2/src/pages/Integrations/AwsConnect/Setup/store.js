@@ -57,9 +57,9 @@ export const useAwsConnectSetupStore = create((set, get) => {
 
     loadAgents: async () => {
       const live = current()
-      await useAgentStore.getState().fetchAgents()
-      const { error } = useAgentStore.getState()
-      if (live() && error) showSnackbar({ level: 'error', text: 'Failed to load agents', description: error })
+      const err = await useAgentStore.getState().fetchAgents()
+      if (!live() || !err) return
+      showSnackbar({ level: 'error', text: 'Failed to load agents', description: errorMessage(err, err.message) })
     },
 
     saveCredentials: async () => {

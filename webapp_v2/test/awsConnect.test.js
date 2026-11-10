@@ -265,15 +265,19 @@ describe('setup store', () => {
     expect(store()).toMatchObject({ step: 'credentials', busy: null, credentialsError: 'unable to parse request body' })
   })
 
-  it('loads the agents once and says so when it fails', async () => {
-    agentsService.list.mockRejectedValueOnce(new Error('Request failed with status code 500'))
+  it('loads the agents once and shows the gateway message when it fails (Q30)', async () => {
+    agentsService.list.mockRejectedValueOnce(apiError('failed listing agents: db timeout', 500))
     await store().loadAgents()
     expect(agentsService.list).toHaveBeenCalledTimes(1)
     expect(showSnackbar).toHaveBeenCalledWith({
       level: 'error',
       text: 'Failed to load agents',
-      description: 'Request failed with status code 500',
+      description: 'failed listing agents: db timeout',
     })
+
+    agentsService.list.mockRejectedValueOnce(new Error('Network Error'))
+    await store().loadAgents()
+    expect(showSnackbar).toHaveBeenLastCalledWith(expect.objectContaining({ description: 'Network Error' }))
 
     agentsService.list.mockResolvedValueOnce({ data: [{ id: 'a1', name: 'default' }] })
     showSnackbar.mockClear()
