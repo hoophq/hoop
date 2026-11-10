@@ -108,7 +108,8 @@
 # All run tini as PID 1 (ENTRYPOINT), which execs the relay.
 #
 # All serve every protocol the relay decodes (postgres, mysql, mssql, mongodb,
-# http, grpc, spanner) and run as uid 10001.
+# http, grpc, spanner) and run as uid 10001, whose home /home/hoop it can
+# write (the sidecar saves its login in ~/.hoop/sidecar).
 #
 # distroless carries no OS package manager and no shell, so it reports zero
 # OS-package CVEs and is roughly two thirds the size of the default — at the
@@ -223,7 +224,8 @@ COPY dist/binaries/ /tmp/binaries/
 RUN mkdir -p /out && \
     tar -xf /tmp/binaries/hoop_*_Linux_${TARGETARCH}.tar.gz -C /out/ ./hoop && \
     chown root:root /out/hoop && \
-    chmod 755 /out/hoop
+    chmod 755 /out/hoop && \
+    mkdir -m 0750 /out/home
 
 # --- Stage: tini (init shim) -------------------------------------------------
 # Both flavours run tini as PID 1, so the relay is never PID 1 itself: tini
@@ -300,9 +302,15 @@ RUN set -eu; \
 #
 # uid 10001 is set numerically: distroless has no useradd, and the relay never
 # resolves a passwd entry.
+#
+# With no passwd entry, HOME would be /, which 10001 cannot write. The sidecar
+# keeps its login in ~/.hoop/sidecar, so HOME is a folder 10001 owns.
+# scripts/ci/check-sidecar-image-home.sh guards this for every flavour.
 FROM ${DISTROLESS_IMAGE} AS distroless
 ARG SIDECAR_CONFIG
 COPY --from=unpack /out/hoop /app/hoop
+COPY --from=unpack --chown=10001:10001 /out/home /home/hoop
+ENV HOME=/home/hoop
 # The statically linked build: it needs nothing from this rootfs.
 COPY --from=tini /usr/bin/tini-static /app/tini
 ENV PATH="/app:${PATH}"
@@ -420,7 +428,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # /opt/libhoop-ica/current/{bin,models}; `current` points at this image's
 # release directory the way the Azure installer's points at a versioned one.
 RUN groupadd --gid 10001 hoop && \
-    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    useradd --uid 10001 --gid 10001 --create-home --shell /sbin/nologin hoop && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates tini \
       libtesseract5 tesseract-ocr tesseract-ocr-eng && \
@@ -504,7 +512,7 @@ RUN set -eu; test "$TARGETARCH" = amd64; \
 
 # Same standalone ICA sidecar binary; no Tesseract/CPU ORT assets in this image.
 FROM ${UBUNTU_IMAGE} AS ica-gpu
-RUN groupadd --gid 10001 hoop && useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+RUN groupadd --gid 10001 hoop && useradd --uid 10001 --gid 10001 --create-home --shell /sbin/nologin hoop && \
     apt-get update -y && apt-get install -y --no-install-recommends ca-certificates tini libstdc++6 && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives && \
     mkdir -p /opt/libhoop-ica/releases/image/models && \
@@ -554,8 +562,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   tini             the init shim, as PID 1. See the tini stage above.
 #
 # Nothing else is installed.
+#
+# --create-home: the sidecar keeps its login in ~/.hoop/sidecar, so uid 10001
+# needs a home it can write (also in ica and ica-gpu).
+# scripts/ci/check-sidecar-image-home.sh guards it.
 RUN groupadd --gid 10001 hoop && \
-    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    useradd --uid 10001 --gid 10001 --create-home --shell /sbin/nologin hoop && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates tini && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives

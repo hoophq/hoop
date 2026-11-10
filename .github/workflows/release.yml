@@ -1051,6 +1051,17 @@ jobs:
           scripts/ci/verify-alcatraz-image.sh \
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+      # uid 10001 must write its home, or a free-plan login is lost.
+      - name: Check published images have a writable home
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }} \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+          scripts/ci/check-sidecar-image-home.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }} \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
       # The ica flavour builds hoop-inspect from source with the libhoop-ica
       # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
       # a token that reads both private modules and the libhoop-ica release
@@ -1074,6 +1085,10 @@ jobs:
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
+      - name: Check the ica image has a writable home
+        run: |
+          scripts/ci/wait-for-image.sh hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
+          scripts/ci/check-sidecar-image-home.sh hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
       # The Docker-less bundle, from the same Dockerfile and the same
       # ica-build stage the image above just built (same build-args, so
       # BuildKit reuses it: this step is a tar and an export, not a second
@@ -1114,6 +1129,13 @@ jobs:
             gh_token=${{ secrets.GH_TOKEN }}
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           tags: hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
+      - name: Check the ica-gpu image has a writable home
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        env:
+          PLATFORMS: linux/amd64
+        run: |
+          scripts/ci/wait-for-image.sh hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
+          scripts/ci/check-sidecar-image-home.sh hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
       - name: Export the ica GPU assets bundle
         if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
         uses: docker/build-push-action@v7

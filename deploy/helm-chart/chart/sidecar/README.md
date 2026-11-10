@@ -60,12 +60,16 @@ the config's `control_plane_url`, else `https://use.hoop.dev`. Step by step,
 with screenshots:
 https://hoop.dev/docs/control-plane/connect-sidecar#connect-with-approval-no-token
 
-> **The pod must have somewhere to save the login.** The login is saved in
-> `credentials.json`, in `~/.hoop/sidecar`. The image has no writable home
-> folder, so without a state volume (below) the save fails after the
-> approval: the pod exits with `was approved but its token could not be
-> saved`, and the web app keeps a sidecar this pod cannot use. Delete that
-> sidecar in the web app. Use a token or a state volume.
+> **Keep the login past a restart.** The login is saved in
+> `credentials.json`, in `~/.hoop/sidecar` (`/home/hoop/.hoop/sidecar`).
+> Without a state volume (below), a new pod loses it and logs in again, and
+> an admin must approve it again. Use a token or a state volume.
+>
+> With `containerSecurityContext.readOnlyRootFilesystem: true`, or an image
+> older than this chart, the home folder is not writable. The pod then exits
+> after the approval with `was approved but its token could not be saved`,
+> and the web app keeps a sidecar this pod cannot use. Delete that sidecar in
+> the web app.
 
 ### Use a token (recommended)
 
