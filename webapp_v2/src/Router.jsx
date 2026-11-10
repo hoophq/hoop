@@ -58,6 +58,8 @@ import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import GatewaySlack from '@/pages/Integrations/Slack/GatewaySlack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
+import AwsConnect from '@/pages/Integrations/AwsConnect'
+import AwsConnectSetup from '@/pages/Integrations/AwsConnect/Setup'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
@@ -666,6 +668,24 @@ function Router() {
           </Page>
         }
       />
+      {/* The CLJS AWS Connect panels stay until ENG-922, so a rollback is
+          reverting these routes. */}
+      <Route
+        path="/integrations/aws-connect"
+        element={
+          <Page adminOnly licenseFeature="resource-discovery">
+            <AwsConnect />
+          </Page>
+        }
+      />
+      <Route
+        path="/integrations/aws-connect/setup"
+        element={
+          <Page adminOnly licenseFeature="resource-discovery">
+            <AwsConnectSetup mode="create" />
+          </Page>
+        }
+      />
 
       {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The rest
           of the onboarding is ClojureScript. */}
@@ -674,6 +694,14 @@ function Router() {
         element={
           <Guard adminOnly>
             <OnboardingProtectionRules />
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/aws-connect"
+        element={
+          <Guard adminOnly>
+            <AwsConnectSetup mode="onboarding" />
           </Guard>
         }
       />
