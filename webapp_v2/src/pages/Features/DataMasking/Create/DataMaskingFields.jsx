@@ -49,8 +49,11 @@ const MatchOption = ({ option }) => <TaggedOption option={option} tagged={option
 // The sidecar's detector loads ENTITY_TYPES; the rest is the agent's DLP provider.
 const EntityOption = ({ option }) => <TaggedOption option={option} tagged={!ENTITY_TYPES.includes(option.value)} side="agent" />
 
-function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound, maxEntities }) {
+const NO_COLUMNS_ON_MCP = 'An MCP listener has no result-set columns, so it masks by detected entities only.'
+
+function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound, mcpBound, maxEntities }) {
   const set = (patch) => onChange({ ...rule, ...patch })
+  const matches = mcpBound ? MATCHES.map((m) => (m.value === 'columns' ? { ...m, disabled: true } : m)) : MATCHES
   const value = sshBound ? SSH_ONLY_STRATEGY : rule.strategy
   const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
@@ -79,11 +82,12 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
           />
           <Select
             label="Match by"
-            data={MATCHES}
+            data={matches}
             value={rule.match}
             onChange={(v) => set({ match: v ?? 'entities' })}
             renderOption={MatchOption}
             allowDeselect={false}
+            error={mcpBound && rule.match === 'columns' ? NO_COLUMNS_ON_MCP : undefined}
             w={220}
           />
         </Group>
@@ -208,6 +212,7 @@ export default function DataMaskingFields({ editor }) {
     setScoreThreshold,
     strategies,
     sshBound,
+    mcpBound,
     agentBlocked,
     agentBound,
     agentHalfDiffers,
@@ -325,6 +330,7 @@ export default function DataMaskingFields({ editor }) {
               index={i}
               strategies={strategies}
               sshBound={sshBound}
+              mcpBound={mcpBound}
               maxEntities={isFreeLicense ? 1 : undefined}
               removable={rules.length > 1}
               onChange={(next) => setRules(rules.map((r, j) => (j === i ? next : r)))}

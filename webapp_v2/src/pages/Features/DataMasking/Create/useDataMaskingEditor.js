@@ -106,14 +106,17 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
     stored ? scoreToPercent(stored.score_threshold) : 85,
   )
 
-  // An ssh lane masks bytes in place, so only the length-preserving strategy is offered.
-  const sshBound = useMemo(() => {
+  const targetProtocols = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    return targets.some((t) => {
+    return targets.map((t) => {
       const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-      return (lane?.protocol ?? '').toLowerCase() === 'ssh'
+      return (lane?.protocol ?? '').toLowerCase()
     })
   }, [targets, sidecars])
+  // An ssh lane masks bytes in place, so only the length-preserving strategy is offered.
+  const sshBound = targetProtocols.includes('ssh')
+  // An mcp lane masks result text by entity; the plane refuses a column rule on it.
+  const mcpBound = targetProtocols.includes('mcp')
 
   const strategies = sshBound ? MASK_STRATEGIES.filter((s) => s.value === SSH_ONLY_STRATEGY) : MASK_STRATEGIES
 
@@ -193,6 +196,7 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
     setScoreThreshold,
     strategies,
     sshBound,
+    mcpBound,
     agentBlocked,
     agentBound,
     agentHalfDiffers,

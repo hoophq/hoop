@@ -80,18 +80,18 @@ describe('an mcp lane', () => {
     expect(detail({ allow: ['get_*', 'list_*'] })).toBe('MCP tool · allow only get_*, list_*')
   })
 
-  it('takes no mask or analyzer rule, and a mixed sidecar binds them to its other lanes', () => {
-    expect(laneFeatureBlocked('mcp', 'data-masking')).toBeTruthy()
+  it('takes mask rules but no analyzer rule, and a mixed sidecar binds the analyzer to its other lanes', () => {
+    expect(laneFeatureBlocked('mcp', 'data-masking')).toBeNull()
     expect(laneFeatureBlocked('mcp', 'ai-analyzer')).toBeTruthy()
     expect(laneFeatureBlocked('mcp', 'guardrails')).toBeNull()
     const mcp = { name: 'tools', protocol: 'mcp' }
     const pg = { name: 'appdb', protocol: 'postgres' }
     const sidecar = { configuration: { listeners: [mcp, pg], analyzer: { provider: 'anthropic' } } }
-    expect(addBlocked(sidecar, mcp, 'data-masking')).toBe(laneFeatureBlocked('mcp', 'data-masking'))
+    expect(addBlocked(sidecar, mcp, 'data-masking')).toBeNull()
     expect(addBlocked(sidecar, mcp, 'ai-analyzer')).toBe(laneFeatureBlocked('mcp', 'ai-analyzer'))
     expect(addBlocked(sidecar, mcp, 'guardrails')).toBeNull()
-    expect(addBlocked(sidecar, null, 'data-masking')).toBeNull()
-    expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['appdb'])
+    expect(targetLanes(sidecar, null, 'data-masking')).toEqual(['tools', 'appdb'])
+    expect(targetLanes(sidecar, null, 'ai-analyzer')).toEqual(['appdb'])
     expect(targetLanes(sidecar, null, 'guardrails')).toEqual(['tools', 'appdb'])
   })
 })
