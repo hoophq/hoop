@@ -6,19 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
 	"os"
 	"os/signal"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/version"
@@ -327,11 +322,7 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
-		// A Postgres demo config verifies hoop's demo database against the
-		// Amazon RDS CA the CLI ships. It is written where the config points
-		// before the sidecar reads it, so the config boots on every run, not
-		// only right after the setup screen wrote it.
-		if err := prepareSidecarDemo(sidecarConfigFlag); err != nil {
+		if err := sidecartui.PrepareDemo(sidecarConfigFlag); err != nil {
 			return err
 		}
 
@@ -414,23 +405,12 @@ needs a restart.`,
 			return daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 		}
 
-		// A config written by the setup screen's demo names the demo API
-		// as its upstream; the CLI serves it for as long as the sidecar
-		// runs, so the demo config works on every boot, not only the first.
-		var notes []string
-		var demo *sidecartui.DemoOptions
-		running := &sidecarDemo{stop: func() {}}
-		if sidecarConfigFlag != "" {
-			running, err = startSidecarDemo(sidecarConfigFlag, cfg)
-			if err != nil {
-				return err
-			}
-			defer running.stop()
-			notes = running.notes
-			if len(running.targets) > 0 {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Targets: running.targets}
-			}
+		// A config without a demo key starts nothing here.
+		demo, err := sidecartui.StartDemo(sidecarConfigFlag, cfg)
+		if err != nil {
+			return err
 		}
+		defer demo.Stop()
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
 		// The format only changes how its output reaches the terminal: a
@@ -442,185 +422,13 @@ needs a restart.`,
 			Version:      daemon.Version,
 			AuditFile:    cfg.Audit.File,
 			Reviewer:     reviewer,
-			Operator:     sidecarOperator(),
 			SaveDir:      sidecarSaveDir(),
-			Notes:        notes,
-			Demo:         demo,
+			Notes:        demo.Notes(),
+			Demo:         demo.Options(openBrowser),
 			ControlPlane: plane,
 			OpenURL:      openBrowser,
-		}, func() error { return errors.Join(daemon.Run(cfg, det), running.err()) })
+		}, func() error { return errors.Join(daemon.Run(cfg, det), demo.Err()) })
 	},
-}
-
-// startSidecarDemo turns on every built-in demo the config at path names, and
-// returns what stops it. A config without a demo key starts nothing.
-//
-// configyaml.DemoAPIKey names the HTTP demo: the CLI serves the invented API
-// at the key's address for as long as the sidecar runs. That address must be
-// loopback, because the API answers anyone who reaches it, and invented data
-// is still not something to expose.
-//
-// configyaml.DemoPostgresKey names the Postgres demo: the database is hoop's,
-// across the network, and nothing is served here. The key's address says which
-// listener fronts it, so the tour can run.
-func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
-	none := &sidecarDemo{stop: func() {}}
-	// The setup screens write the demo key only into YAML. A JSON config
-	// is not parsed as YAML: valid JSON (a \/ escape, a repeated key) can
-	// fail that parse, and would then stop a boot that works without it.
-	if !configyaml.IsYAML(path) {
-		return none, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return none, err
-	}
-	apiAddr, api, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
-	if err != nil {
-		return none, err
-	}
-	pgAddr, pg, err := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
-	if err != nil {
-		return none, err
-	}
-	if !api && !pg {
-		return none, nil
-	}
-	// Check both before serving anything, so a bad key starts nothing.
-	var bind string
-	if api {
-		if bind, err = loopbackBind(apiAddr); err != nil {
-			return none, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
-		}
-	}
-	if pg {
-		if err := sidecardemo.CheckAddr(pgAddr); err != nil {
-			return none, fmt.Errorf("%s: %w", configyaml.DemoPostgresKey, err)
-		}
-	}
-
-	d := &sidecarDemo{stop: func() {}}
-	if api {
-		ctx, cancel := context.WithCancel(context.Background())
-		errc, err := sidecardemo.Serve(ctx, bind)
-		if err != nil {
-			cancel()
-			return none, err
-		}
-		d.stop, d.what = cancel, "demo API"
-		go d.watch(errc)
-		d.tour(cfg, sidecardemo.KindHTTP, apiAddr, "demo API served at "+apiAddr)
-	}
-	if pg {
-		d.tour(cfg, sidecardemo.KindPostgres, pgAddr, "hoop's demo database is "+pgAddr)
-	}
-	return d, nil
-}
-
-// tour adds the demo at addr to the tour, through the listener that forwards
-// to it, and the notes that say how to try it. Without such a listener there
-// is nothing to tour: a default port would reach another service, or nothing
-// at all.
-func (d *sidecarDemo) tour(cfg *daemon.Config, kind sidecardemo.Kind, addr, where string) {
-	for _, l := range cfg.Listeners {
-		// Listen goes into the commands shown and copied: only a tcp
-		// loopback address, never a socket path a config could fill with
-		// shell syntax.
-		if l.Network != "" && l.Network != "tcp" {
-			continue
-		}
-		if _, err := loopbackBind(l.Listen); err != nil {
-			continue
-		}
-		if l.Upstream != addr {
-			continue
-		}
-		t := sidecartui.DemoTarget{Kind: kind, Ports: sidecardemo.Ports{API: addr, Listen: l.Listen},
-			Listener: l.Name, Analyzer: l.Analyzer != nil}
-		d.targets = append(d.targets, t)
-		d.notes = append(d.notes, where+"; try, from another terminal:")
-		for _, c := range sidecardemo.TryCommands(kind, t.Ports, t.Analyzer) {
-			d.notes = append(d.notes, "  "+c)
-		}
-		return
-	}
-	d.notes = append(d.notes, where+", but no listener forwards to it: "+
-		"set a listener's upstream to "+addr+" to try the demo")
-}
-
-// prepareSidecarDemo puts on disk what a demo config needs before the sidecar
-// loads it: for the Postgres demo, the Amazon RDS CA its listener verifies the
-// database against (sidecardemo.EnsureCA). Any other config is left alone. A
-// config that cannot be read or parsed is left alone too: loading it is what
-// reports that, with its own message.
-func prepareSidecarDemo(path string) error {
-	if path == "" || !configyaml.IsYAML(path) {
-		return nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	if _, ok, err := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey); err != nil || !ok {
-		return nil
-	}
-	_, err = sidecardemo.EnsureCA()
-	return err
-}
-
-// sidecarDemo is the demos a config names, and the upstream the CLI runs for
-// the HTTP one (the demo API).
-type sidecarDemo struct {
-	stop func()
-	// what names the upstream the CLI serves (the demo API), for the logs.
-	what string
-	// targets are the demos the tour runs, one per demo key a listener
-	// forwards to; empty when none does and the tour stays off.
-	targets []sidecartui.DemoTarget
-	notes   []string
-
-	mu     sync.Mutex
-	failed error
-}
-
-// watch reports a demo API that stops serving while the sidecar runs. The
-// log line reaches the dashboard's Logs and System; err() hands it to the
-// run's result, so it is not lost when the screen closes.
-func (d *sidecarDemo) watch(errc <-chan error) {
-	err := <-errc
-	if err == nil {
-		return
-	}
-	d.mu.Lock()
-	d.failed = err
-	d.mu.Unlock()
-	slog.Error("the "+d.what+" stopped serving; the demo listener has nothing to forward to", "error", err.Error())
-}
-
-func (d *sidecarDemo) err() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.failed == nil {
-		return nil
-	}
-	return fmt.Errorf("the %s stopped: %w", d.what, d.failed)
-}
-
-// loopbackBind is the address the demo API binds for addr, which must be
-// this machine's: a literal loopback IP, or localhost bound as 127.0.0.1
-// rather than whatever the resolver maps the name to.
-func loopbackBind(addr string) (string, error) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "", err
-	}
-	if host == "localhost" {
-		return net.JoinHostPort("127.0.0.1", port), nil
-	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return "", fmt.Errorf("%s is not a loopback address; the demo API only serves this machine", addr)
-	}
-	return addr, nil
 }
 
 // warnDeprecatedSidecarAlias renders the rename notice to w when the command
@@ -938,7 +746,7 @@ func validateSidecarConfig(path string) (string, error) {
 	if err := refusePlainPlane(path); err != nil {
 		return "", err
 	}
-	if err := prepareSidecarDemo(path); err != nil {
+	if err := sidecartui.PrepareDemo(path); err != nil {
 		return "", err
 	}
 	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
@@ -979,19 +787,6 @@ func refusePlainPlane(path string) error {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// sidecarOperator names the person reviewing at this terminal: the OS
-// account that started the process, which is who the decision is recorded
-// against.
-func sidecarOperator() string {
-	if u, err := user.Current(); err == nil && u.Username != "" {
-		return u.Username
-	}
-	if u := os.Getenv("USER"); u != "" {
-		return u
-	}
-	return "unknown"
 }
 
 // sidecarSaveDir is where the TUI keeps a copy of what it shows: the hoop
