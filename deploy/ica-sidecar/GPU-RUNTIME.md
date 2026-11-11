@@ -91,19 +91,23 @@ inference. A real GPU build and its smoke logs are required before publication.
 
 ## Produce and publish an asset through CI
 
-`.github/workflows/ica-gpu-runtime.yml` is manually dispatched. It requires a
-prepared self-hosted runner labelled `self-hosted`, `linux`, `x64`, `ica-gpu`, and
-`GH_TOKEN` with read access to both source repositories. It never provisions a GPU host.
-Ordinary CPU runners cannot replace this GPU gate. Dispatch from trusted source.
+The manual `ICA GPU Runtime Asset` workflow lives in the private
+`hoophq/libhoop-ica` repository. Follow its [runtime build and runner guide](https://github.com/hoophq/libhoop-ica/blob/main/deploy/aks/external-gpu/runtime/README.md).
+Register the prepared Linux x64 GPU runner there with label `ica-gpu`. The public
+Hoop repository supplies the selected build sources and consumes published runtime
+assets in its release workflow.
 
-Inputs are runtime asset `version`, the full `turboocr_revision`, the host-owned
-`builder_config` path, and `publish` (default **false**). The supplied SHA must
-match the builder profile. A successful build uploads the runtime tarball and
-checksum as a downloadable workflow artifact. Logs are retained even on failure.
+Inputs are `hoop_revision` (a reviewed Hoop release tag or full commit SHA), runtime
+asset `version`, the full `turboocr_revision`, the host-owned `builder_config`
+path, and `publish` (default **false**). The private workflow runs from `main`,
+checks out the selected Hoop revision, resolves its embedded engine pin and uses
+that revision's producer scripts. The TurboOCR SHA must match the builder profile.
+Successful builds upload the runtime tarball and checksum as GitHub artifacts.
+Logs are retained even on failure.
 
 With `publish: true`, a separate production job verifies the tarball checksum and
-uses the same release mirror credentials as the CPU release pipeline. It refuses
-an existing version prefix and publishes under:
+uses release mirror credentials configured in the private repository's
+`production` environment. It refuses an existing version prefix and publishes under:
 
 ```text
 https://releases.hoop.dev/release/ica-gpu-runtime/<runtime-version>/
@@ -115,8 +119,9 @@ These are URL templates until a real asset is built and published. The job check
 that the public archive URL is reachable and prints the exact URL/digest in its
 summary. It does not edit repository variables or update existing deployments.
 
-Set those values as `ICA_GPU_ASSETS_URL` and `ICA_GPU_ASSETS_SHA256` for the normal
-Hoop release, or pass them directly to the existing Docker build commands in
+Set those values as `ICA_GPU_ASSETS_URL` and `ICA_GPU_ASSETS_SHA256` in
+`hoophq/hoop` for its normal release, or pass them directly to the existing
+Docker build commands in
 [GPU.md](GPU.md). That release builds the `ica-gpu` image and downloadable
 `hoop-ica-gpu-assets` bundle from the **same** verified runtime. Native users then
 extract the complete bundle and run its installer; no source compilation occurs
