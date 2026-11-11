@@ -6,7 +6,7 @@ import CardConnector from '../../components/CardConnector'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { APPROVER_RULE } from '../useSidecarAiAnalyzerEditor'
-import ApprovalGroups from './ApprovalGroups'
+import ApprovalRouting from './ApprovalRouting'
 
 const APPROVER_ICONS = { [APPROVER_AI]: Bot, [APPROVER_HUMAN]: User }
 
@@ -37,7 +37,8 @@ function ApproverOption({ value, label, description, selected, onSelect }) {
 }
 
 // Who approves one level's hold: an AI agent with an optional prompt, or the
-// members of some groups. A bare hold from an imported file names its rule.
+// members of some groups, static or AI-routed. A bare hold from an imported
+// file names its rule.
 function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChange }) {
   if (approval.approver === APPROVER_RULE) {
     return (
@@ -70,7 +71,7 @@ function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChang
         />
       )}
       {approval.approver === APPROVER_HUMAN && (
-        <ApprovalGroups options={groupOptions} value={approval.groups} onChange={(groups) => onChange({ groups })} />
+        <ApprovalRouting approval={approval} groupOptions={groupOptions} onChange={onChange} />
       )}
     </Stack>
   )

@@ -36,11 +36,23 @@ type recordingReviewer struct {
 	// onClaim runs inside each claim before it answers, which is where a
 	// test ends the connection mid-wait.
 	onClaim func()
+
+	// fileLeft and claimLeft are the budget the last filing and claim had.
+	fileLeft, claimLeft time.Duration
+}
+
+// budget is the time left before ctx's deadline, or zero with none.
+func budget(ctx context.Context) time.Duration {
+	if d, ok := ctx.Deadline(); ok {
+		return time.Until(d)
+	}
+	return 0
 }
 
 func (r *recordingReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	r.sent = append(r.sent, statement)
+	r.fileLeft = budget(ctx)
 	r.mu.Unlock()
 	if r.block {
 		<-ctx.Done()
@@ -49,9 +61,10 @@ func (r *recordingReviewer) File(ctx context.Context, statement string) (analyze
 	return r.res, r.err
 }
 
-func (r *recordingReviewer) Claim(_ context.Context, reviewID string) (analyzer.ReviewResult, error) {
+func (r *recordingReviewer) Claim(ctx context.Context, reviewID string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	r.claimed = append(r.claimed, reviewID)
+	r.claimLeft = budget(ctx)
 	n := len(r.claimed)
 	r.mu.Unlock()
 	if r.onClaim != nil {
@@ -352,13 +365,14 @@ func TestATruncatedGRPCMessageDeniesWithoutFiling(t *testing.T) {
 	}
 }
 
-// A hold sits inline on a proxied connection, so it is bounded by the same
-// timeout the model call is. Without the deadline a plane that never answers
-// would hold the client's socket until something else gave up.
+// A hold sits inline on a proxied connection, so a filing is bounded. Without
+// the deadline a plane that never answers would hold the client's socket
+// until something else gave up.
 func TestTheReviewIsBoundedByTheTimeout(t *testing.T) {
 	rev := &recordingReviewer{block: true}
 	ev := holdingEvaluator(t, rev, func(c *analyzer.Config) {
 		c.Timeout = 50 * time.Millisecond
+		c.ReviewTimeout = 50 * time.Millisecond
 		c.FailOpen = true
 	})
 
@@ -369,6 +383,33 @@ func TestTheReviewIsBoundedByTheTimeout(t *testing.T) {
 	}
 	if !v.Denied {
 		t.Error("a review that never answered forwarded the statement")
+	}
+}
+
+// A filing waits for the plane's AI routing (ENG-663), so it gets at least
+// DefaultReviewTimeout. A claim keeps the analyzer timeout.
+func TestAFilingGetsTheLongerReviewBudget(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}}}
+	ev := holdingEvaluator(t, rev, nil)
+	ev.Evaluate(deleteStatement())
+
+	rev.mu.Lock()
+	defer rev.mu.Unlock()
+	if rev.fileLeft <= analyzer.DefaultReviewTimeout-time.Second || rev.fileLeft > analyzer.DefaultReviewTimeout {
+		t.Errorf("the filing had %v, want about %v", rev.fileLeft, analyzer.DefaultReviewTimeout)
+	}
+	if rev.claimLeft <= 0 || rev.claimLeft > analyzer.DefaultTimeout {
+		t.Errorf("the claim had %v, want at most %v", rev.claimLeft, analyzer.DefaultTimeout)
+	}
+
+	// A longer analyzer timeout is never cut by the review budget.
+	long := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "REJECTED"}}
+	holdingEvaluator(t, long, func(c *analyzer.Config) { c.Timeout = time.Minute }).Evaluate(deleteStatement())
+	long.mu.Lock()
+	defer long.mu.Unlock()
+	if long.fileLeft <= analyzer.DefaultReviewTimeout {
+		t.Errorf("the filing had %v, want the minute timeout", long.fileLeft)
 	}
 }
 

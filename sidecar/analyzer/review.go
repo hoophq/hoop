@@ -385,7 +385,9 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		gen = e.pins.begin(pin.key)
 		defer e.pins.finish(gen, pin, "", false)
 	}
-	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
+	// A filing can wait for the plane's AI routing, so it gets the longer
+	// of the two budgets.
+	res, err := e.ask(ctx, max(e.cfg.Timeout, e.cfg.ReviewTimeout), func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
 	})
 	if pin.key != "" {
@@ -472,7 +474,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 			return e.denyEnded(ctx, notes, reviewID, reviewPending, "the connection ended while waiting for approval")
 		}
 
-		res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
+		res, err := e.ask(ctx, e.cfg.Timeout, func(c context.Context) (ReviewResult, error) {
 			return e.cfg.Review.Claim(c, reviewID)
 		})
 		if err != nil {
@@ -498,15 +500,16 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 	}
 }
 
-// ask makes one call to the review backend, bounded by the analyzer timeout.
+// ask makes one call to the review backend, bounded by timeout.
 //
 // The call is detached from the connection's cancellation on purpose. Once a
 // request is out, the plane may spend the approval whether or not anybody
 // reads the answer, and an answer that is read can at least be recorded. The
 // caller checks the connection before starting a call, and release checks it
 // again after a claim.
-func (e *Evaluator) ask(ctx context.Context, call func(context.Context) (ReviewResult, error)) (ReviewResult, error) {
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cfg.Timeout)
+func (e *Evaluator) ask(ctx context.Context, timeout time.Duration,
+	call func(context.Context) (ReviewResult, error)) (ReviewResult, error) {
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 	return call(callCtx)
 }

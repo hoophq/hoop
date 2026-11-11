@@ -3,9 +3,23 @@ import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
+import { reviewsService } from '@/services/reviews'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 const EMPTY_LIBRARY = { guardrails: [], mask: [] }
+
+// The integrations an AI-routed approval notifies through (ENG-663).
+const EMPTY_INTEGRATION = { integrated: false, channels: [] }
+const EMPTY_INTEGRATIONS = { slack: EMPTY_INTEGRATION, teams: EMPTY_INTEGRATION }
+
+// One integration of GET /approvals/routing/integrations. A channel with no
+// id cannot be named in the spec, so it is dropped.
+const readIntegration = (value) => ({
+  integrated: value?.integrated === true,
+  channels: (Array.isArray(value?.channels) ? value.channels : [])
+    .filter((c) => typeof c?.id === 'string' && c.id !== '')
+    .map((c) => ({ id: c.id, name: typeof c.name === 'string' && c.name !== '' ? c.name : c.id })),
+})
 
 const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
 
@@ -45,6 +59,12 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   ruleLibrary: EMPTY_LIBRARY,
   ruleLibraryStatus: 'idle',
   ruleLibraryRequestId: 0,
+
+  // Session-scoped as the rule library: cleared on logout, and only the
+  // newest fetch of this session commits.
+  routingIntegrations: EMPTY_INTEGRATIONS,
+  routingIntegrationsStatus: 'idle',
+  routingIntegrationsRequestId: 0,
 
   submitting: false,
 
@@ -161,6 +181,36 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
       ruleLibraryRequestId: state.ruleLibraryRequestId + 1,
     })),
 
+  // Emptied while a fetch runs and on a failure, so no other session's
+  // channels are shown.
+  fetchRoutingIntegrations: async () => {
+    const requestId = get().routingIntegrationsRequestId + 1
+    set({
+      routingIntegrations: EMPTY_INTEGRATIONS,
+      routingIntegrationsStatus: 'loading',
+      routingIntegrationsRequestId: requestId,
+    })
+    const current = () => get().routingIntegrationsRequestId === requestId
+    try {
+      const { data } = await reviewsService.routingIntegrations()
+      if (!current()) return
+      set({
+        routingIntegrations: { slack: readIntegration(data?.slack), teams: readIntegration(data?.teams) },
+        routingIntegrationsStatus: 'success',
+      })
+    } catch {
+      if (!current()) return
+      set({ routingIntegrations: EMPTY_INTEGRATIONS, routingIntegrationsStatus: 'error' })
+    }
+  },
+
+  resetRoutingIntegrations: () =>
+    set((state) => ({
+      routingIntegrations: EMPTY_INTEGRATIONS,
+      routingIntegrationsStatus: 'idle',
+      routingIntegrationsRequestId: state.routingIntegrationsRequestId + 1,
+    })),
+
   createRule: async (payload) => {
     set({ submitting: true })
     try {
@@ -201,10 +251,12 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   },
 }))
 
-// The rule library names another org's rules: drop it when the session ends,
-// as useSidecarStore does. Module state outlives a logout.
+// The rule library and the integration channels name another org's data:
+// drop them when the session ends, as useSidecarStore does. Module state
+// outlives a logout.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useAiSessionAnalyzerStore.getState().resetRuleLibrary()
+    useAiSessionAnalyzerStore.getState().resetRoutingIntegrations()
   }
 })

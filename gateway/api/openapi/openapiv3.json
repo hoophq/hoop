@@ -1464,6 +1464,49 @@
           "AnalyticsModeDisabled"
         ]
       },
+      "openapi.ApprovalRoutingChannel": {
+        "properties": {
+          "id": {
+            "description": "The channel id",
+            "example": "C0123ABC",
+            "type": "string"
+          },
+          "name": {
+            "description": "The channel name; the id when unknown",
+            "example": "C0123ABC",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ApprovalRoutingIntegration": {
+        "properties": {
+          "channels": {
+            "description": "The channels it reaches",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ApprovalRoutingChannel"
+            },
+            "type": "array"
+          },
+          "integrated": {
+            "description": "The organization set the integration up",
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ApprovalRoutingIntegrations": {
+        "properties": {
+          "slack": {
+            "$ref": "#/components/schemas/openapi.ApprovalRoutingIntegration"
+          },
+          "teams": {
+            "$ref": "#/components/schemas/openapi.ApprovalRoutingIntegration"
+          }
+        },
+        "type": "object"
+      },
       "openapi.AttributeRequest": {
         "properties": {
           "access_control_group_names": {
@@ -6154,6 +6197,15 @@
             "readOnly": true,
             "type": "string"
           },
+          "routing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ReviewRouting"
+              }
+            ],
+            "description": "The AI routing decision. Absent on an approval request with static routing",
+            "readOnly": true
+          },
           "session": {
             "description": "The id of session",
             "example": "35DB0A2F-E5CE-4AD8-A308-55C3108956E5",
@@ -6352,6 +6404,235 @@
           "ReviewStatusRequestRejectedType",
           "ReviewStatusRequestRevokedType"
         ]
+      },
+      "openapi.ReviewRouting": {
+        "properties": {
+          "candidates": {
+            "description": "The groups the AI selected from",
+            "example": [
+              "payments-approvers",
+              "sre"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "channels": {
+            "description": "The channels that got the approval request",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ReviewRoutingChannel"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "decided_at": {
+            "description": "When the decision was made",
+            "example": "2024-07-25T15:56:35.317601Z",
+            "readOnly": true,
+            "type": "string"
+          },
+          "fallback_cause": {
+            "description": "Why the AI routing fell back. Set with mode static",
+            "enum": [
+              "no_provider",
+              "timeout",
+              "provider_error",
+              "no_tool_call",
+              "refusal",
+              "invalid_decision",
+              "no_valid_group"
+            ],
+            "example": "timeout",
+            "readOnly": true,
+            "type": "string"
+          },
+          "fallback_detail": {
+            "description": "Detail of the fallback, bounded",
+            "example": "no answer in 20s",
+            "readOnly": true,
+            "type": "string"
+          },
+          "groups": {
+            "description": "The groups that got the approval request",
+            "example": [
+              "sre"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "integrations": {
+            "description": "The notify integrations of the configuration, and their state at the decision",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ReviewRoutingIntegration"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "mode": {
+            "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request",
+            "enum": [
+              "ai",
+              "static"
+            ],
+            "example": "ai",
+            "readOnly": true,
+            "type": "string"
+          },
+          "notified_users": {
+            "description": "The users that got a direct message",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ReviewRoutingUser"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "reason": {
+            "description": "The reason the AI gave, at most 500 characters",
+            "example": "The sre group approved similar statements fast.",
+            "readOnly": true,
+            "type": "string"
+          },
+          "unreachable": {
+            "description": "The selected users an integration could not reach",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ReviewRoutingUnreachable"
+            },
+            "readOnly": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewRoutingChannel": {
+        "properties": {
+          "id": {
+            "description": "The channel id",
+            "example": "C0123ABC",
+            "readOnly": true,
+            "type": "string"
+          },
+          "integration": {
+            "description": "The integration",
+            "enum": [
+              "slack",
+              "teams"
+            ],
+            "example": "slack",
+            "readOnly": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The channel name; the id when unknown",
+            "example": "#payments-approvals",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewRoutingIntegration": {
+        "properties": {
+          "delivery": {
+            "description": "How it notifies",
+            "enum": [
+              "dm",
+              "channel",
+              "both"
+            ],
+            "example": "both",
+            "readOnly": true,
+            "type": "string"
+          },
+          "integrated": {
+            "description": "The organization set the integration up when the decision was made",
+            "example": true,
+            "readOnly": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The integration",
+            "enum": [
+              "slack",
+              "teams"
+            ],
+            "example": "slack",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewRoutingUnreachable": {
+        "properties": {
+          "cause": {
+            "description": "Why it could not reach the user",
+            "example": "no slack id",
+            "readOnly": true,
+            "type": "string"
+          },
+          "integration": {
+            "description": "The integration",
+            "enum": [
+              "slack",
+              "teams"
+            ],
+            "example": "slack",
+            "readOnly": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The display name of the user",
+            "example": "Bob",
+            "readOnly": true,
+            "type": "string"
+          },
+          "user_id": {
+            "description": "The user id",
+            "example": "D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewRoutingUser": {
+        "properties": {
+          "email": {
+            "description": "The email of the user",
+            "example": "ana@example.com",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The user id",
+            "example": "D5BFA2DD-7A09-40AE-AFEB-C95787BA9E90",
+            "readOnly": true,
+            "type": "string"
+          },
+          "integrations": {
+            "description": "The integrations that sent the direct message",
+            "example": [
+              "slack"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "type": "array"
+          },
+          "name": {
+            "description": "The display name of the user",
+            "example": "Ana",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "openapi.ReviewSessionTimeWindow": {
         "properties": {
@@ -9220,6 +9501,12 @@
           "payload": {
             "description": "The statement to approve, base64 encoded",
             "example": "REVMRVRFIEZST00gdXNlcnM7",
+            "type": "string"
+          },
+          "principal": {
+            "description": "Who sent the statement, as the sidecar saw it: a hoop user id, an auth\nsubject or an email. Sent only for a level with AI routing; every user\nit names is never routed to nor notified. At most 256 characters",
+            "example": "ana@example.com",
+            "maxLength": 256,
             "type": "string"
           },
           "reserve": {
@@ -12100,6 +12387,47 @@
           }
         },
         "summary": "Count Approvals",
+        "tags": [
+          "Approvals"
+        ]
+      }
+    },
+    "/approvals/routing/integrations": {
+      "get": {
+        "description": "List the integrations AI routing can notify through, and the channels each reaches. Slack channels are the channels of every sidecar listener and the default channel; a channel name is its id when unknown. An integration that is not set up reads integrated false.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ApprovalRoutingIntegrations"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Approval Routing Integrations",
         "tags": [
           "Approvals"
         ]

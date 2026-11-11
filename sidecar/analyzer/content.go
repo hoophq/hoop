@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/lexer"
 )
 
 func init() {
@@ -137,6 +138,33 @@ func stripSQLLiterals(s string) string {
 	return out.String()
 }
 
+// StatementShape returns text with every value removed, for the control
+// plane: the approval routing agent reads the shape of a held statement and
+// no value in it (ENG-663). ok is false for a protocol with no shape, for a
+// SQL statement the lexer cannot read in full, and for a mongodb command
+// that does not decode.
+//
+// A SQL shape is the lexer's tokens under the protocol's dialect (see
+// lexer.Shape): strings, numbers, binds and quoted names are ?, comments are
+// gone. It is not the cache key's stripSQLLiterals, which keeps comments.
+func StatementShape(protocol, text string) (string, bool) {
+	switch inspect.Protocol(protocol) {
+	case inspect.Postgres:
+		return lexer.Shape(text, lexer.Postgres)
+	case inspect.MySQL:
+		return lexer.Shape(text, lexer.MySQL)
+	case inspect.MSSQL:
+		return lexer.Shape(text, lexer.MSSQL)
+	case inspect.Oracle:
+		return lexer.Shape(text, lexer.Oracle)
+	case inspect.ClickHouse:
+		return lexer.Shape(text, lexer.ClickHouse)
+	case inspect.MongoDB:
+		return mongodbStrictShape(text)
+	}
+	return "", false
+}
+
 // MongoDBBuilder renders a MongoDB command for classification.
 type MongoDBBuilder struct{}
 
@@ -197,18 +225,26 @@ func mongodbCacheKey(stmt inspect.Statement) string {
 }
 
 func mongodbShape(text string) string {
+	if shape, ok := mongodbStrictShape(text); ok {
+		return shape
+	}
+	return normalizeSpace(text)
+}
+
+// mongodbStrictShape is mongodbShape with no fallback: ok is false for a
+// command that does not decode, whose text keeps its values.
+func mongodbStrictShape(text string) (string, bool) {
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
-		return normalizeSpace(text)
+		return "", false
 	}
-	shaped := mongodbShapeValue(value, "")
-	encoded, err := json.Marshal(shaped)
+	encoded, err := json.Marshal(mongodbShapeValue(value, ""))
 	if err != nil {
-		return normalizeSpace(text)
+		return "", false
 	}
-	return string(encoded)
+	return string(encoded), true
 }
 
 // batchFields name the arrays whose ORDER and LENGTH carry no meaning a
