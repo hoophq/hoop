@@ -445,6 +445,7 @@ COPY --from=ort /opt/ort/lib/ /opt/alcatraz/ort/releases/${ORT_VERSION}/lib/
 COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER \
   /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER
 ENV PATH="/app:${PATH}"
+ENV HOME=/home/hoop
 # Numeric, so a pod with runAsNonRoot can verify the user without a
 # runAsUser of its own; the kubelet refuses a named user under it.
 USER 10001:10001
@@ -521,6 +522,7 @@ COPY --from=ica-build /out/bin/hoop-inspect /app/hoop-inspect
 COPY --from=ica-gpu-native /gpu/ /opt/libhoop-ica/releases/image/gpu/
 COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER
 ENV PATH="/app:${PATH}"
+ENV HOME=/home/hoop
 ENV LD_LIBRARY_PATH="/opt/libhoop-ica/current/gpu/lib:/opt/libhoop-ica/current/gpu/ort/lib"
 USER 10001:10001
 ENTRYPOINT ["/usr/bin/tini", "--"]
@@ -564,7 +566,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Nothing else is installed.
 #
 # --create-home: the sidecar keeps its login in ~/.hoop/sidecar, so uid 10001
-# needs a home it can write (also in ica and ica-gpu).
+# needs a home it can write (also in ica and ica-gpu). ENV HOME below names it,
+# so a runtime that does not read /etc/passwd still finds it.
 # scripts/ci/check-sidecar-image-home.sh guards it.
 RUN groupadd --gid 10001 hoop && \
     useradd --uid 10001 --gid 10001 --create-home --shell /sbin/nologin hoop && \
@@ -575,6 +578,7 @@ RUN groupadd --gid 10001 hoop && \
 # Ownership and mode are already root:root 0755 from the unpack stage.
 COPY --from=unpack /out/hoop /app/hoop
 ENV PATH="/app:${PATH}"
+ENV HOME=/home/hoop
 ENV HOOP_SIDECAR_CONFIG=${SIDECAR_CONFIG}
 USER hoop
 # The dynamically linked tini from the package, at the path apt installs it.

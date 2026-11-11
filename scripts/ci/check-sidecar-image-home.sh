@@ -58,6 +58,18 @@ for platform in "${PLATFORMS[@]}"; do
 
   for image in "$@"; do
     echo "checking ${image} (${platform})"
+    # The image must set HOME itself (ENV HOME). Docker fills HOME from
+    # /etc/passwd at run time, other runtimes may not; the container's
+    # Config.Env holds only what the image declares.
+    cid=$(docker create --platform "$platform" "$image" /check-never-runs)
+    declared=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$cid" | grep '^HOME=' || true)
+    docker rm -f "$cid" >/dev/null
+    cid=""
+    if [ -z "$declared" ]; then
+      echo "FAIL: ${image} (${platform}) does not set ENV HOME" >&2
+      failed=1
+      continue
+    fi
     if ! docker run --rm --platform "$platform" \
         -v "$probe:/probe:ro" --entrypoint /probe/busybox \
         "$image" sh -c "$check"; then
