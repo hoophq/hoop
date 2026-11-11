@@ -85,7 +85,7 @@ fi
 # sits here for a minute or so. Its healthcheck allows for that.
 c_step "Starting appdb, hoop-inspect, metabase"
 docker compose up -d --wait
-c_ok "metabase :3000, sidecar admin :19000, postgres lane :15432"
+c_ok "metabase :3000, sidecar admin :19000, sidecar API :19002, postgres lane :15432"
 
 # -------------------------------------------------------------- 3. provision
 c_step "Provisioning Metabase"
@@ -114,7 +114,7 @@ ready
 
   Audit trail, every statement Metabase ran, including its own sync:
 
-      curl -s localhost:19000/api/sessions | python3 -m json.tool
+      curl -s localhost:19002/api/sessions | python3 -m json.tool
       docker compose logs -f hoop-inspect
 
   Teardown:

@@ -80,7 +80,7 @@ cd deploy/docker-compose/envoy-stack
 
 ```bash
 curl -s localhost:19000/healthz                        # ok
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 **3. Walk the lanes.** `./demo.sh` runs every one of these in order and prints
@@ -105,8 +105,8 @@ curl -sk https://localhost:8443/status/503 -H 'X-Hoop-User: alice' -w '\n%{http_
 **4. Read the evidence** the sidecar recorded:
 
 ```bash
-curl -s localhost:19000/stats                  | python3 -m json.tool
-curl -s 'localhost:19000/api/sessions?limit=1' | python3 -m json.tool
+curl -s localhost:19002/stats                  | python3 -m json.tool
+curl -s 'localhost:19002/api/sessions?limit=1' | python3 -m json.tool
 docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
@@ -121,7 +121,8 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 |---|---|
 | 8443 | Envoy HTTPS, to the `httpbin` lane |
 | 5433 | Envoy TCP, to the `appdb` lane |
-| 19000 | sidecar admin: `/healthz`, `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
+| 19000 | sidecar admin: `/healthz`, `/readyz` |
+| 19002 | sidecar admin API (`admin.api_listen`): `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 9901 | Envoy admin |
 
 That Postgres listener is `envoy:5432` inside the compose network and `5433` on
@@ -946,10 +947,12 @@ license: /etc/hoop-inspect/license.json
 # file alone.
 # control_plane_url: https://cp.example.com
 
-# Optional and UNAUTHENTICATED: omit it to turn it off. See "Health and admin
+# listen serves the probes and the authenticated writes; api_listen serves the
+# UNAUTHENTICATED read routes and is off unless set. See "Health and admin
 # listeners".
 admin:
-  listen: 127.0.0.1:19000   # /healthz /readyz /stats /metrics /config /events /api/*, PUT /license
+  listen: 127.0.0.1:19000       # /healthz /readyz, PUT /license, POST /v1/drain
+  api_listen: 127.0.0.1:19002   # /stats /metrics /config /events /api/*
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:
@@ -1173,7 +1176,7 @@ inheritance happens at startup. Debugging a denial that never fired starts
 here, again against the stack config:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 ```json
@@ -1199,27 +1202,34 @@ never the signature.
 
 ### Health and admin listeners
 
-The admin listener (`admin.listen`) serves `/stats`, `/metrics`, `/config`,
-`/events` and `/api/*` with no authentication. Whoever reaches the port reads
-the audit trail and each lane's rules. It is off when `admin.listen` is empty.
+The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
+the two authenticated writes, `PUT /license` and `POST /v1/drain`. Nothing on
+it reads audit data or rules, so a platform can probe it and a workspace that
+reaches it learns only whether the process is up.
 
-A platform that probes the process does not need it. Set
-`HOOP_SIDECAR_HEALTH_LISTEN` to an address, and the process binds a second
-listener there that serves `GET /healthz` and `GET /readyz` and nothing else:
+The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
+have no authentication: whoever reaches them reads the audit trail and each
+lane's rules. They are on a separate listener, `admin.api_listen`, which is
+off unless set. It must not share `admin.listen`'s port.
 
-```bash
-HOOP_SIDECAR_HEALTH_LISTEN=0.0.0.0:19001 hoop-inspect -config config.yaml
-curl -s localhost:19001/healthz   # ok
-curl -s localhost:19001/readyz    # ready, or 503 naming the lanes still loading
+```yaml
+admin:
+  listen: 0.0.0.0:19000        # probes
+  api_listen: 127.0.0.1:19002  # read routes, loopback only
 ```
 
-It is an environment variable and not a config key: the probe belongs to the
-deployment, not to a document a control plane serves. A bind failure stops
-the process, like a lane that cannot bind. The Helm chart sets it to
-`0.0.0.0:19001` and probes there, so a pod runs with admin off.
+Releases before this split served the read routes on `admin.listen`. A
+scraper or script that reads them there needs `api_listen` set and its URL
+moved to that port.
 
-With admin off, the audit trail still leaves the process through `audit.file`,
-the control plane copy (see "Connecting it to a Control Plane") and OTLP (see
+`HOOP_SIDECAR_HEALTH_LISTEN` binds one more listener with `/healthz` and
+`/readyz` only, for a deployment that probes a port other than
+`admin.listen`. It is an environment variable and not a config key. A bind
+failure stops the process, like a lane that cannot bind, and a port another
+listener of the config binds is refused at startup.
+
+The audit trail also leaves the process through `audit.file`, the control
+plane copy (see "Connecting it to a Control Plane") and OTLP (see
 "OpenTelemetry").
 
 ### Sharing a rule block between lanes
@@ -2280,7 +2290,7 @@ would merge requests whose risk can differ. Watch the hit rate at `/stats`
 before enabling a blocking action:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
+curl -s localhost:19002/config | python3 -m json.tool   # what each lane sends
 ```
 
 Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
@@ -2469,7 +2479,8 @@ entry: an older build ignores an `extra` key it does not read.
 
 #### Watching the analyzer: `/metrics`
 
-The admin listener serves `GET /metrics` in the Prometheus text format. A
+The admin API listener (`admin.api_listen`) serves `GET /metrics` in the
+Prometheus text format. A
 process with no analyzer answers an empty document, so a scrape job pointed
 at every sidecar does not mark one down.
 
@@ -5881,7 +5892,7 @@ Three places say it, and they agree because they read the same resolved config.
 **`GET /stats`**, whose `addr` is the address the listener bound:
 
 ```bash
-curl -s localhost:19000/stats | python3 -m json.tool
+curl -s localhost:19002/stats | python3 -m json.tool
 ```
 
 ```json

@@ -36,7 +36,7 @@ const FirstRunDocsURL = "https://hoop.dev/docs"
 
 // firstRunAddr is the preferred bind: loopback only, and a port unusual
 // enough that a laptop's usual suspects (5432, 8080, 3000) and our own
-// conventions (15432 for the demo Postgres lane, 19000 for /stats) never
+// conventions (15432 for the demo Postgres lane, 19000 for admin) never
 // sit on it. A preference, not a promise: firstRunListen falls back when
 // something holds it, and the banner prints what was actually bound.
 const firstRunAddr = "127.0.0.1:15321"

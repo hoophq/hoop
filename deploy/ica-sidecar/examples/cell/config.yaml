@@ -5,9 +5,13 @@
 log_level: info
 
 admin:
-  # Kubernetes probes need the pod address. Restrict this unauthenticated port
-  # with NetworkPolicy; never publish it through the session load balancer.
+  # Kubernetes probes need the pod address. This port serves only /healthz,
+  # /readyz and the token-gated drain; never publish it through the session
+  # load balancer.
   listen: 0.0.0.0:19000
+  # /stats and the other read routes have no authentication: loopback only,
+  # reached with kubectl port-forward.
+  api_listen: 127.0.0.1:19002
 
 audit:
   file: '-'

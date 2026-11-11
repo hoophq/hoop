@@ -14,10 +14,10 @@ import (
 // HealthListenEnv is the address of the health listener: GET /healthz and
 // GET /readyz, and nothing else. Unset, no health listener binds.
 //
-// It exists so a platform can probe the process with the admin listener off.
-// The admin listener serves the audit trail and each lane's rules without
-// authentication, so a workspace that can reach it can read them. The health
-// listener answers only whether the process is up and its lanes are ready.
+// It exists so a deployment can probe a port other than admin.listen. Like
+// admin.listen, it serves no audit data or rules: those are on
+// admin.api_listen. It answers only whether the process is up and its lanes
+// are ready.
 //
 // An environment variable and never a config key: the probe belongs to the
 // deployment that declares it, not to a document a control plane serves.
@@ -51,8 +51,9 @@ func checkHealthListen(cfg *Config, addr string) error {
 		mcpListen = cfg.MCP.Listen
 	}
 	for what, other := range map[string]string{
-		"the admin listener (admin.listen)": cfg.Admin.Listen,
-		"the MCP server (mcp.listen)":       mcpListen,
+		"the admin listener (admin.listen)":         cfg.Admin.Listen,
+		"the admin API listener (admin.api_listen)": cfg.Admin.APIListen,
+		"the MCP server (mcp.listen)":               mcpListen,
 	} {
 		if oh, n, ok := listenHostPort(other); ok && n == port && sameBindHost(host, oh) {
 			return clash(what)

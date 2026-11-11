@@ -120,6 +120,7 @@ type System struct {
 	Analyzer     string
 	ControlPlane string
 	Admin        string
+	AdminAPI     string
 	QueryAPI     bool
 	Watching     string
 	Analytics    bool
@@ -262,6 +263,8 @@ func (s *State) ApplyLog(r LogRecord) {
 		s.System.ControlPlane = r.Get("url")
 	case "admin endpoint listening":
 		s.System.Admin = r.Get("listen")
+	case "admin API endpoint listening":
+		s.System.AdminAPI = r.Get("listen")
 	case "query API mounted":
 		s.System.QueryAPI = true
 	case "watching the config file; a rule edit applies without a restart":

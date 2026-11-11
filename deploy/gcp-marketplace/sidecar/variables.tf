@@ -113,7 +113,7 @@ variable "guardrail_preset" {
 }
 
 variable "config_document" {
-  description = "document: the whole sidecar config as JSON or YAML. admin.listen, when set, must be 0.0.0.0:19000; leave admin out to turn it off."
+  description = "document: the whole sidecar config as JSON or YAML. admin.listen must be 0.0.0.0:19000."
   type        = string
   default     = ""
 }

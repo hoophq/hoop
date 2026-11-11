@@ -66,6 +66,9 @@ func portUses(cfg *daemon.Config, demoAPI string) []portUse {
 	if cfg.Admin.Listen != "" {
 		out = append(out, portUse{what: "admin server", addr: cfg.Admin.Listen})
 	}
+	if cfg.Admin.APIListen != "" {
+		out = append(out, portUse{what: "admin API server", addr: cfg.Admin.APIListen})
+	}
 	if cfg.MCP != nil && cfg.MCP.Listen != "" {
 		out = append(out, portUse{what: "MCP server", addr: cfg.MCP.Listen})
 	}

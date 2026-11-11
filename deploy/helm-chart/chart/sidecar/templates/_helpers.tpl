@@ -95,25 +95,13 @@ the volume and HOOP_SIDECAR_CONFIG all have to agree.
 {{- end -}}
 
 {{/*
-The health port, `health.port`, default 19001. The chart sets
-HOOP_SIDECAR_HEALTH_LISTEN to it and declares it on the pod. The listener
-there serves /healthz and /readyz and nothing else, so the probes do not
-depend on the admin listener, which the config may leave off. Printed
-through int64: a values file parses every number as float64.
-*/}}
-{{- define "hoopsidecar.healthPort" -}}
-{{- $h := .Values.health | default dict -}}
-{{- if hasKey $h "port" -}}{{ int64 $h.port }}{{- else -}}19001{{- end -}}
-{{- end -}}
-
-{{/*
-Where the probes go: the health port by name, unless `probe.port` names
-another. An image that predates HOOP_SIDECAR_HEALTH_LISTEN binds nothing on
-the health port; it is probed on its admin port (19000) instead.
+Where the probes go: `probe.port` when set, else the admin port, 19000.
+admin.listen serves only /healthz, /readyz and two authenticated writes, so
+probing it exposes nothing; the read routes live on admin.api_listen.
 */}}
 {{- define "hoopsidecar.probePort" -}}
 {{- $p := .Values.probe.port -}}
-{{- if not $p -}}health
+{{- if not $p -}}19000
 {{- else if kindIs "string" $p -}}{{ $p }}
 {{- else -}}{{ int64 $p }}
 {{- end -}}
@@ -217,11 +205,22 @@ changed a selector label would detach the pods from their Deployment.
 {{- fail (printf "controlPlane.tokenExpirationSeconds is %s: Kubernetes refuses a projected token that expires in less than 600 seconds; set 600 or more" $exp) -}}
 {{- end -}}
 {{- end -}}
-{{- $health := atoi (include "hoopsidecar.healthPort" .) -}}
-{{- if or (lt $health 1) (gt $health 65535) -}}
-{{- fail (printf "health.port is %v: it must be a port number from 1 to 65535" (.Values.health | default dict).port) -}}
+{{/*
+The probes poll the admin port, so a config that omits or moves admin is a
+pod that never goes ready. Caught here, at render. Only checkable when the
+chart can see the config: under controlPlane.url or existingConfigMap this is
+the operator's to get right. probe.port moves the probes and skips the check.
+*/}}
+{{- if and .Values.config (not .Values.probe.port) -}}
+{{- $listen := "" -}}
+{{- if .Values.config.admin -}}
+{{- $listen = .Values.config.admin.listen | default "" -}}
 {{- end -}}
-{{- if eq $health 19000 -}}
-{{- fail "health.port is 19000, the admin port: a config that sets admin.listen there would fail to bind one of the two. Pick another port" -}}
+{{- if not $listen -}}
+{{- fail "config.admin.listen is not set: the chart probes /healthz on 19000, and the admin server is disabled when its listen address is empty. Set it to '0.0.0.0:19000'" -}}
+{{- end -}}
+{{- if not (hasSuffix ":19000" $listen) -}}
+{{- fail (printf "config.admin.listen is %q but this chart probes /healthz on 19000. Use '0.0.0.0:19000'" $listen) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

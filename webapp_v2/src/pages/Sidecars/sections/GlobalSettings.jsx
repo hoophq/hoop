@@ -143,8 +143,10 @@ export default function GlobalSettings({ sidecar, editable }) {
             <Row label="Admin">
               {editing === 'admin' ? (
                 // An empty address is the off switch: the daemon opens no endpoint for it.
+                // The PATCH merges top-level keys only, so the rest of admin (api_listen,
+                // ica_readiness_json) is sent back as it is, or it would be dropped.
                 <Editing
-                  onSave={() => save({ admin: { listen: draft.trim() } }, 'Admin endpoint updated.')}
+                  onSave={() => save({ admin: { ...config?.admin, listen: draft.trim() } }, 'Admin endpoint updated.')}
                   onCancel={cancel}
                   saving={saving}
                   error={error}
