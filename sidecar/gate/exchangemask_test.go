@@ -800,3 +800,50 @@ func TestTheCodecSplitsAChunkedTextValueAtItsUnit(t *testing.T) {
 		t.Fatalf("unexpected output shape")
 	}
 }
+
+// httpJunk is client bytes the HTTP codec cannot decode. The policy allows
+// them, so the gate forwards them, and the upstream may answer them.
+var httpJunk = []byte("NOT HTTP AT ALL\r\n\r\n")
+
+// After the gate forwarded client bytes it could not decode, an HTTP lane no
+// longer knows how many responses are due. A later masked request is refused
+// (its response might not be the next one), and an unmasked one passes.
+func TestAnHTTPLaneRefusesAMaskAfterUndecodableBytes(t *testing.T) {
+	g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	ctx := context.Background()
+	if d := g.Request(ctx, httpRequest("/masked")); !d.Allowed {
+		t.Fatalf("masked request denied: %s", d.Message)
+	}
+	if out := respond(g, httpResponse()); bytes.Contains(out, []byte("ada@example.com")) {
+		t.Fatalf("masked request's response = %q", out)
+	}
+	if d := g.Request(ctx, httpJunk); !d.Allowed || d.Err == nil {
+		t.Fatalf("undecodable bytes: allowed=%v err=%v", d.Allowed, d.Err)
+	}
+	if d := g.Request(ctx, httpRequest("/masked-again")); d.Allowed || d.Rule != "ai-mask" ||
+		!strings.Contains(d.Message, "can no longer tell its responses apart") {
+		t.Fatalf("masked request after undecodable bytes = %+v", d)
+	}
+	if d := g.Request(ctx, httpRequest("/plain")); !d.Allowed {
+		t.Fatalf("unmasked request denied: %s", d.Message)
+	}
+}
+
+// A plan installed in the read that also carried undecodable bytes lasts for
+// the connection, which then takes no further request.
+func TestAnHTTPPlanBesideUndecodableBytesLastsForTheConnection(t *testing.T) {
+	g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	ctx := context.Background()
+	if d := g.Request(ctx, append(httpRequest("/masked"), httpJunk...)); !d.Allowed {
+		t.Fatalf("masked request with undecodable bytes denied: %s", d.Message)
+	}
+	if out := respond(g, httpResponse()); bytes.Contains(out, []byte("ada@example.com")) {
+		t.Fatalf("masked request's response = %q", out)
+	}
+	if out := respond(g, httpResponse()); bytes.Contains(out, []byte("ada@example.com")) {
+		t.Fatalf("a later response left unmasked: %q", out)
+	}
+	if d := g.Request(ctx, httpRequest("/plain")); d.Allowed || !strings.Contains(d.Message, "reconnect") {
+		t.Fatalf("request after a lost count = %+v", d)
+	}
+}

@@ -576,14 +576,14 @@ type Gate struct {
 	planActive bool
 	// planAnswered: on an HTTP lane, the plan's final response arrived.
 	planAnswered bool
-	// planSticky: on a serial lane, the plan's end cannot be known; it
-	// lasts for the connection. planDue counts the markers until it ends.
+	// planSticky: the plan's end cannot be known; it lasts for the
+	// connection. planDue counts a serial lane's markers until it ends.
 	planSticky bool
 	planDue    int
 	// endScan and reqScan follow a serial lane's framing; nil for a
 	// protocol the gate does not follow. maskOutstanding counts responses the
 	// client asked for and the server has not ended; countLost says that
-	// count is no longer known.
+	// count is no longer known (a serial lane's, or httpOpen on an HTTP lane).
 	endScan         ResponseEnd
 	reqScan         requestCounter
 	maskOutstanding int
@@ -1129,6 +1129,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// unparsed stands for client bytes the codec could not decode. It is
 	// judged after the statements the codec did decode, in stream order.
 	var unparsed *inspect.Statement
+	// lostCount: forwarded client bytes the codec could not decode may hold
+	// requests the upstream answers and the gate never counted.
+	lostCount := err != nil && dir == inspect.FromClient
 	if err != nil {
 		// A malformed stream is reported, and policy decides whether its
 		// bytes proceed: the gate turns them into an `unknown` statement
@@ -1308,6 +1311,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	if dir == inspect.FromServer {
 		g.answered(stmts, ended)
 	} else {
+		if lostCount {
+			g.loseRequestCount()
+		}
 		g.installPlan(install, g.sent(stmts, d.Payload))
 	}
 

@@ -55,7 +55,10 @@ const (
 	// before the plan's response, a plan on a WebSocket message, and a
 	// masked response the codec could pass through unmasked (compressed,
 	// close-delimited, an upgrade, longer than AIMaskMaxResponseBytes, or
-	// a head not whole in one read) are refused.
+	// a head not whole in one read) are refused. After forwarded client
+	// bytes the codec could not decode, the count of responses due is
+	// lost: no later plan is admitted, and an active one lasts for the
+	// connection, which then takes no further request.
 	MaskScopeHTTP
 )
 
@@ -130,6 +133,9 @@ func (g *Gate) exchangeBusy(stmt inspect.Statement) string {
 	}
 	switch g.maskScope {
 	case MaskScopeHTTP:
+		if g.planSticky {
+			return refuseSticky(g.cfg.Protocol)
+		}
 		if !g.planAnswered {
 			return refuseHTTPPending
 		}
@@ -179,6 +185,10 @@ func (g *Gate) maskRefusal(stmt inspect.Statement, requests int) string {
 	defer g.mu.Unlock()
 	switch g.maskScope {
 	case MaskScopeHTTP:
+		if g.countLost {
+			return head + "this connection forwarded bytes the codec could not decode, so it can no " +
+				"longer tell its responses apart; reconnect"
+		}
 		if g.httpOpen > 0 {
 			return head + "an earlier request on this connection is still waiting for its response; " +
 				"send this request after that response"
@@ -231,6 +241,23 @@ func (g *Gate) sent(stmts []inspect.Statement, payload []byte) int {
 	return 0
 }
 
+// loseRequestCount records forwarded client bytes the codec could not decode.
+// On an HTTP lane they may hold requests the upstream answers, so httpOpen no
+// longer counts the responses due: no later plan is admitted, and an active
+// one lasts for the connection. A serial lane's request counter reads the
+// forwarded bytes itself (sent).
+func (g *Gate) loseRequestCount() {
+	if g.maskScope != MaskScopeHTTP {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.countLost = true
+	if g.planActive {
+		g.planSticky = true
+	}
+}
+
 // installPlan makes masks the plan of the statement just allowed and
 // forwarded. asked is what sent returned for its read.
 func (g *Gate) installPlan(masks []policy.ResponseMask, asked int) {
@@ -247,7 +274,12 @@ func (g *Gate) installPlan(masks []policy.ResponseMask, asked int) {
 	}
 	g.plan, g.planActive, g.planAnswered = masks, true, false
 	g.respChecked, g.respBytes = false, 0
-	if g.maskScope == MaskScopeSerial {
+	switch g.maskScope {
+	case MaskScopeHTTP:
+		// maskRefusal admitted it with the count known; bytes forwarded
+		// beside it in the same read lose the count (loseRequestCount).
+		g.planSticky = g.countLost
+	case MaskScopeSerial:
 		// maskRefusal admitted the statement with nothing outstanding, so
 		// its response is the next one, unless its read asked for no
 		// response or for several.
