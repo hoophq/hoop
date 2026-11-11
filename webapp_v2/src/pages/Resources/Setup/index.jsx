@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Box, Group } from '@mantine/core'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import FullBleed from '@/layout/FullBleed'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
-import { setupConfigFor } from './catalog'
+import { useUserStore } from '@/stores/useUserStore'
+import { hiddenByFlags, setupConfigFor } from './catalog'
 import { useResourceSetupStore } from './store'
 import NameStep from './NameStep'
 import AgentStep from './AgentStep'
@@ -81,6 +82,7 @@ export default function ResourceSetup() {
   const start = useResourceSetupStore((s) => s.start)
   const checkName = useResourceSetupStore((s) => s.checkName)
   const submit = useResourceSetupStore((s) => s.submit)
+  const featureFlags = useUserStore((s) => s.featureFlags)
   const scrollRef = useRef(null)
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export default function ResourceSetup() {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [step])
 
+  if (hiddenByFlags(catalogId, featureFlags)) return <Navigate to="/resource-catalog" replace />
   // The store still holds an earlier run until start() lands.
   if (!setup || current !== setup) return <PageLoader h={400} />
 

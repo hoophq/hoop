@@ -1033,8 +1033,9 @@ when adding one, follow the pattern in `services/agents.js`.
 Non-obvious notes only:
 
 - `api.js` — the base Axios instance (Bearer-token interceptor, renewed token
-  from `X-New-Access-Token`, 401 → saved URL + logout). Every other service
-  imports it; never call axios directly.
+  from `X-New-Access-Token`; a 401 with the current token → saved URL + logout,
+  one with a stale token of the same account → retried once). Every other
+  service imports it; never call axios directly.
 - `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
@@ -1224,6 +1225,7 @@ import { showSnackbar } from '@/utils/snackbar'
 showSnackbar({ level: 'success', text: 'Agent deleted.' })
 showSnackbar({ level: 'error',   text: 'Failed to delete agent.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
+showSnackbar({ level: 'warning', text: 'Saved, with a caveat.', description: reason })
 
 // Error toasts can expand to show a `details` panel (object → key/value lines)
 showSnackbar({

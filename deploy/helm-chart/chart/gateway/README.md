@@ -34,3 +34,15 @@ Setup steps: "Credentials from an existing Secret" in [../../README.md](../../RE
 | `config.IDP_CLIENT_ASSERTION_FILE` | empty | Path to a JWT that authenticates the OIDC client in place of `config.IDP_CLIENT_SECRET`. Set one, not both. |
 
 Setup steps: "Entra ID without a client secret" in [../../README.md](../../README.md).
+
+## Boot-time organization settings
+
+All keys apply to the default organization at every gateway boot, so a
+rotated value replaces the stored one. None takes effect with
+`ORG_MULTI_TENANT=true`: `ORG_ID`, `HOOP_LICENSE` and `ANALYTICS_TRACKING=disabled` are refused.
+
+| Value | Default | Description |
+|---|---|---|
+| `config.HOOP_LICENSE` | empty | The signed license JSON itself (starts with `{`) or the path of a file that holds it. The gateway verifies the signature, the validity window and `API_URL`'s host, then stores it; a bad document stops startup. |
+| `config.ANALYTICS_TRACKING` | empty | Without an enterprise license the organization is always `identified`. With one: `enabled` forces `identified`, `disabled` forces `disabled`, unset keeps the mode set in Settings (a new organization starts `disabled`). |
+| `config.ORG_ID` | empty | UUID the default organization is created with on a fresh database, so `config.API_KEY` can be written before the first boot. An existing organization with another id stops startup: it never renames one. |

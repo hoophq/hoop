@@ -51,6 +51,7 @@ func (l *laneLog) BeginStage(ctx context.Context, stage telemetry.Stage, engine 
 func (l *laneLog) Upstream(context.Context, time.Duration, telemetry.Pairing) {}
 func (l *laneLog) Masked(values int)                                          { l.masked += values }
 func (l *laneLog) AuditError()                                                { l.auditErrs++ }
+func (l *laneLog) MCPMessage(telemetry.MCPMessage)                            {}
 
 // ctxSink records whether the write came under the statement context, and
 // fails when told to.

@@ -4,11 +4,13 @@
 package mcpgateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,6 +23,8 @@ import (
 	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
+	sidecarinspect "github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/backend"
 	"github.com/hoophq/mcpproxy/checks"
@@ -52,12 +56,31 @@ const (
 	// connIdleTimeout closes a keep-alive connection idle between requests;
 	// a streaming response is not idle.
 	connIdleTimeout = 2 * time.Minute
+	// maxAdvertised caps the tool names a lane's telemetry carries.
+	maxAdvertised = 1024
 )
+
+// mcpMethods are the methods MCP defines. Telemetry names any other method
+// telemetry.MCPOther.
+var mcpMethods = map[string]bool{
+	mcp.MethodInitialize: true, mcp.MethodPing: true,
+	mcp.MethodToolsList: true, mcp.MethodToolsCall: true,
+	mcp.MethodResourcesList: true, "resources/templates/list": true, mcp.MethodResourcesRead: true,
+	"resources/subscribe": true, "resources/unsubscribe": true,
+	mcp.MethodPromptsList: true, mcp.MethodPromptsGet: true,
+	"completion/complete": true, "logging/setLevel": true, "roots/list": true,
+	mcp.MethodSamplingCreateMessage: true, mcp.MethodElicitationCreate: true,
+	mcp.MethodServerDiscover: true, mcp.MethodSubscriptionsListen: true,
+	mcp.MethodInitialized: true, "notifications/cancelled": true, mcp.MethodProgress: true,
+	mcp.MethodLoggingMessage: true, mcp.MethodToolsListChanged: true,
+	"notifications/resources/updated": true, "notifications/resources/list_changed": true,
+	"notifications/prompts/list_changed": true, "notifications/roots/list_changed": true,
+}
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
 func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}, renamed: map[string]string{},
-		opening: map[string]chan struct{}{}}
+		opening: map[string]chan struct{}{}, advertised: map[string]bool{}}
 	for real, ov := range lane.Policy.Overrides {
 		if ov.Name != "" {
 			s.renamed[ov.Name] = real
@@ -119,12 +142,17 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	// The hoop check runs after mcpproxy's own (budgets, overrides) and
 	// before the terminal audit tap.
 	last := len(pipeline) - 1
-	pipeline = append(pipeline[:last:last], &hoopCheck{s: s}, pipeline[last])
+	own := []inspect.Check{&hoopCheck{s: s}}
+	if lane.MaskResults {
+		own = append(own, &maskCheck{s: s})
+	}
+	pipeline = append(append(pipeline[:last:last], own...), pipeline[last])
 
 	gw, err := mcpgw.New(mcpgw.Options{
 		Backends:           map[string]backend.Factory{lane.Name: factory},
 		Pipeline:           pipeline,
 		Sink:               s,
+		Observer:           s,
 		Logger:             s.log,
 		SessionIdleTimeout: lane.SessionIdleTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
@@ -189,6 +217,11 @@ type server struct {
 	closed    bool
 
 	total, denied atomic.Int64
+
+	// advertised holds the real names of the tools the upstream listed, up
+	// to maxAdvertised: the tools telemetry names.
+	advertisedMu sync.Mutex
+	advertised   map[string]bool
 }
 
 func (s *server) Serve(ctx context.Context) error {
@@ -289,6 +322,56 @@ func (s *server) Stats() (active, total, denied int64) {
 	active = int64(len(s.sessions))
 	s.mu.Unlock()
 	return active, s.total.Load(), s.denied.Load()
+}
+
+// ObserveMessage implements mcpproxy's gateway.Observer. A message the
+// pipeline refused counts as denied, whichever check refused it.
+func (s *server) ObserveMessage(dir inspect.Direction, _, method, tool, decision string, _ time.Duration) {
+	if decision != "allow" {
+		s.denied.Add(1)
+	}
+	if s.lane.Telemetry == nil {
+		return
+	}
+	m := telemetry.MCPMessage{Direction: sidecarinspect.FromClient, Method: method, Tool: s.toolLabel(tool), Decision: decision}
+	if dir == inspect.S2C {
+		m.Direction = sidecarinspect.FromServer
+	}
+	if method != "" && !mcpMethods[method] {
+		m.Method = telemetry.MCPOther
+	}
+	if method == mcp.MethodToolsCall && m.Tool == "" {
+		m.Tool = telemetry.MCPOther
+	}
+	s.lane.Telemetry.MCPMessage(m)
+}
+
+func (s *server) advertise(names []string) {
+	s.advertisedMu.Lock()
+	defer s.advertisedMu.Unlock()
+	for _, n := range names {
+		if len(s.advertised) >= maxAdvertised {
+			return
+		}
+		s.advertised[n] = true
+	}
+}
+
+// toolLabel is tool's real name when the upstream listed it, else
+// telemetry.MCPOther.
+func (s *server) toolLabel(tool string) string {
+	if tool == "" {
+		return ""
+	}
+	if real, ok := s.renamed[tool]; ok {
+		tool = real
+	}
+	s.advertisedMu.Lock()
+	defer s.advertisedMu.Unlock()
+	if s.advertised[tool] {
+		return tool
+	}
+	return telemetry.MCPOther
 }
 
 func (s *server) Notes() []string {
@@ -477,12 +560,10 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 	case mcp.MethodToolsCall:
 		name, args, err := toolCallParams(m.Env.Params)
 		if err != nil {
-			c.s.denied.Add(1)
-			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+			return invalidParams(m, err)
 		}
 		v := ls.ToolCall(ctx, name, args)
 		if !v.Allowed {
-			c.s.denied.Add(1)
 			return deniedToolResult(m.Env, v)
 		}
 	}
@@ -539,10 +620,11 @@ func (c *hideCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.
 	if err != nil {
 		return inspect.AllowAll // hoopCheck refuses the message
 	}
-	hidden, err := hideTools(ls, m)
+	names, hidden, err := hideTools(ls, m)
 	if err != nil {
 		return unreadableCatalog(ctx, ls, err)
 	}
+	c.s.advertise(names)
 	if len(hidden) > 0 {
 		sessionHidden(ms).put(m.Env.ID.Key(), hidden)
 	}
@@ -556,9 +638,8 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 	}
 	name, args, err := toolCallParams(m.Env.Params)
 	if err != nil {
-		c.s.denied.Add(1)
 		ls.Record(ctx, "mcp_invalid_params", map[string]string{"reason": err.Error()})
-		return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+		return invalidParams(m, err)
 	}
 	tool := checks.RealToolName(ms, name)
 	if real, ok := c.s.renamed[name]; ok && tool == name {
@@ -571,26 +652,56 @@ func (c *hideCheck) call(ctx context.Context, ms inspect.Session, m *inspect.Msg
 	if v.Allowed {
 		return inspect.AllowAll
 	}
-	c.s.denied.Add(1)
 	return deniedToolResult(m.Env, v)
 }
 
+// invalidParams refuses a tools/call whose params the lane cannot read. It
+// drops the params: mcpproxy's observer reads the tool from them after the
+// pipeline, case-insensitively, and would count the call under a tool the
+// lane never judged.
+func invalidParams(m *inspect.Msg, err error) inspect.Decision {
+	d := inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: "+err.Error())
+	m.Env.Params = nil
+	return d
+}
+
 // toolCallParams reads a tools/call's tool name and arguments by their exact
-// keys, as an MCP server does. Params with keys that differ only in case are
-// refused: every later check reads them without case, as Go does, and would
-// judge a different tool than the server runs.
+// keys, as an MCP server does. Params that repeat a key, exactly or in another
+// case, are refused: a later check and the server could each read a
+// different value, and judge one tool while the server runs another.
 func toolCallParams(params json.RawMessage) (string, json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(params, &fields); err != nil {
-		return "", nil, errors.New("params are not an object")
+	notObject := errors.New("params are not an object")
+	dec := json.NewDecoder(bytes.NewReader(params))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return "", nil, notObject
 	}
-	seen := make(map[string]string, len(fields))
-	for k := range fields {
+	fields := map[string]json.RawMessage{}
+	seen := map[string]string{}
+	for dec.More() {
+		tok, err := dec.Token()
+		k, isKey := tok.(string)
+		if err != nil || !isKey {
+			return "", nil, notObject
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return "", nil, notObject
+		}
 		f := foldKey(k)
 		if prev, dup := seen[f]; dup {
+			if prev == k {
+				return "", nil, fmt.Errorf("key %q appears twice", k)
+			}
 			return "", nil, fmt.Errorf("keys %q and %q differ only in case", prev, k)
 		}
 		seen[f] = k
+		fields[k] = v
+	}
+	if _, err := dec.Token(); err != nil {
+		return "", nil, notObject
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return "", nil, notObject
 	}
 	var name string
 	if err := json.Unmarshal(fields["name"], &name); err != nil || name == "" {
@@ -615,23 +726,24 @@ func foldKey(s string) string {
 }
 
 // hideTools drops from a tools/list result every tool ls hides, keeping the
-// other fields of the result as they came, and returns the names it dropped.
-func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) ([]string, error) {
+// other fields of the result as they came. It returns every name the result
+// listed and the names it dropped.
+func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) (names, hidden []string, err error) {
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(m.Env.Result, &result); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var raw []json.RawMessage
 	if err := json.Unmarshal(result["tools"], &raw); err != nil {
-		return nil, fmt.Errorf("tools: %w", err)
+		return nil, nil, fmt.Errorf("tools: %w", err)
 	}
 	kept := make([]json.RawMessage, 0, len(raw))
-	var hidden []string
 	for _, entry := range raw {
 		t, err := catalogTool(entry)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		names = append(names, t.Name)
 		if ls.Hidden(t.Name) {
 			hidden = append(hidden, t.Name)
 			continue
@@ -639,18 +751,17 @@ func hideTools(ls daemon.MCPLaneSession, m *inspect.Msg) ([]string, error) {
 		kept = append(kept, entry)
 	}
 	if len(hidden) == 0 {
-		return nil, nil
+		return names, nil, nil
 	}
-	var err error
 	if result["tools"], err = json.Marshal(kept); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out, err := json.Marshal(result)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m.Env.Result = out
-	return hidden, nil
+	return names, hidden, nil
 }
 
 // catalogTools reads the tools of a tools/list result for the catalog
@@ -728,9 +839,57 @@ func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms i
 			return unreadableCatalog(ctx, ls, err)
 		}
 		if v := ls.ToolList(ctx, tools, sessionHidden(ms).take(m.Env.ID.Key())); !v.Allowed {
-			c.s.denied.Add(1)
 			return inspect.Decision{Verdict: inspect.Kill, Reason: "tool catalog denied: " + v.Message, Rule: checkName}
 		}
 	}
 	return inspect.AllowAll
 }
+
+// maskCheck masks results with mcpproxy's redactor. Hooks.Redact gets no
+// session, so a redactor is built per message around the session's masker.
+type maskCheck struct{ s *server }
+
+func (c *maskCheck) Name() string { return checks.NameRedact }
+
+func (c *maskCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
+	if m == nil || m.Env == nil || m.Dir != inspect.S2C || !m.Env.IsResponse() {
+		return inspect.AllowAll
+	}
+	ls, err := c.s.laneSession(ctx, ms)
+	if err != nil {
+		return inspect.Decision{Verdict: inspect.Kill, Reason: err.Error(), Rule: checkName}
+	}
+	var entities []string
+	var recordErr error
+	hooks := inspect.Hooks{Redact: func(_ context.Context, text string) (string, int, error) {
+		out, names, n, err := ls.Mask(text)
+		if err != nil {
+			c.s.log.Warn("mcp result withheld: masking failed", "error", err)
+			return "", 0, err
+		}
+		entities = append(entities, names...)
+		return out, n, nil
+	}}
+	sink := sinkFunc(func(ctx context.Context, ev audit.Event) {
+		if ev.Type != audit.EventRedacted {
+			c.s.Emit(ctx, ev)
+			return
+		}
+		n, ok := ev.Fields["redactions"].(int)
+		if !ok {
+			recordErr = errors.New("the redacted event carries no count")
+			return
+		}
+		recordErr = ls.RecordMasked(ctx, entities, n)
+	})
+	d := checks.NewRedactor(hooks, sink).Inspect(ctx, ms, m)
+	if d.Verdict == inspect.Allow && recordErr != nil {
+		c.s.log.Warn("mcp result withheld: masked values not recorded", "error", recordErr)
+		return inspect.Denyf(m.Env, jsonrpc.CodePolicyDenied, checks.NameRedact, "result withheld: audit trail unavailable")
+	}
+	return d
+}
+
+type sinkFunc func(context.Context, audit.Event)
+
+func (f sinkFunc) Emit(ctx context.Context, ev audit.Event) { f(ctx, ev) }

@@ -244,6 +244,8 @@ func (la *LaneAnalyzerConfig) usesAIMask() bool {
 //   - mongodb: replies pair with requests by id, and an unacknowledged
 //     write or an exhaust cursor has no one-to-one answer.
 //   - ssh: a session's output is not tied to one command.
+//   - mcp: the engine masks every result with the lane's mask rules
+//     (ENG-965) and does not say which tool call a result answers.
 //   - ica and plug-in protocols: no statement response the sidecar can
 //     tie, or framing this build does not know.
 func aiMaskScope(lc ListenerConfig) gate.MaskScope {
@@ -283,8 +285,11 @@ func grpcAIMaskGap(g *GRPCCodecConfig) string {
 
 // noAIMaskReason says why a lane is MaskScopeNone, for LaneAIRuleWarnings.
 func noAIMaskReason(lc ListenerConfig) string {
-	if isGRPCTransport(lc) {
+	switch {
+	case isGRPCTransport(lc):
 		return grpcAIMaskGap(lc.GRPC)
+	case isMCPGateway(lc):
+		return "cannot tie a response to one tool call: it masks results with the lane's mask rules only"
 	}
 	return "cannot tie a response to one statement"
 }

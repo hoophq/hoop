@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,20 +22,24 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/mcpgateway"
 	"github.com/hoophq/hoop/sidecar/mcpgateway/internal/testupstream"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // recSession is the sidecar session a test lane opens: it records what the
 // engine hands it, denies the tools in deny and hides the tools in hide.
 type recSession struct {
-	mu     sync.Mutex
-	id     string
-	deny   map[string]string
-	hide   map[string]bool
-	calls  []string
-	acts   []string
-	seen   []string
-	closed bool
+	mu        sync.Mutex
+	id        string
+	deny      map[string]string
+	hide      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	calls     []string
+	acts      []string
+	seen      []string
+	masked    []string
+	closed    bool
 }
 
 func (s *recSession) ID() string { return s.id }
@@ -72,6 +78,30 @@ func (s *recSession) Record(_ context.Context, activity string, attrs map[string
 	}
 }
 
+func (s *recSession) Mask(text string) (string, []string, int, error) {
+	if s.mask == nil {
+		return text, nil, 0, nil
+	}
+	return s.mask(text)
+}
+
+func (s *recSession) RecordMasked(_ context.Context, entities []string, count int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recordErr != nil {
+		return s.recordErr
+	}
+	sorted := slices.Sorted(slices.Values(entities))
+	s.masked = append(s.masked, fmt.Sprintf("%s:%d", strings.Join(slices.Compact(sorted), ","), count))
+	return nil
+}
+
+func (s *recSession) maskedRecords() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.masked...)
+}
+
 func (s *recSession) Close(context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -93,18 +123,20 @@ func (s *recSession) everything() string {
 
 // testLane opens one recSession per MCP session.
 type testLane struct {
-	mu       sync.Mutex
-	deny     map[string]string
-	hide     map[string]bool
-	sessions []*recSession
-	callers  []daemon.MCPCaller
+	mu        sync.Mutex
+	deny      map[string]string
+	hide      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	sessions  []*recSession
+	callers   []daemon.MCPCaller
 }
 
 func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSession, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callers = append(l.callers, c)
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, mask: l.mask, recordErr: l.recordErr}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -357,9 +389,8 @@ func TestARenamedToolIsHiddenByItsRealName(t *testing.T) {
 }
 
 // A tools/call is judged by its exact "name" key, as an MCP server reads it.
-// Params whose keys differ only in case are refused: Go reads them without
-// case, so the lane would judge one tool and a server in another language
-// would run the other.
+// Params that repeat a key, exactly, escaped or in another case, are
+// refused: the lane would judge one value and the server could run another.
 func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
@@ -372,6 +403,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 		`{"name":"echo","arguments":{"message":"x"},"ARGUMENTS":{"message":"y"}}`,
 		`{"Name":"echo","arguments":{"message":"x"}}`,
 		`{"name":"echo","arguments":{"message":"x"},"argumentſ":{"message":"y"}}`,
+		`{"name":"delete_customer","name":"echo","arguments":{"message":"x"}}`,
+		`{"name":"echo","arguments":{"message":"x"},"arguments":{"message":"y"}}`,
+		`{"name":"delete_customer","\u006eame":"echo","arguments":{"message":"x"}}`,
 	} {
 		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
 		if code != 200 || !strings.Contains(body, "-32602") {
@@ -380,6 +414,9 @@ func TestAToolCallIsJudgedByItsExactNameKey(t *testing.T) {
 	}
 	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
 		t.Fatalf("the lane judged %v, want no call", calls)
+	}
+	if body := c.call(t, 30, "echo", `{"message":"still works"}`); !strings.Contains(body, "still works") {
+		t.Fatalf("a normal call after the refusals: %s", body)
 	}
 }
 
@@ -484,6 +521,97 @@ func TestOneSidecarSessionPerMCPSession(t *testing.T) {
 	}
 	if active, total, _ := srv.Stats(); active != 1 || total != 2 {
 		t.Fatalf("stats active=%d total=%d", active, total)
+	}
+}
+
+// recRecorder keeps the messages the engine counts.
+type recRecorder struct {
+	telemetry.LaneRecorder // nil: the engine calls MCPMessage only
+	mu                     sync.Mutex
+	msgs                   []string
+}
+
+func (r *recRecorder) MCPMessage(m telemetry.MCPMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.msgs = append(r.msgs, strings.Join([]string{string(m.Direction), m.Method, m.Tool, m.Decision}, "|"))
+}
+
+func (r *recRecorder) count(msg string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, m := range r.msgs {
+		if m == msg {
+			n++
+		}
+	}
+	return n
+}
+
+// mcpproxy's observer feeds the lane's telemetry by method, tool and
+// decision, and every refusal reaches the lane's denied count, mcpproxy's
+// own included. A tool the upstream did not list, a call refused as invalid
+// params and a method MCP does not define are counted as (other). Invalid
+// params are refused before the budget, so they spend none of it.
+func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
+	rec := &recRecorder{}
+	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
+	t.Cleanup(up.Close)
+	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 3}, Open: ln.open, Telemetry: rec})
+	c := &client{url: url}
+	c.init(t)
+	c.list(t)
+	c.call(t, 3, "echo", `{"message":"hi"}`)
+	c.call(t, 4, "delete_customer", `{"id":"7"}`)
+	if body := c.call(t, 5, "made_up", `{}`); !strings.Contains(body, "was not advertised") {
+		t.Fatalf("unlisted tool: %s", body)
+	}
+	if _, body := c.post(t, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"delete_customer","name":"echo","arguments":{}}}`); !strings.Contains(body, "-32602") {
+		t.Fatalf("repeated name: %s", body)
+	}
+	if body := c.call(t, 6, "echo", `{"message":"over"}`); !strings.Contains(body, "-32012") {
+		t.Fatalf("call over the budget: %s", body)
+	}
+	c.post(t, `{"jsonrpc":"2.0","method":"notifications/x-custom"}`)
+
+	for msg, want := range map[string]int{
+		"client|initialize||allow":                          1,
+		"client|notifications/initialized||allow":           1,
+		"client|tools/list||allow":                          1,
+		"server|||allow":                                    1,
+		"client|tools/call|echo|allow":                      1,
+		"server||echo|allow":                                1,
+		"client|tools/call|delete_customer|deny":            1,
+		"client|tools/call|" + telemetry.MCPOther + "|deny": 2,
+		"client|tools/call|echo|deny":                       1,
+		"client|" + telemetry.MCPOther + "||allow":          1,
+	} {
+		if got := rec.count(msg); got != want {
+			t.Errorf("%s counted %d times, want %d; all: %v", msg, got, want, rec.msgs)
+		}
+	}
+	if _, _, denied := srv.Stats(); denied != 4 {
+		t.Fatalf("denied %d, want the rule, the unlisted tool, the invalid params and the budget", denied)
+	}
+}
+
+// The engine links none of mcpproxy's WAL, Prometheus or OTLP code: the
+// sidecar's audit and telemetry blocks do that work.
+func TestTheEngineLinksNoMCPProxyWALOrTelemetry(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, pkg := range strings.Fields(string(out)) {
+		for _, banned := range []string{"github.com/hoophq/mcpproxy/wal", "github.com/hoophq/mcpproxy/telemetry",
+			"github.com/prometheus/", "go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/exporters"} {
+			if strings.HasPrefix(pkg, banned) {
+				t.Errorf("the engine links %s", pkg)
+			}
+		}
 	}
 }
 

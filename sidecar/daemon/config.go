@@ -1728,11 +1728,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	}
 	if isMCPGateway(lc) {
 		problems = append(problems, validateMCPGatewayLane(lc, name)...)
-		if lc.Mask != nil && lc.Mask.hasRules() {
-			problems = append(problems, name+": a mask block on an mcp listener does not apply yet; mask rules inherited from the top level are accepted and noted")
-		}
-		if lc.Analyzer != nil {
-			problems = append(problems, name+": analyzer does not apply to an mcp listener yet")
+		if lc.Mask != nil {
+			problems = append(problems, ValidateMCPMasking(*lc.Mask, name)...)
 		}
 	} else if lc.MCPGateway != nil {
 		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))
@@ -1887,7 +1884,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
 						"or set mask: {rules: []} on this lane.", name))
 			}
-		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !isMCPGateway(lc) && !gate.MaskSupported(p) {
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !maskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
 			// capability), and buildMasker asks it through the factory; the
 			// config alone cannot say, and the plane never loads one.

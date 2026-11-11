@@ -1,8 +1,11 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -17,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // The engine (mcpproxy) lives in the nested sidecar/mcpgateway module; this
@@ -24,6 +28,12 @@ import (
 
 func isMCPGateway(lc ListenerConfig) bool {
 	return inspect.Protocol(lc.Protocol) == inspect.MCP
+}
+
+// maskSupported adds the mcp lane, which has no codec: mcpproxy's redactor
+// rewrites the decoded JSON.
+func maskSupported(p inspect.Protocol) bool {
+	return p == inspect.MCP || gate.MaskSupported(p)
 }
 
 // MCPGatewayConfig is a listener's mcp_gateway block: the upstream transport
@@ -39,6 +49,7 @@ type MCPGatewayConfig struct {
 	MaxResultKB        int                        `json:"max_result_kb,omitempty" label:"Max result size (KiB)" help:"Cuts the text of a tool result to this size. 0 is unlimited."`
 	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty" ui:"-"`
 	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty" ui:"-"`
+	SQL                map[string]MCPSQLTool      `json:"sql,omitempty" cap:"mcp_sql" ui:"-"`
 }
 
 type MCPToolOverride struct {
@@ -56,6 +67,74 @@ func (m *MCPGatewayConfig) transport() string {
 		return MCPTransportStreamableHTTP
 	}
 	return m.Transport
+}
+
+// MaskRuleNamesColumns reports a mask rule an mcp lane never matches: it masks
+// strings without their keys. The control plane uses it to skip the same rules.
+func MaskRuleNamesColumns(rule json.RawMessage) bool {
+	var r struct {
+		Columns []string `json:"columns"`
+	}
+	return json.Unmarshal(rule, &r) == nil && len(r.Columns) > 0
+}
+
+// columnMaskRules splits off the rules that name columns. ok is false when the
+// rules do not parse; the plugin reports that.
+func columnMaskRules(raw json.RawMessage) (kept [][]byte, columns []string, ok bool) {
+	var rules []json.RawMessage
+	if json.Unmarshal(raw, &rules) != nil {
+		return nil, nil, false
+	}
+	for i, r := range rules {
+		if !MaskRuleNamesColumns(r) {
+			kept = append(kept, r)
+			continue
+		}
+		label := fmt.Sprintf("mask rule %d", i+1)
+		if name := maskRuleName(r); name != "" {
+			label = fmt.Sprintf("mask rule %q", name)
+		}
+		columns = append(columns, label)
+	}
+	return kept, columns, true
+}
+
+func maskRuleName(rule json.RawMessage) string {
+	var r struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(rule, &r)
+	return r.Name
+}
+
+// ValidateMCPMasking refuses a rule that names columns in an mcp lane's own
+// mask block. The control plane calls it before it binds a rule to the lane.
+func ValidateMCPMasking(mc MaskConfig, lane string) []string {
+	if !mc.hasRules() {
+		return nil
+	}
+	_, columns, _ := columnMaskRules(mc.Rules)
+	problems := make([]string, 0, len(columns))
+	for _, label := range columns {
+		problems = append(problems, fmt.Sprintf(
+			"%s: %s names columns, which an mcp listener never matches: it masks result strings without their keys. Name entities instead",
+			lane, label))
+	}
+	return problems
+}
+
+// mcpMask drops the inherited rules that name columns and labels them in
+// skipped. They are not refused: 1.290 accepts them on an mcp lane.
+func mcpMask(lc ListenerConfig, mc MaskConfig) (applied MaskConfig, skipped []string) {
+	if !mc.hasRules() || (lc.Mask != nil && lc.Mask.hasRules()) {
+		return mc, nil
+	}
+	kept, skipped, ok := columnMaskRules(mc.Rules)
+	if !ok || len(skipped) == 0 {
+		return mc, nil
+	}
+	mc.Rules = append(append([]byte("["), bytes.Join(kept, []byte(","))...), ']')
+	return mc, skipped
 }
 
 func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
@@ -100,7 +179,7 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 			problems = append(problems, fmt.Sprintf("%s: mcp_gateway.tool_rate_limits[%q] must be positive", name, glob))
 		}
 	}
-	return problems
+	return append(problems, validateMCPSQL(name, m.SQL)...)
 }
 
 func loopbackHost(host string) bool {
@@ -131,8 +210,8 @@ type MCPToolInfo struct {
 	Description string
 }
 
-// MCPLaneSession is one sidecar session per MCP session. Calls are
-// serialized: a gate is not safe for concurrent use.
+// MCPLaneSession is one sidecar session per MCP session. Its methods may run
+// concurrently; Close waits for the calls in flight.
 type MCPLaneSession interface {
 	ID() string
 	ToolCall(ctx context.Context, tool string, args []byte) MCPVerdict
@@ -143,6 +222,12 @@ type MCPLaneSession interface {
 	// left out of it.
 	ToolList(ctx context.Context, tools []MCPToolInfo, hidden []string) MCPVerdict
 	Record(ctx context.Context, activity string, attrs map[string]string)
+	// Mask rewrites one result string with the session's mask rules and
+	// returns the entities it masked. An error withholds the result.
+	Mask(text string) (out string, entities []string, count int, err error)
+	// RecordMasked audits what Mask rewrote in one result. An error
+	// withholds the result.
+	RecordMasked(ctx context.Context, entities []string, count int) error
 	Close(ctx context.Context)
 }
 
@@ -172,6 +257,11 @@ type MCPGatewayLane struct {
 	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
+	// MaskResults is set when the lane has mask rules: tool and resource
+	// results then pass MCPLaneSession.Mask. Fixed when the lane is built.
+	MaskResults bool
+	// Telemetry is the lane's recorder; nil without a telemetry block.
+	Telemetry telem.LaneRecorder
 	// Open starts the sidecar session for one MCP session. Nil on a
 	// -validate run.
 	Open func(ctx context.Context, caller MCPCaller) (MCPLaneSession, error)
@@ -184,6 +274,7 @@ type MCPGatewayServer interface {
 	Serve(ctx context.Context) error
 	Close() error
 	Addr() net.Addr
+	// Stats counts MCP sessions, and the messages the lane refused.
 	Stats() (active, total, denied int64)
 	Notes() []string
 	// EndSessions closes every open MCP session: the next message on one is
@@ -262,6 +353,8 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		DownstreamTLS:      downstream,
 		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaskResults:        ln.masker != nil,
+		Telemetry:          ln.telemetry,
 		Log:                laneLog,
 	}
 	if lc.MCPGateway != nil {
@@ -295,12 +388,15 @@ func (r mcpLaneRules) swapLane(ln lane, drained func()) {
 
 type mcpLaneSession struct {
 	mu      sync.Mutex
+	calls   sync.WaitGroup
 	g       *gate.Gate
 	release func()
 	mcpSID  string
 	hide    *policy.Rules
+	sql     map[string]MCPSQLTool
 	log     *slog.Logger
 	closed  bool
+	done    chan struct{}
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -329,7 +425,11 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}, nil
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log, done: make(chan struct{})}
+	if ln.cfg.MCPGateway != nil {
+		ls.sql = ln.cfg.MCPGateway.SQL
+	}
+	return ls, nil
 }
 
 func (s *mcpLaneSession) ID() string { return string(s.g.Session().ID) }
@@ -344,6 +444,13 @@ func (s *mcpLaneSession) ToolCall(ctx context.Context, tool string, args []byte)
 		Metadata: map[string]string{
 			inspect.MetadataMCPMethod: "tools/call", inspect.MetadataMCPTool: tool, inspect.MetadataMCPSession: s.mcpSID,
 		},
+	}
+	t, isSQL, err := mcpSQLFor(s.sql, tool)
+	switch {
+	case err != nil:
+		return s.refuseSQL(ctx, tool, "", err)
+	case isSQL:
+		return s.sqlCall(ctx, stmt, t, args)
 	}
 	return s.evaluate(ctx, stmt)
 }
@@ -394,34 +501,85 @@ func mcpHideRules(rules []policy.Rule) (*policy.Rules, error) {
 	return policy.NewRules(hide)
 }
 
-func (s *mcpLaneSession) evaluate(ctx context.Context, stmt inspect.Statement) MCPVerdict {
+// begin admits one call; false means the session is closed. Close waits for
+// every call admitted, so none reaches a closed gate.
+func (s *mcpLaneSession) begin() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
+		return false
+	}
+	s.calls.Add(1)
+	return true
+}
+
+// evaluate judges stmts in order and stops at the first deny.
+func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statement) MCPVerdict {
+	if !s.begin() {
 		return MCPVerdict{Message: "session closed"}
 	}
-	d := s.g.EvaluateStatement(ctx, stmt)
-	return MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}
+	defer s.calls.Done()
+	var v MCPVerdict
+	for _, stmt := range stmts {
+		d := s.g.EvaluateStatement(ctx, stmt)
+		if d.Err != nil {
+			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
+		}
+		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
+			break
+		}
+	}
+	return v
 }
 
 func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[string]string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
+	if !s.begin() {
 		return
 	}
+	defer s.calls.Done()
 	if err := s.g.RecordActivity(ctx, activity, attrs); err != nil {
 		s.log.Warn("mcp activity not recorded", "activity", activity, "error", err)
 	}
 }
 
+var errMCPSessionClosed = errors.New("the sidecar session is closed")
+
+func (s *mcpLaneSession) Mask(text string) (string, []string, int, error) {
+	if !s.begin() {
+		return "", nil, 0, errMCPSessionClosed
+	}
+	defer s.calls.Done()
+	m := s.g.Masker()
+	if m == nil {
+		return "", nil, 0, errors.New("the sidecar session has no masker")
+	}
+	out, entities, n := m.Mask([]byte(text))
+	return string(out), entities, n, nil
+}
+
+func (s *mcpLaneSession) RecordMasked(ctx context.Context, entities []string, count int) error {
+	if !s.begin() {
+		return errMCPSessionClosed
+	}
+	defer s.calls.Done()
+	return s.g.RecordMasked(ctx, entities, count)
+}
+
+// Close is safe to call more than once; a later call waits for the first.
 func (s *mcpLaneSession) Close(ctx context.Context) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
+		select {
+		case <-s.done:
+		case <-ctx.Done():
+		}
 		return
 	}
 	s.closed = true
+	s.mu.Unlock()
+	defer close(s.done)
+	s.calls.Wait()
 	if err := s.g.Close(ctx); err != nil {
 		s.log.Warn("mcp session close reported an error", "error", err)
 	}

@@ -81,6 +81,15 @@
       }
     },
     {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "claude-code"
+      }
+    },
+    {
       "id": "grafana",
       "name": "Grafana",
       "description": "Access your Grafana monitoring and visualization platform securely through Hoop.dev with comprehensive audit trails, session recording, and intelligent traffic monitoring.",
@@ -200,6 +209,24 @@
         "command": [
           "bash"
         ]
+      }
+    },
+    {
+      "id": "mcp",
+      "name": "MCP",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcp"
+      }
+    },
+    {
+      "id": "mcpproxy",
+      "name": "MCP Gateway",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcpproxy"
       }
     },
     {

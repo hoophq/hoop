@@ -40,6 +40,10 @@ const FlagAnalyzeBeforeRunForms = "experimental.analyze_before_run_forms"
 // FlagReviewNotifications is spelled here for the same reason.
 const FlagReviewNotifications = "experimental.review_notifications"
 
+// FlagCLIContexts is spelled here for the same reason. Released CLIs refuse
+// `hoop context use` when a gateway omits it: never remove it, flip Default.
+const FlagCLIContexts = "experimental.cli_contexts"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -168,6 +172,13 @@ var catalog = map[string]Flag{
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
+	},
+	FlagCLIContexts: {
+		Name:        FlagCLIContexts,
+		Description: "Let the hoop CLI switch between saved installations with `hoop context use`. Each context keeps its own URL and login, and switching syncs the CLI version with that gateway. When off, `hoop context use` refuses a context logged in to this organization.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentClient},
 	},
 	FlagAgents: {
 		Name:        FlagAgents,

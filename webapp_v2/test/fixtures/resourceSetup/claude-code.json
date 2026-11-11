@@ -1,0 +1,30 @@
+{
+  "name": "cc",
+  "type": "httpproxy",
+  "subtype": "claude-code",
+  "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "cc-role",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "httpproxy",
+      "secret": {
+        "envvar:REMOTE_URL": "aHR0cHM6Ly9hcGkuYW50aHJvcGljLmNvbQ==",
+        "envvar:HEADER_X_API_KEY": "c2stYW50LTE=",
+        "envvar:INSECURE": "ZmFsc2U=",
+        "envvar:HEADER_X-Org": "YWNtZQ=="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "75122bce-f957-49eb-a812-2ab60977cd9f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "claude-code"
+    }
+  ]
+}

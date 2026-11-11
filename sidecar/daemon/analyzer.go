@@ -893,16 +893,18 @@ func (c *Config) enterpriseLicensed() bool {
 
 // lanesAnalyze reports whether any listener asks for analysis.
 func (c *Config) lanesAnalyze() bool {
-	for _, lc := range c.Listeners {
-		if lc.Analyzer != nil {
-			return true
-		}
-		gc, _, _ := c.resolve(lc)
-		if _, ai := splitAnalyzerRules(gc.Rules); len(ai) > 0 {
-			return true
-		}
+	return slices.ContainsFunc(c.Listeners, c.laneAnalyzes)
+}
+
+// laneAnalyzes reports whether lc asks for analysis: an analyzer block, or an
+// ai_analysis rule it resolves.
+func (c *Config) laneAnalyzes(lc ListenerConfig) bool {
+	if lc.Analyzer != nil {
+		return true
 	}
-	return false
+	gc, _, _ := c.resolve(lc)
+	_, ai := splitAnalyzerRules(gc.Rules)
+	return len(ai) > 0
 }
 
 // effectiveAnalyzer is the analyzer section the process runs: the config's,

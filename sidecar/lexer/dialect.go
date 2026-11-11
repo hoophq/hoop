@@ -116,6 +116,16 @@ func (d Dialect) String() string {
 	return "postgres"
 }
 
+// DialectNamed returns the dialect whose String is name.
+func DialectNamed(name string) (Dialect, bool) {
+	for d := Postgres; d <= Spark; d++ {
+		if d.String() == name {
+			return d, true
+		}
+	}
+	return Postgres, false
+}
+
 // lexRules is the per-dialect quoting and comment matrix.
 //
 // Every entry here corresponds to a way the previous lexer could be walked

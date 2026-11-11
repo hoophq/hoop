@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -215,6 +216,14 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 		idx, err := listenerIndex("data masking", maskByLane[lane][0].RuleName, lane)
 		if err != nil {
 			return cfg, err
+		}
+		// The sidecar refuses a column rule in an mcp lane's own block, so
+		// it is skipped here, whatever route bound it.
+		if isMCPListener(listeners[idx]) {
+			rules = slices.DeleteFunc(rules, daemon.MaskRuleNamesColumns)
+			if len(rules) == 0 {
+				continue
+			}
 		}
 		raw, err := json.Marshal(rules)
 		if err != nil {

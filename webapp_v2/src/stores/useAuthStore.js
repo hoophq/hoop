@@ -18,6 +18,17 @@ const clearCookie = (cookieName) => {
 
 const REDIRECT_KEY = 'redirect-after-auth'
 
+// The account a JWT names (`sub`), or null for an opaque token: some OIDC
+// providers hand the browser one.
+export function tokenSubject(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(payload)).sub || null
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = create((set, get) => ({
   // The token of this tab's sign-in. Stores reset when it changes, as an
   // account change, so a renewal leaves it as it was. Never send it: getToken()

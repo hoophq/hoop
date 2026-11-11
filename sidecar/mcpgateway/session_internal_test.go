@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/inspect"
 	"github.com/hoophq/mcpproxy/jsonrpc"
@@ -31,6 +32,8 @@ func (nopSession) ToolList(context.Context, []daemon.MCPToolInfo, []string) daem
 	return daemon.MCPVerdict{Allowed: true}
 }
 func (nopSession) Record(context.Context, string, map[string]string) {}
+func (nopSession) Mask(text string) (string, []string, int, error)   { return text, nil, 0, nil }
+func (nopSession) RecordMasked(context.Context, []string, int) error { return nil }
 func (nopSession) Close(context.Context)                             {}
 
 // A message that reaches the pipeline after its MCP session ended, after a
@@ -227,5 +230,43 @@ func TestToolCallParamsWithManyKeysIsFast(t *testing.T) {
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Fatalf("200000 keys took %v", d)
+	}
+}
+
+// A top-level key that repeats, exactly or escaped, is refused and named;
+// a repeat inside arguments is not this check's to judge.
+func TestToolCallParamsRefusesARepeatedKey(t *testing.T) {
+	for params, want := range map[string]string{
+		`{"name":"a","name":"b"}`:                    `key "name" appears twice`,
+		`{"name":"a","arguments":{},"arguments":{}}`: `key "arguments" appears twice`,
+		`{"name":"a","\u006eame":"b"}`:               `key "name" appears twice`,
+		`{"name":"a","Name":"b"}`:                    `differ only in case`,
+		`{"name":"a"} {"name":"b"}`:                  `not an object`,
+		`{"name":"a","arguments":{"x":1,"x":2}}`:     ``,
+	} {
+		_, _, err := toolCallParams(json.RawMessage(params))
+		if want == "" && err != nil || want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+			t.Errorf("%s: %v, want %q", params, err, want)
+		}
+	}
+}
+
+// Telemetry names a tool by its real name, and at most maxAdvertised tools.
+func TestToolLabelsAreBounded(t *testing.T) {
+	s := &server{advertised: map[string]bool{}, renamed: map[string]string{"find_customer": "customer_lookup"}}
+	names := []string{"customer_lookup"}
+	for i := range maxAdvertised {
+		names = append(names, fmt.Sprintf("tool_%d", i))
+	}
+	s.advertise(names)
+	for tool, want := range map[string]string{
+		"find_customer":        "customer_lookup",
+		names[maxAdvertised-1]: names[maxAdvertised-1],
+		names[maxAdvertised]:   telemetry.MCPOther,
+		"":                     "",
+	} {
+		if got := s.toolLabel(tool); got != want {
+			t.Errorf("toolLabel(%q) = %q, want %q", tool, got, want)
+		}
 	}
 }

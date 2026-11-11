@@ -91,6 +91,8 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/settings/attributes/edit/:name` | React | Done |
 | `/settings/protection-rules` | React | Done |
 | `/onboarding/protection-rules` | React | Done (chrome-less, above the `/onboarding/*` splat) |
+| `/onboarding/aws-connect` | React | Done (ENG-920). The AWS discovery wizard, chrome-less, above the `/onboarding/*` splat |
+| `/integrations/aws-connect`, `/integrations/aws-connect/setup` | React | Done (ENG-920). Jobs page and the wizard. The CLJS panels stay until ENG-922 |
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
@@ -99,7 +101,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
 | `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
-| `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type |
+| `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs; ENG-914: SSH, TCP, Linux VM, HTTP proxy; ENG-915: Claude Code, MCP, MCP Gateway (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type, and a stable page for the MCP OAuth popup return (`?mcp_oauth=`) |
 | `/resources/configure/:resourceName` | React | Done (ENG-912). The CLJS `:configure-resource` panel stays until ENG-922 |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
@@ -149,7 +151,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 
 ```
 /                             home (redirects to onboarding)
-/onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
+/onboarding/*                 first-run setup (except /onboarding/protection-rules and /onboarding/aws-connect → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
 /resources/new (types outside REACT_SETUP_SUBTYPES), /resources/:id/add-role
@@ -159,7 +161,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /features/runbooks/setup, /features/runbooks/rules/*
 /plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
-/integrations/aws-connect/*
 /client (SQL editor)
 /runbooks (runner)
 /slack/user/new/:id, /slack/organization/new
@@ -281,7 +282,8 @@ blocks"); full props in `COMPONENTS.md`.
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576), the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`) and IAM federation for `custom/bigquery` (ENG-910).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
-- Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
+- Onboarding Protection Rules (`/onboarding/protection-rules`) and the AWS Connect wizard (`/onboarding/aws-connect`); the rest of `/onboarding/*` is still CLJS
+- AWS Connect (`/integrations/aws-connect`, `/integrations/aws-connect/setup`)
 - Toast/snackbar parity — `utils/snackbar.jsx` + `Toast.jsx` (same sonner library as CLJS)
 - Page loaders (`PageLoader`, `AuthPageLoader`)
 - Auth store, User store, UI store, Agent store

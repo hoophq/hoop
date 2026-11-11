@@ -70,7 +70,7 @@ func TestMCPToolRule(t *testing.T) {
 }
 
 // The rule reads only an MCP tools/call: the catalog statement, another
-// protocol and a statement without a tool name never match, so a top-level
+// protocol, a statement without a tool name and a SQL statement never match, so a top-level
 // rule every lane inherits stays silent outside mcp lanes.
 func TestMCPToolRuleReadsOnlyMCPCalls(t *testing.T) {
 	rules, err := mcpRules(t, `[{"name":"r","type":"mcp_tool","allow":["echo"]}]`)
@@ -80,10 +80,13 @@ func TestMCPToolRuleReadsOnlyMCPCalls(t *testing.T) {
 	catalog := inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromServer, Operation: inspect.OpShow, Text: "delete_customer: Delete a customer.\n"}
 	unnamed := mcpCall("x")
 	delete(unnamed.Metadata, inspect.MetadataMCPTool)
+	sql := mcpCall("execute_sql")
+	sql.Metadata[inspect.MetadataMCPSQLIndex] = "1"
 	for name, s := range map[string]inspect.Statement{
-		"catalog":  catalog,
-		"postgres": stmt("SELECT 1", inspect.OpSelect, "delete_customer"),
-		"unnamed":  unnamed,
+		"catalog":       catalog,
+		"postgres":      stmt("SELECT 1", inspect.OpSelect, "delete_customer"),
+		"unnamed":       unnamed,
+		"sql statement": sql,
 	} {
 		if rules.Evaluate(s).Denied {
 			t.Errorf("%s: denied", name)

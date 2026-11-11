@@ -268,7 +268,9 @@ First wins, not first valid, same as the license sources: an env var holding
 garbage is an error, never a reason to fall through to the file. A token and
 an identity type both set is an error naming both, a credential with no URL
 is an error, and a URL with no credential is an error naming the token and
-the identity type.
+the identity type — for `hoop-inspect`, and for `hoop start sidecar
+--no-login`. A plain `hoop start sidecar` logs in instead; see "Logging in
+instead of a token" below.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
@@ -293,6 +295,9 @@ first run, with a config file or without one, unless the run already has a
 credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
 license, which is not the free plan. `--validate`, `--migrate` and
 `--codec-test` never log in.
+
+Step by step, with screenshots:
+https://hoop.dev/docs/control-plane/connect-sidecar#connect-with-approval-no-token
 
 The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
 `control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
@@ -1260,7 +1265,8 @@ default it wants to override.
 The analyzer runs wherever a content builder renders the statement for a
 model: `postgres`, `mysql` and `mssql` send the statement text with the
 operation, tables and database the codec derived; `http` sends the method,
-normalized resource and body. A lane whose protocol has no builder is refused
+normalized resource and body; `mcp` sends the tool name and arguments of a
+`tools/call`. A lane whose protocol has no builder is refused
 at startup rather than left classifying nothing, which is what a relay-only
 protocol would otherwise get: no statements to render means no verdict,
 silently.
@@ -1866,7 +1872,9 @@ is attached before the hold.
 
 Every mask path fails closed. Where the response of one statement cannot be
 told apart, the gate denies the statement the AI masked; where a masked
-response might leave unmasked, it denies the response. The message says why:
+response might leave unmasked, it denies the response. An AI mask on client
+bytes the codec could not decode (`unknown` with `parse_error`) is denied on
+every protocol: the codec lost the stream. The message says why:
 
 | Protocol | A mask applies to | Refused |
 |---|---|---|
@@ -1874,7 +1882,7 @@ response might leave unmasked, it denies the response. The message says why:
 | `http` | the response to its request, until the next request after it | any request while that response is not complete; a masked request behind an outstanding one; a masked WebSocket message. Before any of its bytes leave, a masked response whose head is not whole in the first read, or whose non-empty body is compressed (any `Content-Encoding` but `identity`), chunked (the codec masks it in pieces that can split a value), close-delimited, longer than 16 MiB (the codec's masking limit), or of a media type the codec does not read (it reads none, JSON types and text types: `text/*`, `application/xml`, `application/yaml`, `application/javascript`, form-urlencoded); and an upgrade. Heads end at CRLFCRLF or LFLF, as the codec reads them |
 | `postgres` | the response up to its own ReadyForQuery | a masked statement while an earlier response is outstanding (counted from the first byte of the connection); a masked `Parse` (extended query protocol); a statement sent before the masked response ended; a masked statement sent with others in one read |
 | `mysql`, `oracle`, `clickhouse` | every server byte for the rest of the connection | every later statement on the connection (the gate reads no end-of-response marker on these lanes; reconnect); a masked statement sent with others in one read |
-| `mssql`, `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors, `grpc.raw`, `grpc.discover.fail_open` | nothing | every masked statement (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so. `grpc.raw` rewrites only the declared `string_fields` and forwards the rest; `fail_open` forwards what it cannot decode while discovery fails |
+| `mssql`, `mongodb`, `ssh`, `ica`, `mcp`, plug-ins, grpc without descriptors, `grpc.raw`, `grpc.discover.fail_open` | nothing | every masked statement or tool call (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so. On `mcp` the engine masks every result with the lane's mask rules and does not say which tool call a result answers. `grpc.raw` rewrites only the declared `string_fields` and forwards the rest; `fail_open` forwards what it cannot decode while discovery fails |
 
 On postgres the gate counts, from the first byte of the connection, the
 responses the client asked for and the ReadyForQuery messages the server
@@ -2832,8 +2840,8 @@ the block is the configuration, so `-validate` and the plane can check it.
 Every signal carries the resource `service.name=hoop-sidecar` (override it
 under `resource`), `service.version`, `service.instance.id` (the same
 install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
-and `hoop.schema.version=1.0`, with the schema URL
-`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+and `hoop.schema.version=1.1`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.1`. An attribute or series
 added bumps the minor; one renamed or removed bumps the major, because a
 dashboard written against the old name goes dark.
 
@@ -2847,6 +2855,7 @@ dashboard written against the old name goes dark.
 | `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
 | `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.mcp.messages` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.mcp.method`, `hoop.mcp.tool`, `hoop.mcp.decision` (`allow`, `deny`, `kill`). An mcp lane only; see "mcp lane metrics" |
 | `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.analyzer.kind` (`classify`, `decide`), `hoop.outcome` |
 | `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.analyzer.kind` |
 | `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
@@ -2903,7 +2912,9 @@ for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
 `hoop.statement` per judged statement and, under it, one span per stage
 (`policy`, `analyzer`, `review`). The upstream measurement is an event on
 the enclosing span. The sampling decision is taken once, at the exchange, so
-every statement of a sampled connection is in and a 1% ratio costs 1%. A
+every statement of a sampled connection is in and a 1% ratio costs 1%. An
+mcp lane opens no exchange span: each judged tool call is a trace of its own,
+`hoop.statement` with its stages, sampled on its own. A
 denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
 `hoop.rule` and an error status naming the rule. The OPA decision and the
 analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
@@ -3777,7 +3788,46 @@ listeners:
 | `identity_header` | none | The header whose value names the caller. See Auth. |
 | `downstream_tls` | none | `cert_file` and `key_file`: the lane serves MCP clients over TLS. |
 | `guardrails`, `opa` | the top-level blocks | The rules and OPA for this lane. `mcp_tool` rules decide which tools it offers. |
+| `mask` | the top-level block | The mask rules for tool and resource results. See "Masking results". |
+| `analyzer` | none | A model rates each tool call. See "Analyzer". |
 | `mcp_gateway` | none | The upstream transport and the session policy. See "`mcp_gateway` keys". |
+
+#### Masking results
+
+The lane masks results with its mask rules, through mcpproxy's redactor.
+It masks these strings of a `tools/call`, `resources/read` and
+`tasks/result` result:
+
+- `content[].text`
+- `content[].resource.text`, an embedded resource
+- `contents[].text`
+- every string value of `structuredContent`, up to 128 levels deep
+
+Object keys, numbers and every other field are not masked: the client reads
+them as protocol. Prompts and upstream error messages are not masked.
+
+- A rule finds values by entity. The redactor hands the lane a string, not
+  its key, so a rule that names `columns` never fires. Validate refuses
+  one in the lane's own `mask` block. The control plane refuses to bind one
+  to the lane, does not bind an imported one there, and never serves one
+  there. An inherited one does not apply, and `-validate` and the
+  startup log note it; inherited entity rules apply. The lane's own mask
+  rules, or `mask: {rules: []}`, replace inherited ones.
+- Each masked result is one `masked` audit row with the count and the
+  entities, never the values.
+- A result is withheld with JSON-RPC error `-32010`, and the MCP session
+  stays open, when:
+  - the masker fails;
+  - the masked row cannot be written under `fail_on_audit_error`;
+  - a key repeats or differs only in case;
+  - `structuredContent` nests deeper than 128 levels;
+  - the result, or a field listed above, has an unexpected type (an
+    object where an array belongs, a number where a string belongs). A
+    `null` passes.
+- Turning masking on or off needs a restart; a rule change reloads.
+- The control plane serves mask rules to an mcp lane only when the sidecar
+  reports `mcp_mask`. 1.290.0 refuses a `mask` block there and does not
+  mask inherited rules.
 
 #### Tool allow and deny: `mcp_tool`
 
@@ -3843,6 +3893,7 @@ rule only to a sidecar that reports the type.
 | `max_calls_per_session` | `0`: no limit | The tool calls one MCP session may attempt. A refused call counts too. | Past the limit: `-32012`, `session tool-call budget exhausted (N calls)` |
 | `tool_rate_limits` | none | Tool glob to calls per minute, per session. When several globs match a tool, the lowest limit applies. | Over the limit: `-32012`, `tool "x" rate limit exceeded (N calls/min)` |
 | `max_result_kb` | `0`: no limit | The text of a tool result is cut to this size and ends with `[truncated by gateway]`. | The cut result |
+| `sql` | none | The tools whose calls carry SQL. See "SQL tools". | |
 
 `tool_rate_limits` globs work as in `mcp_tool`.
 
@@ -3855,7 +3906,8 @@ session as activities: `mcp.tool_denied`, `mcp.budget_exceeded`,
 
 Each `tools/call` is one statement: `operation: call`, `tables: [<tool>]`,
 the text `<tool>` and its arguments JSON on the next line, and the metadata
-`mcp.method`, `mcp.tool` and `mcp.session`. These rule types read it:
+`mcp.method`, `mcp.tool` and `mcp.session`. A call to a SQL tool adds one
+statement per SQL statement; see "SQL tools". These rule types read it:
 
 ```yaml
 guardrails:
@@ -3883,9 +3935,8 @@ input for a call, beside the `context` every lane sends:
  "metadata": {"mcp.method": "tools/call", "mcp.tool": "get_file_contents", "mcp.session": "<id>"}}
 ```
 
-`opa: {responses: false}` keeps the catalog from OPA. The lane has no
-human review: an `analyzer` block is refused (ENG-964), and so is
-mcpproxy's `approval_tools` (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+`opa: {responses: false}` keeps the catalog from OPA. mcpproxy's
+`approval_tools` is refused (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
 runs one session through a lane.
 
 One sidecar session per MCP session: it opens on the first message,
@@ -3898,6 +3949,123 @@ sessions: a session read its rules when it opened, so the next message on
 it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
+
+#### Analyzer
+
+An `analyzer` block, or an `ai_analysis` rule, classifies each `tools/call`.
+The model reads the tool name and the arguments JSON, cut to
+`max_input_bytes` (default 8 KiB). It never reads `tools/list` or a result.
+
+```yaml
+    analyzer:
+      trigger: {operations: [call]}   # omit it to classify every call
+      high: block
+      medium: warn
+```
+
+- `block` refuses the one call as a tool error,
+  `denied by the hoop sidecar (rule <listener>): <message>`. The session
+  stays open.
+- A hold (`require_approval`) refuses the call before any approver, the AI
+  agent included, and files no approval request: the lane cannot hold a
+  tool call yet (ENG-967). A hold that a person approves still needs a
+  control plane and an `approval_rule`, or a person running
+  `hoop start sidecar` in a terminal, to start, as on the other lanes.
+- A provider failure follows `fail_open`, as on the other lanes.
+- The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
+  and `ai_status`.
+- `ai_rules`: an AI guardrail refuses the one call it matches. An AI mask
+  refuses the call it masks: the lane masks every result with its mask
+  rules and cannot tie a mask to one call's result. The lane warns at start.
+
+A control plane serves an analyzer on an mcp lane only to a sidecar that
+reports `mcp_analyzer`.
+
+#### SQL tools: `mcp_gateway.sql`
+
+`sql` names the tools whose calls carry SQL. The rules then read that SQL as
+on a SQL lane.
+
+```yaml
+listeners:
+  - name: bigquery
+    protocol: mcp
+    listen: 127.0.0.1:18902
+    upstream: https://bigquery.googleapis.com/mcp   # needs a credential; see Auth
+    guardrails:
+      rules:
+        - {name: read-only, type: operation, operations: [insert, update, delete, drop, unknown]}
+    mcp_gateway:
+      sql:
+        "execute_sql*": {argument: query, dialect: googlesql}
+```
+
+| Key | Effect |
+|---|---|
+| the key | A tool glob, as in `mcp_tool`. It reads the real tool name. When several globs match, the longest wins. |
+| `argument` | The top-level argument that holds the SQL. Required. |
+| `dialect` | `postgres`, `mysql`, `mssql`, `clickhouse`, `googlesql`, `oracle` or `spark`. Required. BigQuery is `googlesql`. |
+
+A call to a SQL tool is 1 + N statements, judged in order. The first deny
+stops the call.
+
+- The call statement, as for every tool, with `mcp.sql_statements: N`.
+- One statement per SQL statement in the argument: the SQL as text, the
+  operation, effects and tables from the lexer, and the metadata
+  `mcp.method`, `mcp.tool`, `mcp.session`, `mcp.sql_argument`,
+  `mcp.sql_dialect` and `mcp.sql_index` (from 1).
+
+`mcp_tool` rules read only the call statement. A `table` rule reads the
+tables of the SQL, and `require_table_match` denies a SQL statement that
+names none. To scope a rule to one tool, use OPA or a `metadata` rule on
+`mcp.tool`. Observe mode records all 1 + N.
+
+The analyzer reads the call, as any other call, then each SQL statement as
+SQL, as on an `http.sql` lane: 1 + N model calls. A trigger selects the SQL by
+its own operation and tables, and also by `call` or by the tool name in
+`tables`.
+
+SQL the lexer cannot read is `operation: unknown`, as on a SQL lane:
+`EXECUTE IMMEDIATE`, a script loop or block, `EXPORT DATA`. `sql.incomplete`
+holds the reason when the lexer has one. Name `unknown` in the rule to
+refuse it.
+
+The lane refuses a call before any rule, also in observe mode, when it
+cannot read the argument: `arguments` absent or not an object; the argument
+absent, not a string, blank or with no statement; the argument two times,
+after JSON unescape or in another case; invalid UTF-8 or a lone surrogate
+escape in it; two globs of the same length that disagree. The client gets
+`denied by the hoop sidecar (rule mcp_gateway.sql): <reason>`, and the
+session records `mcp_sql_unreadable` with `tool`, `argument` and `reason`.
+
+A control plane serves `sql` only to a sidecar that reports `mcp_sql`.
+
+#### mcp lane metrics
+
+`GET /stats` lists the lane. `active` and `total` count MCP sessions.
+`denied` counts messages the lane refused, not refused connections: in both
+directions, by a rule or OPA, as invalid params, and by `mcp_gateway` (a
+budget, a rate limit, a tool the server did not list, a rug pull).
+
+```json
+{"name": "github-mcp", "addr": "127.0.0.1:18901", "active": 1, "total": 3, "denied": 2}
+```
+
+With a `telemetry` block, `hoop.sidecar.mcp.messages` counts every message
+by direction, method, tool and decision. A response has no method; it names
+the tool of the call it answers. `hoop.mcp.tool` is the real tool name, for
+the first 1024 tools the server listed; any other tool is `(other)`, and so
+is a method MCP does not define, and a call refused as invalid params, so a
+client cannot add series. Each call is
+also a `hoop.statement` in `hoop.sidecar.statements` and, with traces on, a
+trace of its own (see "OpenTelemetry").
+
+```
+sum by (hoop_mcp_tool, hoop_mcp_decision) (rate(hoop_sidecar_mcp_messages_total{hoop_mcp_method="tools/call"}[5m]))
+```
+
+Usage analytics count the lane under `mcp`: `connections` are MCP sessions,
+and `connections-denied` is the `denied` count above.
 
 #### Auth
 
@@ -3961,13 +4129,12 @@ own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
 What the lane refuses at validate, and why: a `listen` off loopback
 without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
-requests, not connections); a `mask` block on
-the lane (ENG-965) and an `analyzer` block (ENG-964) until those land; a
+requests, not connections); an `mcp_gateway.sql` entry without a glob, an
+argument or a known dialect (the dialect is never guessed); a rule in
+the lane's own `mask` block that names `columns` (see "Masking results"); a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
-`unknown field`. Mask rules inherited from the
-top-level block are accepted, so one file serves every lane, and `-validate`
-notes that they do not apply to this lane yet.
+`unknown field`.
 Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
 
 ### Postgres: trace ids from the startup packet
@@ -4554,6 +4721,18 @@ the table it reads; any other first argument makes the statement `unknown`.
 `Split` keeps the text whole, as for Oracle: Spark runs one statement or one
 script per call.
 
+#### BigQuery scripts (GoogleSQL)
+
+`lexer.GoogleSQL` reads a BigQuery script as a Spark script. `Split` cuts
+it at each `;`, so a part that starts with `LOOP`, `WHILE`, `REPEAT`, `FOR`
+or a `BEGIN` block is `unknown` with its writes as effects. So is one of
+these after THEN or ELSE of an `IF`, a `CASE` statement or an exception
+handler, and one after a top-level colon, which covers a label in any
+spelling (`lbl:`, `` `lbl`: ``). Before, `FOR r IN (SELECT 1) DO DELETE
+FROM t` read as a select and `BEGIN DELETE FROM t` as a begin. A bare
+`BEGIN`, `BEGIN TRANSACTION` and a column called `begin` in a CASE
+expression stay what they were. Not checked on BigQuery.
+
 ### The ceiling
 
 Three shapes are out of reach for any amount of parsing, this scanner's or
@@ -5117,7 +5296,8 @@ block), the rule also matches the effects the scanner did see, so
 matches client statements only: a response carries no verb, so the codecs
 report it as `unknown`, and a rule naming `unknown` would otherwise refuse
 every response. The `operations` scope of every other rule type uses the
-same test.
+same test. Client bytes the codec cannot decode are also `unknown`, with the
+reason in `metadata.parse_error`, so a rule naming `unknown` refuses them.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
@@ -5264,6 +5444,26 @@ result := {"denied": true, "rule": "no-writes-to-customers"} if {
 
 `operation` stays the worst single effect and `tables` stays the flattened
 names, so a rule written before the split keeps firing.
+
+**Client bytes the codec cannot decode reach policy too.** The gate turns
+them into one `unknown` client statement with no text and the decode error
+in `metadata.parse_error`, judged after the statements decoded before them:
+
+```json
+{"input": {"protocol": "postgres", "direction": "client", "operation": "unknown",
+           "statement": "", "metadata": {"parse_error": "libhoop/codec/postgres: malformed message"}}}
+```
+
+```rego
+result := {"denied": true, "rule": "parse-error"} if input.metadata.parse_error
+```
+
+A denial refuses the bytes and ends the connection: after a decode error the
+codec no longer tracks the stream. A policy that allows the statement, or a
+lane with no policy, forwards the bytes and lets the upstream's own parser
+judge them. A rule naming `unknown` refuses them, as does OPA's undefined
+result with `fail_open: false`. Response bytes the codec cannot decode are
+still forwarded unjudged. The error is audited as `kind: error` either way.
 
 `phase` and `findings` appear only on a lane that consults OPA after a
 producer (see [Analyzing statements with a
@@ -5568,6 +5768,8 @@ ends and what declares its length.
   not the client, decides whether it reaches that size, and forwarding it as
   it came would hand the client every row unmasked. The lane keeps serving
   after the refusal.
+- MCP: the lane masks the strings of tool and resource results; see
+  "Masking results" under the mcp lane.
 
 A codec that cannot re-frame gets its `mask.rules` refused at startup,
 because accepting a masking config that can never fire is the failure that

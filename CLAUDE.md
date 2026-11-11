@@ -138,8 +138,10 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 - **TLS termination**: `gateway/proxyproto/tlstermination/`
 
 ## Configuration
-- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, or `RDP_PII_GUARD_POLICY` stops startup.
+- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, `RDP_PII_GUARD_POLICY`, `HOOP_LICENSE`, `ANALYTICS_TRACKING` or `ORG_ID` stops startup.
 - `RDP_PII_SNAPSHOT_INTERVAL`, `RDP_PII_SCORE_THRESHOLD`, and `EVENT_ROUTING_WORKERS` fall back to a default instead.
+- `HOOP_LICENSE` (license JSON or a file path) is stored on the default org at every boot. Its analytics mode is set at every boot by `analytics.ModeAtBoot`: no valid enterprise license → `identified`, always; enterprise → `ANALYTICS_TRACKING=enabled` → `identified`, `disabled` → `disabled`, unset → the stored mode (`disabled` for an org created on this boot). `HOOP_LICENSE` and `ANALYTICS_TRACKING=disabled` are not accepted with `ORG_MULTI_TENANT`.
+- `ORG_ID` (UUID) is the id the default org is created with on a fresh database, so `API_KEY=<org-id>|<secret>` can be written before the first boot; an existing org with another id stops startup. Not accepted with `ORG_MULTI_TENANT`.
 - Key env vars: `POSTGRES_DB_URI`, `API_URL`, `GRPC_URL`, `AUTH_METHOD`, `DLP_PROVIDER`, `DLP_MODE`, `GIN_MODE`.
 - DLP providers: Presidio (`MSPRESIDIO_ANALYZER_URL`, `MSPRESIDIO_ANONYMIZER_URL`) or GCP (`GOOGLE_APPLICATION_CREDENTIALS_JSON`).
 - Auth provider resolution: dynamic (`gateway/idp/core.go`): DB `server_auth_config` overrides env; providers are `local`, `oidc`, `saml` with 30-minute cached verifier instances.

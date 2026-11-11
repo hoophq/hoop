@@ -149,6 +149,11 @@ func (g *Gate) exchangeBusy(stmt inspect.Statement) string {
 // response, or "". requests counts the statements of the read it arrived in.
 func (g *Gate) maskRefusal(stmt inspect.Statement, requests int) string {
 	const head = "an AI data masking rule applies to the response of this statement, and "
+	if stmt.Metadata[inspect.MetadataParseError] != "" {
+		// The codec could not decode the bytes, so it no longer tracks the
+		// stream and cannot find this statement's response.
+		return head + "the codec could not decode it, so its response cannot be found; it is refused"
+	}
 	switch g.maskScope {
 	case MaskScopeExchange:
 		return ""

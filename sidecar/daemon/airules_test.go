@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
@@ -386,7 +388,7 @@ func TestEachProtocolHasItsAIMaskScope(t *testing.T) {
 	for proto, want := range map[string]gate.MaskScope{
 		"postgres": gate.MaskScopeSerial, "mysql": gate.MaskScopeSerial, "mssql": gate.MaskScopeNone,
 		"oracle": gate.MaskScopeSerial, "clickhouse": gate.MaskScopeSerial, "http": gate.MaskScopeHTTP,
-		"mongodb": gate.MaskScopeNone, "ssh": gate.MaskScopeNone, "grpc": gate.MaskScopeNone,
+		"mongodb": gate.MaskScopeNone, "ssh": gate.MaskScopeNone, "grpc": gate.MaskScopeNone, "mcp": gate.MaskScopeNone,
 	} {
 		lc := ListenerConfig{Name: "l", Protocol: proto}
 		if got := aiMaskScope(lc); got != want {
@@ -450,5 +452,59 @@ func TestTheRuleLibraryIsRuleContent(t *testing.T) {
 	lb, _ := laneRuleDoc(b, b.Listeners[0])
 	if string(la) == string(lb) {
 		t.Error("a library change does not swap the lane")
+	}
+}
+
+// openAIRulesMCPSession opens a session on an mcp lane whose high level is
+// warn and lets the AI apply the rule_library rules; agent decides.
+func openAIRulesMCPSession(t *testing.T, agent *ruleAgent) (*lane, MCPLaneSession) {
+	t.Helper()
+	cfg, err := LoadConfigBytes([]byte(`{"analyzer":{"provider":"stub","model":"m"},
+		"rule_library":{"guardrails":[{"name":"no-customer-deletes","type":"pattern_match","pattern_regex":"delete_customer","message":"customers are not deleted"}],
+			"mask":[{"name":"emails","entities":["EMAIL_ADDRESS"]}]},
+		"listeners":[{"name":"tools","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp",
+			"analyzer":{"high":"warn","ai_rules":{"high":{"guardrails":{},"mask":{}}}}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.UseLicense(licensetest.Ref(t, licensetest.Enterprise())); err != nil {
+		t.Fatal(err)
+	}
+	lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"EMAIL_ADDRESS"}},
+		&analyzerDeps{cfg: cfg.Analyzer, provider: agent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ls, err := openMCPLaneSession(ctx, lanes[0], newLiveRules(lanes[0]), audit.NewMemorySink(16), true,
+		MCPCaller{Subject: "alice", MCPSessionID: "m1"}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ls.Close(ctx) })
+	return &lanes[0], ls
+}
+
+// An mcp lane cannot tie a mask to one tool call's result, so the call the AI
+// masks is refused, and the load says so. An AI guardrail denies the call.
+func TestAnMCPLaneRefusesTheCallTheAIMasks(t *testing.T) {
+	ctx := context.Background()
+	masking := &ruleAgent{calls: []analyzer.ToolCall{toolCall("apply_mask", `{"rule":"emails","reason":"emails"}`)}}
+	ln, ls := openAIRulesMCPSession(t, masking)
+	if !slices.ContainsFunc(ln.notes, func(n string) bool { return strings.Contains(n, "cannot tie a response to one tool call") }) {
+		t.Errorf("notes %v lack the mcp mask warning", ln.notes)
+	}
+	if v := ls.ToolCall(ctx, "get_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Rule != "ai-mask" ||
+		!strings.Contains(v.Message, "mcp lane cannot tie a response") {
+		t.Fatalf("masked call verdict: %+v", v)
+	}
+
+	guarding := &ruleAgent{calls: []analyzer.ToolCall{toolCall("apply_guardrail", `{"rule":"no-customer-deletes","reason":"deletes"}`)}}
+	_, ls = openAIRulesMCPSession(t, guarding)
+	if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Message != "customers are not deleted" {
+		t.Fatalf("guarded call verdict: %+v", v)
+	}
+	if v := ls.ToolCall(ctx, "get_customer", []byte(`{"id":"7"}`)); !v.Allowed {
+		t.Fatalf("a call the guardrail does not match was refused: %+v", v)
 	}
 }

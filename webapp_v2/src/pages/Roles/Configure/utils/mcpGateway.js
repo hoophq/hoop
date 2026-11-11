@@ -1,8 +1,7 @@
 // MCP Gateway (mcpproxy) connection settings, reconstructed from what a
 // saved connection actually carries.
 //
-// The create wizard (still CLJS: webapp/src/webapp/resources/setup/
-// roles_step.cljs::mcpproxy-role-form) holds three pieces of form state that
+// The create wizard holds three pieces of form state that
 // are deliberately NOT saved as env vars — which catalog server was picked,
 // which auth mode the admin chose, and which header a pasted token rides in.
 // Nothing on the agent reads them, so emitting them would put three keys
@@ -232,6 +231,12 @@ export function staticHeaderName(entry) {
 
 export function staticHeaderFor(entry) {
   return staticHeaderName(entry) || DEFAULT_STATIC_HEADER
+}
+
+// The mode a freshly picked server starts in; custom starts on static.
+export function defaultAuthMode(entry) {
+  if (entry?.auth === 'oauth' || entry?.auth === 'none') return entry.auth
+  return 'static'
 }
 
 /**
