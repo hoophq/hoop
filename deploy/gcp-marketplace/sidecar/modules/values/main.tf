@@ -24,8 +24,8 @@ locals {
   }
   simple_ports = local.protocol_ports[var.protocol]
 
-  # The admin port is fixed: the chart probes /healthz on 19000 and refuses a
-  # config that puts admin anywhere else.
+  # The admin port the chart declares and its Service targets. The chart
+  # probes its own health port, so this listener is optional for the pod.
   admin_listen = "0.0.0.0:19000"
 
   # The free tier enforces one guardrail rule, so a preset is one rule.
@@ -96,11 +96,17 @@ locals {
   })
 
   config_values = {
-    simple        = yamlencode({ config = local.simple_config })
-    document      = yamlencode({ config = local.document })
+    simple = yamlencode({ config = local.simple_config })
+    # No admin listener: turn the admin Service off too, or it targets a
+    # port nothing binds. Two strings, not one object: the two shapes differ.
+    document = local.document_admin_on ? yamlencode({ config = local.document }) : yamlencode({
+      config  = local.document
+      service = { enabled = false }
+    })
     configmap     = yamlencode({ existingConfigMap = var.existing_config_map })
     control_plane = yamlencode({ controlPlane = { url = var.control_plane_url } })
   }[var.config_source]
+  document_admin_on = try(trimspace(local.document.admin.listen), "") != ""
 
   # A sidecar that runs its own file has nobody to approve a login code, so
   # the free tier runs with no login (ENG-906). control_plane has a credential.

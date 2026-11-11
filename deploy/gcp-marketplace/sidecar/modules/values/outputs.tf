@@ -17,8 +17,16 @@ output "values_yaml" {
     error_message = "config_document is empty or names no listeners: the sidecar does not start without one."
   }
   precondition {
-    condition     = var.config_source != "document" || try(endswith(local.document.admin.listen, ":19000"), false)
-    error_message = "config_document must set admin.listen to '0.0.0.0:19000': the pod is probed on /healthz there."
+    # Absent or null admin is off. Present, it must be an object whose listen
+    # is unset, empty, or on 19000: the admin Service targets 19000.
+    condition = var.config_source != "document" || try(local.document.admin, null) == null || (
+      can(keys(local.document.admin)) && (
+        try(local.document.admin.listen == null, true) ||
+        try(local.document.admin.listen == "", false) ||
+        try(endswith(local.document.admin.listen, ":19000"), false)
+      )
+    )
+    error_message = "config_document sets admin to something other than an object with listen on port 19000: the admin Service targets 19000. Use admin: {listen: '0.0.0.0:19000'}, or leave admin out to turn it off."
   }
   precondition {
     condition     = alltrue([for p in local.document_port : p != null])
@@ -41,4 +49,9 @@ output "values_yaml" {
 output "lane_ports" {
   description = "Ports the lane Service publishes."
   value       = [for p in local.lane_ports : p.port]
+}
+
+output "admin_service_enabled" {
+  description = "Whether the values keep the chart's admin Service. False for a config document without admin."
+  value       = var.config_source != "document" || local.document_admin_on
 }

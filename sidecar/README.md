@@ -946,8 +946,10 @@ license: /etc/hoop-inspect/license.json
 # file alone.
 # control_plane_url: https://cp.example.com
 
+# Optional and UNAUTHENTICATED: omit it to turn it off. See "Health and admin
+# listeners".
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*, PUT /license
+  listen: 127.0.0.1:19000   # /healthz /readyz /stats /metrics /config /events /api/*, PUT /license
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:
@@ -1194,6 +1196,31 @@ not load reads the answer from the endpoint that told them what did, and a
 `null` there means a license lifted that cap. `license` is the verdict behind
 those numbers: the type, the customer, the term, the features and the source,
 never the signature.
+
+### Health and admin listeners
+
+The admin listener (`admin.listen`) serves `/stats`, `/metrics`, `/config`,
+`/events` and `/api/*` with no authentication. Whoever reaches the port reads
+the audit trail and each lane's rules. It is off when `admin.listen` is empty.
+
+A platform that probes the process does not need it. Set
+`HOOP_SIDECAR_HEALTH_LISTEN` to an address, and the process binds a second
+listener there that serves `GET /healthz` and `GET /readyz` and nothing else:
+
+```bash
+HOOP_SIDECAR_HEALTH_LISTEN=0.0.0.0:19001 hoop-inspect -config config.yaml
+curl -s localhost:19001/healthz   # ok
+curl -s localhost:19001/readyz    # ready, or 503 naming the lanes still loading
+```
+
+It is an environment variable and not a config key: the probe belongs to the
+deployment, not to a document a control plane serves. A bind failure stops
+the process, like a lane that cannot bind. The Helm chart sets it to
+`0.0.0.0:19001` and probes there, so a pod runs with admin off.
+
+With admin off, the audit trail still leaves the process through `audit.file`,
+the control plane copy (see "Connecting it to a Control Plane") and OTLP (see
+"OpenTelemetry").
 
 ### Sharing a rule block between lanes
 

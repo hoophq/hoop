@@ -91,13 +91,21 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
           {{- end }}
-        # The admin server, and nothing else. Every lane port comes from the
-        # config document and differs per deployment, so none is declared
-        # here; a containerPort is informational either way, and a lane is
-        # reached through whatever fronts this pod — an Envoy sidecar over
-        # loopback, or a Service of your own carrying this chart's selector
-        # labels — the chart README has one to paste.
+        # Health only: /healthz and /readyz. The probes below use it, so the
+        # pod starts whether or not the config turns the admin listener on.
+        - name: HOOP_SIDECAR_HEALTH_LISTEN
+          value: '0.0.0.0:{{ include "hoopsidecar.healthPort" . }}'
+        # The health and admin servers, and nothing else. Every lane port
+        # comes from the config document and differs per deployment, so none
+        # is declared here; a containerPort is informational either way, and
+        # a lane is reached through whatever fronts this pod — an Envoy
+        # sidecar over loopback, or a Service of your own carrying this
+        # chart's selector labels — the chart README has one to paste. The
+        # admin port binds only when the config sets admin.listen to it.
         ports:
+        - name: health
+          containerPort: {{ include "hoopsidecar.healthPort" . }}
+          protocol: TCP
         - name: admin
           containerPort: 19000
           protocol: TCP
@@ -108,7 +116,7 @@ spec:
         startupProbe:
           httpGet:
             path: {{ . | quote }}
-            port: 19000
+            port: {{ include "hoopsidecar.probePort" $ }}
           periodSeconds: {{ $.Values.probe.startupPeriodSeconds | default 5 }}
           timeoutSeconds: {{ $.Values.probe.timeoutSeconds | default 2 }}
           failureThreshold: {{ $.Values.probe.startupFailureThreshold | default 120 }}
@@ -116,14 +124,14 @@ spec:
         readinessProbe:
           httpGet:
             path: {{ .Values.probe.readinessPath | default "/healthz" | quote }}
-            port: 19000
+            port: {{ include "hoopsidecar.probePort" . }}
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
           timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}
         livenessProbe:
           httpGet:
             path: {{ .Values.probe.livenessPath | default "/healthz" | quote }}
-            port: 19000
+            port: {{ include "hoopsidecar.probePort" . }}
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
           timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}

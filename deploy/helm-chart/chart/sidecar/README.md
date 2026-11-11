@@ -20,7 +20,7 @@ A minimum `my-values.yaml`:
 
 ```yaml
 config:
-  admin:
+  admin:          # optional, unauthenticated; see Ports
     listen: '0.0.0.0:19000'
   audit:
     file: '-'
@@ -40,25 +40,25 @@ with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
 
 ## Ports
 
-The chart declares exactly one port, literally: **19000**, the admin server.
-The same number is written into the Deployment's `containerPort`, the Service,
-and both probes. It is not configurable — 19000 is what every config under
-`deploy/docker-compose/` binds and what `sidecar/daemon/firstrun.go` names as
-the convention.
+The chart declares two ports:
 
-`config.admin.listen` therefore has to be `0.0.0.0:19000`. A config that omits
-it or moves it is **refused at render**, because the relay disables the admin
-server when the address is empty and the probes would otherwise poll a closed
-port and fail every pod:
+- **19001, health** (`health.port`). The chart sets
+  `HOOP_SIDECAR_HEALTH_LISTEN=0.0.0.0:<health.port>` and points every probe
+  at it. That listener serves `/healthz` and `/readyz` and nothing else. Pick
+  a port no lane and no other container in the pod binds; 19000 is refused.
+- **19000, admin.** It binds only when the config sets
+  `admin.listen: '0.0.0.0:19000'`. It serves `/stats`, `/metrics`, `/config`,
+  `/events` and `/api/*` **without authentication**: anything that reaches the
+  port reads the audit trail and each lane's rules. Leave `admin` out to turn
+  it off, and set `service.enabled: false` so no Service points at a closed
+  port. Any other admin port reaches nothing the chart declares.
 
-```
-config.admin.listen is "0.0.0.0:9901" but this chart probes /healthz on 19000.
-Use '0.0.0.0:19000'
-```
+The probes do not depend on the config, so they work the same under
+`controlPlane.url` and `existingConfigMap`, where the chart cannot see it.
 
-Under `controlPlane.url` or `existingConfigMap` the chart cannot see the
-config, so that check does not run and putting admin on 19000 is yours to get
-right.
+The image must be a build that reads `HOOP_SIDECAR_HEALTH_LISTEN`. An older
+image ignores it and binds nothing on the health port. To run one with this
+chart, keep `admin.listen: '0.0.0.0:19000'` and set `probe.port: 19000`.
 
 **Lane ports are not declared on the pod.** A `containerPort` is informational
 in Kubernetes, and a lane bound to a unix socket has no port at all.
@@ -94,7 +94,8 @@ Ports here are literal. The chart does not read them from `config.listeners`,
 so keep the two in step: a Service pointing at a port nothing binds is accepted
 by Kubernetes and reaches nothing.
 
-The admin Service is separate and unaffected — always ClusterIP, always 19000.
+The admin and health ports are not part of `laneServices`. The admin Service
+is separate and unaffected — always ClusterIP, always 19000.
 
 > **Before setting `type: LoadBalancer`.** The relay terminates no client TLS
 > unless the lane sets `downstream_tls`, and that is accepted on **postgres,
@@ -134,7 +135,8 @@ under `deploy/docker-compose/` binds:
 
 | Port | Lane |
 |---|---|
-| 19000 | admin: `/healthz`, `/stats`, `/config`, `/events`, `/api/*` |
+| 19000 | admin, optional and unauthenticated: `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
+| 19001 | health (`health.port`), set by the chart: `/healthz`, `/readyz` |
 | 15432 | postgres |
 | 18080 | http |
 | 11433 | mssql |
@@ -167,10 +169,12 @@ under `deploy/docker-compose/` binds:
 | `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`, `openai-agents-http`, `openai-agents-kubernetes`, `agentcore-http`, `agentcore-kubernetes`, `agentcore-postgres`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
 | `existingSecret` | A Secret in the namespace the chart references but does not manage. Loaded last: `HOOP_LICENSE` and `HOOP_SIDECAR_TOKEN` there override `license` and `controlPlane.token`, so neither has to sit in the release values |
-| `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
+| `service.enabled` | A Service for the admin port, 19000 only. Default `true`. Set `false` when the config leaves admin off |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |
-| `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing. The port is fixed at 19000 |
+| `health.port` | Port of the health listener → `HOOP_SIDECAR_HEALTH_LISTEN`. Default `19001`; `19000` is refused |
+| `probe.port` | Where the probes go. Default: the health port. `19000` for an image older than the health listener, with admin on 19000 |
+| `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing |
 | `service.annotations` | Annotations on the Service |
 | `extraVolumes` / `extraVolumeMounts` | For what the config references by path: CA files, credentials |
 | `nameOverride`, `fullnameOverride` | Change the name chart-owned resources are built from |
@@ -183,8 +187,7 @@ under `deploy/docker-compose/` binds:
 | `podLabels` | Extra labels on the pod template, not the selector. A key the chart sets itself is refused |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | Service account. `name` with `create: false` points at an existing one (GKE Workload Identity) |
 
-The chart reads the config document only to check that admin is on 19000.
-Everything the
+The chart does not interpret the config document. Everything the
 relay does — protocols, guardrails, masking, audit, PII entities, AI analysis
 — is decided in that document. Its schema is in `sidecar/README.md`, with
 worked examples under `deploy/docker-compose/*/sidecar/config.yaml`.
@@ -321,9 +324,9 @@ both ways are refused.
 
 ## Environment variables
 
-The relay reads twelve. Eleven come from the Secret `sidecar-config`; the
-twelfth is set directly on the container because it defaults to a
-downward-API field, which a Secret cannot express:
+The relay reads thirteen. Eleven come from the Secret `sidecar-config`; the
+other two are set directly on the container: one defaults to a downward-API
+field, which a Secret cannot express, and the other is the probe address:
 
 | Variable | From |
 |---|---|
@@ -339,6 +342,7 @@ downward-API field, which a Secret cannot express:
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
 | `HOOP_SIDECAR_INSTALL_SOURCE` | `analytics.installSource`, else empty |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
+| `HOOP_SIDECAR_HEALTH_LISTEN` | `0.0.0.0:<health.port>` on the container, always |
 
 Add anything else through `extraSecret`, which becomes a second `envFrom`
 Secret — an analyzer provider's API key, for instance.
