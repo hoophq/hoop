@@ -506,12 +506,15 @@ func (rl *ruleLevel) joinedPrompt(handoffPrompt string) string {
 // appliedRule is one rule the AI applied: existing (name) or created
 // (definition), compiled. reason and definition are the record forms
 // (recordReason, recordDefinition); guard and mask are compiled from what
-// the agent sent.
+// the agent sent. denial is a created guardrail's message in its record form
+// (recordDenial): the client and the trail see it. A library guardrail has
+// none and denies with its admin-written message.
 type appliedRule struct {
 	kind       string
 	name       string
 	definition json.RawMessage
 	reason     string
+	denial     string
 	guard      policy.Evaluator
 	mask       policy.ResponseMask
 }
@@ -591,7 +594,7 @@ func (rl *ruleLevel) parse(e *Evaluator, level RiskLevel, calls []ToolCall, solo
 			}
 			d.applied = append(d.applied, a)
 		case toolCreateGuardrail:
-			d.add(e, level, RuleKindGuardrail, reason, c.Args, rl.createGuardrail)
+			d.add(e, level, RuleKindGuardrail, reason, c.Args, rl.createGuardrail(e))
 		case toolCreateMask:
 			d.add(e, level, RuleKindMask, reason, c.Args, rl.createMaskRule(e))
 		}
@@ -740,9 +743,17 @@ func recordArgs(raw json.RawMessage) json.RawMessage {
 }
 
 // createGuardrail builds a guardrail from create_guardrail's arguments and
-// compiles it like a config rule. It returns the definition it built even
-// when it fails, for the record.
-func (rl *ruleLevel) createGuardrail(raw json.RawMessage) (appliedRule, json.RawMessage, error) {
+// compiles it like a config rule. Its message is the agent's prose, so the
+// denial carries its record form.
+func (rl *ruleLevel) createGuardrail(e *Evaluator) func(json.RawMessage) (appliedRule, json.RawMessage, error) {
+	return func(raw json.RawMessage) (appliedRule, json.RawMessage, error) {
+		return rl.buildGuardrail(e, raw)
+	}
+}
+
+// buildGuardrail is createGuardrail for one call. It returns the rule's
+// definition when it fails, for the record.
+func (rl *ruleLevel) buildGuardrail(e *Evaluator, raw json.RawMessage) (appliedRule, json.RawMessage, error) {
 	var args struct {
 		Type       string   `json:"type"`
 		Words      []string `json:"words"`
@@ -797,7 +808,20 @@ func (rl *ruleLevel) createGuardrail(raw json.RawMessage) (appliedRule, json.Raw
 	if err != nil {
 		return appliedRule{}, def, err
 	}
-	return appliedRule{guard: ev}, def, nil
+	return appliedRule{guard: ev, denial: e.recordDenial(r.Message)}, def, nil
+}
+
+// createdDenialUnrecorded is a created guardrail's denial when no record
+// redactor runs: its message is the agent's prose.
+const createdDenialUnrecorded = "the AI guardrail denied the statement"
+
+// recordDenial is a created guardrail's message as the client and the record
+// may see it: through Config.RecordRedact whole, then bounded like a reason.
+func (e *Evaluator) recordDenial(msg string) string {
+	if e.cfg.RecordRedact == nil {
+		return createdDenialUnrecorded
+	}
+	return Truncate(e.cfg.RecordRedact(msg), maxAgentReasonBytes)
 }
 
 // createMaskRule builds a masking rule from create_mask's arguments and
@@ -1000,6 +1024,9 @@ func (e *Evaluator) enforceRules(stmt inspect.Statement, ec *policy.EvalContext,
 					name = createdGuardrailName
 				}
 				msg := v.Message
+				if a.denial != "" {
+					msg = a.denial
+				}
 				if msg == "" {
 					msg = "denied by the AI guardrail " + name
 				}

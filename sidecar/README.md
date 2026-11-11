@@ -1839,10 +1839,13 @@ apply only when the agent does not select `block`. With `require_approval`
 the rules apply before the hold: a guardrail deny files no review, and a mask
 is attached before the hold.
 
-- A guardrail denies only. A match denies with the rule's message.
-  `action: defer` and `ai_analysis` are never offered. `create_guardrail`
-  offers no type the lane cannot evaluate: no `table` on ssh, no `pii`
-  without a detector.
+- A guardrail denies only. A match denies with the rule's message. A created
+  guardrail's message is the agent's prose, so the client and the audit
+  record get it after the record redactor, cut to the reason limit; with no
+  detector they get `the AI guardrail denied the statement`. A library
+  guardrail denies with its own message. `action: defer` and `ai_analysis`
+  are never offered. `create_guardrail` offers no type the lane cannot
+  evaluate: no `table` on ssh, no `pii` without a detector.
 - A mask applies to the response of this statement only, through a
   per-exchange plan in the gate; the lane masker is never changed. An ssh lane
   offers `strategy: mask` only.
@@ -1868,7 +1871,7 @@ is attached before the hold.
   through the record redactor before it is cut, and the cache keeps that
   form. With no detector, no reason is kept, a definition keeps only its
   `type` or `strategy`, and an error is a fixed text. The rule that enforces
-  is the one the agent sent.
+  is the one the agent sent; only its denial text is the record form.
 
 Every mask path fails closed. Where the response of one statement cannot be
 told apart, the gate denies the statement the AI masked; where a masked

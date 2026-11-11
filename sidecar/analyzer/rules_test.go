@@ -652,8 +652,8 @@ func TestAIRuleAuditFieldsGoThroughTheRecordRedactor(t *testing.T) {
 	var first int32
 	for i := range 2 {
 		v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
-		if !v.Denied || v.Message != "card "+aiRuleCard {
-			t.Fatalf("statement %d: verdict = %+v, want the created guardrail's own message", i, v)
+		if !v.Denied || v.Message != "card <CREDIT_CARD>" {
+			t.Fatalf("statement %d: verdict = %+v, want the created guardrail's message, redacted", i, v)
 		}
 		trail := v.Annotations[analyzer.MetadataAIRules] + v.Annotations[analyzer.MetadataAIRuleInvalid]
 		if strings.Contains(trail, "4111") || !strings.Contains(trail, "CREDIT_CARD") {
@@ -680,8 +680,8 @@ func TestWithNoRecordRedactorAIRuleRecordsKeepNoModelProse(t *testing.T) {
 	p := &handoffProvider{replies: []decideReply{aiRuleCalls()}}
 	ev := rulesEvaluator(t, p, analyzer.ActionWarn, aiRulesBothNew(), func(c *analyzer.Config) { c.RecordRedact = nil })
 	v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
-	if !v.Denied || v.Message != "card "+aiRuleCard {
-		t.Fatalf("verdict = %+v, want the created guardrail's own message", v)
+	if !v.Denied || v.Message != "the AI guardrail denied the statement" {
+		t.Fatalf("verdict = %+v, want the fixed denial of a created guardrail", v)
 	}
 	trail := v.Annotations[analyzer.MetadataAIRules] + v.Annotations[analyzer.MetadataAIRuleInvalid]
 	for _, prose := range []string{"4111", "aaaa", "card", `"r"`, " tail"} {
@@ -777,6 +777,37 @@ func TestOnRuleInvalidGetsTheRecordFormOfTheError(t *testing.T) {
 			if strings.Contains(reported[0], "4111") || !strings.Contains(reported[0], tc.want) ||
 				reported[0] != inv[0]["error"] {
 				t.Errorf("reported %q, recorded %q", reported[0], inv[0]["error"])
+			}
+		})
+	}
+}
+
+// A created guardrail's message is the agent's prose, and it is the denial
+// the client sees and the trail keeps: it goes through the record redactor,
+// or is a fixed text with none. A library guardrail keeps its own message.
+func TestACreatedGuardrailDenialGoesThroughTheRecordRedactor(t *testing.T) {
+	redactEmail := func(s string) string { return strings.ReplaceAll(s, "ada@example.com", "<EMAIL_ADDRESS>") }
+	created := `{"type":"operation","operations":["delete"],"message":"ada@example.com may not be deleted","reason":"r"}`
+	for name, tc := range map[string]struct {
+		redact func(string) string
+		args   string
+		lr     analyzer.LevelRules
+		want   string
+	}{
+		"created, redactor": {redactEmail, created, aiRulesBothNew(), "<EMAIL_ADDRESS> may not be deleted"},
+		"created, none":     {nil, created, aiRulesBothNew(), "the AI guardrail denied the statement"},
+		"library, none":     {nil, `{"rule":"no-deletes","reason":"r"}`, bothExisting(), "deletes are not allowed here"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tool := "create_guardrail"
+			if strings.Contains(tc.args, `"rule"`) {
+				tool = "apply_guardrail"
+			}
+			p := &handoffProvider{replies: []decideReply{reply(call(tool, tc.args))}}
+			ev := rulesEvaluator(t, p, analyzer.ActionWarn, tc.lr, func(c *analyzer.Config) { c.RecordRedact = tc.redact })
+			v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
+			if !v.Denied || v.Message != tc.want {
+				t.Fatalf("verdict = %+v, want the denial %q", v, tc.want)
 			}
 		})
 	}
