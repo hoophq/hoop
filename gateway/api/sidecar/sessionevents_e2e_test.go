@@ -61,7 +61,7 @@ func TestE2ESessionEventsAgainstARealSidecar(t *testing.T) {
 	doc := fmt.Sprintf(`{"listeners":[{"name":"appdb","protocol":"postgres",`+
 		`"listen":"127.0.0.1:%d","upstream":%q,`+
 		`"guardrails":{"mode":"enforce","rules":[{"name":"no-drop","type":"deny_words_list","words":["drop table"]}]}}],`+
-		`"admin":{"api_listen":"127.0.0.1:%d"}}`, listenPort, up.Host, adminPort)
+		`"admin":{"listen":"127.0.0.1:%d"}}`, listenPort, up.Host, adminPort)
 	w, _ := putConfig(t, sc.ID, doc)
 	require.Equal(t, http.StatusOK, w.Code, "put: %s", w.Body)
 

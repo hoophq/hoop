@@ -67,15 +67,12 @@ image:
 config: {}
   # log_level: info
   #
-  # # Probes (/healthz, /readyz) and the authenticated writes. REQUIRED, and
-  # # on 19000: the relay disables admin when the address is empty and has no
-  # # default port of its own, while this chart declares 19000 and probes
-  # # /healthz there. A config that omits it or moves it is refused at render,
-  # # not left to fail every pod. It serves no audit data or rules.
-  # #
-  # # api_listen serves the read routes (/stats, /metrics, /config, /events,
-  # # /api/*) with NO authentication. Off unless set; this chart does not
-  # # publish it. Reach it with `kubectl port-forward`.
+  # # Health, stats and the audit query API. REQUIRED, and on 19000: the
+  # # relay disables admin when the address is empty and has no default port
+  # # of its own, while this chart declares 19000 and probes /healthz there.
+  # # A config that omits it or moves it is refused at render, not left to
+  # # fail every pod. 19000 is the number every config under
+  # # deploy/docker-compose/*/sidecar/ binds.
   # admin:
   #   listen: '0.0.0.0:19000'
   #

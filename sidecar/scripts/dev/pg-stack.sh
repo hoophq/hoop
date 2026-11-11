@@ -107,5 +107,5 @@ ready
 
   ports
     5433  envoy postgres (host) -> hoop-inspect -> appdb
-    19000 sidecar admin, 19002 sidecar read API, 9901 envoy admin
+    19000 sidecar admin, 9901 envoy admin
 EOF

@@ -19,6 +19,6 @@ output "lane_ports" {
 }
 
 output "admin_service" {
-  description = "Service of the admin server on 19000: /healthz, /readyz."
+  description = "Service of the admin server on 19000: /healthz, /stats, /config."
   value       = local.fullname
 }

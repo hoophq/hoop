@@ -57,8 +57,7 @@ One file. This one redacts emails and refuses destructive SQL.
 log_level: info
 
 admin:
-  listen: 127.0.0.1:19000        # /healthz /readyz
-  api_listen: 127.0.0.1:19002    # /stats /config /events, no authentication
+  listen: 127.0.0.1:19000        # /healthz /stats /config /events
 
 
 mask:                            # Data Masking

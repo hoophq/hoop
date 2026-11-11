@@ -163,14 +163,11 @@ psql -h 127.0.0.1 -U USER DATABASE
 Credentials do not change: the sidecar passes the login through to the
 resource.
 
-The `admin_service` output serves `/healthz` and `/readyz` on 19000. The
-read routes (`/stats`, `/config`, `/api/*`) have no authentication and are
-off unless a `document` config sets `admin.api_listen`; with
-`api_listen: 127.0.0.1:19002`, reach them through the pod:
+The `admin_service` output serves `/healthz`, `/stats` and `/config` on 19000:
 
 ```bash
-kubectl -n hoop-sidecar port-forward deploy/ADMIN_SERVICE 19002
-curl -s localhost:19002/stats
+kubectl -n hoop-sidecar port-forward svc/ADMIN_SERVICE 19000
+curl -s localhost:19000/stats
 ```
 
 In `simple` mode the audit trail goes to the pod's log, so Cloud Logging

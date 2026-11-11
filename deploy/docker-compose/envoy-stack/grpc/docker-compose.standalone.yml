@@ -4,7 +4,7 @@
 #   ./demo-standalone.sh
 #
 # Run it from this directory, with the envoy stack DOWN: both publish
-# 18443, 19000 and 19002 on the host. This is NOT an overlay -- it is a complete
+# 18443 and 19000 on the host. This is NOT an overlay -- it is a complete
 # three-service stack (plus two init jobs) demonstrating ADR-0013's
 # standalone mode: the gRPC lane terminates the client's TLS itself
 # (downstream_tls in config-standalone.yaml), applies the same guardrail
@@ -82,8 +82,7 @@ services:
       - lane-certs:/etc/hoop-inspect/certs:ro
     ports:
       - "18443:18443"   # the TLS gRPC lane -- the front door
-      - "19000:19000"   # admin: /healthz, /readyz
-      - "19002:19002"   # read API: /stats, /config, /api/sessions
+      - "19000:19000"   # admin: /healthz, /stats, /api/sessions
     depends_on:
       grpc-descriptors: { condition: service_completed_successfully }
       lane-certs: { condition: service_completed_successfully }

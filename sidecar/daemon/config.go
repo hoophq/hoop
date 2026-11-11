@@ -849,33 +849,40 @@ func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 
 // AdminConfig configures the admin listeners.
 //
-// Listen serves the probes (/healthz, /readyz) and the two authenticated
-// writes (PUT /license, POST /v1/drain): nothing on it reads audit data or
-// rules. APIListen serves the unauthenticated read routes (/stats, /metrics,
-// /config, /events, /api/*) and is off unless set, because anything that
-// reaches it reads the audit trail and each lane's rules.
+// Listen serves the probes (/healthz, /readyz), the two authenticated writes
+// (PUT /license, POST /v1/drain) and, by default, the unauthenticated read
+// routes (/stats, /metrics, /config, /events, /api/*), as every release has.
+// An operator who must not expose the read routes where the probes are moves
+// them to APIListen, or turns them off with DisableAPI.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
-	// APIListen is where the read routes bind. Empty turns them off.
+	// APIListen moves the read routes to their own address. Empty keeps
+	// them on Listen.
 	APIListen string `json:"api_listen,omitempty" cap:"admin_api_listen"`
+	// DisableAPI turns the read routes off. The probes and the
+	// authenticated writes stay on Listen.
+	DisableAPI bool `json:"disable_api,omitempty" cap:"admin_disable_api"`
 	// ICAReadinessJSON lets an external relay require explicit live engine
 	// inspection attestation. Default keeps the existing plaintext /readyz API.
 	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty" cap:"ica_readiness_json"`
 }
 
-// validate refuses an api_listen that is not host:port or that shares the
-// probe listener's address: the two are separate servers, so one would fail
-// to bind.
+// validate refuses an api_listen that is not host:port, that shares the
+// probe listener's address (two servers on one socket: one would fail to
+// bind), or that is set beside disable_api, which says the opposite.
 func (a AdminConfig) validate() []string {
 	if a.APIListen == "" {
 		return nil
+	}
+	if a.DisableAPI {
+		return []string{"admin.api_listen is set but admin.disable_api turns the read routes off; set one or the other"}
 	}
 	ah, ap, ok := listenHostPort(a.APIListen)
 	if !ok {
 		return []string{fmt.Sprintf("admin.api_listen %q: want host:port with a port number", a.APIListen)}
 	}
 	if lh, lp, ok := listenHostPort(a.Listen); ok && lp == ap && sameBindHost(lh, ah) {
-		return []string{fmt.Sprintf("admin.api_listen %q binds the same port as admin.listen %q; pick another port", a.APIListen, a.Listen)}
+		return []string{fmt.Sprintf("admin.api_listen %q binds the same port as admin.listen %q; omit api_listen to keep the read routes there", a.APIListen, a.Listen)}
 	}
 	return nil
 }

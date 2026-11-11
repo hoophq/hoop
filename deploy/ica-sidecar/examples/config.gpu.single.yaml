@@ -4,7 +4,6 @@
 log_level: info
 admin:
   listen: 127.0.0.1:19000
-  api_listen: 127.0.0.1:19002    # /stats, for the drain controller; unauthenticated
 # Text inspector is intentionally absent. Audit contains metadata, not OCR text.
 audit:
   file: '-'

@@ -105,7 +105,7 @@ printf 'fake-key' > "$WORKDIR/key"; chmod 600 "$WORKDIR/key"
 
 cat > "$CONFIG" <<YAML
 log_level: info
-admin: {listen: "127.0.0.1:${ADMIN_PORT}", api_listen: "127.0.0.1:${API_PORT}"}
+admin: {listen: "127.0.0.1:${ADMIN_PORT}"}
 audit: {file: "-", memory_buffer: 256, query_sessions: 500}
 pii:
   entities: [EMAIL_ADDRESS, US_SSN]

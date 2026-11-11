@@ -95,7 +95,7 @@ compose logs --no-log-prefix hoop-inspect | grep '^{' |
         | with_entries(select(.value != null))'
 
 step "/stats: the lane's sessions, and the messages it refused (the rule and the budget)"
-compose exec -T client curl -sS http://127.0.0.1:19002/stats | show '.listeners[]'
+compose exec -T client curl -sS http://127.0.0.1:19000/stats | show '.listeners[]'
 
 step "hoop.sidecar.mcp.messages, from the collector's last export"
 sleep 6 # one metrics interval

@@ -119,12 +119,12 @@ const LISTENER_EXAMPLE = (host) => `listeners:
     upstream: <your-database-host>:5432`
 
 const dockerConfig = `admin:
-  listen: 0.0.0.0:19000      # health checks: /healthz, /readyz
+  listen: 0.0.0.0:19000      # the admin API port
 ${LISTENER_EXAMPLE('0.0.0.0')}`
 
 const cliConfig = (url) => `control_plane_url: ${url}
 admin:
-  listen: 127.0.0.1:19000    # health checks: /healthz, /readyz
+  listen: 127.0.0.1:19000    # the admin API port
 ${LISTENER_EXAMPLE('127.0.0.1')}`
 
 const dockerRun = (image, url, token) => `docker run -d --name hoop-sidecar \\
@@ -148,7 +148,7 @@ const helmValues = (url, token) => `controlPlane:
   token: ${token}
 config:
   admin:
-    listen: 0.0.0.0:19000      # health checks; the chart probes /healthz here
+    listen: 0.0.0.0:19000      # the admin API port; the chart needs 19000
 ${LISTENER_EXAMPLE('0.0.0.0')
   .split('\n')
   .map((line) => `  ${line}`)
@@ -277,7 +277,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
                       <CodeSnippet code={k8sEnv(imageRef, controlPlaneUrl)} />
                       <Note>
                         {
-                          'The container also needs the config file, from a ConfigMap mounted at /etc/hoop-inspect/config.yaml: at least one entry in listeners, and admin.listen on 0.0.0.0 for the probes. '
+                          'The container also needs the config file, from a ConfigMap mounted at /etc/hoop-inspect/config.yaml: at least one entry in listeners, and admin.listen on 0.0.0.0. '
                         }
                         <DocLink href={docsUrl.sidecar.kubernetesManifest}>Running as Sidecar</DocLink>
                         {' has the full Deployment and ConfigMap.'}
@@ -305,7 +305,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
             <CodeSnippet code={dockerConfig} />
             <Note>
               {
-                'listeners names the database the sidecar sits in front of; the file needs at least one. admin.listen serves the health checks (/healthz, /readyz) and nothing that reads data. In a container, use 0.0.0.0: a published port cannot reach the container 127.0.0.1. The '
+                'listeners names the database the sidecar sits in front of; the file needs at least one. admin.listen sets the port of the admin API. In a container, use 0.0.0.0: a published port cannot reach the container 127.0.0.1. The '
               }
               {configFileLink}
               {' has every key.'}

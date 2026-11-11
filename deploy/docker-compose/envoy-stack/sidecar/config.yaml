@@ -5,7 +5,7 @@
 #
 # Each lane resolves its own rules, its own masking and its own OPA endpoint.
 # The top-level guardrails/mask blocks are DEFAULTS every lane inherits
-# unless it overrides them; the resolved result is served at :19002/config.
+# unless it overrides them; the resolved result is served at :19000/config.
 #
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
@@ -20,7 +20,6 @@ log_level: info
 
 admin:
   listen: 0.0.0.0:19000
-  api_listen: 0.0.0.0:19002 # /stats /metrics /config /events /api/*; no auth
 
 audit:
   file: "-" # stdout, for the container log pipeline

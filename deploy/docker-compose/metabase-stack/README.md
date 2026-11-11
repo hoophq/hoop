@@ -96,8 +96,7 @@ Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
 compiles in `golang:1.26-alpine` from the same Dockerfile `../envoy-stack`
 uses, so building `hoop-inspect:local` in either stack serves the other.
 
-Ports: `3000` Metabase, `19000` sidecar admin, `19002` sidecar read API
-(`/stats`, `/config`, `/api/*`), `15432` the postgres lane.
+Ports: `3000` Metabase, `19000` sidecar admin, `15432` the postgres lane.
 First boot takes a minute or so, because Metabase migrates an empty H2
 application database before `/api/health` answers, and `docker compose up
 --wait` sits there for it.
@@ -283,8 +282,8 @@ summary reads a 180-second log window, wide enough to catch the schema sync,
 so a second run inside three minutes is summarized together with the first.
 
 ```bash
-curl -s localhost:19002/api/sessions | python3 -m json.tool
-curl -s localhost:19002/stats        | python3 -m json.tool
+curl -s localhost:19000/api/sessions | python3 -m json.tool
+curl -s localhost:19000/stats        | python3 -m json.tool
 docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 

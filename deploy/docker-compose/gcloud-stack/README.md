@@ -19,8 +19,7 @@ without descriptors.
 | compose network | `bigquery:9060`    | BigQuery emulator, Storage API (gRPC)         |
 | host `:29010`   | `hoop-inspect`     | spanner lane                                  |
 | host `:29060`   | `hoop-inspect`     | bqstorage lane                                |
-| host `:19001`   | `hoop-inspect`     | admin: `/healthz`, `/readyz` (`:19000` inside; 19001 so envoy-stack's 19000 can coexist) |
-| host `:19003`   | `hoop-inspect`     | read API: `/stats`, `/config`, `/api/*` (`:19002` inside) |
+| host `:19001`   | `hoop-inspect`     | admin (`:19000` inside; 19001 so envoy-stack's 19000 can coexist) |
 
 The emulator ports stay off the host on purpose: the data plane is only
 reachable through the sidecar.

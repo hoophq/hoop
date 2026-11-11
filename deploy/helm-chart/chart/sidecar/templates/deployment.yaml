@@ -91,14 +91,12 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
           {{- end }}
-        # The admin server, and nothing else. It serves /healthz and /readyz
-        # for the probes below; the read routes are on admin.api_listen, which
-        # this chart does not publish. Every lane port comes from the config
-        # document and differs per deployment, so none is declared here; a
-        # containerPort is informational either way, and a lane is reached
-        # through whatever fronts this pod — an Envoy sidecar over loopback,
-        # or a Service of your own carrying this chart's selector labels —
-        # the chart README has one to paste.
+        # The admin server, and nothing else. Every lane port comes from the
+        # config document and differs per deployment, so none is declared
+        # here; a containerPort is informational either way, and a lane is
+        # reached through whatever fronts this pod — an Envoy sidecar over
+        # loopback, or a Service of your own carrying this chart's selector
+        # labels — the chart README has one to paste.
         ports:
         - name: admin
           containerPort: 19000
@@ -110,7 +108,7 @@ spec:
         startupProbe:
           httpGet:
             path: {{ . | quote }}
-            port: {{ include "hoopsidecar.probePort" $ }}
+            port: 19000
           periodSeconds: {{ $.Values.probe.startupPeriodSeconds | default 5 }}
           timeoutSeconds: {{ $.Values.probe.timeoutSeconds | default 2 }}
           failureThreshold: {{ $.Values.probe.startupFailureThreshold | default 120 }}
@@ -118,14 +116,14 @@ spec:
         readinessProbe:
           httpGet:
             path: {{ .Values.probe.readinessPath | default "/healthz" | quote }}
-            port: {{ include "hoopsidecar.probePort" . }}
+            port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
           timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}
         livenessProbe:
           httpGet:
             path: {{ .Values.probe.livenessPath | default "/healthz" | quote }}
-            port: {{ include "hoopsidecar.probePort" . }}
+            port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
           timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}

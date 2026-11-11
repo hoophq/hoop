@@ -739,11 +739,13 @@ func (m model) systemView(w, h, off int) string {
 		{"ai analyzer", on(sys.Analyzer != "", sys.Analyzer)},
 		{"control plane", on(sys.ControlPlane != "", sys.ControlPlane)},
 		{"session sync", on(sys.SessionsSink, "sending session events to the control plane")},
-		{"admin", on(sys.Admin != "", sys.Admin+stFaint.Render(" · /healthz /readyz"))},
-		{"admin api", on(sys.AdminAPI != "", sys.AdminAPI+stFaint.Render(" · /stats /config /metrics"))},
-		{"query api", on(sys.QueryAPI, sys.AdminAPI+" /api/sessions · /api/events · /api/stats")},
+		{"admin api", on(sys.Admin != "", sys.Admin)},
+		{"query api", on(sys.QueryAPI, "/api/sessions · /api/events · /api/stats")},
 		{"config watch", on(sys.Watching != "", sys.Watching+stFaint.Render(" · edits apply live, SIGHUP to force"))},
 		{"analytics", on(sys.Analytics, "usage analytics enabled")},
+	}
+	if sys.AdminAPI != "" {
+		rows = append(rows, kv{"admin reads", on(true, sys.AdminAPI+stFaint.Render(" · /stats /config /metrics (admin.api_listen)"))})
 	}
 	for _, n := range m.notes {
 		rows = append(rows, kv{"output", n})

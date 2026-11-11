@@ -206,7 +206,7 @@ printf '%s\n' "$out" | sed 's/^/  /' | head -3
 grep -q "PermissionDenied" <<<"$out" && fail "the lane refused the query; no live rule should match it"
 
 sleep 1
-events=$($CURL -s --max-time 10 "http://hoop-inspect:19002/api/events?protocol=spanner&q=$MARK&limit=20")
+events=$($CURL -s --max-time 10 "http://hoop-inspect:19000/api/events?protocol=spanner&q=$MARK&limit=20")
 # One line per statement event: <database> <dialect> <tables>, read from the
 # event's metadata and tables fields.
 read_events() {
@@ -231,7 +231,7 @@ ok "a table rule fencing songs fires on the PostgreSQL database and cannot be do
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"
 sleep 1
-stats=$($CURL -s --max-time 10 http://hoop-inspect:19002/stats)
+stats=$($CURL -s --max-time 10 http://hoop-inspect:19000/stats)
 denied=0
 for n in $(grep -o '"denied":[0-9]*' <<<"$stats" | cut -d: -f2); do
     denied=$((denied + n))
@@ -242,7 +242,7 @@ ok "denied statements across all lanes: $denied"
 
 note ""
 note "The last spanner sessions, as an audit UI would read them:"
-sessions=$($CURL -s --max-time 10 'http://hoop-inspect:19002/api/sessions?protocol=spanner&limit=5')
+sessions=$($CURL -s --max-time 10 'http://hoop-inspect:19000/api/sessions?protocol=spanner&limit=5')
 printf '%s\n' "$sessions" | sed -e 's/},{/},\n   {/g' -e 's/^/  /'
 grep -q '"protocol":"spanner"' <<<"$sessions" \
     || fail "/api/sessions shows no sessions with protocol spanner"

@@ -151,7 +151,7 @@ fi
 # ------------------------------------------------------- 5. the audit trail
 c_step "5. The audit trail names the actor"
 sleep 1
-SESS="$(curl -s 'http://localhost:19002/api/sessions?limit=25' 2>/dev/null)"
+SESS="$(curl -s 'http://localhost:19000/api/sessions?limit=25' 2>/dev/null)"
 if grep -q 'alice@HOOP.TEST' <<<"$SESS"; then
     ok "sessions carry principal=alice@HOOP.TEST"
     note "pgwire names its user in cleartext; MSSQL hides it inside the ticket"

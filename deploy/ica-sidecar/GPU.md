@@ -85,10 +85,8 @@ loopback/private and never put the token in YAML, Git or command-line arguments.
 The endpoint accepts no body, refuses empty/mixed/unsupported processes, is
 idempotent, and makes initialized ICA managers unready until restart. It does
 not shut down the process or enforce a drain timeout; the deployment controller
-waits for `/stats` active sessions before a controlled restart. `/stats` is on
-`admin.api_listen` (off unless set; the examples use `127.0.0.1:19002`), not on
-`admin.listen`. Use the strict JSON readiness option above when deploying
-behind the external ICA relay.
+waits for `/stats` active sessions before a controlled restart. Use the strict
+JSON readiness option above when deploying behind the external ICA relay.
 
 ## Prepare one native GPU asset set
 

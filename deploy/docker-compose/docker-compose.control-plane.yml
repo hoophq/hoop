@@ -92,12 +92,11 @@ services:
     configs:
       - source: sidecar-config
         target: /etc/hoop-inspect/config.yaml
-    # Loopback: the admin endpoints have no authentication, and the lane is
+    # Loopback: the admin endpoint has no authentication, and the lane is
     # reached by service name from inside the network.
     ports:
       - "127.0.0.1:15432:15432"  # the postgres lane
-      - "127.0.0.1:19000:19000"  # /healthz /readyz
-      - "127.0.0.1:19002:19002"  # /stats /config /api/*
+      - "127.0.0.1:19000:19000"  # /healthz /stats /config
     depends_on:
       control-plane:
         condition: "service_healthy"
@@ -114,7 +113,6 @@ configs:
 
       admin:
         listen: 0.0.0.0:19000
-        api_listen: 0.0.0.0:19002
 
       audit:
         file: "-"

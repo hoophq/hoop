@@ -95,17 +95,16 @@ the volume and HOOP_SIDECAR_CONFIG all have to agree.
 {{- end -}}
 
 {{/*
-Where the probes go: `probe.port` when set, else the admin port, 19000.
-admin.listen serves only /healthz, /readyz and two authenticated writes, so
-probing it exposes nothing; the read routes live on admin.api_listen.
+The admin port. Fixed at 19000, the number every config under
+deploy/docker-compose/<stack>/sidecar/ binds and the one firstrun.go names as the
+convention. It is written literally into the Deployment, the Service and both
+probes; this constant exists so the four cannot fall out of step, not to make
+the number configurable.
+
+A config that puts admin somewhere else is refused below rather than rendered
+around, because the probes would then poll a closed port and fail every pod.
 */}}
-{{- define "hoopsidecar.probePort" -}}
-{{- $p := .Values.probe.port -}}
-{{- if not $p -}}19000
-{{- else if kindIs "string" $p -}}{{ $p }}
-{{- else -}}{{ int64 $p }}
-{{- end -}}
-{{- end -}}
+{{- define "hoopsidecar.adminPort" -}}19000{{- end -}}
 
 {{/*
 Whether a config file is mounted at all. False in control-plane mode, where
@@ -206,21 +205,23 @@ changed a selector label would detach the pods from their Deployment.
 {{- end -}}
 {{- end -}}
 {{/*
-The probes poll the admin port, so a config that omits or moves admin is a
-pod that never goes ready. Caught here, at render. Only checkable when the
-chart can see the config: under controlPlane.url or existingConfigMap this is
-the operator's to get right. probe.port moves the probes and skips the check.
+The probes are hardcoded to the admin port, so a config that moves or omits
+admin is a pod that never goes ready. Caught here, at render, instead of as a
+CrashLoopBackOff at 3am. Only checkable when the chart can see the config:
+under controlPlane.url or existingConfigMap this is the operator's to get
+right, and the README says so.
 */}}
-{{- if and .Values.config (not .Values.probe.port) -}}
+{{- $admin := include "hoopsidecar.adminPort" . -}}
+{{- if .Values.config -}}
 {{- $listen := "" -}}
 {{- if .Values.config.admin -}}
 {{- $listen = .Values.config.admin.listen | default "" -}}
 {{- end -}}
 {{- if not $listen -}}
-{{- fail "config.admin.listen is not set: the chart probes /healthz on 19000, and the admin server is disabled when its listen address is empty. Set it to '0.0.0.0:19000'" -}}
+{{- fail (printf "config.admin.listen is not set: the chart probes /healthz on %s, and the admin server is disabled when its listen address is empty. Set it to '0.0.0.0:%s'" $admin $admin) -}}
 {{- end -}}
-{{- if not (hasSuffix ":19000" $listen) -}}
-{{- fail (printf "config.admin.listen is %q but this chart probes /healthz on 19000. Use '0.0.0.0:19000'" $listen) -}}
+{{- if not (hasSuffix (printf ":%s" $admin) $listen) -}}
+{{- fail (printf "config.admin.listen is %q but this chart probes /healthz on %s. Use '0.0.0.0:%s'" $listen $admin $admin) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

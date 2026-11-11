@@ -23,7 +23,6 @@ log_level: info
 
 admin:
   listen: 0.0.0.0:19000
-  api_listen: 0.0.0.0:19002 # /stats /metrics /config /events /api/*; no auth
 
 audit:
   file: "-"

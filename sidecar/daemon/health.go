@@ -14,10 +14,10 @@ import (
 // HealthListenEnv is the address of the health listener: GET /healthz and
 // GET /readyz, and nothing else. Unset, no health listener binds.
 //
-// It exists so a deployment can probe a port other than admin.listen. Like
-// admin.listen, it serves no audit data or rules: those are on
-// admin.api_listen. It answers only whether the process is up and its lanes
-// are ready.
+// It exists so a deployment can probe a port that serves nothing else.
+// admin.listen also serves the unauthenticated read routes unless
+// admin.api_listen or admin.disable_api says otherwise; this listener never
+// does. It answers only whether the process is up and its lanes are ready.
 //
 // An environment variable and never a config key: the probe belongs to the
 // deployment that declares it, not to a document a control plane serves.

@@ -1245,16 +1245,12 @@ func Run(cfg *Config, det Plugin) error {
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
-		go serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
+		go serveAdmin(ctx, cfg.Admin, servers, relayNames, endpoints, endpointNames,
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
 	}
 	if cfg.Admin.Listen == "" && strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
 			"hint", "set admin.listen to install a license through the admin API")
-	}
-	if cfg.Admin.Listen != "" && cfg.Admin.APIListen == "" {
-		log.Info("admin read routes are off: /stats, /metrics, /config, /events and /api/* answer only on admin.api_listen",
-			"hint", "set admin.api_listen to serve them; they have no authentication")
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1985,18 +1981,17 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 	return out, nil
 }
 
-// serveAdmin runs the admin listeners. Both bind separately from the data
+// serveAdmin runs the admin listeners. They bind separately from the data
 // path, so a platform can probe or scrape them without reaching the proxy,
 // and vice versa.
 //
-// addr (admin.listen) serves the probes and the two authenticated writes,
-// and nothing that reads audit data or rules: a workspace that reaches it
-// learns only whether the process is up. apiAddr (admin.api_listen) serves
-// the unauthenticated read routes. Either is skipped when empty.
+// admin.listen serves the probes and the two authenticated writes. The
+// unauthenticated read routes are there too, as in every release, unless
+// admin.api_listen moves them to their own address or admin.disable_api
+// turns them off. Either way the probes stay where the platform polls them.
 func serveAdmin(
 	ctx context.Context,
-	addr string,
-	apiAddr string,
+	cfg AdminConfig,
 	servers []*proxy.Server,
 	relayNames []string,
 	endpoints []endpointServer,
@@ -2009,32 +2004,36 @@ func serveAdmin(
 	otel *otelExporter,
 	licenseAPI http.Handler,
 	log *slog.Logger,
-	icaReadinessJSON bool,
 ) {
-	probes := http.NewServeMux()
-	handleHealth(probes, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
-
-	// License writes require their own secret. ICA deployment drain below has a
-	// separate token and is disabled by default. licenseHandler refuses it unless the
-	// operator set AdminSecretEnv, and then asks for that secret: every
-	// read on the API listener is unauthenticated, and a write must not be.
-	probes.Handle("PUT /license", licenseAPI)
-	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
-
-	// Releases up to 1.306 served the read routes here. A scraper still
-	// pointed at this port gets a 404 that says where they went, rather than
-	// a bare one it might mistake for a typo.
-	moved := func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "moved: this route is served on admin.api_listen, which is off unless set", http.StatusNotFound)
-	}
-	for _, p := range []string{"GET /stats", "GET /metrics", "GET /config", "GET /events", "/api/"} {
-		probes.HandleFunc(p, moved)
+	// addProbes mounts the probes and the two authenticated writes. License
+	// writes require their own secret. ICA deployment drain has a separate
+	// token and is disabled by default. licenseHandler refuses it unless the
+	// operator set AdminSecretEnv, and then asks for that secret: every read
+	// route is unauthenticated, and a write must not be.
+	addProbes := func(m *http.ServeMux) {
+		handleHealth(m, healthState{endpoints, endpointNames, cfg.ICAReadinessJSON, len(servers)})
+		m.Handle("PUT /license", licenseAPI)
+		m.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
 	}
 
-	if addr != "" {
-		go serveHTTP(ctx, "admin endpoint", addr, probes, log)
+	// Where the read routes are not served on admin.listen, a scraper pointed
+	// there gets a 404 that says why, rather than a bare one it might take
+	// for a typo.
+	probesOnly := func(why string) *http.ServeMux {
+		m := http.NewServeMux()
+		addProbes(m)
+		h := func(w http.ResponseWriter, r *http.Request) { http.Error(w, why, http.StatusNotFound) }
+		for _, p := range []string{"GET /stats", "GET /metrics", "GET /config", "GET /events", "/api/"} {
+			m.HandleFunc(p, h)
+		}
+		return m
 	}
-	if apiAddr == "" {
+	if cfg.DisableAPI {
+		log.Info("admin read routes are off (admin.disable_api)",
+			"paths", "/stats, /metrics, /config, /events, /api/*")
+		if cfg.Listen != "" {
+			serveHTTP(ctx, "admin endpoint", cfg.Listen, probesOnly("not served: admin.disable_api is true"), log)
+		}
 		return
 	}
 
@@ -2253,8 +2252,8 @@ func serveAdmin(
 	// operational endpoints above (/stats, /metrics) stay stable and
 	// separately scrapeable.
 	//
-	// It sits on the admin API listener by design. This is a read interface
-	// to every statement every user ran; it belongs behind whatever already
+	// It sits on an admin listener by design. This is a read interface to
+	// every statement every user ran; it belongs behind whatever already
 	// decides who may see audit data, and the data-path ports must never
 	// serve it.
 	if ac.query != nil {
@@ -2265,7 +2264,18 @@ func serveAdmin(
 			"paths", "/api/sessions, /api/sessions/{id}, /api/sessions/{id}/events, /api/events, /api/stats")
 	}
 
-	serveHTTP(ctx, "admin API endpoint", apiAddr, mux, log)
+	if cfg.APIListen == "" {
+		// The default, as in every release: one listener, every route.
+		addProbes(mux)
+		if cfg.Listen != "" {
+			serveHTTP(ctx, "admin endpoint", cfg.Listen, mux, log)
+		}
+		return
+	}
+	if cfg.Listen != "" {
+		go serveHTTP(ctx, "admin endpoint", cfg.Listen, probesOnly("not served here: see admin.api_listen"), log)
+	}
+	serveHTTP(ctx, "admin API endpoint", cfg.APIListen, mux, log)
 }
 
 // serveHTTP serves handler on addr until ctx ends, and logs a bind failure.

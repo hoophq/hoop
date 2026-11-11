@@ -51,9 +51,9 @@ livenessProbe:
 For local debugging, forward only to loopback:
 
 ```bash
-kubectl -n <cell-namespace> port-forward deployment/<cell-release> 19000:19000 19002:19002
+kubectl -n <cell-namespace> port-forward deployment/<cell-release> 19000:19000
 # In another terminal:
-curl -s http://127.0.0.1:19002/stats
+curl -s http://127.0.0.1:19000/stats
 curl -i http://127.0.0.1:19000/readyz
 ```
 

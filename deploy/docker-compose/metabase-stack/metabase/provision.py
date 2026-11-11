@@ -173,7 +173,7 @@ def register_database(base, session):
             f"POST /api/database failed (HTTP {status}): {body}\n"
             "      Metabase tests the connection before saving, so this is\n"
             "      usually the sidecar refusing or the lane being down.\n"
-            "      Check: curl -s localhost:19002/config"
+            "      Check: curl -s localhost:19000/config"
         )
     ok(f"database {DATABASE['name']!r} registered (id {body['id']})")
     return body["id"]

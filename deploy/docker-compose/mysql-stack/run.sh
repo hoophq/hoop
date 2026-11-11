@@ -46,7 +46,7 @@ fi
 # ----------------------------------------------------------------- 2. compose
 c_step "Starting appdb, hoop-inspect, envoy, client"
 docker compose up -d --wait
-c_ok "mysql :3307, sidecar admin :19000, sidecar API :19002, envoy admin :9901"
+c_ok "mysql :3307, sidecar admin :19000, envoy admin :9901"
 
 cat <<'EOF'
 
@@ -67,7 +67,7 @@ ready
 
   Audit trail -- every statement above:
 
-    curl -s localhost:19002/api/sessions | python3 -m json.tool
+    curl -s localhost:19000/api/sessions | python3 -m json.tool
     docker compose logs -f hoop-inspect
 
   Teardown:
