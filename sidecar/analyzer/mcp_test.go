@@ -174,3 +174,27 @@ func TestAHandoffHoldOnAnMCPToolCallIsRefused(t *testing.T) {
 		t.Errorf("filed %d review(s), want none", rev.filed())
 	}
 }
+
+// A hold on a tool call is refused before the rule turn: no model call is
+// spent, and no AI rule is recorded, for a call the lane refuses anyway.
+func TestARefusedMCPHoldRunsNoRuleTurn(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{reply(call("apply_guardrail", `{"rule":"no-deletes","reason":"destructive"}`))}}
+	rev := &handoffReviewer{}
+	ev := rulesEvaluator(t, p, analyzer.ActionRequireReview, bothExisting(), func(c *analyzer.Config) {
+		c.Review = rev
+		c.Trigger = analyzer.Trigger{All: true}
+	})
+	v := ev.EvaluateWith(mcpCall("delete_customer", `{"id":"7"}`), withUser("ana@corp"))
+	if !v.Denied || v.Message != mcpHoldRefusal {
+		t.Fatalf("verdict %+v", v)
+	}
+	if asks := p.asks(); len(asks) != 0 {
+		t.Errorf("rule turns = %d, want none", len(asks))
+	}
+	if got, ok := v.Annotations[analyzer.MetadataAIRules]; ok {
+		t.Errorf("ai_rules = %q on a refused call", got)
+	}
+	if rev.filed() != 0 {
+		t.Errorf("filed %d review(s), want none", rev.filed())
+	}
+}

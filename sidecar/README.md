@@ -3977,6 +3977,8 @@ The model reads the tool name and the arguments JSON, cut to
 - `ai_rules`: an AI guardrail refuses the one call it matches. An AI mask
   refuses the call it masks: the lane masks every result with its mask
   rules and cannot tie a mask to one call's result. The lane warns at start.
+  A `require_approval` level refuses the call before the rule turn, so no
+  model call is spent and no `ai_rules` is recorded for it.
 
 A control plane serves an analyzer on an mcp lane only to a sidecar that
 reports `mcp_analyzer`.
