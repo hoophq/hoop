@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -506,5 +507,26 @@ func TestAnMCPLaneRefusesTheCallTheAIMasks(t *testing.T) {
 	}
 	if v := ls.ToolCall(ctx, "get_customer", []byte(`{"id":"7"}`)); !v.Allowed {
 		t.Fatalf("a call the guardrail does not match was refused: %+v", v)
+	}
+}
+
+// The log line for an invalid created rule carries the error as the record
+// keeps it: the validation error quotes the agent's arguments.
+func TestTheInvalidRuleLogKeepsNoModelLiteral(t *testing.T) {
+	cfg := aiLane(t, LevelAIRule{Guardrails: &AIRuleOptions{Mode: "existing_and_new"}})
+	agent := &ruleAgent{calls: []analyzer.ToolCall{toolCall("create_guardrail",
+		`{"type":"pattern_match","pattern_regex":"ada@example.com(","message":"x","reason":"r"}`)}}
+	var buf bytes.Buffer
+	det := stubPlugin{entities: []string{"EMAIL_ADDRESS"}, find: "ada@example.com"}
+	lanes, err := buildLanes(cfg, det, &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: agent, det: det,
+		log: slog.New(slog.NewTextHandler(&buf, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.Chain{lanes[0].policy}.EvaluateWith(deleteFromUsers(), &policy.EvalContext{})
+	out := buf.String()
+	if !strings.Contains(out, "the AI created an invalid rule") || strings.Contains(out, "ada@example.com") ||
+		!strings.Contains(out, "<EMAIL_ADDRESS>") {
+		t.Errorf("log = %s", out)
 	}
 }

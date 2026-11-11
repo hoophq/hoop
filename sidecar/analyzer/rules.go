@@ -617,10 +617,13 @@ func (d *ruleDecision) add(e *Evaluator, level RiskLevel, kind, reason string, a
 		a, def, err = build(args)
 	}
 	if err != nil {
+		// The error quotes the agent's arguments: the callback logs it, so
+		// it gets the record form too.
+		rec := e.recordRuleError(err)
 		d.invalid = append(d.invalid, invalidRule{kind: kind, definition: e.recordDefinition(def),
-			reason: e.recordReason(reason), err: e.recordRuleError(err)})
+			reason: e.recordReason(reason), err: rec})
 		if e.cfg.OnRuleInvalid != nil {
-			e.cfg.OnRuleInvalid(level, kind, err)
+			e.cfg.OnRuleInvalid(level, kind, errors.New(rec))
 		}
 		return
 	}

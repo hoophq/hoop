@@ -744,3 +744,40 @@ func TestAPinnedResendAppliesTheFilingsRules(t *testing.T) {
 		t.Errorf("claimed %v, want r1", claimed)
 	}
 }
+
+// OnRuleInvalid gets the error in its record form, never the raw one: the
+// validation error quotes the agent's arguments, and the daemon logs it.
+// With no record redactor it gets the fixed text.
+func TestOnRuleInvalidGetsTheRecordFormOfTheError(t *testing.T) {
+	for name, tc := range map[string]struct {
+		redact func(string) string
+		want   string
+	}{
+		"redactor":    {redactSecret, "<CREDIT_CARD>"},
+		"no redactor": {nil, "with no record redactor the detail is not kept"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := &handoffProvider{replies: []decideReply{reply(call("create_guardrail",
+				`{"type":"pattern_match","pattern_regex":"`+aiRuleCard+`(","message":"x","reason":"r"}`))}}
+			var mu sync.Mutex
+			var reported []string
+			ev := rulesEvaluator(t, p, analyzer.ActionAllow, aiRulesBothNew(), func(c *analyzer.Config) {
+				c.RecordRedact = tc.redact
+				c.OnRuleInvalid = func(_ analyzer.RiskLevel, _ string, err error) {
+					mu.Lock()
+					reported = append(reported, err.Error())
+					mu.Unlock()
+				}
+			})
+			v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
+			inv := invalidRecords(t, v)
+			if len(reported) != 1 || len(inv) != 1 {
+				t.Fatalf("reported %q, %d invalid record(s)", reported, len(inv))
+			}
+			if strings.Contains(reported[0], "4111") || !strings.Contains(reported[0], tc.want) ||
+				reported[0] != inv[0]["error"] {
+				t.Errorf("reported %q, recorded %q", reported[0], inv[0]["error"])
+			}
+		})
+	}
+}

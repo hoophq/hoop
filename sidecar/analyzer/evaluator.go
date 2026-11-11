@@ -386,8 +386,9 @@ type Config struct {
 	CompileMask func(definition json.RawMessage) (policy.ResponseMask, error)
 
 	// OnRuleInvalid is told about every rule the AI created that failed
-	// validation, so the operator sees it beside the audit record. Nil
-	// reports nothing.
+	// validation, so the operator sees it beside the audit record. err is
+	// the error as the record keeps it (RecordRedact), never the raw one,
+	// which quotes the agent's arguments. Nil reports nothing.
 	OnRuleInvalid func(level RiskLevel, kind string, err error)
 }
 
