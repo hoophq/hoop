@@ -916,6 +916,10 @@ jobs:
   #   :<version>-ica                  Ubuntu 24.04 LTS + hoop-inspect with
   #                                   the Citrix ICA engine, tesseract and
   #                                   ONNX Runtime
+  #   :<version>-ica-gpu              the ICA engine on TurboOCR and CUDA
+  #                                   NER, linux/amd64 only; published only
+  #                                   when ICA_GPU_ASSETS_URL and
+  #                                   ICA_GPU_ASSETS_SHA256 are set
   #   :latest                         an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
@@ -935,8 +939,9 @@ jobs:
   # history. The slim flavours are a stock rootfs plus the `hoop` binary; the
   # -alcatraz pair adds model weights and ONNX Runtime, which carry none; the
   # ica flavour adds Ubuntu's tesseract packages, ONNX Runtime and the
-  # libhoop-ica worker, none built FROM hoophq/agent-tools. Do not add a tag
-  # here without reading that note.
+  # libhoop-ica worker, and the ica-gpu flavour the reviewed GPU runtime
+  # asset (deploy/ica-sidecar/GPU.md), none built FROM hoophq/agent-tools.
+  # Do not add a tag here without reading that note.
   #
   # The slim flavours need build-tar-files and no published base: they
   # extract the release tarball directly, so nothing waits on a registry. One
