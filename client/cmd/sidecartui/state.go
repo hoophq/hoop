@@ -226,6 +226,11 @@ func (s *State) ApplyLog(r LogRecord) {
 		s.System.Detection = true
 	case "risk analyzer attached":
 		s.System.Analyzer = strings.TrimSpace(r.Get("provider") + " " + r.Get("model"))
+		if r.Get("provider") == hostedProvider {
+			// The daemon logs the PII notice too; this keeps it on the
+			// status screen, where the analyzer is described.
+			s.System.Analyzer = "Hoop-hosted " + r.Get("model") + " · statements sent to Hoop"
+		}
 		if send := r.Get("send"); send != "" {
 			s.System.Analyzer += " · send " + send
 		}

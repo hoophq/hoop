@@ -51,8 +51,8 @@ func TestStartSidecarDemoIgnoresAListenerItCannotQuote(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.stop()
-	if d.ports != nil {
-		t.Errorf("tour ports = %+v, want no tour for a unix listener", d.ports)
+	if len(d.targets) > 0 {
+		t.Errorf("tour targets = %+v, want no tour for a unix listener", d.targets)
 	}
 	for _, n := range d.notes {
 		if strings.Contains(n, "$(id)") {

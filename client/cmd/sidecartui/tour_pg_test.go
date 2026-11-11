@@ -88,7 +88,7 @@ func TestPgQueryLogsInAsTheDemoRoleAndRendersRows(t *testing.T) {
 		_ = b.Flush()
 	})
 
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT customerid, email FROM customers LIMIT 2;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT customerid, email FROM customers LIMIT 2;", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestPgQueryIgnoresThePGEnvironment(t *testing.T) {
 		b.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 		_ = b.Flush()
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT 1;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT 1;", false)
 	if err != nil {
 		t.Fatalf("a PG* variable broke the step: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestPgQueryReadsTheSidecarRefusal(t *testing.T) {
 	addr, _ := fakePostgres(t, func(_ *pgproto3.Backend, conn net.Conn) {
 		_, _ = conn.Write(proxy.PostgresError(msg))
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "DROP TABLE customers;")
+	r, err := pgQuery(pgTarget{addr: addr}, "DROP TABLE customers;", false)
 	if err != nil {
 		t.Fatalf("a refusal is an answer, not an error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestPgQueryShowsADatabaseErrorAsIs(t *testing.T) {
 		b.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 		_ = b.Flush()
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT nope FROM customers;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT nope FROM customers;", false)
 	if err != nil {
 		t.Fatal(err)
 	}

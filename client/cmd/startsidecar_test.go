@@ -55,7 +55,7 @@ func TestStartSidecarDemoServesTheAPIAConfigNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.stop()
-	ports, notes := d.ports, d.notes
+	ports, notes := targetPorts(d), d.notes
 	if ports == nil || ports.API != addr || ports.Listen != cfg.Listeners[0].Listen {
 		t.Errorf("ports = %+v, want the API %s and the listener in front of it", ports, addr)
 	}
@@ -105,11 +105,11 @@ func TestStartSidecarDemoFrontsTheRemoteDemoDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.stop()
-	if d.kind != sidecardemo.KindPostgres {
-		t.Errorf("kind = %q, want the Postgres demo", d.kind)
+	if len(d.targets) != 1 || d.targets[0].Kind != sidecardemo.KindPostgres {
+		t.Errorf("targets = %+v, want the Postgres demo", d.targets)
 	}
-	if d.ports == nil || d.ports.API != sidecardemo.PGAddr || d.ports.Listen != cfg.Listeners[0].Listen {
-		t.Errorf("ports = %+v, want the listener in front of %s", d.ports, sidecardemo.PGAddr)
+	if p := targetPorts(d); p == nil || p.API != sidecardemo.PGAddr || p.Listen != cfg.Listeners[0].Listen {
+		t.Errorf("ports = %+v, want the listener in front of %s", p, sidecardemo.PGAddr)
 	}
 	if len(d.notes) < 2 || !strings.Contains(d.notes[0], sidecardemo.PGAddr) || !strings.Contains(d.notes[1], "psql") {
 		t.Errorf("notes = %v, want the database named and psql commands to try", d.notes)
@@ -186,8 +186,8 @@ func TestStartSidecarDemoWithoutAListenerForItHasNoTour(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.stop()
-	if d.ports != nil {
-		t.Errorf("tour ports = %+v with no listener forwarding to %s", d.ports, addr)
+	if len(d.targets) > 0 {
+		t.Errorf("tour targets = %+v with no listener forwarding to %s", d.targets, addr)
 	}
 	if len(d.notes) != 1 || !strings.Contains(d.notes[0], "no listener forwards to it") {
 		t.Errorf("notes = %v, want them to say what is missing", d.notes)
@@ -211,7 +211,7 @@ func TestStartSidecarDemoIgnoresAConfigWithoutTheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, err := startSidecarDemo(path, &daemon.Config{})
-	if err != nil || d.notes != nil || d.ports != nil {
+	if err != nil || d.notes != nil || len(d.targets) > 0 {
 		t.Fatalf("notes %v, err %v; want nothing started", d.notes, err)
 	}
 	d.stop()
@@ -359,4 +359,55 @@ func TestSidecarBareInvocation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// targetPorts is the one demo's ports, nil when the tour is off.
+func targetPorts(d *sidecarDemo) *sidecardemo.Ports {
+	if len(d.targets) != 1 {
+		return nil
+	}
+	return &d.targets[0].Ports
+}
+
+// The setup screen's demo names both keys: one boot serves the API, fronts
+// the remote database, and hands the tour both demos, each matched to the
+// listener in front of it.
+func TestStartSidecarDemoRunsEveryDemoAConfigNames(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	cfg := &daemon.Config{Listeners: []daemon.ListenerConfig{
+		{Name: "demo-api", Protocol: "http", Listen: "127.0.0.1:18080", Upstream: addr},
+		{Name: "demo-postgres", Protocol: "postgres", Listen: "127.0.0.1:15432", Upstream: sidecardemo.PGAddr},
+	}}
+	b, err := configyaml.Render(cfg, configyaml.RenderOptions{Extensions: []configyaml.Extension{
+		{Key: configyaml.DemoAPIKey, Value: addr}, {Key: configyaml.DemoPostgresKey, Value: sidecardemo.PGAddr}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), configyaml.StarterFile)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := startSidecarDemo(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.stop()
+	if len(d.targets) != 2 || d.targets[0].Kind != sidecardemo.KindHTTP || d.targets[0].Listener != "demo-api" ||
+		d.targets[1].Kind != sidecardemo.KindPostgres || d.targets[1].Listener != "demo-postgres" {
+		t.Fatalf("targets = %+v, want the API then the database, each with its listener", d.targets)
+	}
+	joined := strings.Join(d.notes, "\n")
+	if !strings.Contains(joined, "curl") || !strings.Contains(joined, "psql") {
+		t.Errorf("notes = %v, want commands for both demos", d.notes)
+	}
+	resp, err := http.Get("http://" + addr + "/users")
+	if err != nil {
+		t.Fatalf("the demo API is not up: %v", err)
+	}
+	resp.Body.Close()
 }

@@ -33,10 +33,47 @@ import (
 type DemoOptions struct {
 	// OpenURL opens a URL in the person's browser. Nil hides the key.
 	OpenURL func(string) error
-	// Ports are where this demo runs; the zero value means the defaults.
+	// Targets are the demos the config runs, each with its own steps. The
+	// setup screens write both, so one tour shows every step.
+	Targets []DemoTarget
+	// Ports, Kind and Analyzer describe a single demo when Targets is
+	// empty: the zero values mean the HTTP demo on its default ports.
+	Ports    sidecardemo.Ports
+	Kind     sidecardemo.Kind
+	Analyzer bool
+}
+
+// DemoTarget is one demo the tour runs steps against.
+type DemoTarget struct {
+	// Kind is HTTP or Postgres; Ports where its listener and upstream are.
+	Kind  sidecardemo.Kind
 	Ports sidecardemo.Ports
-	// Kind is which demo this is: HTTP or Postgres. The zero value is HTTP.
-	Kind sidecardemo.Kind
+	// Listener is the listener in front of it. An audit event ticks only
+	// this demo's steps when it names that listener, so a masked API reply
+	// does not tick the database's masking step. "" matches any listener.
+	Listener string
+	// Analyzer reports that the listener has an AI analyzer, which adds
+	// the step that shows it.
+	Analyzer bool
+}
+
+// label names a demo in the step list.
+func (d DemoTarget) label() string {
+	if d.Kind == sidecardemo.KindPostgres {
+		return "Postgres · hoop's demo database"
+	}
+	return "HTTP · an invented API"
+}
+
+// analyzerTimeout bounds a step the model judges: one classification may take
+// the analyzer's own 10 s default, then the request runs.
+const analyzerTimeout = 30 * time.Second
+
+// verdict is what the analyzer recorded for the step that shows it, read from
+// the audit trail: the step's own answer is a 403 or a 201 and says nothing
+// of the rating behind it.
+type verdict struct {
+	level, action, status, message string
 }
 
 type tourResult struct {
@@ -50,36 +87,63 @@ type tourResult struct {
 type tourResultMsg tourResult
 
 type tour struct {
-	kind    sidecardemo.Kind
+	targets []DemoTarget
 	steps   []sidecardemo.Step
+	// at is the index in targets of each step's demo.
+	at      []int
 	cur     int
 	done    []bool
 	running int
 	result  *tourResult
 	open    func(string) error
 	flash   string
-	ports   sidecardemo.Ports
 	// lastOp is each session's last recorded operation, which a masked
 	// event (it names none) is matched by.
 	lastOp map[string]string
+	// verdict is the analyzer's record of the last analyzer step run here,
+	// nil until its audit event arrives.
+	verdict *verdict
+	// awaiting is the analyzer step whose verdict is wanted, -1 for none.
+	awaiting int
 }
 
 func newTour(o *DemoOptions) *tour {
-	kind := o.Kind
-	if kind == "" {
-		kind = sidecardemo.KindHTTP
+	targets := o.Targets
+	if len(targets) == 0 {
+		targets = []DemoTarget{{Kind: o.Kind, Ports: o.Ports, Analyzer: o.Analyzer}}
 	}
-	p := o.Ports
-	if p.Listen == "" || p.API == "" {
-		p = sidecardemo.DefaultPortsFor(kind)
+	t := &tour{open: o.OpenURL, running: -1, awaiting: -1}
+	for _, d := range targets {
+		if d.Kind == "" {
+			d.Kind = sidecardemo.KindHTTP
+		}
+		if d.Ports.Listen == "" || d.Ports.API == "" {
+			d.Ports = sidecardemo.DefaultPortsFor(d.Kind)
+		}
+		t.targets = append(t.targets, d)
+		for _, s := range sidecardemo.StepsFor(d.Kind, d.Analyzer) {
+			t.steps = append(t.steps, s)
+			t.at = append(t.at, len(t.targets)-1)
+		}
 	}
-	steps := sidecardemo.StepsFor(kind)
-	return &tour{kind: kind, steps: steps, done: make([]bool, len(steps)), running: -1,
-		open: o.OpenURL, ports: p}
+	t.done = make([]bool, len(t.steps))
+	return t
 }
 
-// pg reports whether this is the Postgres demo.
-func (t *tour) pg() bool { return t.kind == sidecardemo.KindPostgres }
+// target is the demo step i runs against.
+func (t *tour) target(i int) DemoTarget { return t.targets[t.at[i]] }
+
+// pgAt reports whether step i is a Postgres step.
+func (t *tour) pgAt(i int) bool { return t.target(i).Kind == sidecardemo.KindPostgres }
+
+// pg reports whether the selected step is a Postgres step.
+func (t *tour) pg() bool { return t.pgAt(t.cur) }
+
+// command is step i as a command to paste.
+func (t *tour) command(i int) string {
+	d := t.target(i)
+	return t.steps[i].Command(d.Kind, d.Ports)
+}
 
 // see ticks the step an audit event shows happened.
 //
@@ -103,7 +167,21 @@ func (t *tour) see(ev audit.Event) {
 	if op == "" {
 		op = t.lastOp[string(ev.SessionID)]
 	}
+	level, status := ev.Metadata[metaRiskLevel], ev.Metadata[metaAIStatus]
+	if t.awaiting >= 0 && (level != "" || status != "") && ev.Direction != inspect.FromServer &&
+		t.from(t.awaiting, ev) && strings.EqualFold(op, t.steps[t.awaiting].SeenOp) {
+		t.verdict = &verdict{level: level, action: ev.Metadata[metaRiskAction], status: status, message: ev.Message}
+	}
 	for i, s := range t.steps {
+		if !t.from(i, ev) {
+			continue
+		}
+		if s.Analyzer {
+			if (level == "high" || level == "medium") && strings.EqualFold(op, s.SeenOp) {
+				t.done[i] = true
+			}
+			continue
+		}
 		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
 			continue
 		}
@@ -116,25 +194,38 @@ func (t *tour) see(ev audit.Event) {
 	}
 }
 
+// from reports whether ev crossed the listener in front of step i's demo.
+func (t *tour) from(i int, ev audit.Event) bool {
+	l := t.target(i).Listener
+	return l == "" || ev.Connection == "" || ev.Connection == l
+}
+
 // run sends step i's request off the UI goroutine, over the demo's protocol.
 func (t *tour) run(i int) tea.Cmd {
 	t.running, t.flash = i, ""
-	if t.pg() {
+	if t.steps[i].Analyzer {
+		t.awaiting, t.verdict = i, nil
+	}
+	if t.pgAt(i) {
 		return t.runPG(i)
 	}
 	return t.runHTTP(i)
 }
 
 func (t *tour) runHTTP(i int) tea.Cmd {
-	s := t.steps[i]
+	s, ports := t.steps[i], t.target(i).Ports
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		timeout := 5 * time.Second
+		if s.Analyzer {
+			timeout = analyzerTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		var body io.Reader
 		if s.Body != "" {
 			body = strings.NewReader(s.Body)
 		}
-		req, err := http.NewRequestWithContext(ctx, s.Method, s.URL(t.ports), body)
+		req, err := http.NewRequestWithContext(ctx, s.Method, s.URL(ports), body)
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -157,19 +248,19 @@ func (t *tour) runHTTP(i int) tea.Cmd {
 // listener serves; the comparison step connects to the database itself over
 // TLS, verified against the RDS roots the demo carries.
 func (t *tour) runPG(i int) tea.Cmd {
-	s := t.steps[i]
-	target := pgTarget{addr: t.ports.Listen}
+	s, ports := t.steps[i], t.target(i).Ports
+	target := pgTarget{addr: ports.Listen}
 	return func() tea.Msg {
 		if s.Direct {
 			roots, err := sidecardemo.RDSRoots()
 			if err != nil {
 				return tourResultMsg{step: i, err: err}
 			}
-			host, _, _ := net.SplitHostPort(t.ports.API)
-			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
+			host, _, _ := net.SplitHostPort(ports.API)
+			target = pgTarget{addr: ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
 		}
 		start := time.Now()
-		res, err := pgQuery(target, s.SQL)
+		res, err := pgQuery(target, s.SQL, s.Analyzer)
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -188,8 +279,9 @@ func (t *tour) apply(r tourResult) {
 
 // summary is the one-line "what runs" for a step: the HTTP method and path, or
 // the SQL statement.
-func (t *tour) summary(s sidecardemo.Step) string {
-	if t.pg() {
+func (t *tour) summary(i int) string {
+	s := t.steps[i]
+	if t.pgAt(i) {
 		return s.SQL
 	}
 	return s.Method + " " + s.Path
@@ -233,10 +325,10 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 		case s.Method != "GET":
 			t.flash = "a browser can only send GET; run this one with enter or curl"
 		default:
-			if err := t.open(s.URL(t.ports)); err != nil {
+			if err := t.open(s.URL(t.target(t.cur).Ports)); err != nil {
 				t.flash = "could not open a browser: " + err.Error()
 			} else {
-				t.flash = "opened " + s.URL(t.ports) + " in your browser"
+				t.flash = "opened " + s.URL(t.target(t.cur).Ports) + " in your browser"
 			}
 		}
 	case "c":
@@ -245,7 +337,7 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 			label = "psql"
 		}
 		t.flash = "copied the " + label + " command"
-		return tea.SetClipboard(t.steps[t.cur].Command(t.kind, t.ports)), true
+		return tea.SetClipboard(t.command(t.cur)), true
 	default:
 		return nil, false
 	}
@@ -271,13 +363,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 		}
 	}
 	text := lipgloss.NewStyle().Width(w)
-	intro := "Requests to " + t.ports.Listen + " go through the sidecar to an invented API. " +
-		"Run each step here, or paste its curl into another terminal, then open Wire to see what the sidecar recorded."
-	if t.pg() {
-		intro = "Statements sent to " + t.ports.Listen + " go through the sidecar to hoop's demo database, " +
-			"a read-only copy of the dellstore sample shop. " +
-			"Run each step here, or paste its psql into another terminal, then open Wire to see what the sidecar recorded."
-	}
+	intro := t.intro()
 	lines := []string{
 		stStrong.Render("Try the demo") + stFaint.Render(fmt.Sprintf("   %d of %d done", done, len(t.steps))),
 		text.Inherit(stText).Render(intro),
@@ -288,6 +374,13 @@ func (t *tour) view(w, h int, now time.Time) string {
 		titleW = max(titleW, ansi.StringWidth(s.Title))
 	}
 	for i, s := range t.steps {
+		// One heading per demo, only when there is more than one to tell apart.
+		if len(t.targets) > 1 && (i == 0 || t.at[i] != t.at[i-1]) {
+			if i > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, stLabel.Render(strings.ToUpper(t.target(i).label())))
+		}
 		mark := badge(fmt.Sprint(i+1), colPrimary)
 		if t.done[i] {
 			mark = stPrimary.Render(" ✓ ")
@@ -296,9 +389,9 @@ func (t *tour) view(w, h int, now time.Time) string {
 		if i == t.cur {
 			cursor, title = stPrimary.Render("› "), stStrong.Render(fmt.Sprintf("%-*s", titleW, s.Title))
 		}
-		target := t.summary(s)
+		target := t.summary(i)
 		if s.Direct {
-			target += stFaint.Render("  (" + t.ports.API + ", no sidecar)")
+			target += stFaint.Render("  (" + t.target(i).Ports.API + ", no sidecar)")
 		}
 		row := cursor + mark + "  " + title + "  " + stFaint.Render(target)
 		if i == t.cur {
@@ -310,7 +403,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 	s := t.steps[t.cur]
 	lines = append(lines, "", stLabel.Render(strings.ToUpper(s.Title)),
 		text.Inherit(stText).Render("Expect: "+s.Expect),
-		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(s.Command(t.kind, t.ports), w-2, "…")))
+		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(t.command(t.cur), w-2, "…")))
 	if t.flash != "" {
 		lines = append(lines, stPrimary.Render(t.flash))
 	}
@@ -322,7 +415,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 		if t.pg() {
 			verb = "running "
 		}
-		lines = append(lines, shimmer(verb+t.summary(s)+"…", now))
+		lines = append(lines, shimmer(verb+t.summary(t.cur)+"…", now))
 	case r != nil && r.step == t.cur && r.err != nil:
 		lines = append(lines, stDanger.Bold(true).Render("✕ "+r.err.Error()))
 	case r != nil && r.step == t.cur:
@@ -332,6 +425,9 @@ func (t *tour) view(w, h int, now time.Time) string {
 		}
 		lines = append(lines, st.Render(fmt.Sprintf("%d %s", r.status, t.statusText(r.status)))+
 			stFaint.Render("  ·  "+short(r.dur)))
+		if s.Analyzer {
+			lines = append(lines, t.verdictLine())
+		}
 		lines = append(lines, text.Inherit(stFaint).Render(s.Why))
 		lines = append(lines, t.next(), "")
 		room := max(h-len(lines)-1, 3)
@@ -350,6 +446,52 @@ func (t *tour) view(w, h int, now time.Time) string {
 		lines = lines[:h]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// intro says where the steps go: one demo, or each of them.
+func (t *tour) intro() string {
+	const tail = "then open Wire to see what the sidecar recorded."
+	if len(t.targets) == 1 {
+		d := t.targets[0]
+		if d.Kind == sidecardemo.KindPostgres {
+			return "Statements sent to " + d.Ports.Listen + " go through the sidecar to hoop's demo database, " +
+				"a read-only copy of the dellstore sample shop. " +
+				"Run each step here, or paste its psql into another terminal, " + tail
+		}
+		return "Requests to " + d.Ports.Listen + " go through the sidecar to an invented API. " +
+			"Run each step here, or paste its curl into another terminal, " + tail
+	}
+	var parts []string
+	for _, d := range t.targets {
+		if d.Kind == sidecardemo.KindPostgres {
+			parts = append(parts, d.Ports.Listen+" fronts hoop's demo database, a read-only copy of the dellstore sample shop")
+		} else {
+			parts = append(parts, d.Ports.Listen+" fronts an invented API")
+		}
+	}
+	return "The sidecar runs every demo at once: " + strings.Join(parts, "; ") + ". " +
+		"Run each step here, or paste its command into another terminal, " + tail
+}
+
+// verdictLine is what the analyzer recorded for the step that shows it: the
+// level and what it mapped to, or why there is no level (the model was not
+// reached, the budget is spent).
+func (t *tour) verdictLine() string {
+	v := t.verdict
+	if v == nil || t.awaiting != t.cur {
+		return stFaint.Render("analyzer: waiting for its record in the audit trail…")
+	}
+	if v.level == "" {
+		return stDanger.Bold(true).Render("analyzer: no rating") + stFaint.Render(" · ai_status "+v.status)
+	}
+	line := stLabel.Render("analyzer ") + riskBadge(v.level)
+	if v.action != "" {
+		line += stText.Render(" → " + v.action)
+	}
+	if v.message != "" {
+		line += stFaint.Render("  " + v.message)
+	}
+	return line
 }
 
 // next points at the first step not done yet, or at Wire once all are.
@@ -385,7 +527,7 @@ const sqlstateRefused = "42501"
 // styles like a refused HTTP request, and any other (a mistyped column, a
 // failed login) a 400 that carries the database's own message. Only a
 // connection that never answered is the returned error.
-func pgQuery(t pgTarget, sql string) (tourResult, error) {
+func pgQuery(t pgTarget, sql string, analyzed bool) (tourResult, error) {
 	host, port, err := net.SplitHostPort(t.addr)
 	if err != nil {
 		return tourResult{}, err
@@ -413,7 +555,11 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeout := 15 * time.Second
+	if analyzed {
+		timeout = analyzerTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {

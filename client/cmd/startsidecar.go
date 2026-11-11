@@ -427,8 +427,8 @@ needs a restart.`,
 			}
 			defer running.stop()
 			notes = running.notes
-			if running.ports != nil {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports, Kind: running.kind}
+			if len(running.targets) > 0 {
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Targets: running.targets}
 			}
 		}
 
@@ -452,7 +452,7 @@ needs a restart.`,
 	},
 }
 
-// startSidecarDemo turns on the built-in demo the config at path names, and
+// startSidecarDemo turns on every built-in demo the config at path names, and
 // returns what stops it. A config without a demo key starts nothing.
 //
 // configyaml.DemoAPIKey names the HTTP demo: the CLI serves the invented API
@@ -475,40 +475,53 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 	if err != nil {
 		return none, err
 	}
-
-	d := &sidecarDemo{stop: func() {}}
-	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
+	apiAddr, api, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
 	if err != nil {
 		return none, err
 	}
-	if ok {
-		bind, err := loopbackBind(addr)
-		if err != nil {
+	pgAddr, pg, err := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
+	if err != nil {
+		return none, err
+	}
+	if !api && !pg {
+		return none, nil
+	}
+	// Check both before serving anything, so a bad key starts nothing.
+	var bind string
+	if api {
+		if bind, err = loopbackBind(apiAddr); err != nil {
 			return none, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
 		}
+	}
+	if pg {
+		if err := sidecardemo.CheckAddr(pgAddr); err != nil {
+			return none, fmt.Errorf("%s: %w", configyaml.DemoPostgresKey, err)
+		}
+	}
+
+	d := &sidecarDemo{stop: func() {}}
+	if api {
 		ctx, cancel := context.WithCancel(context.Background())
 		errc, err := sidecardemo.Serve(ctx, bind)
 		if err != nil {
 			cancel()
 			return none, err
 		}
-		d.stop, d.kind, d.what = cancel, sidecardemo.KindHTTP, "demo API"
-		d.where = "demo API served at " + addr
+		d.stop, d.what = cancel, "demo API"
 		go d.watch(errc)
-	} else {
-		addr, ok, err = configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
-		if err != nil || !ok {
-			return none, err
-		}
-		if err := sidecardemo.CheckAddr(addr); err != nil {
-			return none, fmt.Errorf("%s: %w", configyaml.DemoPostgresKey, err)
-		}
-		d.kind, d.what = sidecardemo.KindPostgres, "demo database"
-		d.where = "hoop's demo database is " + addr
+		d.tour(cfg, sidecardemo.KindHTTP, apiAddr, "demo API served at "+apiAddr)
 	}
-	// The tour sends its requests through the listener in front of the
-	// upstream. Without one, there is nothing to tour: a default port would
-	// reach another service, or nothing at all.
+	if pg {
+		d.tour(cfg, sidecardemo.KindPostgres, pgAddr, "hoop's demo database is "+pgAddr)
+	}
+	return d, nil
+}
+
+// tour adds the demo at addr to the tour, through the listener that forwards
+// to it, and the notes that say how to try it. Without such a listener there
+// is nothing to tour: a default port would reach another service, or nothing
+// at all.
+func (d *sidecarDemo) tour(cfg *daemon.Config, kind sidecardemo.Kind, addr, where string) {
 	for _, l := range cfg.Listeners {
 		// Listen goes into the commands shown and copied: only a tcp
 		// loopback address, never a socket path a config could fill with
@@ -519,21 +532,20 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 		if _, err := loopbackBind(l.Listen); err != nil {
 			continue
 		}
-		if l.Upstream == addr {
-			d.ports = &sidecardemo.Ports{API: addr, Listen: l.Listen}
-			break
+		if l.Upstream != addr {
+			continue
 		}
+		t := sidecartui.DemoTarget{Kind: kind, Ports: sidecardemo.Ports{API: addr, Listen: l.Listen},
+			Listener: l.Name, Analyzer: l.Analyzer != nil}
+		d.targets = append(d.targets, t)
+		d.notes = append(d.notes, where+"; try, from another terminal:")
+		for _, c := range sidecardemo.TryCommands(kind, t.Ports, t.Analyzer) {
+			d.notes = append(d.notes, "  "+c)
+		}
+		return
 	}
-	if d.ports == nil {
-		d.notes = []string{d.where + ", but no listener forwards to it: " +
-			"set a listener's upstream to " + addr + " to try the demo"}
-		return d, nil
-	}
-	d.notes = []string{d.where + "; try, from another terminal:"}
-	for _, c := range sidecardemo.TryCommands(d.kind, *d.ports) {
-		d.notes = append(d.notes, "  "+c)
-	}
-	return d, nil
+	d.notes = append(d.notes, where+", but no listener forwards to it: "+
+		"set a listener's upstream to "+addr+" to try the demo")
 }
 
 // prepareSidecarDemo puts on disk what a demo config needs before the sidecar
@@ -556,19 +568,16 @@ func prepareSidecarDemo(path string) error {
 	return err
 }
 
-// sidecarDemo is the demo a config names, and the upstream the CLI runs for
-// it when it runs one (the HTTP demo's API).
+// sidecarDemo is the demos a config names, and the upstream the CLI runs for
+// the HTTP one (the demo API).
 type sidecarDemo struct {
 	stop func()
-	// kind is which demo this is; what names its upstream for the logs, and
-	// where says where that upstream is, for the notes.
-	kind  sidecardemo.Kind
-	what  string
-	where string
-	// ports is where the tour sends requests, nil when no listener fronts
-	// the upstream and the tour stays off.
-	ports *sidecardemo.Ports
-	notes []string
+	// what names the upstream the CLI serves (the demo API), for the logs.
+	what string
+	// targets are the demos the tour runs, one per demo key a listener
+	// forwards to; empty when none does and the tour stays off.
+	targets []sidecartui.DemoTarget
+	notes   []string
 
 	mu     sync.Mutex
 	failed error
