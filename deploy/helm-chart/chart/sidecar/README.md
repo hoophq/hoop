@@ -60,21 +60,18 @@ Under `controlPlane.url` or `existingConfigMap` the chart cannot see the
 config, so that check does not run and putting admin on 19000 is yours to get
 right.
 
-Port 19000 also serves the read routes (`/stats`, `/metrics`, `/config`,
-`/events`, `/api/*`), which have no authentication. To keep the probes on
-19000 without them, move them to loopback with `admin.api_listen` (reach them
-with `kubectl port-forward`), or turn them off with `admin.disable_api: true`:
+Port 19000 serves only `/healthz`, `/readyz` and the authenticated
+`PUT /license` and `POST /v1/drain`. The read routes (`/stats`, `/metrics`,
+`/config`, `/events`, `/api/*`) have no authentication and are on a separate
+listener, `config.admin.api_listen`, off unless set. The chart does not
+declare or publish it; reach it with `kubectl port-forward`:
 
 ```yaml
 config:
   admin:
     listen: '0.0.0.0:19000'
-    api_listen: '127.0.0.1:19002'   # or: disable_api: true
+    api_listen: '127.0.0.1:19002'
 ```
-
-Both keys need an image that reads them. An older image refuses a config
-that sets either one and the pod does not start, so upgrade `image.tag`
-first.
 
 **Lane ports are not declared on the pod.** A `containerPort` is informational
 in Kubernetes, and a lane bound to a unix socket has no port at all.
@@ -150,7 +147,8 @@ under `deploy/docker-compose/` binds:
 
 | Port | Lane |
 |---|---|
-| 19000 | admin: `/healthz`, `/stats`, `/config`, `/events`, `/api/*` |
+| 19000 | admin: `/healthz`, `/readyz`, `PUT /license`, `POST /v1/drain` |
+| 19002 | admin API (`admin.api_listen`, off unless set, not published): `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 15432 | postgres |
 | 18080 | http |
 | 11433 | mssql |
@@ -186,7 +184,8 @@ under `deploy/docker-compose/` binds:
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |
-| `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing. The port is fixed at 19000 |
+| `probe.port` | Where the probes go. Default `19000`, the admin port; setting it skips the render check on `config.admin.listen` |
+| `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing |
 | `service.annotations` | Annotations on the Service |
 | `extraVolumes` / `extraVolumeMounts` | For what the config references by path: CA files, credentials |
 | `nameOverride`, `fullnameOverride` | Change the name chart-owned resources are built from |

@@ -21,7 +21,8 @@
 log_level: info
 
 admin:
-  listen: 127.0.0.1:19000        # unauthenticated; keep it on loopback
+  listen: 127.0.0.1:19000        # /healthz /readyz and the authenticated writes
+  api_listen: 127.0.0.1:19002    # /stats /metrics /config: unauthenticated, loopback only
 
 audit:
   file: '-'

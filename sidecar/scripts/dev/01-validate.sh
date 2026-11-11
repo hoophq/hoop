@@ -43,6 +43,7 @@ log_level: info
 
 admin:
   listen: 127.0.0.1:${ADMIN_PORT}
+  api_listen: 127.0.0.1:${API_PORT}
 
 audit:
   file: "-"                 # stdout as JSON lines; 03-verify.sh reads these

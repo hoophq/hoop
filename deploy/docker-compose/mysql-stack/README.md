@@ -30,7 +30,8 @@ Needs `docker`, `curl`, `python3`. No local Go: the sidecar image is the one
 `hoop-inspect:local` built by either stack serves both. It needs `./libhoop`
 beside the repo, the same constraint as building `sidecar/` at all.
 
-Ports: `3307` mysql, `19000` sidecar admin, `9901` Envoy admin. Inside the
+Ports: `3307` mysql, `19000` sidecar admin, `19002` sidecar read API
+(`/stats`, `/config`, `/api/*`), `9901` Envoy admin. Inside the
 compose network the listener is `envoy:3306`; 3307 is only the host-side
 publication.
 

@@ -170,5 +170,6 @@ ready
 
   ports
     1433  envoy, TDS 8.0 -> hoop-inspect -> mssql
-    8443  envoy https, 5433 envoy postgres, 19000 sidecar admin, 9901 envoy admin
+    8443  envoy https, 5433 envoy postgres, 9901 envoy admin
+    19000 sidecar admin, 19002 sidecar read API
 EOF

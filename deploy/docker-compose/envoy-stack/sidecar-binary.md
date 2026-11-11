@@ -51,7 +51,8 @@ lane, which denies destructive SQL and masks two fields on the way back:
 log_level: info
 
 admin:
-  listen: 0.0.0.0:19000     # /healthz /stats /config /events /api/*
+  listen: 0.0.0.0:19000     # /healthz /readyz
+  api_listen: 0.0.0.0:19002 # /stats /metrics /config /events /api/*; no auth, omit to turn off
 
 audit:
   file: "-"                 # stdout as JSON lines
@@ -169,7 +170,7 @@ CMD ["hoop", "start", "sidecar"]
 
 ```bash
 docker build -t my-hoop-inspect:1.149.0 .
-docker run -d --name inspect -p 15432:15432 -p 19000:19000 my-hoop-inspect:1.149.0
+docker run -d --name inspect -p 15432:15432 -p 19000:19000 -p 19002:19002 my-hoop-inspect:1.149.0
 ```
 
 `--config` also reads `HOOP_SIDECAR_CONFIG`, which is why the `CMD` carries no
@@ -217,6 +218,7 @@ containers:
     ports:
       - {containerPort: 15432, name: pg}
       - {containerPort: 19000, name: admin}
+      - {containerPort: 19002, name: api}
     readinessProbe:
       httpGet: {path: /healthz, port: 19000}
     volumeMounts:
@@ -231,7 +233,7 @@ volumes:
 ```
 
 Two containers in one pod share a network namespace, so **they cannot both bind
-15432 or 19000**. That is fine here (only the relay binds them) and it is the
+15432, 19000 or 19002**. That is fine here (only the relay binds them) and it is the
 first thing to check if the container exits with `address already in use`.
 
 Point your client at the relay's port instead of the database's, and change
@@ -276,9 +278,9 @@ the database is encrypted separately, and independently: see
 ### Read the evidence
 
 ```bash
-curl -s localhost:19000/stats                  | python3 -m json.tool
-curl -s 'localhost:19000/api/sessions?limit=5' | python3 -m json.tool
-curl -s localhost:19000/config                 | python3 -m json.tool
+curl -s localhost:19002/stats                  | python3 -m json.tool
+curl -s 'localhost:19002/api/sessions?limit=5' | python3 -m json.tool
+curl -s localhost:19002/config                 | python3 -m json.tool
 ```
 
 ```json
@@ -368,7 +370,7 @@ and `max_input_bytes`.
 Read the hit rate before you enable `block` anywhere:
 
 ```bash
-curl -s localhost:19000/stats | python3 -m json.tool
+curl -s localhost:19002/stats | python3 -m json.tool
 ```
 
 Roll out with every tier on `warn`, watch `by_risk` in `/api/stats` for a
@@ -419,8 +421,8 @@ Every classified statement carries its risk into the audit trail, allowed ones
 included, and the store keeps the highest risk a session reached:
 
 ```bash
-curl -s 'localhost:19000/api/sessions?limit=5' | python3 -m json.tool
-curl -s localhost:19000/api/stats              | python3 -m json.tool
+curl -s 'localhost:19002/api/sessions?limit=5' | python3 -m json.tool
+curl -s localhost:19002/api/stats              | python3 -m json.tool
 ```
 
 ```json
