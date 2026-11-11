@@ -82,6 +82,11 @@ controlPlane:
   token: hsc_...
 ```
 
+`controlPlane.url` must be the plane that issued the token. That is
+`https://use.hoop.dev`, unless the login went to another plane
+(`HOOP_CONTROL_PLANE_URL` or the config's `control_plane_url`).
+`hoop sidecar status --token` prints each token with its plane.
+
 To keep the token out of the release values, put `HOOP_SIDECAR_TOKEN` in
 `existingSecret` instead, still with `controlPlane.url`.
 
@@ -106,6 +111,8 @@ podSecurityContext:
 ```
 
 The image runs as uid 10001. `fsGroup: 10001` lets it write to the volume.
+The path is not a secret. It sits in `extraSecret` because the chart has no
+other key for an environment variable.
 
 ### Already on a token, an identity or a license
 
