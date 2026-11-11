@@ -210,8 +210,8 @@ type MCPToolInfo struct {
 	Description string
 }
 
-// MCPLaneSession is one sidecar session per MCP session. Calls are
-// serialized: a gate is not safe for concurrent use.
+// MCPLaneSession is one sidecar session per MCP session. Its methods may run
+// concurrently; Close waits for the calls in flight.
 type MCPLaneSession interface {
 	ID() string
 	ToolCall(ctx context.Context, tool string, args []byte) MCPVerdict
@@ -388,6 +388,7 @@ func (r mcpLaneRules) swapLane(ln lane, drained func()) {
 
 type mcpLaneSession struct {
 	mu      sync.Mutex
+	calls   sync.WaitGroup
 	g       *gate.Gate
 	release func()
 	mcpSID  string
@@ -395,6 +396,7 @@ type mcpLaneSession struct {
 	sql     map[string]MCPSQLTool
 	log     *slog.Logger
 	closed  bool
+	done    chan struct{}
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -423,7 +425,7 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log}
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log, done: make(chan struct{})}
 	if ln.cfg.MCPGateway != nil {
 		ls.sql = ln.cfg.MCPGateway.SQL
 	}
@@ -499,16 +501,30 @@ func mcpHideRules(rules []policy.Rule) (*policy.Rules, error) {
 	return policy.NewRules(hide)
 }
 
-// evaluate judges stmts in order under one lock and stops at the first deny.
-func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statement) MCPVerdict {
+// begin admits one call; false means the session is closed. Close waits for
+// every call admitted, so none reaches a closed gate.
+func (s *mcpLaneSession) begin() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
+		return false
+	}
+	s.calls.Add(1)
+	return true
+}
+
+// evaluate judges stmts in order and stops at the first deny.
+func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statement) MCPVerdict {
+	if !s.begin() {
 		return MCPVerdict{Message: "session closed"}
 	}
+	defer s.calls.Done()
 	var v MCPVerdict
 	for _, stmt := range stmts {
 		d := s.g.EvaluateStatement(ctx, stmt)
+		if d.Err != nil {
+			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
+		}
 		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
 			break
 		}
@@ -517,11 +533,10 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 }
 
 func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[string]string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
+	if !s.begin() {
 		return
 	}
+	defer s.calls.Done()
 	if err := s.g.RecordActivity(ctx, activity, attrs); err != nil {
 		s.log.Warn("mcp activity not recorded", "activity", activity, "error", err)
 	}
@@ -530,13 +545,12 @@ func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[
 var errMCPSessionClosed = errors.New("the sidecar session is closed")
 
 func (s *mcpLaneSession) Mask(text string) (string, []string, int, error) {
-	s.mu.Lock()
-	closed, m := s.closed, s.g.Masker()
-	s.mu.Unlock()
-	switch {
-	case closed:
+	if !s.begin() {
 		return "", nil, 0, errMCPSessionClosed
-	case m == nil:
+	}
+	defer s.calls.Done()
+	m := s.g.Masker()
+	if m == nil {
 		return "", nil, 0, errors.New("the sidecar session has no masker")
 	}
 	out, entities, n := m.Mask([]byte(text))
@@ -544,21 +558,28 @@ func (s *mcpLaneSession) Mask(text string) (string, []string, int, error) {
 }
 
 func (s *mcpLaneSession) RecordMasked(ctx context.Context, entities []string, count int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
+	if !s.begin() {
 		return errMCPSessionClosed
 	}
+	defer s.calls.Done()
 	return s.g.RecordMasked(ctx, entities, count)
 }
 
+// Close is safe to call more than once; a later call waits for the first.
 func (s *mcpLaneSession) Close(ctx context.Context) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
+		select {
+		case <-s.done:
+		case <-ctx.Done():
+		}
 		return
 	}
 	s.closed = true
+	s.mu.Unlock()
+	defer close(s.done)
+	s.calls.Wait()
 	if err := s.g.Close(ctx); err != nil {
 		s.log.Warn("mcp session close reported an error", "error", err)
 	}

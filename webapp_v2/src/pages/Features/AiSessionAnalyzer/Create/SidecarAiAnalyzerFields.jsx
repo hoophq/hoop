@@ -12,7 +12,13 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked, laneFeatureBlocked } from '@/pages/Sidecars/config'
-import { REVIEW_MODE_HOLD, REVIEW_MODES, isHandoffAction, isHoldAction } from '@/pages/sidecarRuleVocabulary'
+import {
+  NO_HOLD_ON_MCP,
+  REVIEW_MODE_HOLD,
+  REVIEW_MODES,
+  isHandoffAction,
+  isHoldAction,
+} from '@/pages/sidecarRuleVocabulary'
 import OptionalLabel from '../components/OptionalLabel'
 import LevelApprover from './sections/LevelApprover'
 import LevelHandoff from './sections/LevelHandoff'
@@ -79,6 +85,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     isHTTP,
     operations,
     actions,
+    mcpBound,
     noTrigger,
   } = editor
 
@@ -199,6 +206,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                 renderOption={renderAction}
                 value={form[level] || null}
                 onChange={(v) => setLevelAction(level, v ?? '')}
+                error={mcpBound && isHoldAction(form[level]) ? NO_HOLD_ON_MCP : undefined}
                 clearable
               />
               {isHoldAction(form[level]) && (
@@ -220,6 +228,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
                   onApprover={(approver) => setApprover(level, approver)}
                   onApproval={(patch) => setApproval(level, patch)}
+                  mcpBound={mcpBound}
                 />
               )}
             </Stack>

@@ -139,12 +139,20 @@ func selectOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
 	if matchOperation(ops, stmt) {
 		return true
 	}
-	m := stmt.Metadata["http.sql_method"]
-	return m != "" && slices.Contains(ops, inspect.Operation(m))
+	if m := stmt.Metadata["http.sql_method"]; m != "" && slices.Contains(ops, inspect.Operation(m)) {
+		return true
+	}
+	return mcpSQLTool(stmt) != "" && slices.Contains(ops, inspect.OpCall)
 }
 
+// matchTable also matches SQL an mcp lane read out of a tool call by the
+// tool's name, which the call itself carries in Tables.
 func matchTable(tables []string, stmt inspect.Statement) bool {
+	tool := mcpSQLTool(stmt)
 	for _, want := range tables {
+		if tool != "" && strings.EqualFold(want, tool) {
+			return true
+		}
 		for _, got := range stmt.Tables {
 			if strings.EqualFold(want, got) {
 				return true
@@ -152,6 +160,15 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 		}
 	}
 	return false
+}
+
+// mcpSQLTool names the tool whose call carried stmt, when stmt is SQL an mcp
+// lane read out of its arguments.
+func mcpSQLTool(stmt inspect.Statement) string {
+	if _, ok := stmt.Metadata[inspect.MetadataMCPSQLIndex]; !ok {
+		return ""
+	}
+	return stmt.Metadata[inspect.MetadataMCPTool]
 }
 
 // matchResource matches an HTTP target: an HTTP statement's resource, or
@@ -696,6 +713,10 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 // agent selected, and pin is what its filing pins.
 func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
 	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
+	if stmt.Protocol == inspect.MCP {
+		// ENG-967: the mcp lane cannot hold a tool call yet, so no approver sees it.
+		return e.deny(notes, "call refused because an mcp lane cannot hold a call for approval yet")
+	}
 	ctx := withHoldDetail(connContext(ec), HoldDetail{
 		Rule:        e.cfg.Rule,
 		RiskLevel:   level,

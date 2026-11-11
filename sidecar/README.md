@@ -1265,7 +1265,8 @@ default it wants to override.
 The analyzer runs wherever a content builder renders the statement for a
 model: `postgres`, `mysql` and `mssql` send the statement text with the
 operation, tables and database the codec derived; `http` sends the method,
-normalized resource and body. A lane whose protocol has no builder is refused
+normalized resource and body; `mcp` sends the tool name and arguments of a
+`tools/call`. A lane whose protocol has no builder is refused
 at startup rather than left classifying nothing, which is what a relay-only
 protocol would otherwise get: no statements to render means no verdict,
 silently.
@@ -3655,6 +3656,7 @@ listeners:
 | `downstream_tls` | none | `cert_file` and `key_file`: the lane serves MCP clients over TLS. |
 | `guardrails`, `opa` | the top-level blocks | The rules and OPA for this lane. `mcp_tool` rules decide which tools it offers. |
 | `mask` | the top-level block | The mask rules for tool and resource results. See "Masking results". |
+| `analyzer` | none | A model rates each tool call. See "Analyzer". |
 | `mcp_gateway` | none | The upstream transport and the session policy. See "`mcp_gateway` keys". |
 
 #### Masking results
@@ -3800,9 +3802,8 @@ input for a call, beside the `context` every lane sends:
  "metadata": {"mcp.method": "tools/call", "mcp.tool": "get_file_contents", "mcp.session": "<id>"}}
 ```
 
-`opa: {responses: false}` keeps the catalog from OPA. The lane has no
-human review: an `analyzer` block is refused (ENG-964), and so is
-mcpproxy's `approval_tools` (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+`opa: {responses: false}` keeps the catalog from OPA. mcpproxy's
+`approval_tools` is refused (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
 runs one session through a lane.
 
 One sidecar session per MCP session: it opens on the first message,
@@ -3815,6 +3816,34 @@ sessions: a session read its rules when it opened, so the next message on
 it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
+
+#### Analyzer
+
+An `analyzer` block, or an `ai_analysis` rule, classifies each `tools/call`.
+The model reads the tool name and the arguments JSON, cut to
+`max_input_bytes` (default 8 KiB). It never reads `tools/list` or a result.
+
+```yaml
+    analyzer:
+      trigger: {operations: [call]}   # omit it to classify every call
+      high: block
+      medium: warn
+```
+
+- `block` refuses the one call as a tool error,
+  `denied by the hoop sidecar (rule <listener>): <message>`. The session
+  stays open.
+- A hold (`require_approval`) refuses the call before any approver, the AI
+  agent included, and files no approval request: the lane cannot hold a
+  tool call yet (ENG-967). A hold that a person approves still needs a
+  control plane and an `approval_rule`, or a person running
+  `hoop start sidecar` in a terminal, to start, as on the other lanes.
+- A provider failure follows `fail_open`, as on the other lanes.
+- The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
+  and `ai_status`.
+
+A control plane serves an analyzer on an mcp lane only to a sidecar that
+reports `mcp_analyzer`.
 
 #### SQL tools: `mcp_gateway.sql`
 
@@ -3854,6 +3883,11 @@ stops the call.
 tables of the SQL, and `require_table_match` denies a SQL statement that
 names none. To scope a rule to one tool, use OPA or a `metadata` rule on
 `mcp.tool`. Observe mode records all 1 + N.
+
+The analyzer reads the call, as any other call, then each SQL statement as
+SQL, as on an `http.sql` lane: 1 + N model calls. A trigger selects the SQL by
+its own operation and tables, and also by `call` or by the tool name in
+`tables`.
 
 SQL the lexer cannot read is `operation: unknown`, as on a SQL lane:
 `EXECUTE IMMEDIATE`, a script loop or block, `EXPORT DATA`. `sql.incomplete`
@@ -3961,9 +3995,7 @@ without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
 requests, not connections); an `mcp_gateway.sql` entry without a glob, an
 argument or a known dialect (the dialect is never guessed); a rule in
-the lane's own `mask` block that names `columns` (see "Masking results");
-an `analyzer`
-block (ENG-964) until it lands; a
+the lane's own `mask` block that names `columns` (see "Masking results"); a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
 `unknown field`.

@@ -89,6 +89,9 @@ const (
 	// CapabilityMCPMask means this build masks results on an mcp listener.
 	// 1.290.0 refuses a mask block there and ignores inherited rules.
 	CapabilityMCPMask = "mcp_mask"
+	// CapabilityMCPAnalyzer means this build runs an analyzer on an mcp
+	// listener. Older builds from 1.289.0 decode the block and refuse it there.
+	CapabilityMCPAnalyzer = "mcp_analyzer"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -179,7 +182,7 @@ var behaviourCapabilities = []string{CapabilitySessionEvents}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
-var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken, CapabilityMCPMask}
+var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken, CapabilityMCPMask, CapabilityMCPAnalyzer}
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
@@ -303,6 +306,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 		if _, _, mc := served.resolve(l); isMCPGateway(l) {
 			if applied, _ := mcpMask(l, mc); applied.hasRules() {
 				need(where, "binds mask rules to an mcp listener", CapabilityMCPMask)
+			}
+			if served.laneAnalyzes(l) {
+				need(where, "runs an analyzer on an mcp listener", CapabilityMCPAnalyzer)
 			}
 		}
 		// A plug-in protocol is no build's: the header never lists it, and

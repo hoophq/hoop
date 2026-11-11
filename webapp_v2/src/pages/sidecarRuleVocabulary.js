@@ -228,11 +228,17 @@ export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 export const HANDOFF_ACTION = 'ai-handoff'
 export const isHandoffAction = (action) => action === HANDOFF_ACTION
 
+export const NO_HOLD_ON_MCP = 'An MCP listener cannot hold a call yet: a hold refuses the call.'
+
 // analyzerActionsFor lists the level actions, the hold and the hand-off included.
-export function analyzerActionsFor() {
+// An mcp lane refuses a held call and files no request, so the hold is off there.
+export function analyzerActionsFor(mcpBound = false) {
+  const hold = mcpBound
+    ? { value: REVIEW_ACTION, label: 'Hold for approval', description: NO_HOLD_ON_MCP, disabled: true }
+    : { value: REVIEW_ACTION, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' }
   return [
     ...ANALYZER_ACTIONS,
-    { value: REVIEW_ACTION, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' },
+    hold,
     { value: HANDOFF_ACTION, label: 'Hand off to AI agent', description: 'Let an AI agent select an action' },
   ]
 }

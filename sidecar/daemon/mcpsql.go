@@ -123,11 +123,10 @@ func (s *mcpLaneSession) sqlCall(ctx context.Context, call inspect.Statement, t 
 // refuseSQL refuses a call whose SQL argument the lane cannot read, before
 // any rule: no rule can judge SQL it cannot see.
 func (s *mcpLaneSession) refuseSQL(ctx context.Context, tool, argument string, reason error) MCPVerdict {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
+	if !s.begin() {
 		return MCPVerdict{Message: "session closed"}
 	}
+	defer s.calls.Done()
 	if err := s.g.RecordActivity(ctx, "mcp_sql_unreadable", map[string]string{"tool": tool, "argument": argument, "reason": reason.Error()}); err != nil {
 		s.log.Warn("mcp activity not recorded", "activity", "mcp_sql_unreadable", "error", err)
 	}
