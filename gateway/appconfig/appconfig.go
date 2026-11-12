@@ -94,8 +94,8 @@ type Config struct {
 }
 
 // defaultPgMaxOpenConns fits one replica on the smallest common managed
-// PostgreSQL tier (100 max_connections) with room for a second replica
-// during a rollout.
+// PostgreSQL tier (100 max_connections) with half the slots left for the
+// reserved ones and other clients. More replicas: size it per deployment.
 const defaultPgMaxOpenConns = 50
 
 var runtimeConfig Config

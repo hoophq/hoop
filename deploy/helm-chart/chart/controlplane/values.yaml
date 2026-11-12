@@ -69,6 +69,12 @@ config:
   POSTGRES_DB_URI: ''
   # 'postgres://<user>:<pwd>@<db-host>:<port>/<dbname>'
 
+  ## Most PostgreSQL connections one replica opens; past it a query waits in
+  ## process instead of taking a server slot. Size it to the server: 2-4 x
+  ## its vCPUs, and replicas x value below max_connections minus the reserved
+  ## slots.
+  # POSTGRES_MAX_OPEN_CONNS: '50'
+
   # -- REQUIRED. The address the web app and every sidecar reach this on. Must
   # carry a scheme: appconfig parses it with url.Parse, and without one the
   # hostname is read as a URL path and every route is mounted under it.
