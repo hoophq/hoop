@@ -126,22 +126,33 @@ func isHeaderName(s string) bool {
 func openCallerTokens(lanes []lane, log *slog.Logger) ([]*token.File, error) {
 	var files []*token.File
 	for i := range lanes {
-		ct := lanes[i].cfg.CallerToken
-		if ct == nil {
-			continue
+		if err := openCallerToken(&lanes[i], log); err != nil {
+			return nil, err
 		}
-		var flog *slog.Logger
-		if log != nil {
-			flog = log.With("listener", lanes[i].name)
+		if lanes[i].callerTokens != nil {
+			files = append(files, lanes[i].callerTokens)
 		}
-		f, err := token.Open(ct.File, flog)
-		if err != nil {
-			return nil, fmt.Errorf("%s: caller_token.file: %w", lanes[i].name, err)
-		}
-		lanes[i].callerTokens = f
-		files = append(files, f)
 	}
 	return files, nil
+}
+
+// openCallerToken is openCallerTokens for one lane: the shape laneRuntime
+// needs when a reload adds a listener.
+func openCallerToken(ln *lane, log *slog.Logger) error {
+	ct := ln.cfg.CallerToken
+	if ct == nil {
+		return nil
+	}
+	var flog *slog.Logger
+	if log != nil {
+		flog = log.With("listener", ln.name)
+	}
+	f, err := token.Open(ct.File, flog)
+	if err != nil {
+		return fmt.Errorf("%s: caller_token.file: %w", ln.name, err)
+	}
+	ln.callerTokens = f
+	return nil
 }
 
 // mcpCallerCheck is an mcp lane's caller_token. The key is an HMAC of the
@@ -172,13 +183,14 @@ func mcpCallerCheck(ln lane) (*MCPCallerCheck, error) {
 }
 
 // watchCallerTokens re-reads the token files on the config file's schedule:
-// a stat every interval, and a forced read on SIGHUP.
+// a stat every interval, and a forced read on SIGHUP. It reads the list per
+// tick, because a reload adds and removes lanes, and their files with them.
 //
 // It is its own goroutine rather than part of the reloader, because the
 // reloader stops polling under a control plane, and a token file lives on
 // the sidecar host whoever serves the config. signal.Notify delivers SIGHUP
 // to every registered channel, so the reloader still gets its copy.
-func watchCallerTokens(ctx context.Context, log *slog.Logger, files []*token.File, every time.Duration) {
+func watchCallerTokens(ctx context.Context, log *slog.Logger, files *tokenWatch, every time.Duration) {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -189,12 +201,12 @@ func watchCallerTokens(ctx context.Context, log *slog.Logger, files []*token.Fil
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			for _, f := range files {
+			for _, f := range files.all() {
 				f.Poll()
 			}
 		case <-hup:
 			log.Info("SIGHUP received; re-reading the caller token files")
-			for _, f := range files {
+			for _, f := range files.all() {
 				f.Reload()
 			}
 		}

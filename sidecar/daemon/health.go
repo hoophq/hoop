@@ -118,14 +118,12 @@ func sameBindHost(a, b string) bool {
 
 // healthState is what /readyz reads. The admin listener and the health
 // listener build their routes from one value, so a probe gets the same answer
-// from either.
+// from either. Each probe reads the lanes: a reload adds and removes them.
 type healthState struct {
-	endpoints     []endpointServer
-	endpointNames []string
+	lanes *laneSet
 	// icaReadinessJSON is admin.ica_readiness_json: /readyz answers with the
 	// ICA inspection attestation instead of plain text.
 	icaReadinessJSON bool
-	proxyCount       int
 }
 
 // handleHealth mounts /healthz and /readyz on mux.
@@ -140,11 +138,12 @@ func handleHealth(mux *http.ServeMux, h healthState) {
 	// connections until then. /readyz reports that, separate from
 	// /healthz; other lanes are ready once bound, so it returns 200 for them.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		endpoints, names := h.lanes.endpoints()
 		if h.icaReadinessJSON {
-			writeICAReadiness(w, h.endpoints, h.proxyCount)
+			writeICAReadiness(w, endpoints, h.lanes.relayCount())
 			return
 		}
-		if notReady := notReadyEndpoints(h.endpoints, h.endpointNames); len(notReady) > 0 {
+		if notReady := notReadyEndpoints(endpoints, names); len(notReady) > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
 			return

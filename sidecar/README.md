@@ -230,15 +230,35 @@ touches rules (guardrails, masking, pii, OPA, a listener's analyzer block,
 the `license` key) is applied in place, logged as `config file configuration
 applied` with a generation number. Connections already open drain under the
 rules they were accepted with; new connections run the new rules, and
-nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
-log_level, the top-level analyzer section, adding `control_plane_url`) logs
-`restart to apply it` once and the process keeps serving what it had; a file
-that does not load keeps the running rules, is retried on the next tick, and
-warns once until it loads again. gRPC, Spanner and SSH lanes swap rules the
-same way, per RPC or per connection; turning masking on or off on one of them
-is the exception and logs `restart to apply it`, because it is a server option
-fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
-applies the same one.
+nothing rebinds or drops. gRPC, Spanner and SSH lanes swap rules the same
+way, per RPC or per connection; turning masking on or off on one of them is
+the exception and logs `restart to apply it`, because it is a server option
+fixed at build.
+
+The sidecar starts a listener added to the file in place: the socket binds,
+the log says `listener started`, and `/stats` lists it. It stops a listener
+whose name is gone: the socket closes and every connection on it with it,
+and the log says `listener stopped`. The other lanes keep their sockets and
+connections. Every lane kind starts and stops this way, unix sockets
+included (the sidecar binds the path on add and unlinks it on remove).
+Added lanes bind before anything else in the document moves, so a listener
+that cannot bind (a port another process holds, a socket path the process
+cannot write) refuses the whole document: no lane starts, no rule swaps,
+the running lanes keep serving, and the log names the listener and the
+error. Fix it and save the file again. Three edits to the listener set stay
+restart-bound, and the log names the listener: editing a running
+listener's own fields (address, upstream, protocol, TLS, a grpc lane's
+`descriptors`); renaming one, which is a remove and an add on one address;
+and adding or removing a listener while any listener has no `name`, because
+unnamed lanes are keyed by position and an insert would rename the ones
+after it.
+
+An edit beyond that (audit, admin, log_level, the top-level analyzer
+section, adding `control_plane_url`) logs `restart to apply it` once and
+the process keeps serving what it had; a file that does not load keeps the
+running rules, is retried on the next tick, and warns once until it loads
+again. ADR-0014 records the boundary; the control plane's heartbeat applies
+the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
 move. It also re-reads the license file, which is watched on the same ten
@@ -482,9 +502,11 @@ Once running, a heartbeat repeats the handshake about every minute (each
 wait is drawn from 48 to 72 seconds, so a fleet started together does not
 stay in step). It keeps the
 plane's last-seen fresh and picks up edits, applying them under the same
-boundary as a file edit: rule-only drift swaps in place, logged as
-`configuration applied` with a generation number; drift beyond the rules
-logs `restart to apply it`. A failed heartbeat changes nothing, because
+boundary as a file edit: rule-only drift swaps in place, a listener added
+or removed starts or stops in place, both logged as `configuration applied`
+with a generation number; drift beyond that logs `restart to apply it`. A
+listener that cannot bind refuses the document, and the sidecar page shows
+`refused` with the reason. A failed heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
@@ -567,7 +589,7 @@ prompt, no token, no listener or upstream address — the same line
 |---|---|---|
 | `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up, how many times the page was opened |
 | `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
-| `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed (`guardrails`, `opa`, `mask`, `analyzer`, `pii`, `license`, `listeners`), lanes swapped, kept, added and removed |
 | `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls, failures and rate-limited statements, audit write failures, per protocol |
 | `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |

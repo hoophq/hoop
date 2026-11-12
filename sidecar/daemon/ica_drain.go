@@ -14,7 +14,9 @@ const ICADeployTokenEnv = "HOOP_ICA_DEPLOY_TOKEN"
 // ICAAdmissionDrainer stops admissions without closing existing desktop sessions.
 type ICAAdmissionDrainer interface{ BeginICADrain() bool }
 
-func icaDrainHandler(secret string, endpoints []endpointServer, proxyCount int) http.HandlerFunc {
+// icaDrainHandler drains every ICA lane's admissions. It reads the lanes
+// per request: a reload adds and removes them.
+func icaDrainHandler(secret string, lanes *laneSet) http.HandlerFunc {
 	secret = strings.TrimSpace(secret)
 	want := sha256.Sum256([]byte(secret))
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -32,7 +34,8 @@ func icaDrainHandler(secret string, endpoints []endpointServer, proxyCount int) 
 			writeAdminJSON(w, http.StatusBadRequest, map[string]any{"error": "drain takes no request body"})
 			return
 		}
-		if len(endpoints) == 0 || proxyCount != 0 {
+		endpoints, _ := lanes.endpoints()
+		if len(endpoints) == 0 || lanes.relayCount() != 0 {
 			writeAdminJSON(w, http.StatusConflict, map[string]any{"error": "ICA-only process required"})
 			return
 		}

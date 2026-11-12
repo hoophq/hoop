@@ -30,7 +30,7 @@ func TestHealthListenerServesOnlyProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serveHealth(ctx, addr, healthState{endpoints: []endpointServer{lane}, endpointNames: []string{"desktops"}}, slog.New(slog.DiscardHandler))
+		done <- serveHealth(ctx, addr, healthState{lanes: &laneSet{lanes: []runningLane{{name: "desktops", endpoint: lane}}}}, slog.New(slog.DiscardHandler))
 	}()
 
 	base := "http://" + addr
@@ -82,7 +82,7 @@ func TestHealthListenerReturnsBindFailure(t *testing.T) {
 	}
 	defer held.Close()
 
-	err = serveHealth(context.Background(), held.Addr().String(), healthState{}, slog.New(slog.DiscardHandler))
+	err = serveHealth(context.Background(), held.Addr().String(), healthState{lanes: &laneSet{}}, slog.New(slog.DiscardHandler))
 	if err == nil || !strings.Contains(err.Error(), HealthListenEnv) {
 		t.Fatalf("serveHealth on a held port = %v, want an error naming %s", err, HealthListenEnv)
 	}
