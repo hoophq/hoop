@@ -142,17 +142,6 @@ func TestATopologyDriftKeepsTheRestartPath(t *testing.T) {
 	}
 }
 
-// An added listener is topology, not rules: sockets would have to bind.
-func TestAnAddedListenerKeepsTheRestartPath(t *testing.T) {
-	rl, buf := testReloader(t, reloadBase)
-
-	drifted := editJSON(t, reloadBase, `"listeners": [{`,
-		`"listeners": [{"name": "second", "protocol": "postgres", "listen": "127.0.0.1:1", "upstream": "h2:5432"}, {`)
-	if got := applyWith(rl, buf, drifted); got != reloadRestart {
-		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
-	}
-}
-
 // A document startup would refuse is refused on reload with the running
 // rules kept: the heartbeat must never be a side door past validation.
 func TestABrokenDocumentIsRefused(t *testing.T) {
@@ -484,8 +473,11 @@ func TestAGRPCDescriptorsEditKeepsTheRestartPath(t *testing.T) {
 	if got := handleWith(rl, buf, drifted); got != reloadRestart {
 		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
 	}
-	if !strings.Contains(buf.String(), "beyond the rules; restart to apply it") {
+	if !strings.Contains(buf.String(), "restart to apply it") {
 		t.Errorf("no restart log line:\n%s", buf)
+	}
+	if !strings.Contains(rl.lastReason, `changed listener "g" beyond its rules`) {
+		t.Errorf("reason = %q", rl.lastReason)
 	}
 	if rl.gen != 0 {
 		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)

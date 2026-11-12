@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -112,9 +114,17 @@ type laneState struct {
 // rules. Run assembles one when a control plane is connected; the heartbeat
 // owns it afterwards.
 type reloader struct {
-	// baseline is the running config's non-rule document. A fetched config
-	// whose non-rule document differs needs a restart.
+	// baseline is the running config's non-rule document outside the
+	// listeners: audit, admin, log_level, the analyzer section, plugins.
+	// A fetched config whose baseline differs needs a restart.
 	baseline []byte
+	// listeners is every running listener's non-rule document, keyed by
+	// name. A listener whose document changed needs a restart; one whose
+	// name is new is started, one whose name is gone is stopped.
+	listeners map[string][]byte
+	// rt starts and stops lanes. Nil in a harness that runs no server, and
+	// then a document that adds or removes a listener is restart-bound.
+	rt *laneRuntime
 	// piiRaw is the pii section the running detector was built from. The
 	// detector is rebuilt only when this drifts, never per reload: a
 	// rebuilt detector forces every masker and pii rule to swap, and most
@@ -262,7 +272,11 @@ type reloader struct {
 func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState],
 	lic *licenseState) (*reloader, error) {
-	baseline, err := nonRuleDoc(cfg)
+	baseline, err := globalDoc(cfg)
+	if err != nil {
+		return nil, err
+	}
+	listeners, err := listenerDocs(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +298,7 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 	}
 	r := &reloader{
 		baseline:        baseline,
+		listeners:       listeners,
 		piiRaw:          cfg.PII,
 		laneDocs:        laneDocs,
 		sections:        laneSections,
@@ -695,8 +710,9 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 }
 
 // applyOwned runs one owner's full document against the running process:
-// rule-only drift swaps, anything beyond the rules is restart-bound. from
-// names the document's owner in the logs: "control plane" or "config file".
+// rule-only drift swaps, a listener added or removed is started or stopped,
+// anything beyond that is restart-bound. from names the document's owner
+// in the logs: "control plane" or "config file".
 func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadOutcome {
 	newCfg, err := LoadConfigBytes(raw)
 	if err != nil {
@@ -705,7 +721,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		return r.keep(reloadRefused, fmt.Sprintf("the %s sent a config this build refuses: %v", from, err))
 	}
 
-	doc, err := nonRuleDoc(newCfg)
+	doc, err := globalDoc(newCfg)
 	if err != nil {
 		// A marshal failure here is internal, not a fact about the
 		// document; retrying costs one compare and may clear.
@@ -714,6 +730,17 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 	if !bytes.Equal(doc, r.baseline) {
 		msg := "the " + from + " changed the configuration beyond the rules; restart to apply it"
+		log.Warn(msg)
+		return r.keep(reloadRestart, msg)
+	}
+	listeners, err := listenerDocs(newCfg)
+	if err != nil {
+		log.Warn("config compare failed; keeping the running rules", "error", err)
+		return reloadRetry
+	}
+	topo, why := r.diffTopology(newCfg, listeners)
+	if why != "" {
+		msg := "the " + from + " " + why
 		log.Warn(msg)
 		return r.keep(reloadRestart, msg)
 	}
@@ -872,7 +899,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		docs[ln.name] = doc
 		// The running lane's masker presence is the build-time one: this
 		// check refuses every document that would change it, so no swap
-		// ever moves it.
+		// ever moves it. An added lane has no running counterpart; its
+		// server is built with whatever the document says.
+		if topo.added[ln.name] {
+			continue
+		}
 		if isEndpointLane(ln.cfg) && (ln.masker != nil) != (r.prevLanes[ln.name].masker != nil) {
 			log.Warn("masking was turned on or off on an endpoint lane on the "+from+"; restart to apply it",
 				"listener", ln.name, "protocol", ln.cfg.Protocol)
@@ -880,10 +911,48 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		}
 	}
 
+	// Added lanes bind FIRST, before any rule swaps and before any removed
+	// lane closes, so a bind that fails leaves the process exactly as it
+	// was: the document is refused as a whole, the lanes it started are
+	// closed again, and the running generation keeps serving. A port
+	// another process holds, a socket path the process cannot write, an
+	// engine that will not start: each is this one refusal, named.
+	started := make(map[string]runningLane, len(topo.added))
+	for i := range lanes {
+		if !topo.added[lanes[i].name] {
+			continue
+		}
+		rl, serr := r.rt.build(&lanes[i])
+		if serr == nil {
+			serr = r.rt.start(rl)
+		}
+		if serr != nil {
+			for name := range started {
+				r.rt.stop(name)
+			}
+			log.Warn("the "+from+" added a listener this process could not start; keeping the running lanes",
+				"listener", lanes[i].name, "error", serr,
+				"hint", "fix it and save the configuration again")
+			return r.keep(reloadRefused, fmt.Sprintf("listener %q could not start: %v", lanes[i].name, serr))
+		}
+		started[rl.name] = rl
+	}
+
 	swapped, kept := 0, 0
 	viewLanes := make([]lane, 0, len(lanes))
 	for _, ln := range lanes {
 		doc := docs[ln.name]
+		if rl, ok := started[ln.name]; ok {
+			r.servers[ln.name] = rl.rules
+			r.laneDocs[ln.name] = doc
+			r.prevLanes[ln.name] = ln
+			viewLanes = append(viewLanes, ln)
+			log.Info("listener started", "listener", ln.name, "protocol", ln.cfg.Protocol,
+				"listen", rl.addr().String(), "upstream", ln.cfg.Upstream,
+				"enforcing", ln.policy != nil && !ln.observing, "rules", len(ln.rules),
+				"masking", ln.masker != nil)
+			continue
+		}
 		if !detChanged && bytes.Equal(doc, r.laneDocs[ln.name]) {
 			// This lane's rules did not move, so its running evaluators
 			// keep serving: analyzer call budgets, verdict caches and
@@ -895,8 +964,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		}
 		target, ok := r.servers[ln.name]
 		if !ok {
-			// The baseline compare guarantees the same listener set, so a
-			// miss is a bug worth a line, not a silent skip.
+			// The topology diff guarantees every lane not added is
+			// running, so a miss is a bug worth a line, not a silent skip.
 			log.Warn("no running server for a reloaded lane", "listener", ln.name)
 			continue
 		}
@@ -912,6 +981,23 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		viewLanes = append(viewLanes, ln)
 		swapped++
 	}
+
+	// Removed lanes close LAST: their socket closes and every connection
+	// on them with it, the way a restart would end them, scoped to the
+	// lane the document dropped. The other lanes never notice.
+	for _, name := range topo.removed {
+		old := r.prevLanes[name]
+		r.tel.drainAnalyzers(old.analyzers)
+		r.rt.stop(name)
+		r.tel.retireAnalyzers(old.analyzers)
+		delete(r.servers, name)
+		delete(r.laneDocs, name)
+		delete(r.prevLanes, name)
+		delete(r.sections, name)
+		log.Info("listener stopped", "listener", name, "protocol", old.cfg.Protocol,
+			"listen", old.cfg.Listen)
+	}
+	r.listeners = listeners
 
 	// Commit, all together: the detector, the pii section it came from and
 	// the analyzer dependencies move as one, only on a document that
@@ -958,6 +1044,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			break
 		}
 		sections[ln.name] = next
+		if topo.added[ln.name] {
+			// Nothing to compare against; the lane counts under
+			// "listeners" below, not as every section moving.
+			continue
+		}
 		for name, doc := range next {
 			if !bytes.Equal(doc, r.sections[ln.name][name]) {
 				changed[name] = true
@@ -970,13 +1061,18 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	if licRotated {
 		changed["license"] = true
 	}
+	if len(started) > 0 || len(topo.removed) > 0 {
+		changed["listeners"] = true
+	}
 	r.sections = sections
 	r.gen++
 	r.view.Store(&laneState{lanes: viewLanes, gen: r.gen})
 	log.Info(from+" configuration applied",
-		"generation", r.gen, "swapped", swapped, "kept", kept)
+		"generation", r.gen, "swapped", swapped, "kept", kept,
+		"added", len(started), "removed", len(topo.removed))
 	r.tel.trackReload(reloadReport{
 		outcome: reloadApplied, gen: r.gen, swapped: swapped, kept: kept,
+		added: len(started), removed: len(topo.removed),
 		changed: sortedKeys(changed), cfg: newCfg, lanes: viewLanes, det: det,
 	})
 	return reloadApplied
@@ -1000,6 +1096,40 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 func BaselineDoc(c *Config) ([]byte, error) { return nonRuleDoc(c) }
 
 func nonRuleDoc(c *Config) ([]byte, error) {
+	cp := nonRuleConfig(c)
+	listeners := make([]ListenerConfig, len(c.Listeners))
+	for i, lc := range c.Listeners {
+		listeners[i] = nonRuleListener(lc)
+	}
+	cp.Listeners = listeners
+	return json.Marshal(&cp)
+}
+
+// globalDoc is nonRuleDoc without the listeners: what a running process can
+// change in neither a rule swap nor a listener start or stop. The reloader
+// compares the two halves apart, so a listener added or removed is seen as
+// that and not as "the document changed".
+func globalDoc(c *Config) ([]byte, error) {
+	cp := nonRuleConfig(c)
+	cp.Listeners = nil
+	return json.Marshal(&cp)
+}
+
+// listenerDocs renders every listener's non-rule document, keyed by the
+// name the lane runs under.
+func listenerDocs(c *Config) (map[string][]byte, error) {
+	out := make(map[string][]byte, len(c.Listeners))
+	for i, lc := range c.Listeners {
+		doc, err := json.Marshal(nonRuleListener(lc))
+		if err != nil {
+			return nil, err
+		}
+		out[lc.displayName(i)] = doc
+	}
+	return out, nil
+}
+
+func nonRuleConfig(c *Config) Config {
 	cp := *c
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil
 	cp.PII = nil
@@ -1007,17 +1137,85 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	// reference; the fetched one carries neither. Neither is a lane fact.
 	cp.License = ""
 	cp.ControlPlaneURL = ""
-	listeners := make([]ListenerConfig, len(c.Listeners))
-	for i, lc := range c.Listeners {
-		lc.Guardrails, lc.OPA, lc.Mask, lc.Policy = nil, nil, nil, nil
-		// The lane's analyzer block swaps with the rules: it builds
-		// evaluators, not sockets, and its provider lives in the
-		// top-level analyzer section, which stays in the baseline.
-		lc.Analyzer = nil
-		listeners[i] = lc
+	return cp
+}
+
+func nonRuleListener(lc ListenerConfig) ListenerConfig {
+	lc.Guardrails, lc.OPA, lc.Mask, lc.Policy = nil, nil, nil, nil
+	// The lane's analyzer block swaps with the rules: it builds
+	// evaluators, not sockets, and its provider lives in the
+	// top-level analyzer section, which stays in the baseline.
+	lc.Analyzer = nil
+	return lc
+}
+
+// topology is what a document does to the running listener set: the names
+// it adds and the names it drops. A name in both with a changed non-rule
+// document is neither; diffTopology refuses it.
+type topology struct {
+	added   map[string]bool
+	removed []string
+}
+
+// diffTopology compares a document's listeners against the running ones and
+// returns what to start and stop, or the reason the document is
+// restart-bound instead. Three things keep it on the restart path:
+//
+//   - a running listener whose address, upstream, protocol, TLS or any
+//     other non-rule field moved: rebinding under live traffic is ADR-0014's
+//     option 2, not taken;
+//   - a listener without a name while the set changed: unnamed lanes are
+//     keyed listener[i], so an insert renames every lane after it, and the
+//     diff would close live lanes to reopen them;
+//   - an added listener on the address a removed one holds: a rename. The
+//     new socket cannot bind before the old one closes, and closing first
+//     would lose the lane when the bind then fails.
+func (r *reloader) diffTopology(newCfg *Config, listeners map[string][]byte) (topology, string) {
+	t := topology{added: map[string]bool{}}
+	for i, lc := range newCfg.Listeners {
+		name := lc.displayName(i)
+		old, running := r.listeners[name]
+		switch {
+		case !running:
+			t.added[name] = true
+		case !bytes.Equal(old, listeners[name]):
+			return topology{}, fmt.Sprintf("changed listener %q beyond its rules; restart to apply it", name)
+		}
 	}
-	cp.Listeners = listeners
-	return json.Marshal(&cp)
+	for name := range r.listeners {
+		if _, ok := listeners[name]; !ok {
+			t.removed = append(t.removed, name)
+		}
+	}
+	sort.Strings(t.removed)
+	if len(t.added) == 0 && len(t.removed) == 0 {
+		return t, ""
+	}
+	if r.rt == nil {
+		return topology{}, "added or removed a listener, and this process cannot start or stop one; restart to apply it"
+	}
+	for _, lc := range append(append([]ListenerConfig{}, newCfg.Listeners...), r.running.Listeners...) {
+		if lc.Name == "" {
+			return topology{}, "added or removed a listener while another has no name; name every listener, or restart to apply it"
+		}
+	}
+	removedAddr := make(map[string]string, len(t.removed))
+	for i, lc := range r.running.Listeners {
+		name := lc.displayName(i)
+		if slices.Contains(t.removed, name) {
+			removedAddr[lc.Network+"|"+lc.listenAddress()] = name
+		}
+	}
+	for i, lc := range newCfg.Listeners {
+		name := lc.displayName(i)
+		if !t.added[name] {
+			continue
+		}
+		if was, ok := removedAddr[lc.Network+"|"+lc.listenAddress()]; ok {
+			return topology{}, fmt.Sprintf("renamed listener %q to %q; restart to apply it", was, name)
+		}
+	}
+	return t, ""
 }
 
 // laneRuleDoc renders one listener's RESOLVED rule stack: the skip decision

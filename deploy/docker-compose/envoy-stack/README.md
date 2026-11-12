@@ -136,6 +136,12 @@ in front of a test MCP server: `initialize`, `tools/list` without the tools
 an `mcp_tool` rule hides, an allowed call, a call to a hidden tool and a call
 over the `mcp_gateway` budget, then the audit rows. It runs without Envoy: the lane binds loopback only.
 
+[`reload/`](reload/README.md) edits the sidecar's config while it runs: a
+fourth lane is appended and starts in place, a lane that cannot bind is
+refused as a whole document, and the lane is removed and stops, while a
+`psql` session on `appdb` stays open through all of it. No restart; the
+sidecar re-reads the file on a ten-second stat or on `SIGHUP`.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 

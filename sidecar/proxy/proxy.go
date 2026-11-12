@@ -460,19 +460,38 @@ func (s *Server) reclaimStaleSocket() error {
 	return nil
 }
 
-// Serve listens and accepts until ctx is cancelled or Close is called.
-func (s *Server) Serve(ctx context.Context) error {
+// Listen binds the configured address without accepting. Serve binds on its
+// own when Listen was not called; a caller that has to know the bind outcome
+// before it commits to the lane (a reload adding a listener) calls Listen
+// first and Serve after. Idempotent: a second call on a bound server is a
+// no-op, and a server Close ended refuses to bind again.
+func (s *Server) Listen() error {
+	s.mu.Lock()
+	bound, closing := s.listener != nil, s.closing
+	s.mu.Unlock()
+	if bound {
+		return nil
+	}
+	if closing {
+		return net.ErrClosed
+	}
 	if err := s.reclaimStaleSocket(); err != nil {
 		return err
 	}
 
 	ln, err := net.Listen(s.cfg.Network, s.cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("sidecar/proxy: listen %s %s: %w",
-			s.cfg.Network, s.cfg.Listen, err)
+		// net.OpError already reads "listen tcp 0.0.0.0:15432: bind: ...".
+		return fmt.Errorf("sidecar/proxy: %w", err)
 	}
 
 	s.mu.Lock()
+	if s.closing {
+		// Close ran between the check above and the bind: honour it.
+		s.mu.Unlock()
+		_ = ln.Close()
+		return net.ErrClosed
+	}
 	s.listener = ln
 	s.mu.Unlock()
 
@@ -482,6 +501,18 @@ func (s *Server) Serve(ctx context.Context) error {
 		"upstream", s.cfg.Upstream,
 		"protocol", string(s.cfg.Protocol),
 		"connection", s.cfg.Connection)
+	return nil
+}
+
+// Serve listens (unless Listen already did) and accepts until ctx is
+// cancelled or Close is called.
+func (s *Server) Serve(ctx context.Context) error {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
 
 	// Close the listener on context cancellation so Accept unblocks.
 	go func() {

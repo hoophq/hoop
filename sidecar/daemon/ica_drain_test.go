@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
 type drainableICA struct {
@@ -31,7 +34,7 @@ func TestICADeploymentDrainAuthenticationAndReadiness(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+tc.auth)
 		}
 		w := httptest.NewRecorder()
-		icaDrainHandler(tc.token, []endpointServer{srv}, 0)(w, req)
+		icaDrainHandler(tc.token, testLaneSet([]endpointServer{srv}, 0))(w, req)
 		if w.Code != tc.code {
 			t.Fatalf("HTTP %d, want %d", w.Code, tc.code)
 		}
@@ -60,7 +63,7 @@ func TestICADeploymentDrainRefusesMixedAndUnsupportedEndpoints(t *testing.T) {
 		req := httptest.NewRequest("POST", "/v1/drain", nil)
 		req.Header.Set("Authorization", "Bearer "+secret)
 		w := httptest.NewRecorder()
-		icaDrainHandler(secret, tc.endpoints, tc.proxies)(w, req)
+		icaDrainHandler(secret, testLaneSet(tc.endpoints, tc.proxies))(w, req)
 		if w.Code != 409 {
 			t.Fatalf("unsupported drain HTTP %d", w.Code)
 		}
@@ -70,4 +73,17 @@ func TestICADeploymentDrainRefusesMixedAndUnsupportedEndpoints(t *testing.T) {
 			}
 		}
 	}
+}
+
+// testLaneSet is a registry of the given endpoint lanes plus proxies relay
+// lanes, each an unserved proxy.Server, for handlers that count both.
+func testLaneSet(endpoints []endpointServer, proxies int) *laneSet {
+	s := &laneSet{}
+	for i, ep := range endpoints {
+		s.lanes = append(s.lanes, runningLane{name: fmt.Sprintf("ep%d", i), endpoint: ep})
+	}
+	for i := range proxies {
+		s.lanes = append(s.lanes, runningLane{name: fmt.Sprintf("relay%d", i), relay: &proxy.Server{}})
+	}
+	return s
 }
