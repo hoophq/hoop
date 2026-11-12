@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -65,6 +66,7 @@ type analyzerDraft struct {
 // starterModels is the model each provider's block names: a cheap, fast
 // default for a classification call. Any model the account serves works.
 var starterModels = map[string]string{
+	hoop.Name:   analyzer.HostedModel,
 	"anthropic": "claude-haiku-4-5",
 	"openai":    "gpt-5-mini",
 	"gemini":    "gemini-2.5-flash",
@@ -306,8 +308,20 @@ func newDraft(id string, m machine) (*draft, error) {
 	}
 	// An mcp lane refuses an analyzer.
 	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	if kind != "" {
+		// The demo shows the AI with no key to set up: the model Hoop
+		// hosts (DEP-161) rates each read, and a high-risk one waits for
+		// the person at this terminal (sidecardemo.AnalyzerPrompt).
+		d.an = analyzerDraft{on: true, provider: hoop.Name, model: analyzer.HostedModel, keyDir: keyDir,
+			keyFile: filepath.Join(keyDir, hoop.Name+".key"), region: "global",
+			trigger: sidecardemo.AnalyzerTrigger(kind),
+			high:    string(analyzer.ActionRequireApproval), medium: string(analyzer.ActionWarn), low: string(analyzer.ActionAllow)}
+	}
 	return d, nil
 }
+
+// hosted reports the model Hoop hosts: no key file, no model to name.
+func (a analyzerDraft) hosted() bool { return a.provider == hoop.Name }
 
 // keyFileStatus is nil when path is a key file the analyzer will accept.
 func keyFileStatus(path string) error {
@@ -352,15 +366,30 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 	}
 	cfg := &daemon.Config{License: d.license}
 	if d.an.on {
-		cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model}
-		if d.an.provider == "vertex" {
-			cfg.Analyzer.Extra = daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}
-		} else {
-			cfg.Analyzer.CredentialsFile = d.an.keyFile
+		switch {
+		case d.an.hosted():
+			// The daemon refuses provider "hoop" by name: the hosted
+			// model is chosen with use_hoop_llm_provider, and takes no key.
+			on := true
+			cfg.Analyzer = &daemon.AnalyzerConfig{UseHoopLLMProvider: &on}
+		case d.an.provider == "vertex":
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				Extra: daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}}
+		default:
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				CredentialsFile: d.an.keyFile}
 		}
 		l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: d.an.high, MediumRisk: d.an.medium, LowRisk: d.an.low}
 		if len(d.an.trigger) > 0 {
 			l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(d.an.trigger...)}
+		}
+		if d.isDemo() && d.an.hosted() {
+			// The demo's AI step must hold the same statement every time:
+			// the lowest temperature, and guidance that names what is high
+			// risk in the demo data.
+			zero := 0.0
+			cfg.Analyzer.Temperature = &zero
+			l.Analyzer.Prompt = sidecardemo.AnalyzerPrompt(d.demoKind)
 		}
 	}
 	// An http_header rule may only name a header the listener captures.
@@ -518,10 +547,14 @@ func (d *draft) analyzerSummary() string {
 		if d.protocol == "mcp" {
 			return "off · an mcp listener does not take one yet"
 		}
-		if d.an.provider != "vertex" && keyFileStatus(d.an.keyFile) != nil {
+		if d.an.provider != "vertex" && !d.an.hosted() && keyFileStatus(d.an.keyFile) != nil {
 			return "off · needs a key file for " + d.an.provider
 		}
 		return "off"
+	}
+	if d.an.hosted() {
+		return fmt.Sprintf("Hoop-hosted model (%s), no key · high→%s, medium→%s, low→%s",
+			analyzer.HostedModel, d.an.high, d.an.medium, d.an.low)
 	}
 	return fmt.Sprintf("%s %s · high→%s, medium→%s, low→%s", d.an.provider, d.an.model, d.an.high, d.an.medium, d.an.low)
 }
@@ -855,12 +888,12 @@ func maskFromForm(f *form) (alcatraz.Rule, error) {
 
 var riskActions = []string{
 	string(analyzer.ActionAllow), string(analyzer.ActionWarn), string(analyzer.ActionBlock),
-	string(analyzer.ActionDefer), string(analyzer.ActionRequireReview),
+	string(analyzer.ActionDefer), string(analyzer.ActionRequireApproval),
 }
 
 var riskActionLabel = map[string]string{
 	"allow": "allow", "warn": "allow, flag in the audit", "block": "block",
-	"defer": "report, let policy decide", "require_review": "hold for approval in this terminal",
+	"defer": "report, let policy decide", "require_approval": "hold for approval",
 }
 
 func analyzerForm(a analyzerDraft, protocol string) *form {
@@ -871,7 +904,7 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 	}
 	// Every field shows while the analyzer is off too: what turning it on
 	// takes (a key file, a model) is the thing the person is deciding on.
-	hideForVertex := func() bool { return prov.text == "vertex" }
+	hideForVertex := func() bool { return prov.text == "vertex" || prov.text == hoop.Name }
 	hideUnlessVertex := func() bool { return prov.text != "vertex" }
 	key := &field{id: "key", label: "Key file", kind: fText, text: a.keyFile, hidden: hideForVertex,
 		help: "Read as written: no ~. Must be mode 0600 or stricter."}
@@ -879,8 +912,12 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 		{id: "on", label: "Enabled", kind: fBool, on: a.on,
 			help: "Off writes the analyzer into the file commented out, one uncomment away."},
 		prov,
+		{id: "hostednote", kind: fNote, hidden: func() bool { return prov.text != hoop.Name }, note: func() string {
+			return stFaint.Render("The model Hoop hosts: no key file. Statement text is sent to Hoop.")
+		}},
 		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
-			help: "Any model the provider serves to your account."},
+			hidden: func() bool { return prov.text == hoop.Name },
+			help:   "Any model the provider serves to your account."},
 		key,
 		{id: "keynote", kind: fNote, hidden: hideForVertex, note: func() string {
 			path := key.text
@@ -923,6 +960,9 @@ func analyzerFromForm(f *form, a analyzerDraft) (analyzerDraft, error) {
 	a.trigger = g("trigger").multi
 	a.high, a.medium, a.low = g("high").text, g("medium").text, g("low").text
 	if !a.on {
+		return a, nil
+	}
+	if a.hosted() {
 		return a, nil
 	}
 	if a.model == "" {

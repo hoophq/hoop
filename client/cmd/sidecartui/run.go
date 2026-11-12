@@ -50,6 +50,9 @@ type Options struct {
 	// "" when it runs on its own. Approvals are then decided there, and the
 	// Approvals section says so and links to them.
 	ControlPlane string
+	// LocalApprovals keeps Approvals at this terminal although ControlPlane
+	// is set: the demo's holds are filed here (daemon.WithLocalReviewerFirst).
+	LocalApprovals bool
 	// OpenURL opens a URL in the person's browser; nil hides that key.
 	OpenURL func(string) error
 }
@@ -314,6 +317,7 @@ func runTUI(opts Options, run func() error) error {
 	m := newModel(opts.Version, append(opts.Notes, notes...), time.Now, stop)
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
 	m.controlPlane, m.openURL = opts.ControlPlane, opts.OpenURL
+	m.localApprovals = opts.LocalApprovals
 	if opts.Demo != nil {
 		// The demo opens on its guide: a person who just booted it has
 		// not sent anything yet, and the empty Wire tells them nothing.
