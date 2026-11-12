@@ -918,8 +918,7 @@ jobs:
   #                                   ONNX Runtime
   #   :<version>-ica-gpu              the ICA engine on TurboOCR and CUDA
   #                                   NER, linux/amd64 only; published only
-  #                                   when ICA_GPU_ASSETS_URL and
-  #                                   ICA_GPU_ASSETS_SHA256 are set
+  #                                   by the private manual GPU release workflow
   #   :latest                         an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
@@ -977,26 +976,7 @@ jobs:
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      # Opt in to the GPU flavour only with a reviewed GPU-native asset set
-      # matching the engine module pin; both the image and the native bundle
-      # use this exact digest. Checked before the first push so a half-set
-      # pair or an unreachable asset fails this job with nothing published,
-      # instead of after the CPU tags are already on Docker Hub. The engine
-      # pin inside the archive is checked by the ica-gpu-native stage, which
-      # needs the download; a mismatch there fails this job the same way.
-      - name: Check ICA GPU release inputs
-        env:
-          GPU_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
-          GPU_SHA: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
-        run: |
-          set -euo pipefail
-          if { [ -n "$GPU_URL" ] && [ -z "$GPU_SHA" ]; } || { [ -z "$GPU_URL" ] && [ -n "$GPU_SHA" ]; }; then
-            echo "Set both ICA_GPU_ASSETS_URL and ICA_GPU_ASSETS_SHA256, or neither" >&2
-            exit 1
-          fi
-          [ -z "$GPU_URL" ] && exit 0
-          printf '%s' "$GPU_SHA" | grep -Eq '^[a-f0-9]{64}$' || { echo "ICA_GPU_ASSETS_SHA256 is not a lowercase hex sha256" >&2; exit 1; }
-          curl --proto '=https' -fsSIL "$GPU_URL" -o /dev/null || { echo "ICA_GPU_ASSETS_URL is not reachable: $GPU_URL" >&2; exit 1; }
+      # ICA GPU publication is an explicitly dispatched private workflow.
       - name: Build and push (default)
         uses: docker/build-push-action@v7
         with:
@@ -1100,48 +1080,6 @@ jobs:
             gh_token=${{ secrets.GH_TOKEN }}
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           outputs: type=local,dest=ica-assets
-      - name: Build and push (ica-gpu)
-        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
-        uses: docker/build-push-action@v7
-        with:
-          file: ./Dockerfile.sidecar
-          context: '.'
-          target: ica-gpu
-          platforms: linux/amd64
-          provenance: false
-          sbom: false
-          push: true
-          build-args: |
-            VERSION=${{ env.GIT_TAG }}
-            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
-            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
-          secrets: |
-            gh_token=${{ secrets.GH_TOKEN }}
-            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
-          tags: hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
-      - name: Export the ica GPU assets bundle
-        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
-        uses: docker/build-push-action@v7
-        with:
-          file: ./Dockerfile.sidecar
-          context: '.'
-          target: ica-gpu-assets
-          platforms: linux/amd64
-          provenance: false
-          sbom: false
-          build-args: |
-            VERSION=${{ env.GIT_TAG }}
-            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
-            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
-          secrets: |
-            gh_token=${{ secrets.GH_TOKEN }}
-            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
-          outputs: type=local,dest=ica-gpu-assets
-      - name: Stage the ica GPU assets bundle
-        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
-        run: |
-          mkdir -p stage/binaries
-          mv ica-gpu-assets/binaries/* stage/binaries/
       - name: Stage the ica assets bundle
         run: |
           set -euo pipefail
@@ -1506,11 +1444,6 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # release-s3 writes CHANGELOG.txt from scripts/release-notes.sh,
-          # which lists the ICA GPU artifacts only when both are set — the
-          # same gate as the ica-gpu steps in docker-publish-hoopsidecar.
-          ICA_GPU_ASSETS_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
-          ICA_GPU_ASSETS_SHA256: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
         run: |-
           make release-s3
           make release-s3-latest
