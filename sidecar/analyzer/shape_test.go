@@ -1,6 +1,8 @@
 package analyzer_test
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -92,5 +94,46 @@ func TestAStatementShapeIsRefusedWhereItCannotStrip(t *testing.T) {
 		if got, ok := analyzer.StatementShape(tc.protocol, tc.text); ok || got != "" {
 			t.Errorf("%s %q: shape = %q, %t", tc.protocol, tc.text, got, ok)
 		}
+	}
+}
+
+// Twenty thousand keys that all become "?" stay apart, each with its own
+// suffix.
+func TestAMongoDBShapeOfManyValueKeysKeepsEveryKey(t *testing.T) {
+	const keys = 20000
+	doc := make(map[string]bool, keys)
+	for i := range keys {
+		doc[strconv.Itoa(i)] = true
+	}
+	raw, err := json.Marshal(map[string]any{"update": "users", "updates": []any{
+		map[string]any{"q": map[string]any{}, "u": map[string]any{"$set": doc}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := analyzer.StatementShape("mongodb", string(raw))
+	if !ok {
+		t.Fatal("no shape")
+	}
+	var shape struct {
+		Updates []struct {
+			U struct {
+				Set map[string]string `json:"$set"`
+			} `json:"u"`
+		} `json:"updates"`
+	}
+	if err := json.Unmarshal([]byte(got), &shape); err != nil {
+		t.Fatal(err)
+	}
+	set := shape.Updates[0].U.Set
+	if len(set) != keys {
+		t.Fatalf("%d keys in the shape, want %d", len(set), keys)
+	}
+	for _, k := range []string{"?", "?#2", "?#" + strconv.Itoa(keys)} {
+		if set[k] != "$bool" {
+			t.Errorf("shape has %q = %q, want $bool", k, set[k])
+		}
+	}
+	if _, ok := set["?#"+strconv.Itoa(keys+1)]; ok {
+		t.Errorf("shape has a suffix past %d", keys)
 	}
 }

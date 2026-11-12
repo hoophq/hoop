@@ -329,13 +329,17 @@ func mongodbShapeValue(value any, field string, keyOf func(string) string) any {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
+		// One keyOf call and one counter per key: a statement can hold
+		// thousands of keys that all map onto "?". keyOf never returns '#',
+		// so base#n cannot meet another base.
+		seen := make(map[string]int, len(keys))
 		for _, key := range keys {
-			name := keyOf(key)
-			for n := 2; ; n++ {
-				if _, taken := out[name]; !taken {
-					break
-				}
-				name = keyOf(key) + "#" + strconv.Itoa(n)
+			base := keyOf(key)
+			n := seen[base] + 1
+			seen[base] = n
+			name := base
+			if n > 1 {
+				name = base + "#" + strconv.Itoa(n)
 			}
 			out[name] = mongodbShapeValue(value[key], key, keyOf)
 		}
