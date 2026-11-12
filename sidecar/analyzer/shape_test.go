@@ -49,6 +49,31 @@ func TestAStatementShapeHoldsNoValue(t *testing.T) {
 	}
 }
 
+// A mongodb key can carry a value: an email, a user id, a map keyed by
+// customer. The shape keeps operators and identifier-like field names only.
+func TestAMongoDBShapeKeepsNoValueInAKey(t *testing.T) {
+	text := `{"update":"users","updates":[{"q":{"ana.souza@corp.example":{"$exists":true},` +
+		`"prefs.4111.email":"x","items.$.qty":{"$gt":1},"tags.$[t].v":1},` +
+		`"u":{"$set":{"by_customer.Ana Souza":true,"by_customer.4111":false,"by_customer.5":true,"status":"done"}}}]}`
+	got, ok := analyzer.StatementShape("mongodb", text)
+	if !ok {
+		t.Fatalf("no shape for %q", text)
+	}
+	for _, s := range []string{"ana", "souza", "4111", "example"} {
+		if strings.Contains(strings.ToLower(got), s) {
+			t.Errorf("shape %q keeps %q", got, s)
+		}
+	}
+	// An email split at its dots is one value: the whole key goes. A numeric
+	// segment goes alone, and two keys that meet stay apart.
+	want := `{"update":"$string","updates":[{"q":{"?":{"$exists":"$bool"},"items.$.qty":{"$gt":"$number"},` +
+		`"prefs.?.email":"$string","tags.$[t].v":"$number"},` +
+		`"u":{"$set":{"?":"$bool","by_customer.?":"$bool","by_customer.?#2":"$bool","status":"$string"}}}]}`
+	if got != want {
+		t.Errorf("shape = %s\nwant    %s", got, want)
+	}
+}
+
 // No shape where none can be made without values: a protocol with no SQL
 // or JSON, a mongodb command that does not decode, a statement the lexer
 // cannot read in full, and MySQL text whose backslash readings disagree.
