@@ -29,7 +29,10 @@ import (
 // message; a terminal that never answers (tmux, screen) simply keeps the
 // COLORFGBG guess, and no frame stalls waiting for it.
 
-// Colors that do not depend on the terminal's background.
+// Colors that do not depend on the terminal's background. colPrimary and
+// colDanger fill badges, buttons and borders, under white ink; text in those
+// hues uses colPrimaryText and colDangerText, which setTheme picks per
+// background.
 var (
 	colPrimary = lipgloss.Color("#3E63DD")
 	colDanger  = lipgloss.Color("#C4060A")
@@ -42,11 +45,14 @@ var (
 var (
 	shade lipgloss.LightDarkFunc
 
-	colFaint   color.Color
-	colStrong  color.Color
-	colBorder  color.Color
-	colSelBg   color.Color
-	colNeutral color.Color
+	colFaint  color.Color
+	colStrong color.Color
+	// colPrimaryText and colDangerText are the brand blue and red as text.
+	colPrimaryText color.Color
+	colDangerText  color.Color
+	colBorder      color.Color
+	colSelBg       color.Color
+	colNeutral     color.Color
 
 	stBrand   lipgloss.Style
 	stFaint   lipgloss.Style
@@ -73,7 +79,13 @@ func init() { setTheme(darkBackground(os.Getenv("COLORFGBG"))) }
 func setTheme(isDark bool) {
 	shade = lipgloss.LightDark(isDark)
 
-	colFaint = shade(lipgloss.Color("#8B8B8B"), lipgloss.Color("#7A7A7A"))
+	// Every text color reads at WCAG AA (4.5:1 or more) on its background
+	// and on colSelBg, the selected row: light on #F0F0F0 to #FFFFFF, dark
+	// on #000000 to #1E1E1E. The brand #3E63DD and #C4060A fall to about
+	// 3:1 and 2.7:1 on a dark terminal, so text takes a lighter tint there.
+	colFaint = shade(lipgloss.Color("#666666"), lipgloss.Color("#A0A0A0"))
+	colPrimaryText = shade(lipgloss.Color("#3A5BC7"), lipgloss.Color("#9EB1FF"))
+	colDangerText = shade(lipgloss.Color("#B5050A"), lipgloss.Color("#FF8C87"))
 	colStrong = shade(lipgloss.Color("#1A1A1A"), lipgloss.Color("#EDEDED"))
 	colBorder = shade(lipgloss.Color("#D4D4D4"), lipgloss.Color("#3A3A3A"))
 	colSelBg = shade(lipgloss.Color("#EBEBEB"), lipgloss.Color("#2B2B2B"))
@@ -86,11 +98,11 @@ func setTheme(isDark bool) {
 	stBold = lipgloss.NewStyle().Bold(true)
 	stText = lipgloss.NewStyle().Foreground(colStrong)
 	stStrong = lipgloss.NewStyle().Foreground(colStrong).Bold(true)
-	stPrimary = lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
-	stDanger = lipgloss.NewStyle().Foreground(colDanger)
-	stKey = lipgloss.NewStyle().Foreground(colPrimary)
+	stPrimary = lipgloss.NewStyle().Foreground(colPrimaryText).Bold(true)
+	stDanger = lipgloss.NewStyle().Foreground(colDangerText)
+	stKey = lipgloss.NewStyle().Foreground(colPrimaryText)
 	stLabel = lipgloss.NewStyle().Foreground(colFaint)
-	stTabOn = lipgloss.NewStyle().Bold(true).Foreground(colPrimary).Underline(true)
+	stTabOn = lipgloss.NewStyle().Bold(true).Foreground(colPrimaryText).Underline(true)
 	stTabOff = lipgloss.NewStyle().Foreground(colFaint)
 	stSel = lipgloss.NewStyle().Background(colSelBg)
 	stPane = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
