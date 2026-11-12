@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { attributesService } from '@/services/attributes'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
 import { reviewsService } from '@/services/reviews'
@@ -52,6 +53,13 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   accessRequestRules: [],
   accessRequestRulesStatus: 'idle',
+  accessRequestRulesRequestId: 0,
+
+  // With the access request rules, tells the form which selected roles an
+  // access request rule also covers through a shared attribute.
+  attributes: [],
+  attributesStatus: 'idle',
+  attributesRequestId: 0,
 
   // The guardrail and data masking rules a risk level may let the AI apply.
   // Session-scoped: cleared on logout. `ruleLibraryRequestId` is the
@@ -140,17 +148,51 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   // Feeds the require_access_request picker in the rule form. The status is kept
   // so the form can tell "this org has no rules" from "the list failed to load".
   fetchAccessRequestRules: async () => {
-    set({ accessRequestRulesStatus: 'loading' })
+    // Cleared at the start so the form never reads a list from an earlier visit
+    // or account; the id drops a response that a newer fetch replaced.
+    const requestId = get().accessRequestRulesRequestId + 1
+    set({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'loading',
+      accessRequestRulesRequestId: requestId,
+    })
     try {
       const { data } = await accessRequestsService.list()
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({
         accessRequestRules: data?.data ?? [],
         accessRequestRulesStatus: 'success',
       })
     } catch {
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({ accessRequestRulesStatus: 'error' })
     }
   },
+
+  fetchAttributes: async () => {
+    const requestId = get().attributesRequestId + 1
+    set({ attributes: [], attributesStatus: 'loading', attributesRequestId: requestId })
+    try {
+      const attributes = await attributesService.listAll()
+      if (get().attributesRequestId !== requestId) return
+      set({ attributes, attributesStatus: 'success' })
+    } catch {
+      if (get().attributesRequestId !== requestId) return
+      set({ attributesStatus: 'error' })
+    }
+  },
+
+  // Bumps both generations, so a fetch still in flight from the old account
+  // cannot fill a list after logout.
+  resetAccessRequestOverlap: () =>
+    set((state) => ({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'idle',
+      accessRequestRulesRequestId: state.accessRequestRulesRequestId + 1,
+      attributes: [],
+      attributesStatus: 'idle',
+      attributesRequestId: state.attributesRequestId + 1,
+    })),
 
   // Both lists or neither: a level shows its two features side by side, and
   // "all rules" is only written back when the list is known. The list is
@@ -258,5 +300,6 @@ useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useAiSessionAnalyzerStore.getState().resetRuleLibrary()
     useAiSessionAnalyzerStore.getState().resetRoutingIntegrations()
+    useAiSessionAnalyzerStore.getState().resetAccessRequestOverlap()
   }
 })
