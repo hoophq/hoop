@@ -32,6 +32,10 @@ const (
 	metaActivity   = audit.MetadataActivity
 )
 
+// hostedProvider is the provider name the sidecar logs for the model Hoop
+// hosts (sidecar/analyzer/hoop.Name, spelled here for the same reason).
+const hostedProvider = "hoop"
+
 // Lane is one listener: what it resolved to at startup, and what crossed it.
 type Lane struct {
 	Name      string
@@ -226,6 +230,10 @@ func (s *State) ApplyLog(r LogRecord) {
 		s.System.Detection = true
 	case "risk analyzer attached":
 		s.System.Analyzer = strings.TrimSpace(r.Get("provider") + " " + r.Get("model"))
+		if r.Get("provider") == hostedProvider {
+			// No provider configured: the sidecar uses the model Hoop hosts.
+			s.System.Analyzer = hostedLabel + " · " + r.Get("model")
+		}
 		if send := r.Get("send"); send != "" {
 			s.System.Analyzer += " · send " + send
 		}

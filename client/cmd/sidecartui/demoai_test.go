@@ -11,7 +11,26 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 )
+
+// The model Hoop hosts is the first provider offered, named for the person,
+// never by its URL; and a sidecar running on it says so in System.
+func TestHoopsOwnModelIsTheNamedDefault(t *testing.T) {
+	if hostedProvider != hoop.Name {
+		t.Fatalf("hostedProvider %q drifted from %q", hostedProvider, hoop.Name)
+	}
+	f := analyzerForm(analyzerDraft{provider: hoop.Name}, "postgres")
+	prov := f.byID("provider")
+	if len(prov.options) == 0 || prov.options[0] != hoop.Name || !strings.Contains(prov.optLabel[hoop.Name], "default") {
+		t.Errorf("provider options %v, label %q: want Hoop's own model first, named as the default", prov.options, prov.optLabel[hoop.Name])
+	}
+	s := NewState(time.Now())
+	s.ApplyLog(LogRecord{Msg: "risk analyzer attached", Attrs: []Attr{{"provider", "hoop"}, {"model", analyzer.HostedModel}}})
+	if !strings.HasPrefix(s.System.Analyzer, hostedLabel) || strings.Contains(s.System.Analyzer, "hoop.dev") {
+		t.Errorf("System shows %q, want %q and no URL", s.System.Analyzer, hostedLabel)
+	}
+}
 
 // Both demos boot with the AI analyzer on, on the model Hoop hosts: no key
 // file, temperature 0, the demo's guidance, and high risk held for approval.
@@ -59,7 +78,7 @@ func TestDemoDraftsTurnTheHostedAnalyzerOn(t *testing.T) {
 		if err := validateDraft(t, d); err != nil {
 			t.Errorf("%s: the demo draft does not validate: %v", id, err)
 		}
-		if !strings.Contains(d.analyzerSummary(), "Hoop-hosted") {
+		if !strings.Contains(d.analyzerSummary(), hostedLabel) {
 			t.Errorf("%s: summary = %q", id, d.analyzerSummary())
 		}
 	}
