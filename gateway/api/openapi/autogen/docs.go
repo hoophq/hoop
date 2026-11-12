@@ -19520,7 +19520,7 @@ const docTemplate = `{
                     "example": "timeout"
                 },
                 "fallback_detail": {
-                    "description": "Detail of the fallback: fixed text per cause. A provider's error text is in the gateway log only",
+                    "description": "Detail of the fallback: fixed text per cause. Provider errors, database errors and the model's own words are in the gateway log only",
                     "type": "string",
                     "readOnly": true,
                     "example": "no answer in 20s"
@@ -19563,7 +19563,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "notify_fallback": {
-                    "description": "Set when the routed notifications reached no user and no channel: the approval request was then posted as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
+                    "description": "Set when the routed notifications reached no user and no channel: the gateway then tried to post the approval request as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
                     "type": "string",
                     "enum": [
                         "no_integration",
@@ -19572,6 +19572,12 @@ const docTemplate = `{
                     ],
                     "readOnly": true,
                     "example": "no_target"
+                },
+                "notify_fallback_posted": {
+                    "description": "With notify_fallback: true when a channel accepted the post as without routing. Absent or false: nobody was notified",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
                 },
                 "reason": {
                     "description": "The reason the AI gave, at most 500 characters",
