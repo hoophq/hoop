@@ -937,3 +937,21 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 		})
 	}
 }
+
+// The requester cannot approve their own statement: a group whose only
+// active member is the requester has nobody to decide, and is not selected.
+func TestAGroupWhoseOnlyMemberIsTheRequesterIsNotSelected(t *testing.T) {
+	startStatusTestDB(t)
+	requester := seedUser(t, "Req", "active", "", "payments")
+	seedUser(t, "Alice", "active", "", "sre")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"payments"}, "notify_users": []string{}, "channels": []any{}, "reason": "r"})})
+
+	d, err := approvalrouting.RouteReview(context.Background(), models.DB, approvalrouting.RouteInput{
+		OrgID: statusTestOrgID, Principal: requester.Email, ListenerName: "appdb",
+		Routing: daemon.ApprovalRouting{Candidates: []string{"payments", "sre"}}})
+	require.NoError(t, err)
+	assert.Equal(t, models.ReviewRoutingModeStatic, d.Record.Mode)
+	assert.Equal(t, approvalrouting.CauseNoValidGroup, d.Record.FallbackCause)
+	assert.Equal(t, []string{"payments", "sre"}, d.Groups)
+}

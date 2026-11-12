@@ -26,7 +26,8 @@ const notifyUsersEnumLimit = 200
 type routeContext struct {
 	in         RouteInput
 	candidates []string
-	// groupMembers counts the active members of each candidate.
+	// groupMembers counts the members of each candidate that can decide,
+	// the requester excluded.
 	groupMembers map[string]int
 	// openReviews counts the pending reviews each candidate can decide.
 	openReviews map[string]int
@@ -195,10 +196,12 @@ func (rc *routeContext) loadMembers(ctx context.Context, db *gorm.DB) error {
 	rc.groupMembers = map[string]int{}
 	rc.members = map[string]member{}
 	for _, r := range rows {
-		rc.groupMembers[r.Group]++
+		// The requester is no approver of their own statement: a group they
+		// alone are in has nobody to decide.
 		if slices.Contains(rc.excluded, r.ID) {
 			continue
 		}
+		rc.groupMembers[r.Group]++
 		m := rc.members[r.ID]
 		if !slices.Contains(m.groups, r.Group) {
 			m.groups = append(m.groups, r.Group)
