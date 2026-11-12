@@ -1597,10 +1597,16 @@ integrated (ENG-705). No email is sent. Only a channel Slack reaches from
 this listener (its channels and the default channel) is offered; a
 configured candidate outside them is recorded as not delivered, as is a
 post Slack refuses. When the routed notifications reach no user and no
-channel, the plane tries to post the review as without routing, skipping a
-channel the routed post already tried, and records why and whether a
-channel accepted that post. The review records the groups, the notified
-users, the channels and the reason, and its details show them.
+channel, the plane falls back and records why, how and whether it reached
+anyone. `delivery: dm` means direct messages only: a Slack route with `dm`
+falls back to a Slack direct message to every approver of the selected
+groups (active or invited, with a Slack id, never the requester), and never
+posts in a channel; with nobody to message, nothing is posted. Otherwise the
+plane posts the review as without routing, skipping a channel the routed
+post already tried. Without a Slack route, the fallback posts in a channel
+only when a configured route allows one, else it sends the direct messages.
+The review records the groups, the notified users, the channels and the
+reason, and its details show them.
 
 The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
 refusal, no tool call or more than one, an invalid decision or no valid group,

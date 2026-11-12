@@ -15,9 +15,9 @@ const (
 	ReviewRoutingModeStatic = "static"
 )
 
-// Notify fallbacks: the routed notifications reached no user and no
-// channel, so the plane tried to post the review as a review without
-// routing is: in the listener's Slack channels or the default channel.
+// Notify fallbacks: why the routed notifications reached no user and no
+// channel. The plane then notifies as ReviewRouting.NotifyFallbackDelivery
+// says.
 const (
 	// ReviewRoutingNotifyNoIntegration: no notify key is integrated.
 	ReviewRoutingNotifyNoIntegration = "no_integration"
@@ -26,6 +26,17 @@ const (
 	ReviewRoutingNotifyNoTarget = "no_target"
 	// ReviewRoutingNotifyNotDelivered: every post failed.
 	ReviewRoutingNotifyNotDelivered = "not_delivered"
+)
+
+// How a notify fallback notifies.
+const (
+	// ReviewRoutingNotifyFallbackChannel: posted as a review without routing
+	// is, in the listener's Slack channels or the default channel.
+	ReviewRoutingNotifyFallbackChannel = "channel"
+	// ReviewRoutingNotifyFallbackDM: sent by Slack direct message to every
+	// approver of the selected groups, the requester excluded. A Slack route
+	// with delivery dm never falls back to a channel.
+	ReviewRoutingNotifyFallbackDM = "dm"
 )
 
 // ReviewRouting is the AI routing decision of a review (ENG-663). It holds
@@ -45,11 +56,15 @@ type ReviewRouting struct {
 	// configured candidate the integration does not reach from this
 	// listener, or a post that failed.
 	UndeliveredChannels []ReviewRoutingUndeliveredChannel `json:"undelivered_channels,omitempty"`
-	// NotifyFallback is set when the routed notifications reached nobody
-	// and the plane tried to post the review as without routing: a
-	// ReviewRoutingNotify* value.
+	// NotifyFallback is set when the routed notifications reached nobody,
+	// and the plane fell back: a ReviewRoutingNotify* value.
 	NotifyFallback string `json:"notify_fallback,omitempty"`
-	// NotifyFallbackPosted reports that a channel accepted that post. False
+	// NotifyFallbackDelivery is how the fallback notified: a
+	// ReviewRoutingNotifyFallback* value. The users a dm fallback reached are
+	// in NotifiedUsers.
+	NotifyFallbackDelivery string `json:"notify_fallback_delivery,omitempty"`
+	// NotifyFallbackPosted reports that the fallback reached someone: a
+	// channel accepted the post, or an approver the direct message. False
 	// with NotifyFallback set: nobody was notified.
 	NotifyFallbackPosted bool      `json:"notify_fallback_posted,omitempty"`
 	DecidedAt            time.Time `json:"decided_at"`

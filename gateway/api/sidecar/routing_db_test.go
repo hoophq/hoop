@@ -881,8 +881,9 @@ func TestOnlyAChannelTheListenerReachesIsOffered(t *testing.T) {
 		{Integration: "slack", ID: "C-ELSEWHERE", Cause: "not reachable from this listener"}}, got.Routing.UndeliveredChannels)
 }
 
-// A routed review that reaches no user and no channel is posted as a review
-// without routing is, and the record says why: never less than before.
+// A routed review that reaches no user and no channel falls back, and the
+// record says why and how: never less than before. A route that may post in
+// a channel falls back to the post as without routing.
 func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 	startStatusTestDB(t)
 	slackFake := useSlack(t, "C-DEFAULT")
@@ -894,26 +895,40 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 		users        []string
 		channels     []map[string]string
 		fallback     string
+		delivery     string
 		posted       bool
 		posts        []string
+		notified     []models.ReviewRoutingUser
 		undelivered  []models.ReviewRoutingUndeliveredChannel
 	}{
-		{name: "no-target", notify: `{"slack": {"delivery": "dm"}}`, users: []string{},
-			fallback: models.ReviewRoutingNotifyNoTarget, posted: true, posts: []string{"C-DEFAULT"}},
-		{name: "teams-only", notify: `{"teams": {"delivery": "dm"}}`, users: []string{alice.ID},
-			fallback: models.ReviewRoutingNotifyNoIntegration, posted: true, posts: []string{"C-DEFAULT"}},
+		{name: "no-target-both", notify: `{"slack": {"delivery": "both"}}`, users: []string{},
+			fallback: models.ReviewRoutingNotifyNoTarget, delivery: models.ReviewRoutingNotifyFallbackChannel,
+			posted: true, posts: []string{"C-DEFAULT"}},
+		// Without a Slack route, a teams route that may post in a channel
+		// keeps the post as without routing.
+		{name: "teams-channel", notify: `{"teams": {"delivery": "channel"}}`, users: []string{},
+			fallback: models.ReviewRoutingNotifyNoIntegration, delivery: models.ReviewRoutingNotifyFallbackChannel,
+			posted: true, posts: []string{"C-DEFAULT"}},
+		// A dm-only teams route falls back to Slack direct messages, never a
+		// channel.
+		{name: "teams-dm", notify: `{"teams": {"delivery": "dm"}}`, users: []string{alice.ID},
+			fallback: models.ReviewRoutingNotifyNoIntegration, delivery: models.ReviewRoutingNotifyFallbackDM,
+			posted: true, posts: []string{"U-ALICE"},
+			notified: []models.ReviewRoutingUser{{ID: alice.ID, Integrations: []string{"slack"}}}},
 		// The fallback skips the channel the routed post already tried.
 		{name: "refused", notify: `{"slack": {"delivery": "channel"}}`, users: []string{},
 			listener: []string{"C-BAD", "C-GOOD"}, refuse: []string{"C-BAD"},
 			channels: []map[string]string{{"integration": "slack", "channel": "C-BAD"}},
-			fallback: models.ReviewRoutingNotifyNotDelivered, posted: true, posts: []string{"C-BAD", "C-GOOD"},
+			fallback: models.ReviewRoutingNotifyNotDelivered, delivery: models.ReviewRoutingNotifyFallbackChannel,
+			posted: true, posts: []string{"C-BAD", "C-GOOD"},
 			undelivered: []models.ReviewRoutingUndeliveredChannel{
 				{Integration: "slack", ID: "C-BAD", Cause: "channel_not_found"}}},
 		// Its only channel already refused: no second post, and nobody reached.
 		{name: "refused-only", notify: `{"slack": {"delivery": "channel"}}`, users: []string{},
 			listener: []string{"C-REFUSED"}, refuse: []string{"C-REFUSED"},
 			channels: []map[string]string{{"integration": "slack", "channel": "C-REFUSED"}},
-			fallback: models.ReviewRoutingNotifyNotDelivered, posted: false, posts: []string{"C-REFUSED"},
+			fallback: models.ReviewRoutingNotifyNotDelivered, delivery: models.ReviewRoutingNotifyFallbackChannel,
+			posted: false, posts: []string{"C-REFUSED"},
 			undelivered: []models.ReviewRoutingUndeliveredChannel{
 				{Integration: "slack", ID: "C-REFUSED", Cause: "channel_not_found"}}},
 	} {
@@ -937,8 +952,9 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 			r := waitNotified(t, sc, filed.Review.ID)
 			assert.Equal(t, models.ReviewRoutingModeAI, r.Mode)
 			assert.Equal(t, tc.fallback, r.NotifyFallback)
+			assert.Equal(t, tc.delivery, r.NotifyFallbackDelivery)
 			assert.Equal(t, tc.posted, r.NotifyFallbackPosted)
-			assert.Empty(t, r.NotifiedUsers)
+			assert.Equal(t, tc.notified, r.NotifiedUsers)
 			assert.Empty(t, r.Channels)
 			assert.Equal(t, tc.undelivered, r.UndeliveredChannels)
 			require.Eventually(t, func() bool { return len(slackFake.destinations())-before == len(tc.posts) },
@@ -946,6 +962,64 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 			assert.Equal(t, tc.posts, slackFake.destinations()[before:])
 		})
 	}
+}
+
+// delivery dm means direct messages only. When the routed DMs reach nobody,
+// every approver of the selected groups with a Slack id gets one (active or
+// invited, never the requester), and no channel gets the review.
+func TestADMRouteThatReachesNobodyMessagesEveryApprover(t *testing.T) {
+	startStatusTestDB(t)
+	slackFake := useSlack(t, "C-DEFAULT")
+	sc := seedLevelSidecar(t, "dm-fallback", "dm-fallback-rule",
+		routedSpec("dm-fallback-rule", `{"slack": {"delivery": "dm"}}`))
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, sc.ID,
+		[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: []string{"C-PAY"}}}))
+	requester := seedUser(t, "Req", "active", "U-REQ", "sre")
+	alice := seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	ivy := seedUser(t, "Ivy", "invited", "U-IVY", "sre")
+	seedUser(t, "Bob", "active", "", "sre")
+	seedUser(t, "Dave", "inactive", "U-DAVE", "sre")
+	seedUser(t, "Carol", "active", "U-CAROL", "payments")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"sre"}, "notify_users": []string{}, "channels": []any{}, "reason": "r"})})
+
+	rec := postLevelBody(sc, "DELETE FROM payments WHERE id = 81", map[string]any{
+		"risk_level": "high", "principal": requester.Email})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	filed := decodeReviewResponse(t, rec)
+	r := waitNotified(t, sc, filed.Review.ID)
+	assert.Equal(t, models.ReviewRoutingNotifyNoTarget, r.NotifyFallback)
+	assert.Equal(t, models.ReviewRoutingNotifyFallbackDM, r.NotifyFallbackDelivery)
+	assert.True(t, r.NotifyFallbackPosted)
+	assert.ElementsMatch(t, []models.ReviewRoutingUser{
+		{ID: alice.ID, Integrations: []string{"slack"}}, {ID: ivy.ID, Integrations: []string{"slack"}}}, r.NotifiedUsers)
+	assert.Empty(t, r.Channels)
+	assert.ElementsMatch(t, []string{"U-ALICE", "U-IVY"}, slackFake.destinations(), "no channel, no requester")
+	got := getApproval(t, filed.Review.ID)
+	require.NotNil(t, got.Routing)
+	assert.Equal(t, models.ReviewRoutingNotifyFallbackDM, got.Routing.NotifyFallbackDelivery)
+}
+
+// When no approver of the selected groups can get a direct message, a dm
+// route posts nothing, and the record says so.
+func TestADMRouteWithNoReachableApproverPostsNothing(t *testing.T) {
+	startStatusTestDB(t)
+	slackFake := useSlack(t, "C-DEFAULT")
+	sc := seedLevelSidecar(t, "dm-none", "dm-none-rule", routedSpec("dm-none-rule", `{"slack": {"delivery": "dm"}}`))
+	bob := seedUser(t, "Bob", "active", "", "sre")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"sre"}, "notify_users": []string{bob.ID}, "channels": []any{}, "reason": "r"})})
+
+	filed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 82", "high"))
+	r := waitNotified(t, sc, filed.Review.ID)
+	assert.Equal(t, models.ReviewRoutingNotifyNotDelivered, r.NotifyFallback)
+	assert.Equal(t, models.ReviewRoutingNotifyFallbackDM, r.NotifyFallbackDelivery)
+	assert.False(t, r.NotifyFallbackPosted)
+	assert.Empty(t, r.NotifiedUsers)
+	assert.Equal(t, []models.ReviewRoutingUnreachable{{UserID: bob.ID, Integration: "slack", Cause: "no slack id"}},
+		r.Unreachable)
+	time.Sleep(500 * time.Millisecond)
+	assert.Empty(t, slackFake.destinations(), "nothing is posted")
 }
 
 // When the post as without routing reaches nobody either, the record says
@@ -966,6 +1040,7 @@ func TestAFallbackPostThatReachesNobodyIsRecordedAsSuch(t *testing.T) {
 		return r != nil && r.NotifyFallback != ""
 	}, 15*time.Second, 50*time.Millisecond)
 	assert.Equal(t, models.ReviewRoutingNotifyNoIntegration, r.NotifyFallback)
+	assert.Equal(t, models.ReviewRoutingNotifyFallbackDM, r.NotifyFallbackDelivery)
 	assert.False(t, r.NotifyFallbackPosted)
 	got := getApproval(t, filed.Review.ID)
 	require.NotNil(t, got.Routing)

@@ -19563,7 +19563,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "notify_fallback": {
-                    "description": "Set when the routed notifications reached no user and no channel: the gateway then tried to post the approval request as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
+                    "description": "Set when the routed notifications reached no user and no channel, and the gateway fell back as notify_fallback_delivery says. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
                     "type": "string",
                     "enum": [
                         "no_integration",
@@ -19573,8 +19573,18 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "no_target"
                 },
+                "notify_fallback_delivery": {
+                    "description": "How the fallback notified. channel: posted as without routing, in the listener's Slack channels or the default channel. dm: sent by Slack direct message to every approver of the selected groups, the requester excluded; a Slack route with delivery dm never posts in a channel. The users a dm fallback reached are in notified_users",
+                    "type": "string",
+                    "enum": [
+                        "channel",
+                        "dm"
+                    ],
+                    "readOnly": true,
+                    "example": "dm"
+                },
                 "notify_fallback_posted": {
-                    "description": "With notify_fallback: true when a channel accepted the post as without routing. Absent or false: nobody was notified",
+                    "description": "With notify_fallback: true when the fallback reached someone, a channel or an approver. Absent or false: nobody was notified",
                     "type": "boolean",
                     "readOnly": true,
                     "example": true

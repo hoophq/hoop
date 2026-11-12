@@ -108,30 +108,84 @@ type notifyPlan struct {
 	principal string
 	excluded  []string
 	users     []string
+	// approvers are the members of the selected groups that may settle the
+	// review, requester removed, in id order: who the dm fallback reaches.
+	approvers []string
 	routes    []*route
 }
 
 // plan binds the selected users to the routes.
-func (rc *routeContext) plan(users []string) *notifyPlan {
+func (rc *routeContext) plan(users, groups []string) *notifyPlan {
+	var approvers []string
+	for _, id := range rc.eligibleUsers() {
+		if slices.ContainsFunc(rc.members[id].groups, func(g string) bool { return slices.Contains(groups, g) }) {
+			approvers = append(approvers, id)
+		}
+	}
 	return &notifyPlan{orgID: rc.in.OrgID, principal: rc.in.Principal, excluded: slices.Clone(rc.excluded),
-		users: users, routes: rc.routes}
+		users: users, approvers: approvers, routes: rc.routes}
 }
 
-// recipients are the planned users without the requester, resolved again:
-// a user the principal names now is never sent a direct message. When the
-// principal cannot be resolved, nobody is.
+// recipients are the planned users without the requester.
 func (p *notifyPlan) recipients(ctx context.Context, db *gorm.DB, reviewID string) []string {
-	ids, err := principalUsers(ctx, db, p.orgID, p.principal)
+	return p.withoutRequester(ctx, db, reviewID, p.users)
+}
+
+// withoutRequester drops the requester from ids, resolved again: a user the
+// principal names now is never sent a direct message. When the principal
+// cannot be resolved, nobody is.
+func (p *notifyPlan) withoutRequester(ctx context.Context, db *gorm.DB, reviewID string, ids []string) []string {
+	named, err := principalUsers(ctx, db, p.orgID, p.principal)
 	if err != nil {
 		log.With("review-id", reviewID).Warnf("no direct message is sent, %v", err)
 		return nil
 	}
-	excluded := append(slices.Clone(p.excluded), ids...)
+	excluded := append(slices.Clone(p.excluded), named...)
 	var out []string
-	for _, u := range p.users {
+	for _, u := range ids {
 		if !slices.Contains(excluded, u) {
 			out = append(out, u)
 		}
+	}
+	return out
+}
+
+// fallbackInChannels reports whether the notify fallback may post in a
+// channel. The fallback goes through Slack: a Slack route decides by its
+// delivery, and dm means direct messages only. Without a Slack route
+// (teams only), a channel is allowed when a configured route allows one.
+func (p *notifyPlan) fallbackInChannels() bool {
+	if r := p.route(IntegrationSlack); r != nil {
+		return r.delivery != DeliveryDM
+	}
+	return slices.ContainsFunc(p.routes, func(r *route) bool { return r.delivery != DeliveryDM })
+}
+
+// fallbackDMs sends the review by Slack direct message to every approver of
+// the selected groups, except the requester and the users the routed post
+// already sent to. It returns the users Slack accepted, in id order.
+func (p *notifyPlan) fallbackDMs(ctx context.Context, db *gorm.DB, card ReviewCard, tried []string) []string {
+	n := registered(IntegrationSlack)
+	if n == nil || !n.Integrated(ctx, p.orgID) {
+		return nil
+	}
+	var targets []string
+	for _, u := range p.withoutRequester(ctx, db, card.ReviewID, p.approvers) {
+		if !slices.Contains(tried, u) {
+			targets = append(targets, u)
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	res := n.Post(ctx, db, p.orgID, card, Targets{HoopUserIDs: targets})
+	var out []string
+	for _, u := range targets {
+		if cause, failed := res.Failed[u]; failed {
+			log.With("review-id", card.ReviewID, "user", u).Infof("no fallback direct message, %s", cause)
+			continue
+		}
+		out = append(out, u)
 	}
 	return out
 }
@@ -147,13 +201,15 @@ func (p *notifyPlan) route(integration string) *route {
 
 // Notify posts the review through the integrations of the decision and
 // records who and where it reached. Call it after the review exists,
-// detached from the request: posting can take minutes. unrouted posts the
-// review as without routing and reports whether a channel accepted it;
-// Notify calls it when the routed notifications reach no user and no
-// channel, so a held statement is never announced less than without
-// routing, and records the outcome. skip are the Slack channels the routed
-// posts already sent to: a second post there would repeat a refusal, or
-// duplicate a message whose answer was lost.
+// detached from the request: posting can take minutes. When the routed
+// notifications reach no user and no channel, Notify falls back, so a held
+// statement is never announced less than without routing, and records the
+// outcome. A Slack route with delivery dm falls back to a direct message to
+// every approver of the selected groups, never a channel. Otherwise unrouted
+// posts the review as without routing and reports whether a channel accepted
+// it; skip are the Slack channels the routed posts already sent to: a second
+// post there would repeat a refusal, or duplicate a message whose answer was
+// lost.
 func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, card ReviewCard,
 	unrouted func(skip []string) bool) {
 	if !d.Notifies() {
@@ -163,12 +219,12 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 	defer cancel()
 
 	rec := *d.Record
-	rec.NotifyFallback, rec.NotifyFallbackPosted = "", false
+	rec.NotifyFallback, rec.NotifyFallbackPosted, rec.NotifyFallbackDelivery = "", false, ""
 	rec.NotifiedUsers, rec.Channels, rec.Unreachable = nil, nil, nil
 	rec.UndeliveredChannels = slices.Clone(d.Record.UndeliveredChannels)
 	notified := map[string][]string{}
 	integrated, posted := false, false
-	var tried []string
+	var tried, triedUsers []string
 	users := d.plan.recipients(ctx, db, card.ReviewID)
 	for _, r := range d.plan.routes {
 		dm := r.delivery != DeliveryChannel
@@ -196,6 +252,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		res := r.notifier.Post(ctx, db, orgID, card, t)
 		if r.integration == IntegrationSlack {
 			tried = append(tried, res.Tried...)
+			triedUsers = append(triedUsers, t.HoopUserIDs...)
 		}
 		for _, u := range t.HoopUserIDs {
 			if cause, failed := res.Failed[u]; failed {
@@ -233,9 +290,21 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		default:
 			rec.NotifyFallback = models.ReviewRoutingNotifyNotDelivered
 		}
-		log.With("review-id", card.ReviewID, "cause", rec.NotifyFallback).
-			Warnf("the routed review reached no user and no channel, posting it as without routing")
-		rec.NotifyFallbackPosted = unrouted(tried)
+		if d.plan.fallbackInChannels() {
+			rec.NotifyFallbackDelivery = models.ReviewRoutingNotifyFallbackChannel
+			log.With("review-id", card.ReviewID, "cause", rec.NotifyFallback).
+				Warnf("the routed review reached no user and no channel, posting it as without routing")
+			rec.NotifyFallbackPosted = unrouted(tried)
+		} else {
+			rec.NotifyFallbackDelivery = models.ReviewRoutingNotifyFallbackDM
+			log.With("review-id", card.ReviewID, "cause", rec.NotifyFallback).
+				Warnf("the routed review reached no user, sending it to every approver by direct message")
+			for _, u := range d.plan.fallbackDMs(ctx, db, card, triedUsers) {
+				rec.NotifiedUsers = append(rec.NotifiedUsers,
+					models.ReviewRoutingUser{ID: u, Integrations: []string{IntegrationSlack}})
+			}
+			rec.NotifyFallbackPosted = len(rec.NotifiedUsers) > 0
+		}
 	}
 	// Detached from ctx: the record must land even when the posts used the
 	// whole budget.

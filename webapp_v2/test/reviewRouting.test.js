@@ -23,6 +23,18 @@ describe('the notification fallback of a routed review', () => {
     )
   })
 
+  it('says a dm fallback went to every approver, or that nobody could get it, never a channel post', () => {
+    expect(notifyFallbackLabel('no_target', true, 'dm')).toBe(
+      'The AI agent selected nobody it could reach. Sent by direct message to every approver of the selected groups.',
+    )
+    expect(notifyFallbackLabel('not_delivered', false, 'dm')).toBe(
+      'Every routed notification failed. No approver of the selected groups could get a direct message.',
+    )
+    expect(notifyFallbackLabel('no_target', true, 'channel')).toBe(
+      'The AI agent selected nobody it could reach. Posted as without routing.',
+    )
+  })
+
   it('shows a cause this build does not know as sent', () => {
     expect(notifyFallbackLabel('new_cause', true)).toBe(
       'The routed notifications reached nobody (new_cause). Posted as without routing.',

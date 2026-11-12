@@ -89,18 +89,28 @@ export function notifyIntegrationLabel(entry) {
 }
 
 // routing.notify_fallback: the routed notifications reached nobody, so the
-// gateway tried to post the review as one without routing (the listener's
-// Slack channels or the default channel). routing.notify_fallback_posted
-// says whether a channel accepted it. A value this build does not know shows
-// as sent.
+// gateway fell back. routing.notify_fallback_delivery says how: "dm" sends a
+// Slack direct message to every approver of the selected groups (a dm route
+// never posts in a channel); otherwise it posts the review as one without
+// routing (the listener's Slack channels or the default channel).
+// routing.notify_fallback_posted says whether that reached anyone. A value
+// this build does not know shows as sent.
 const NOTIFY_FALLBACK = {
   no_integration: 'No notify integration is set up.',
   no_target: 'The AI agent selected nobody it could reach.',
   not_delivered: 'Every routed notification failed.',
 }
-export const notifyFallbackLabel = (value, posted) =>
+const fallbackOutcome = (delivery, posted) => {
+  if (delivery === 'dm') {
+    return posted === true
+      ? 'Sent by direct message to every approver of the selected groups.'
+      : 'No approver of the selected groups could get a direct message.'
+  }
+  return posted === true ? 'Posted as without routing.' : 'The post as without routing reached nobody either.'
+}
+export const notifyFallbackLabel = (value, posted, delivery) =>
   `${NOTIFY_FALLBACK[value] ?? `The routed notifications reached nobody (${value}).`} ` +
-  (posted === true ? 'Posted as without routing.' : 'The post as without routing reached nobody either.')
+  fallbackOutcome(delivery, posted)
 
 // The table's rule cell: the approval rule, else the risk level and the route.
 export function ruleLabel(review) {

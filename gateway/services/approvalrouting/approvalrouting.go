@@ -286,7 +286,7 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	}
 
 	// Channels: an integrated channel route, and a channel it allows.
-	plan := rc.plan(users)
+	plan := rc.plan(users, groups)
 	for _, ch := range args.Channels {
 		route := plan.route(ch.Integration)
 		if route == nil || route.notifier == nil || route.delivery == DeliveryDM {
