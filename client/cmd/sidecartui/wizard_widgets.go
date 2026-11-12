@@ -187,6 +187,8 @@ type field struct {
 	hidden func() bool
 	// note returns a fNote's text, recomputed on every draw.
 	note func() string
+	// changed runs after a fEnum takes a new value, with the old one.
+	changed func(prev string)
 }
 
 func (f *field) visible() bool { return f.hidden == nil || !f.hidden() }
@@ -356,12 +358,15 @@ func (f *form) update(k tea.KeyPressMsg) (tea.Cmd, string) {
 			x.on = !x.on
 		}
 	case fEnum:
-		i := max(slices.Index(x.options, x.text), 0)
+		i, prev := max(slices.Index(x.options, x.text), 0), x.text
 		switch k.String() {
 		case "right", "l", "space", "enter":
 			x.text = x.options[(i+1)%len(x.options)]
 		case "left", "h":
 			x.text = x.options[(i+len(x.options)-1)%len(x.options)]
+		}
+		if x.text != prev && x.changed != nil {
+			x.changed(prev)
 		}
 	case fMulti:
 		if k.String() == "enter" || k.String() == "space" || k.String() == "right" {
