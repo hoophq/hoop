@@ -59,6 +59,14 @@ func TestDemoAnalyzerGuidanceAndTrigger(t *testing.T) {
 	if got := AnalyzerTrigger(KindHTTP); !slices.Equal(got, []string{"get"}) {
 		t.Errorf("HTTP trigger = %v", got)
 	}
+	// The scope reaches the AI step, and in HTTP nothing else: with the model
+	// down the lane refuses what it scopes.
+	if tables, _ := AnalyzerScope(KindPostgres); !slices.Equal(tables, []string{"customers"}) || !strings.Contains(PGSteps[2].SQL, "FROM customers") {
+		t.Errorf("Postgres scope %v does not reach the AI step", tables)
+	}
+	if _, res := AnalyzerScope(KindHTTP); !slices.Equal(res, []string{Steps[2].Path}) {
+		t.Errorf("HTTP scope %v, want only the AI step's path", res)
+	}
 	if AnalyzerTimeout >= analyzer.DefaultTimeout {
 		t.Errorf("AnalyzerTimeout %v is not shorter than the analyzer default %v", AnalyzerTimeout, analyzer.DefaultTimeout)
 	}
