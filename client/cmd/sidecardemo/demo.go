@@ -51,12 +51,22 @@ func DefaultPortsFor(kind Kind) Ports {
 	return DefaultPorts
 }
 
-// StepsFor is the guided demo for the given kind.
-func StepsFor(kind Kind) []Step {
+// StepsFor is the guided demo for the given kind. The analyzer step is
+// listed only when the demo's listener has an analyzer: without one the
+// statement it sends is judged by nothing but the guardrails.
+func StepsFor(kind Kind, analyzer bool) []Step {
+	all := Steps
 	if kind == KindPostgres {
-		return PGSteps
+		all = PGSteps
 	}
-	return Steps
+	out := make([]Step, 0, len(all))
+	for _, s := range all {
+		if s.Analyzer && !analyzer {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // Step is one beat of the guided demo: a request, what to look for in the
@@ -80,6 +90,11 @@ type Step struct {
 	// SeenTable, when set, is a table the event must name too: two Postgres
 	// steps are both a SELECT, and only the table tells them apart.
 	SeenTable string
+	// Analyzer marks the step that shows the AI analyzer. It is listed only
+	// when the listener has one, and an event of any kind ticks it once the
+	// model rated SeenOp medium or high: a block is a violation, a warn a
+	// statement, and the model picks which.
+	Analyzer bool
 }
 
 // Command is the step as a shell command to paste into another terminal: curl
@@ -123,8 +138,18 @@ var Steps = []Step{
 	{
 		Title: "See a guardrail", Method: "DELETE", Path: "/users/1",
 		Expect:   "403: the request never reaches the API.",
-		Why:      "The guardrail \"no-deletes\" matched the DELETE operation and the sidecar answered for the API.",
+		Why:      "The guardrail matched the DELETE operation and the sidecar answered for the API.",
 		SeenKind: "violation", SeenOp: "delete",
+	},
+	{
+		// No guardrail names a POST, so only the model can judge this one.
+		// The body holds no single quote: Curl wraps it in them.
+		Title: "See the AI analyzer", Method: "POST", Path: "/users",
+		Body:     `{"name":"x; DROP TABLE users; --","email":"x@example.com","plan":"enterprise"}`,
+		Expect:   "A model rates the write. Rated high, the sidecar answers 403 for the API; lower, it passes with its rating recorded.",
+		Why:      "No guardrail matches a POST. The analyzer sent the request to the model, and the listener maps high risk to block and medium to warn.",
+		SeenOp:   "post",
+		Analyzer: true,
 	},
 	{
 		Title: "Write through it", Method: "POST", Path: "/users",
@@ -142,8 +167,8 @@ var Steps = []Step{
 
 // TryCommands are the steps as commands, for the config header and the
 // dashboard notes.
-func TryCommands(kind Kind, p Ports) []string {
-	steps := StepsFor(kind)
+func TryCommands(kind Kind, p Ports, analyzer bool) []string {
+	steps := StepsFor(kind, analyzer)
 	out := make([]string, 0, len(steps))
 	for _, s := range steps {
 		out = append(out, s.Command(kind, p))
