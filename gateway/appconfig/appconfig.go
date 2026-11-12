@@ -80,6 +80,8 @@ type Config struct {
 
 	slackSocketSlots int
 
+	pgMaxOpenConns int
+
 	spiffeMode          string
 	spiffeBundleURL     string
 	spiffeBundleFile    string
@@ -90,6 +92,11 @@ type Config struct {
 
 	isLoaded bool
 }
+
+// defaultPgMaxOpenConns fits one replica on the smallest common managed
+// PostgreSQL tier (100 max_connections) with room for a second replica
+// during a rollout.
+const defaultPgMaxOpenConns = 50
 
 var runtimeConfig Config
 
@@ -286,6 +293,20 @@ func Load() error {
 		}
 	}
 
+	// The pool cap is the most PostgreSQL sessions one replica opens. Past it
+	// a query waits in process instead of taking a server slot, so one burst
+	// cannot exhaust max_connections for every caller. Size it to the server:
+	// 2-4 x its vCPUs, and replicas x cap below max_connections minus the
+	// reserved slots.
+	pgMaxOpenConns := defaultPgMaxOpenConns
+	if v := os.Getenv("POSTGRES_MAX_OPEN_CONNS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return fmt.Errorf("invalid POSTGRES_MAX_OPEN_CONNS %q (want an integer >= 1)", v)
+		}
+		pgMaxOpenConns = n
+	}
+
 	// Slack allows 10 sockets per app and a slot switch briefly opens one
 	// extra, so 9 is the most that never reaches the reconnect loop the slots
 	// exist to prevent.
@@ -345,6 +366,7 @@ func Load() error {
 		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		rdpPIIGuardPolicy:               rdpPIIGuardPolicy,
 		eventRoutingWorkers:             eventRoutingWorkers,
+		pgMaxOpenConns:                  pgMaxOpenConns,
 		slackSocketSlots:                slackSocketSlots,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
@@ -622,6 +644,9 @@ func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThr
 func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) RDPPIIGuardPolicy() string             { return c.rdpPIIGuardPolicy }
 func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWorkers }
+
+// PgMaxOpenConns is the most PostgreSQL connections the gateway pool opens.
+func (c Config) PgMaxOpenConns() int { return c.pgMaxOpenConns }
 
 // SlackSocketSlots is how many gateway replicas may open a Slack socket per
 // organization in replica mode. The others post through the Web API only.

@@ -133,6 +133,11 @@ config:
   # pglite:///path/to/data-dir — embedded PostgreSQL (single-node/standalone
   # only; requires a persistent volume mounted at the data directory).
   POSTGRES_DB_URI: ''
+  # Most PostgreSQL connections one gateway replica opens; past it a query
+  # waits in process instead of taking a server slot. Size it to the server:
+  # 2-4 x its vCPUs, and replicas x value below max_connections minus the
+  # reserved slots.
+  # POSTGRES_MAX_OPEN_CONNS: '50'
   # Optional: load SQL migration files from a directory on disk instead of
   # the copy embedded in the gateway binary. Only set this if you manage
   # migration files externally; the image ships them at /app/migrations.

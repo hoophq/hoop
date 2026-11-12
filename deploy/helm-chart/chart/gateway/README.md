@@ -24,6 +24,12 @@ database with a fixed password in the manifest; use an external database.
 
 Setup steps: "Credentials from an existing Secret" in [../../README.md](../../README.md).
 
+## Database pool
+
+| Value | Default | Description |
+|---|---|---|
+| `config.POSTGRES_MAX_OPEN_CONNS` | `50` | Most PostgreSQL connections one replica opens. Past it a query waits in process instead of taking a server slot, so a burst of API requests cannot exhaust `max_connections` for every caller. Size it to the server: 2-4 x its vCPUs, and `replicas x value` below `max_connections` minus the reserved slots. |
+
 ## Entra ID without a client secret
 
 | Value | Default | Description |
