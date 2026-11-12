@@ -1585,20 +1585,22 @@ channels. It reads opaque ids only, never a name or an email, and the
 statement as a shape with its values removed: no string, number, bind,
 comment or quoted name reaches it, and bare table and column names stay. A
 mongodb shape keeps `$` operators and identifier-like field names; any other
-key is `?`. The shape follows the lexer's dialect rules, so a statement it
-cannot read in full, and a protocol with no shape (http, grpc, ssh), sends
-none. It never notifies the requester, nor a user outside the selected
-groups, and never selects a group with no member who can approve (an
-active or invited user other than the requester). Only Slack
-notifies; a `teams` key is recorded as not integrated (ENG-705). No email
-is sent. Only a channel Slack reaches from this listener (its channels and
-the default channel) is offered; a configured candidate outside them is
-recorded as not delivered, as is a post Slack refuses. When the routed
-notifications reach no user and no channel, the plane tries to post the
-review as without routing, skipping a channel the routed post already
-tried, and records why and whether a channel accepted that post. The
-review records the groups, the notified users, the channels
-and the reason, and its details show them.
+key is `?`. A value used as a key that looks like an identifier still
+reaches the model: `roles.jsmith`, a customer id such as `cus_N3x7Ab`, or
+ObjectId hex that starts with a letter. The shape follows the lexer's
+dialect rules, so a statement it cannot read in full, and a protocol with
+no shape (http, grpc, ssh), sends none. It never notifies the requester,
+nor a user outside the selected groups, and never selects a group with no
+member who can approve (an active or invited user other than the
+requester). Only Slack notifies; a `teams` key is recorded as not
+integrated (ENG-705). No email is sent. Only a channel Slack reaches from
+this listener (its channels and the default channel) is offered; a
+configured candidate outside them is recorded as not delivered, as is a
+post Slack refuses. When the routed notifications reach no user and no
+channel, the plane tries to post the review as without routing, skipping a
+channel the routed post already tried, and records why and whether a
+channel accepted that post. The review records the groups, the notified
+users, the channels and the reason, and its details show them.
 
 The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
 refusal, no tool call or more than one, an invalid decision or no valid group,
