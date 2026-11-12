@@ -1024,19 +1024,6 @@ func Run(cfg *Config, det Plugin) error {
 	// Every gate on every lane counts into it, keyed by protocol.
 	tel := newTelemetry(cfg, log)
 	defer tel.close()
-	for i := range lanes {
-		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
-		// One recorder per lane for the process's life: a reload swaps
-		// rules into the servers built below, which keep theirs.
-		lanes[i].telemetry = otel.lane(lanes[i].name, lanes[i].cfg.Protocol)
-	}
-
-	// Before any listener binds: a lane that cannot read its tokens stops
-	// startup with an error naming the file.
-	tokenFiles, err := openCallerTokens(lanes, log)
-	if err != nil {
-		return err
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
@@ -1051,81 +1038,30 @@ func Run(cfg *Config, det Plugin) error {
 	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
 	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
-	// Two server SHAPES, one loop of lane facts. A relay lane pumps bytes
-	// through a Gate and runs proxy.Server; an ENDPOINT lane terminates the
-	// protocol itself and runs the one libhoop built — the grpc transport
-	// (ADR-0013) or the ssh endpoint (ADR-0015). The two endpoints share an
-	// interface rather than a slice each, so adding the third protocol that
-	// terminates in-process does not mean a fourth pair of slices to keep
-	// in lockstep here, in the error fan-in, in the shutdown loop and in
-	// the stats zip. The stats zip pairs a server with a name by index, so
-	// each pair must stay in lockstep.
-	servers := make([]*proxy.Server, 0, len(lanes))
-	relayNames := make([]string, 0, len(lanes))
-	var endpoints []endpointServer
-	var endpointNames []string
-	// relayProtocols and endpointProtocols ride beside the names, for the
-	// telemetry snapshot: a metric is keyed by lane AND protocol.
-	relayProtocols := make([]string, 0, len(lanes))
-	var endpointProtocols []string
-	// statSources pairs every server with its lane's protocol, so usage
-	// can report connections per protocol without naming a lane.
-	statSources := make([]statSource, 0, len(lanes))
+	// Two server SHAPES, one registry of lane facts. A relay lane pumps
+	// bytes through a Gate and runs proxy.Server; an ENDPOINT lane
+	// terminates the protocol itself and runs the one libhoop built — the
+	// grpc transport (ADR-0013) or the ssh endpoint (ADR-0015). The
+	// registry (laneSet) is what /stats, /readyz, the usage ticker and the
+	// shutdown loop read, and what a reload that adds or removes a listener
+	// grows and shrinks; the runtime is the one build path both share.
+	// Nothing binds here: every lane is built, then every lane is started
+	// below, so a lane that cannot be built (a token file it cannot read,
+	// an engine this build did not link) stops startup before any socket
+	// opens.
+	rt := &laneRuntime{cfg: cfg, sink: auditSink, tel: tel, otel: otel, log: log,
+		set: &laneSet{}, tokens: &tokenWatch{}}
+	built := make([]runningLane, 0, len(lanes))
 	// swappers are the reload targets, one per lane of either shape.
 	swappers := make(map[string]ruleSwapper, len(lanes))
-	for _, ln := range lanes {
-		switch {
-		case isGRPCTransport(ln.cfg):
-			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, cfg.reviewSettler(log), log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, gsrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
-			swappers[ln.name] = rules
-		case isSSH(ln.cfg):
-			ssrv, rules, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, ssrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
-			swappers[ln.name] = rules
-		case isICA(ln.cfg):
-			isrv, rules, serr := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, isrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
-			swappers[ln.name] = rules
-		case isMCPGateway(ln.cfg):
-			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, msrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
-			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
-		default:
-			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
-			if serr != nil {
-				return serr
-			}
-			servers = append(servers, srv)
-			relayNames = append(relayNames, ln.name)
-			relayProtocols = append(relayProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
-			swappers[ln.name] = relayRules{srv}
+	for i := range lanes {
+		rl, serr := rt.build(&lanes[i])
+		if serr != nil {
+			return serr
 		}
+		built = append(built, rl)
+		swappers[rl.name] = rl.rules
+		ln := lanes[i]
 
 		// One line per lane naming what it enforces. The config file does not
 		// show what a lane inherited, so this logs the RESOLVED stack: it turns
@@ -1164,20 +1100,15 @@ func Run(cfg *Config, det Plugin) error {
 	// the config generation, the plane copy's drop count. Read on every
 	// export from the same sources /stats renders, so the two agree.
 	otel.observe(func() telem.ProcessSnapshot {
+		running := rt.set.snapshot()
 		snap := telem.ProcessSnapshot{
-			Lanes:            make([]telem.LaneStats, 0, len(servers)+len(endpoints)),
+			Lanes:            make([]telem.LaneStats, 0, len(running)),
 			ConfigGeneration: int64(view.Load().gen),
 		}
-		for i, s := range servers {
-			active, total, _ := s.Stats()
+		for _, l := range running {
+			active, total, _ := l.stats()
 			snap.Lanes = append(snap.Lanes, telem.LaneStats{
-				Lane: relayNames[i], Protocol: relayProtocols[i], Active: active, Total: total,
-			})
-		}
-		for i, s := range endpoints {
-			active, total, _ := s.Stats()
-			snap.Lanes = append(snap.Lanes, telem.LaneStats{
-				Lane: endpointNames[i], Protocol: endpointProtocols[i], Active: active, Total: total,
+				Lane: l.name, Protocol: l.protocol, Active: active, Total: total,
 			})
 		}
 		if ac.events != nil {
@@ -1188,16 +1119,19 @@ func Run(cfg *Config, det Plugin) error {
 		return snap
 	})
 
-	// The reloader swaps rule-only drift into the servers built above and
-	// keeps the restart log for everything else (ADR-0014). One source
-	// feeds it per process: the plane's heartbeat, or the config file's
-	// watcher. Both share the run context, so shutdown stops them with
-	// everything else.
+	// The reloader swaps rule-only drift into the servers built above,
+	// starts and stops the lanes a document adds and removes, and keeps
+	// the restart log for everything else (ADR-0014). One source feeds it
+	// per process: the plane's heartbeat, or the config file's watcher.
+	// Both share the run context, so shutdown stops them with everything
+	// else.
 	rl, rerr := newReloader(cfg, lanes, swappers, det, analyzerDeps, view, licState)
 	if rerr != nil {
 		return rerr
 	}
 	rl.tel = tel
+	rl.rt = rt
+
 	switch {
 	case cfg.cp != nil:
 		log.Info("control plane connected",
@@ -1236,9 +1170,7 @@ func Run(cfg *Config, det Plugin) error {
 			"hint", "send SIGHUP to re-read it now")
 	}
 	go rl.watchFile(ctx, log)
-	if len(tokenFiles) > 0 {
-		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
-	}
+	go watchCallerTokens(ctx, log, rt.tokens, fileWatchEvery)
 
 	var runAdmin func() error
 	if cfg.Admin.Listen != "" || cfg.Admin.APIListen != "" {
@@ -1247,7 +1179,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		runAdmin = func() error {
-			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
+			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, rt.set,
 				view, ac, analyzerCfg, am, licState, otel, log, icaReadinessJSONFor(cfg))
 		}
 	}
@@ -1263,9 +1195,10 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
-	// the series closes on the last window. Lanes come from the view so a
-	// reload's new analyzer instances are the ones read.
-	usage := func() { tel.trackUsage(statSources, view.Load().lanes) }
+	// the series closes on the last window. Both inputs are read per
+	// window: the registry for the lanes a reload added since, the view
+	// for the analyzer instances it swapped in.
+	usage := func() { tel.trackUsage(rt.set.statSources(), view.Load().lanes) }
 	go func() {
 		t := time.NewTicker(usageEvery)
 		defer t.Stop()
@@ -1279,27 +1212,30 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}()
 
+	// errCh carries the first failure; later ones are logged where they
+	// happen and dropped, which is what a bounded channel sized for a lane
+	// count that a reload can grow has to do.
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints)+3)
-	for i, srv := range servers {
-		wg.Add(1)
-		go func(s *proxy.Server, name string) {
-			defer wg.Done()
-			if serr := s.Serve(ctx); serr != nil {
-				log.Error("listener failed", "listener", name, "error", serr)
-				errCh <- serr
-			}
-		}(srv, relayNames[i])
+	errCh := make(chan error, 1)
+	fail := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
 	}
-	for i, srv := range endpoints {
-		wg.Add(1)
-		go func(s endpointServer, name string) {
-			defer wg.Done()
-			if serr := s.Serve(ctx); serr != nil {
-				log.Error("listener failed", "listener", name, "error", serr)
-				errCh <- serr
+	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
+	for i, b := range built {
+		if serr := rt.start(b); serr != nil {
+			// Reported through the same channel a Serve failure uses, so
+			// the select below runs the one shutdown path. The lanes not
+			// started yet hold no socket; an engine among them is released.
+			log.Error("listener failed", "listener", b.name, "error", serr)
+			fail(serr)
+			for _, rest := range built[i:] {
+				_ = rest.close()
 			}
-		}(srv, endpointNames[i])
+			break
+		}
 	}
 	if cfg.MCP != nil {
 		// checkMCP proved a server is linked, and the check above that
@@ -1312,7 +1248,7 @@ func Run(cfg *Config, det Plugin) error {
 			// operator who configured the block expects agents to reach it.
 			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
 				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
-				errCh <- serr
+				fail(serr)
 			}
 		}()
 	}
@@ -1324,7 +1260,7 @@ func Run(cfg *Config, det Plugin) error {
 			// admin.listen must not hide read routes that never started.
 			if serr := runAdmin(); serr != nil {
 				log.Error("admin endpoint failed", "error", serr)
-				errCh <- serr
+				fail(serr)
 			}
 		}()
 	}
@@ -1332,10 +1268,10 @@ func Run(cfg *Config, det Plugin) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h := healthState{endpoints, endpointNames, icaReadinessJSONFor(cfg), len(servers)}
+			h := healthState{rt.set, icaReadinessJSONFor(cfg)}
 			if serr := serveHealth(ctx, addr, h, log); serr != nil {
 				log.Error("health endpoint failed", "listen", addr, "error", serr)
-				errCh <- serr
+				fail(serr)
 			}
 		}()
 	}
@@ -1361,21 +1297,7 @@ func Run(cfg *Config, det Plugin) error {
 		tel.trackLicenseExpired(cfg, licState)
 		cancel()
 	}
-	for _, srv := range servers {
-		_ = srv.Close()
-	}
-	// Endpoint lanes close together: an ica lane's Close drains its sessions
-	// for up to 30s, and closing lanes one after another would add those
-	// windows up past the pod's termination grace period.
-	var closing sync.WaitGroup
-	for i, srv := range endpoints {
-		closing.Go(func() {
-			if cerr := srv.Close(); cerr != nil {
-				log.Warn("listener close failed", "listener", endpointNames[i], "error", cerr)
-			}
-		})
-	}
-	closing.Wait()
+	rt.set.closeAll(log)
 	wg.Wait()
 	close(errCh)
 
@@ -2053,10 +1975,7 @@ func serveAdmin(
 	ctx context.Context,
 	addr string,
 	apiAddr string,
-	servers []*proxy.Server,
-	relayNames []string,
-	endpoints []endpointServer,
-	endpointNames []string,
+	lanes *laneSet,
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
@@ -2086,12 +2005,12 @@ func serveAdmin(
 	}
 
 	probes := http.NewServeMux()
-	handleHealth(probes, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
+	handleHealth(probes, healthState{lanes, icaReadinessJSON})
 
 	// The one write here is the ICA deployment drain. It has its own token
 	// and is off unless the operator sets it: every read route is
 	// unauthenticated, and a write must not be.
-	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
+	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), lanes))
 
 	// Releases up to 1.306 served the read routes here. A scraper still
 	// pointed at this port gets a 404 that says where they went, rather than
@@ -2130,29 +2049,18 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		out := make([]stat, 0, len(servers)+len(endpoints))
-		for i, s := range servers {
-			active, total, denied := s.Stats()
+		// The registry, not the startup slices: a lane a reload added is
+		// listed, one it removed is not.
+		running := lanes.snapshot()
+		out := make([]stat, 0, len(running))
+		for _, l := range running {
+			active, total, denied := l.stats()
 			a := ""
-			if s.Addr() != nil {
-				a = s.Addr().String()
-			}
-			// servers and relayNames are built in lockstep from the relay
-			// listeners, so the index is the join. Endpoint lanes are
-			// appended below from their own lockstep slices.
-			out = append(out, stat{
-				Name: relayNames[i], Addr: a,
-				Active: active, Total: total, Denied: denied,
-			})
-		}
-		for i, s := range endpoints {
-			active, total, denied := s.Stats()
-			a := ""
-			if s.Addr() != nil {
-				a = s.Addr().String()
+			if addr := l.addr(); addr != nil {
+				a = addr.String()
 			}
 			out = append(out, stat{
-				Name: endpointNames[i], Addr: a,
+				Name: l.name, Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}

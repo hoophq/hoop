@@ -429,8 +429,13 @@ type reloadReport struct {
 	gen     int
 	swapped int
 	kept    int
+	// added and removed count the listeners the document started and
+	// stopped.
+	added   int
+	removed int
 	// changed names the config sections that differed from the running
-	// generation: guardrails, opa, mask, analyzer, pii. Fixed vocabulary.
+	// generation: guardrails, opa, mask, analyzer, pii, license,
+	// listeners. Fixed vocabulary.
 	changed []string
 	cfg     *Config
 	lanes   []lane
@@ -463,6 +468,8 @@ func (t *telemetry) trackReload(r reloadReport) {
 		"outcome":           outcome,
 		"lanes-swapped":     r.swapped,
 		"lanes-kept":        r.kept,
+		"lanes-added":       r.added,
+		"lanes-removed":     r.removed,
 	}
 	if r.changed != nil {
 		p["changed"] = r.changed
