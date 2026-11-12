@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -1240,13 +1241,17 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	adminSecret := os.Getenv(AdminSecretEnv)
+	var runAdmin func() error
 	if cfg.Admin.Listen != "" || cfg.Admin.APIListen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
-		go serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
+		licenseAPI := licenseHandler(adminSecret, rl, log)
+		runAdmin = func() error {
+			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
+				view, ac, analyzerCfg, am, licState, otel, licenseAPI, log, cfg.Admin.ICAReadinessJSON)
+		}
 	}
 	if cfg.Admin.Listen == "" && strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
@@ -1275,7 +1280,7 @@ func Run(cfg *Config, det Plugin) error {
 	}()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints)+2)
+	errCh := make(chan error, len(servers)+len(endpoints)+3)
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -1307,6 +1312,18 @@ func Run(cfg *Config, det Plugin) error {
 			// operator who configured the block expects agents to reach it.
 			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
 				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
+				errCh <- serr
+			}
+		}()
+	}
+	if runAdmin != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A bind failure stops the process: healthy probes on
+			// admin.listen must not hide read routes that never started.
+			if serr := runAdmin(); serr != nil {
+				log.Error("admin endpoint failed", "error", serr)
 				errCh <- serr
 			}
 		}()
@@ -1989,10 +2006,12 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 // path, so a platform can probe or scrape them without reaching the proxy,
 // and vice versa.
 //
-// addr (admin.listen) serves the probes and the two authenticated writes,
-// and nothing that reads audit data or rules: a workspace that reaches it
-// learns only whether the process is up. apiAddr (admin.api_listen) serves
+// addr (admin.listen) serves /healthz, /readyz and the two authenticated
+// writes, and no audit data or lane rules. apiAddr (admin.api_listen) serves
 // the unauthenticated read routes. Either is skipped when empty.
+//
+// Both bind before either serves, and a bind or serve failure is returned:
+// probes that answer must not hide read routes that never started.
 func serveAdmin(
 	ctx context.Context,
 	addr string,
@@ -2010,7 +2029,26 @@ func serveAdmin(
 	licenseAPI http.Handler,
 	log *slog.Logger,
 	icaReadinessJSON bool,
-) {
+) error {
+	var probesLn, apiLn net.Listener
+	if addr != "" {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("admin listener (admin.listen): %w", err)
+		}
+		probesLn = ln
+	}
+	if apiAddr != "" {
+		ln, err := net.Listen("tcp", apiAddr)
+		if err != nil {
+			if probesLn != nil {
+				_ = probesLn.Close()
+			}
+			return fmt.Errorf("admin API listener (admin.api_listen): %w", err)
+		}
+		apiLn = ln
+	}
+
 	probes := http.NewServeMux()
 	handleHealth(probes, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
 
@@ -2031,11 +2069,22 @@ func serveAdmin(
 		probes.HandleFunc(p, moved)
 	}
 
-	if addr != "" {
-		go serveHTTP(ctx, "admin endpoint", addr, probes, log)
+	errs := make(chan error, 2)
+	serving := 0
+	if probesLn != nil {
+		serving++
+		go func() { errs <- serveHTTP(ctx, "admin endpoint", probesLn, probes, log) }()
 	}
-	if apiAddr == "" {
-		return
+	wait := func() error {
+		for range serving {
+			if err := <-errs; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if apiLn == nil {
+		return wait()
 	}
 
 	mux := http.NewServeMux()
@@ -2265,13 +2314,14 @@ func serveAdmin(
 			"paths", "/api/sessions, /api/sessions/{id}, /api/sessions/{id}/events, /api/events, /api/stats")
 	}
 
-	serveHTTP(ctx, "admin API endpoint", apiAddr, mux, log)
+	serving++
+	go func() { errs <- serveHTTP(ctx, "admin API endpoint", apiLn, mux, log) }()
+	return wait()
 }
 
-// serveHTTP serves handler on addr until ctx ends, and logs a bind failure.
-func serveHTTP(ctx context.Context, name, addr string, handler http.Handler, log *slog.Logger) {
+// serveHTTP serves handler on ln until ctx ends, and returns a serve failure.
+func serveHTTP(ctx context.Context, name string, ln net.Listener, handler http.Handler, log *slog.Logger) error {
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -2282,8 +2332,9 @@ func serveHTTP(ctx context.Context, name, addr string, handler http.Handler, log
 		_ = srv.Shutdown(shutCtx)
 	}()
 
-	log.Info(name+" listening", "listen", addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error(name+" failed", "error", err)
+	log.Info(name+" listening", "listen", ln.Addr().String())
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("%s: %w", name, err)
 	}
+	return nil
 }

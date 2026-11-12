@@ -172,6 +172,38 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 	}
 }
 
+// An admin.api_listen that cannot bind stops the process: admin.listen must
+// not answer probes while the read routes never started.
+func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	addr := freeTCPAddr(t)
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{})
+	done := make(chan error, 1)
+	go func() {
+		done <- serveAdmin(context.Background(), addr, held.Addr().String(), nil, nil, nil, nil, view, auditChain{},
+			nil, nil, nil, nil, http.NotFoundHandler(), slog.New(slog.DiscardHandler), false)
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "admin.api_listen") {
+			t.Fatalf("serveAdmin with a held api_listen = %v, want an error naming admin.api_listen", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveAdmin kept running with a held api_listen")
+	}
+	// admin.listen was released, not left serving probes.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("admin.listen still held after the failure: %v", err)
+	}
+	_ = ln.Close()
+}
+
 // api_listen on admin.listen's port is two servers on one socket: one would
 // fail to bind, so the config is refused.
 func TestAdminAPIListenMustNotShareTheAdminPort(t *testing.T) {
