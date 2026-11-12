@@ -1588,7 +1588,8 @@ mongodb shape keeps `$` operators and identifier-like field names; any other
 key is `?`. The shape follows the lexer's dialect rules, so a statement it
 cannot read in full, and a protocol with no shape (http, grpc, ssh), sends
 none. It never notifies the requester, nor a user outside the selected
-groups, and never selects a group with no active member. Only Slack
+groups, and never selects a group with no member who can approve (an
+active or invited user other than the requester). Only Slack
 notifies; a `teams` key is recorded as not integrated (ENG-705). No email
 is sent. Only a channel Slack reaches from this listener (its channels and
 the default channel) is offered; a configured candidate outside them is

@@ -31,8 +31,8 @@ type routeContext struct {
 	groupMembers map[string]int
 	// openReviews counts the pending reviews each candidate can decide.
 	openReviews map[string]int
-	// members are the active users of the candidates, requester removed,
-	// by hoop user id.
+	// members are the users of the candidates that may settle a review
+	// (models.ApproverStatuses), requester removed, by hoop user id.
 	members map[string]member
 	// excluded are the hoop user ids of the requester: RequesterID and every
 	// user the principal names. Never routed to, never notified.
@@ -178,7 +178,8 @@ func (rc *routeContext) loadRequester(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// loadMembers reads the active users of the candidates.
+// loadMembers reads the users of the candidates that may settle a review:
+// models.ApproverStatuses, active and invited.
 func (rc *routeContext) loadMembers(ctx context.Context, db *gorm.DB) error {
 	var rows []struct {
 		ID    string `gorm:"column:id"`
@@ -188,8 +189,8 @@ func (rc *routeContext) loadMembers(ctx context.Context, db *gorm.DB) error {
 		SELECT u.id, ug.name
 		FROM private.users u
 		JOIN private.user_groups ug ON ug.user_id = u.id AND ug.org_id = u.org_id
-		WHERE u.org_id = ? AND u.status = 'active' AND ug.name IN ?
-		ORDER BY u.id, ug.name`, rc.in.OrgID, rc.candidates).Scan(&rows).Error
+		WHERE u.org_id = ? AND u.status IN ? AND ug.name IN ?
+		ORDER BY u.id, ug.name`, rc.in.OrgID, models.ApproverStatuses, rc.candidates).Scan(&rows).Error
 	if err != nil {
 		return fmt.Errorf("failed reading the members of the candidate groups: %w", err)
 	}

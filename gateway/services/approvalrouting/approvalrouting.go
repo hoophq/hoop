@@ -248,9 +248,9 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 		return rc.fallback(CauseInvalidDecision, "the tool input has a blank reason", nil)
 	}
 
-	// Groups: candidates only, in candidate order, with an active member to
-	// decide: a group nobody can approve in would hold the statement until
-	// it expires.
+	// Groups: candidates only, in candidate order, with a member to decide
+	// (an active or invited user, not the requester): a group nobody can
+	// approve in would hold the statement until it expires.
 	var groups []string
 	empty := false
 	for _, g := range rc.candidates {
@@ -265,7 +265,7 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	}
 	if len(groups) == 0 {
 		if empty {
-			return rc.fallback(CauseNoValidGroup, "no selected group has an active member", nil)
+			return rc.fallback(CauseNoValidGroup, "no selected group has a member who can approve", nil)
 		}
 		return rc.fallback(CauseNoValidGroup, "no selected group is a candidate", nil)
 	}

@@ -154,7 +154,8 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 	return out
 }
 
-// slackIDs maps active users onto their slack_id ("" without one).
+// slackIDs maps users that may settle a review (models.ApproverStatuses)
+// onto their slack_id ("" without one).
 func slackIDs(ctx context.Context, db *gorm.DB, orgID string, userIDs []string) (map[string]string, error) {
 	out := map[string]string{}
 	if len(userIDs) == 0 {
@@ -164,8 +165,8 @@ func slackIDs(ctx context.Context, db *gorm.DB, orgID string, userIDs []string) 
 		ID      string  `gorm:"column:id"`
 		SlackID *string `gorm:"column:slack_id"`
 	}
-	err := db.WithContext(ctx).Raw(`SELECT id, slack_id FROM private.users WHERE org_id = ? AND id IN ? AND status = 'active'`,
-		orgID, userIDs).Scan(&rows).Error
+	err := db.WithContext(ctx).Raw(`SELECT id, slack_id FROM private.users WHERE org_id = ? AND id IN ? AND status IN ?`,
+		orgID, userIDs, models.ApproverStatuses).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

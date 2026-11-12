@@ -835,7 +835,7 @@ func TestAGroupWithNoActiveMemberIsNotSelected(t *testing.T) {
 	d := route("payments")
 	assert.Equal(t, models.ReviewRoutingModeStatic, d.Record.Mode)
 	assert.Equal(t, approvalrouting.CauseNoValidGroup, d.Record.FallbackCause)
-	assert.Equal(t, "no selected group has an active member", d.Record.FallbackDetail)
+	assert.Equal(t, "no selected group has a member who can approve", d.Record.FallbackDetail)
 	assert.Equal(t, []string{"payments", "sre"}, d.Groups, "the fallback files to every candidate")
 
 	d = route("payments", "sre")
@@ -954,4 +954,23 @@ func TestAGroupWhoseOnlyMemberIsTheRequesterIsNotSelected(t *testing.T) {
 	assert.Equal(t, models.ReviewRoutingModeStatic, d.Record.Mode)
 	assert.Equal(t, approvalrouting.CauseNoValidGroup, d.Record.FallbackCause)
 	assert.Equal(t, []string{"payments", "sre"}, d.Groups)
+}
+
+// An invited user may settle a review from Slack, so a group of invited
+// users can be selected, and its members notified.
+func TestAnInvitedApproverKeepsAGroupSelectable(t *testing.T) {
+	startStatusTestDB(t)
+	slackFake := useSlack(t, "C-DEFAULT")
+	sc := seedLevelSidecar(t, "invited", "invited-rule", routedSpec("invited-rule", `{"slack": {"delivery": "dm"}}`))
+	ivy := seedUser(t, "Ivy", "invited", "U-IVY", "payments")
+	seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"payments"}, "notify_users": []string{ivy.ID}, "channels": []any{}, "reason": "r"})})
+
+	filed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 61", "high"))
+	assert.Equal(t, []string{"payments"}, reviewGroupNames(filed.Review))
+	r := waitNotified(t, sc, filed.Review.ID)
+	assert.Equal(t, models.ReviewRoutingModeAI, r.Mode)
+	assert.Equal(t, []models.ReviewRoutingUser{{ID: ivy.ID, Integrations: []string{"slack"}}}, r.NotifiedUsers)
+	assert.Equal(t, []string{"U-IVY"}, slackFake.destinations())
 }
