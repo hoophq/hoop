@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
@@ -62,7 +63,25 @@ type tour struct {
 	// lastOp is each session's last recorded operation, which a masked
 	// event (it names none) is matched by.
 	lastOp map[string]string
+	// lastRisk is each session's last analyzer verdict, matched the same way.
+	lastRisk map[string]string
+	// held is true while a statement waits at this terminal for approval:
+	// the AI step's, or any other the analyzer held. sawHold is true once
+	// the running step saw one.
+	held, sawHold bool
 }
+
+// stepTimeout is the time a step may take: quick for most, and for the AI
+// step the time a held statement waits for the person (analyzer.ReviewWait)
+// and a margin.
+func stepTimeout(s sidecardemo.Step, quick time.Duration) time.Duration {
+	if s.Approval {
+		return analyzer.ReviewWait + time.Minute
+	}
+	return quick
+}
+
+type tourStep sidecardemo.Step
 
 func newTour(o *DemoOptions) *tour {
 	kind := o.Kind
@@ -92,22 +111,38 @@ func (t *tour) pg() bool { return t.kind == sidecardemo.KindPostgres }
 // records the server's CommandComplete as a statement ("SELECT 4", operation
 // unknown) between the query and its masked rows; letting it count would leave
 // the masked event matched to "unknown" and "See masking" never ticked.
+//
+// The analyzer's verdict is carried the same way: the AI step's approved
+// export is masked too, and that masked reply is not "See masking".
 func (t *tour) see(ev audit.Event) {
-	op := string(ev.Operation)
+	op, risk := string(ev.Operation), ev.Metadata["risk_level"]
 	if (ev.Kind == audit.KindStatement || ev.Kind == "violation") && ev.Direction != inspect.FromServer {
 		if t.lastOp == nil {
-			t.lastOp = map[string]string{}
+			t.lastOp, t.lastRisk = map[string]string{}, map[string]string{}
 		}
 		t.lastOp[string(ev.SessionID)] = op
+		t.lastRisk[string(ev.SessionID)] = risk
 	}
 	if op == "" {
 		op = t.lastOp[string(ev.SessionID)]
 	}
+	if risk == "" {
+		risk = t.lastRisk[string(ev.SessionID)]
+	}
 	for i, s := range t.steps {
-		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
+		if s.SeenRisk == "" && strings.EqualFold(risk, "high") {
+			continue
+		}
+		// The AI step is done whichever way the person decided: approved,
+		// it is a statement; rejected, a violation with the same verdict.
+		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation
+		if s.SeenKind == "" || (string(ev.Kind) != s.SeenKind && !rejected) {
 			continue
 		}
 		if s.SeenTable != "" && !slices.ContainsFunc(ev.Tables, func(tb string) bool { return strings.EqualFold(tb, s.SeenTable) }) {
+			continue
+		}
+		if s.SeenRisk != "" && !strings.EqualFold(ev.Metadata["risk_level"], s.SeenRisk) {
 			continue
 		}
 		if s.SeenOp == "" || strings.EqualFold(op, s.SeenOp) {
@@ -118,7 +153,7 @@ func (t *tour) see(ev audit.Event) {
 
 // run sends step i's request off the UI goroutine, over the demo's protocol.
 func (t *tour) run(i int) tea.Cmd {
-	t.running, t.flash = i, ""
+	t.running, t.flash, t.sawHold = i, "", false
 	if t.pg() {
 		return t.runPG(i)
 	}
@@ -128,7 +163,7 @@ func (t *tour) run(i int) tea.Cmd {
 func (t *tour) runHTTP(i int) tea.Cmd {
 	s := t.steps[i]
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, 5*time.Second))
 		defer cancel()
 		var body io.Reader
 		if s.Body != "" {
@@ -169,7 +204,7 @@ func (t *tour) runPG(i int) tea.Cmd {
 			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
 		}
 		start := time.Now()
-		res, err := pgQuery(target, s.SQL)
+		res, err := pgQuery(target, s.SQL, stepTimeout(s, 15*time.Second))
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -180,11 +215,28 @@ func (t *tour) runPG(i int) tea.Cmd {
 
 func (t *tour) apply(r tourResult) {
 	t.running = -1
+	// The AI step answered without a hold: the analyzer fails open, so an
+	// unreachable model lets the statement through. Say so, not "ok".
+	if r.err == nil && t.steps[r.step].Approval && !t.sawHold {
+		r.err = errNoHold
+	}
 	t.result = &r
 	if r.err == nil {
 		t.done[r.step] = true
 	}
 }
+
+// setHeld records whether a statement waits at this terminal, and that the
+// running step saw one.
+func (t *tour) setHeld(held bool) {
+	t.held = held
+	if held && t.running >= 0 {
+		t.sawHold = true
+	}
+}
+
+var errNoHold = errors.New("the AI analyzer did not hold it: the model Hoop hosts may be unreachable " +
+	"(the analyzer then lets statements through). See Logs (6)")
 
 // summary is the one-line "what runs" for a step: the HTTP method and path, or
 // the SQL statement.
@@ -254,6 +306,9 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 
 func (t *tour) hints() []keyHint {
 	keys := []keyHint{{"↑↓", "step"}, {"enter", "run it here"}}
+	if t.held {
+		keys = []keyHint{{"enter", "approve or reject"}, {"↑↓", "step"}}
+	}
 	copyLabel := "copy curl"
 	if t.pg() {
 		copyLabel = "copy psql"
@@ -317,6 +372,10 @@ func (t *tour) view(w, h int, now time.Time) string {
 	lines = append(lines, "")
 
 	switch r := t.result; {
+	case t.running == t.cur && t.held:
+		lines = append(lines, shimmer("⧗ Waiting for your approval…", now),
+			ansi.Truncate(stText.Render("The AI analyzer held it. Press ")+stKey.Render("enter")+
+				stText.Render(" to read why, then approve or reject it."), w, "…"))
 	case t.running == t.cur:
 		verb := "sending "
 		if t.pg() {
@@ -385,7 +444,7 @@ const sqlstateRefused = "42501"
 // styles like a refused HTTP request, and any other (a mistyped column, a
 // failed login) a 400 that carries the database's own message. Only a
 // connection that never answered is the returned error.
-func pgQuery(t pgTarget, sql string) (tourResult, error) {
+func pgQuery(t pgTarget, sql string, timeout time.Duration) (tourResult, error) {
 	host, port, err := net.SplitHostPort(t.addr)
 	if err != nil {
 		return tourResult{}, err
@@ -413,7 +472,7 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {

@@ -217,6 +217,11 @@ type Config struct {
 	// when it has no control plane. WithLocalReviewer fills it; see there.
 	localReviewer LocalReviewer
 
+	// localReviewerFirst names the listeners whose human holds go to
+	// localReviewer even with a control plane. WithLocalReviewerFirst sets
+	// it; see there.
+	localReviewerFirst []string
+
 	// entrypoint, deprecatedAlias and configFormat are facts the entry
 	// point learned about its own invocation, carried here so Run can
 	// report them. Setup fills them from its Options; none is a config
@@ -2118,6 +2123,10 @@ type analyzerDeps struct {
 	// when cp is nil. Held here for the same reason as cp: a reload that
 	// adds require_review to a lane gets a reviewer without a restart.
 	local LocalReviewer
+
+	// localFirst names the listeners that ask local before cp. Set only
+	// for the CLI's built-in demo; see filesLocally.
+	localFirst []string
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every

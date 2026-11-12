@@ -2,6 +2,7 @@ package sidecartui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -23,14 +24,16 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 )
 
-// validateFile is the validator the CLI injects, minus the license and the
-// reviewer: the free tier, which is what a first config must fit.
+// validateFile is the validator the CLI injects, minus the license: the free
+// tier, which is what a first config must fit. Like the CLI's, it attaches a
+// terminal reviewer, so the demo's require_approval validates.
 func validateFile(path string) (string, error) {
-	cfg, err := configyaml.Load(path)
-	if err != nil {
-		return "", err
-	}
-	det, err := alcatraz.PluginFromConfig(cfg.PII)
+	t := os.Getenv("HOOP_LICENSE")
+	os.Unsetenv("HOOP_LICENSE")
+	defer os.Setenv("HOOP_LICENSE", t)
+	cfg, det, err := daemon.SetupWith(path, configyaml.Load,
+		func(raw json.RawMessage) (daemon.Plugin, error) { return alcatraz.PluginFromConfig(raw) },
+		daemon.WithLocalReviewer(NewReviewer().For))
 	if err != nil {
 		return "", err
 	}

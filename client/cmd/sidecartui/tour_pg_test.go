@@ -88,7 +88,7 @@ func TestPgQueryLogsInAsTheDemoRoleAndRendersRows(t *testing.T) {
 		_ = b.Flush()
 	})
 
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT customerid, email FROM customers LIMIT 2;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT customerid, email FROM customers LIMIT 2;", 15*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestPgQueryIgnoresThePGEnvironment(t *testing.T) {
 		b.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 		_ = b.Flush()
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT 1;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT 1;", 15*time.Second)
 	if err != nil {
 		t.Fatalf("a PG* variable broke the step: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestPgQueryReadsTheSidecarRefusal(t *testing.T) {
 	addr, _ := fakePostgres(t, func(_ *pgproto3.Backend, conn net.Conn) {
 		_, _ = conn.Write(proxy.PostgresError(msg))
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "DROP TABLE customers;")
+	r, err := pgQuery(pgTarget{addr: addr}, "DROP TABLE customers;", 15*time.Second)
 	if err != nil {
 		t.Fatalf("a refusal is an answer, not an error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestPgQueryShowsADatabaseErrorAsIs(t *testing.T) {
 		b.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 		_ = b.Flush()
 	})
-	r, err := pgQuery(pgTarget{addr: addr}, "SELECT nope FROM customers;")
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT nope FROM customers;", 15*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,17 +176,30 @@ func TestPostgresTourTicksStepsFromTheAuditTrail(t *testing.T) {
 	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "select", Tables: []string{"customers"}, SessionID: "s1", Direction: inspect.FromClient})
 	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "unknown", SessionID: "s1", Direction: inspect.FromServer})
 	tr.see(audit.Event{Kind: "masked", SessionID: "s1", Direction: inspect.FromServer})
-	if !tr.done[0] || tr.done[2] {
+	if !tr.done[0] || tr.done[2] || tr.done[3] {
 		t.Fatalf("after the masking query: done = %v, want See masking only", tr.done)
 	}
 	tr.see(audit.Event{Kind: "violation", Operation: "drop", Tables: []string{"customers"}, SessionID: "s2", Direction: inspect.FromClient})
+	if tr.done[2] {
+		t.Fatal("the guardrail's DROP ticked Ask for approval")
+	}
+	// A rejected AI hold is a violation with the high verdict: done too.
+	rej := newTour(&DemoOptions{Kind: sidecardemo.KindPostgres})
+	rej.see(audit.Event{Kind: "violation", Operation: "select", Tables: []string{"customers"}, SessionID: "r1", Direction: inspect.FromClient,
+		Metadata: map[string]string{"risk_level": "high"}})
+	if !rej.done[2] || rej.done[1] {
+		t.Fatalf("a rejected hold: done = %v, want Ask for approval only", rej.done)
+	}
+	// The AI step reads customers too: the analyzer's high verdict tells it apart.
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "select", Tables: []string{"customers"}, SessionID: "s4", Direction: inspect.FromClient,
+		Metadata: map[string]string{"risk_level": "high"}})
 	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "select", Tables: []string{"products"}, SessionID: "s3", Direction: inspect.FromClient})
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		if !tr.done[i] {
 			t.Errorf("step %d (%s) not ticked", i+1, tr.steps[i].Title)
 		}
 	}
-	if tr.done[3] {
+	if tr.done[4] {
 		t.Error("the direct query was ticked: the sidecar never sees it")
 	}
 }

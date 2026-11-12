@@ -93,6 +93,7 @@ type setupOptions struct {
 	entrypoint      string
 	deprecatedAlias bool
 	localReviewer   LocalReviewer
+	localFirst      []string
 	planeURL        string
 	firstRun        FirstRunObserver
 }
@@ -191,6 +192,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
 	cfg.localReviewer = o.localReviewer
+	cfg.localReviewerFirst = o.localFirst
 	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
@@ -1518,7 +1520,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if why := holdRefusal(cfg, lc.Analyzer, ac); why != "" {
+		if why := holdRefusal(cfg, lc.Name, lc.Analyzer, ac); why != "" {
 			problems = append(problems, name+": "+why)
 			continue
 		}

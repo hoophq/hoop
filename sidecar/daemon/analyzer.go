@@ -1011,10 +1011,14 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 //     every -validate run outside a terminal.
 //
 // The plane is asked first: a process connected to one files there even when
-// a local reviewer is linked, so its approvers are never bypassed.
+// a local reviewer is linked, so its approvers are never bypassed. The one
+// exception is WithLocalReviewerFirst, which only the CLI's demo passes.
 func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
 	if ac == nil || la == nil || observing {
 		return nil
+	}
+	if ac.filesLocally(listener) && humanHolds(la) {
+		return ac.local(listener)
 	}
 	if ac.cp != nil {
 		if !humanHolds(la) || ruleHolds(la) && la.ApprovalRule == "" {
@@ -1026,6 +1030,17 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 		return ac.local(listener)
 	}
 	return nil
+}
+
+// filesLocally reports a listener whose human holds go to the local reviewer
+// although a plane is configured: one WithLocalReviewerFirst named, in a
+// process whose lanes come from the local file. A plane that serves the
+// lanes itself keeps its approvers, whatever the listener is called.
+func (ac *analyzerDeps) filesLocally(listener string) bool {
+	if ac == nil || ac.local == nil || !slices.Contains(ac.localFirst, listener) {
+		return false
+	}
+	return ac.cp == nil || ac.cp.diskMode
 }
 
 // budget key prefixes. The map in analyzerDeps is process-wide and keyed by
@@ -1324,13 +1339,14 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		return nil, err
 	}
 	return &analyzerDeps{
-		cfg:      a,
-		provider: provider,
-		cp:       cfg.cp,
-		local:    cfg.localReviewer,
-		det:      det,
-		mcp:      cfg.MCP != nil,
-		metrics:  newAnalyzerMetrics(a.providerName(), a.modelName()),
+		cfg:        a,
+		provider:   provider,
+		cp:         cfg.cp,
+		local:      cfg.localReviewer,
+		localFirst: cfg.localReviewerFirst,
+		det:        det,
+		mcp:        cfg.MCP != nil,
+		metrics:    newAnalyzerMetrics(a.providerName(), a.modelName()),
 	}, nil
 }
 

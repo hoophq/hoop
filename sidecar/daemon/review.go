@@ -168,6 +168,19 @@ func WithLocalReviewer(r LocalReviewer) Option {
 	return func(o *setupOptions) { o.localReviewer = r }
 }
 
+// WithLocalReviewerFirst files the human holds of the named listeners with
+// the WithLocalReviewer reviewer even when a control plane is configured, as
+// long as the lanes come from the local file (the plane answered
+// load_from_disk). A plane that serves the lanes keeps its approvers.
+//
+// Only for the CLI's built-in demo, whose data is public and invented: the
+// free plan always runs logged in, and the demo shows the hold at the
+// terminal. Never pass it for a real config: there the plane's approvers
+// decide. Without WithLocalReviewer it does nothing.
+func WithLocalReviewerFirst(listeners ...string) Option {
+	return func(o *setupOptions) { o.localFirst = append(o.localFirst, listeners...) }
+}
+
 // holdRefusal is why a lane that holds statements cannot be built, or "".
 //
 // Two refusals, both at build rather than in Config.Validate for the reason
@@ -176,8 +189,16 @@ func WithLocalReviewer(r LocalReviewer) Option {
 // names none. Without one, a level a person approves needs a local reviewer,
 // or there is nowhere to file the review at all. A level the approval agent
 // decides needs neither.
-func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
+func holdRefusal(cfg *Config, listener string, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 	if !humanHolds(la) {
+		return ""
+	}
+	if ac.filesLocally(listener) {
+		if la.reserves() {
+			return fmt.Sprintf("the analyzer block sets spend_approval_on %q and this "+
+				"sidecar files approvals at the terminal; the terminal approver "+
+				"releases one statement at once", la.SpendApprovalOn)
+		}
 		return ""
 	}
 	if holdsWithoutAPlane(cfg, la, ac) {
