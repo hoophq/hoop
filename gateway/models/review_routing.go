@@ -16,8 +16,8 @@ const (
 )
 
 // Notify fallbacks: the routed notifications reached no user and no
-// channel, so the review was notified as a review without routing is: in
-// the listener's Slack channels or the default channel.
+// channel, so the plane tried to post the review as a review without
+// routing is: in the listener's Slack channels or the default channel.
 const (
 	// ReviewRoutingNotifyNoIntegration: no notify key is integrated.
 	ReviewRoutingNotifyNoIntegration = "no_integration"
@@ -46,10 +46,13 @@ type ReviewRouting struct {
 	// listener, or a post that failed.
 	UndeliveredChannels []ReviewRoutingUndeliveredChannel `json:"undelivered_channels,omitempty"`
 	// NotifyFallback is set when the routed notifications reached nobody
-	// and the review was posted as without routing: a ReviewRoutingNotify*
-	// value.
-	NotifyFallback string    `json:"notify_fallback,omitempty"`
-	DecidedAt      time.Time `json:"decided_at"`
+	// and the plane tried to post the review as without routing: a
+	// ReviewRoutingNotify* value.
+	NotifyFallback string `json:"notify_fallback,omitempty"`
+	// NotifyFallbackPosted reports that a channel accepted that post. False
+	// with NotifyFallback set: nobody was notified.
+	NotifyFallbackPosted bool      `json:"notify_fallback_posted,omitempty"`
+	DecidedAt            time.Time `json:"decided_at"`
 }
 
 // ReviewRoutingIntegration is one notify key of the routing configuration

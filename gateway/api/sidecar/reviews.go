@@ -724,7 +724,7 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 // A routed notification that reaches nobody falls back to notifySlack too.
 func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
 	decision *approvalrouting.RouteDecision) {
-	unrouted := func() { notifySlack(sidecar, rev, listenerName, display) }
+	unrouted := func() bool { return notifySlack(sidecar, rev, listenerName, display) }
 	if !decision.Notifies() {
 		unrouted()
 		return
@@ -785,14 +785,15 @@ func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
-// exists rather than finding it by looking.
+// exists rather than finding it by looking. It reports whether a channel
+// accepted the message.
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) bool {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
-		return
+		return false
 	}
 
 	// The listener's channels, else the org default channel as a fallback.
@@ -807,7 +808,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 	if len(channels) == 0 && slackSvc.DefaultChannel() == "" {
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
 			Warnf("no slack channel is set for this listener or the org, nobody was notified of this review")
-		return
+		return false
 	}
 
 	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
@@ -818,7 +819,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 	if len(req.ApprovalGroups) == 0 || len(req.ApprovalGroups) >= slackplugin.SlackMaxButtons {
 		log.With("review-id", rev.ID).Warnf("not sending a review message with %d approval groups",
 			len(req.ApprovalGroups))
-		return
+		return false
 	}
 
 	result := slackSvc.PostMessageReview(req)
@@ -827,9 +828,10 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 		// was not invited to. Nobody can act on this review from Slack.
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
 			Warnf("no slack channel accepted the review message, nobody was notified, %v", result)
-		return
+		return false
 	}
 	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("slack review message, %v", result)
+	return true
 }
 
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the

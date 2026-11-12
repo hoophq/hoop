@@ -26,7 +26,8 @@ func toOpenApiRouting(r *models.ReviewRouting) *openapi.ReviewRouting {
 		Reason:         r.Reason,
 		Candidates:     append([]string{}, r.Candidates...),
 		Groups:         append([]string{}, r.Groups...),
-		NotifyFallback: r.NotifyFallback,
+		NotifyFallback:       r.NotifyFallback,
+		NotifyFallbackPosted: r.NotifyFallbackPosted,
 		DecidedAt:      r.DecidedAt,
 	}
 	for _, i := range r.Integrations {

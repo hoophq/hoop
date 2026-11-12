@@ -316,7 +316,7 @@ function RoutingSection({ routing }) {
 
         {routing.notify_fallback && (
           <DetailRow icon={BellRing} label="Notification fallback" align="flex-start">
-            <Text size="sm">{notifyFallbackLabel(routing.notify_fallback)}</Text>
+            <Text size="sm">{notifyFallbackLabel(routing.notify_fallback, routing.notify_fallback_posted)}</Text>
           </DetailRow>
         )}
 

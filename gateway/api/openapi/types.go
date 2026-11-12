@@ -1788,8 +1788,10 @@ type ReviewRouting struct {
 	Unreachable []ReviewRoutingUnreachable `json:"unreachable,omitempty" readonly:"true"`
 	// The channels that did not get the approval request: a configured candidate the integration does not reach from this listener, or a failed post
 	UndeliveredChannels []ReviewRoutingUndeliveredChannel `json:"undelivered_channels,omitempty" readonly:"true"`
-	// Set when the routed notifications reached no user and no channel: the approval request was then posted as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed
+	// Set when the routed notifications reached no user and no channel: the gateway then tried to post the approval request as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed
 	NotifyFallback string `json:"notify_fallback,omitempty" enums:"no_integration,no_target,not_delivered" readonly:"true" example:"no_target"`
+	// With notify_fallback: true when a channel accepted the post as without routing. Absent or false: nobody was notified
+	NotifyFallbackPosted bool `json:"notify_fallback_posted,omitempty" readonly:"true" example:"true"`
 	// When the decision was made
 	DecidedAt time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }

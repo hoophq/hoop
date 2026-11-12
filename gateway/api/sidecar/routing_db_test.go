@@ -673,7 +673,7 @@ func TestNotifyDropsAUserThePrincipalNamesAtPostTime(t *testing.T) {
 	rev := seedStatusReview(t, sc, models.ReviewStatusPending)
 	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
 		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
-		func() { t.Error("a review that reached a user is not posted as without routing") })
+		func() bool { t.Error("a review that reached a user is not posted as without routing"); return false })
 	assert.Equal(t, []string{"U-BOB"}, slackFake.destinations())
 	r := storedRouting(t, sc, rev.ID)
 	require.NotNil(t, r)
@@ -928,6 +928,7 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 			r := waitNotified(t, sc, filed.Review.ID)
 			assert.Equal(t, models.ReviewRoutingModeAI, r.Mode)
 			assert.Equal(t, tc.fallback, r.NotifyFallback)
+			assert.True(t, r.NotifyFallbackPosted, "a channel accepted the post as without routing")
 			assert.Empty(t, r.NotifiedUsers)
 			assert.Empty(t, r.Channels)
 			assert.Equal(t, tc.undelivered, r.UndeliveredChannels)
@@ -936,6 +937,31 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 			assert.Equal(t, tc.posts, slackFake.destinations()[before:])
 		})
 	}
+}
+
+// When the post as without routing reaches nobody either, the record says
+// so: it never claims a post that did not happen.
+func TestAFallbackPostThatReachesNobodyIsRecordedAsSuch(t *testing.T) {
+	startStatusTestDB(t)
+	// No Slack: the teams key is not integrated, and Slack cannot post.
+	sc := seedLevelSidecar(t, "nobody-at-all", "nobody-at-all-rule",
+		routedSpec("nobody-at-all-rule", `{"teams": {"delivery": "dm"}}`))
+	alice := seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"sre"}, "notify_users": []string{alice.ID}, "channels": []any{}, "reason": "r"})})
+
+	filed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 71", "high"))
+	var r *models.ReviewRouting
+	require.Eventually(t, func() bool {
+		r = storedRouting(t, sc, filed.Review.ID)
+		return r != nil && r.NotifyFallback != ""
+	}, 15*time.Second, 50*time.Millisecond)
+	assert.Equal(t, models.ReviewRoutingNotifyNoIntegration, r.NotifyFallback)
+	assert.False(t, r.NotifyFallbackPosted)
+	got := getApproval(t, filed.Review.ID)
+	require.NotNil(t, got.Routing)
+	assert.Equal(t, models.ReviewRoutingNotifyNoIntegration, got.Routing.NotifyFallback)
+	assert.False(t, got.Routing.NotifyFallbackPosted)
 }
 
 // The requester cannot approve their own statement: a group whose only
@@ -1016,7 +1042,7 @@ func TestASlackIDReadErrorIsNotShownToTheApprovalViewers(t *testing.T) {
 		errors.New("failed to connect to `"+secret+"`"))
 	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
 		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
-		func() {})
+		func() bool { return false })
 	r := storedRouting(t, sc, rev.ID)
 	require.NotNil(t, r)
 	const cause = "the gateway could not read the slack ids"
