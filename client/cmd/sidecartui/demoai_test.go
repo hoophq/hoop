@@ -1,6 +1,8 @@
 package sidecartui
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -12,7 +14,37 @@ import (
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 )
+
+// A provider the person already set up is kept, whatever the environment
+// names: any key file in keyDir. Nothing goes to Hoop they did not choose.
+// Vertex has no key file and needs a project: kept, and off until it has one.
+func TestAnExistingProviderIsKeptOverHoopsModel(t *testing.T) {
+	for _, p := range []string{"openai", "gemini", "anthropic"} {
+		if !slices.Contains(analyzer.RegisteredProviders(), p) {
+			continue
+		}
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, p+".key"), []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		d, err := newDraft("postgres", machine{keyDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.an.provider != p || !d.an.on {
+			t.Errorf("%s.key with no env var: provider %q on %v, want %s on", p, d.an.provider, d.an.on, p)
+		}
+	}
+	if slices.Contains(analyzer.RegisteredProviders(), "vertex") {
+		d, _ := newDraft("postgres", machine{keyDir: t.TempDir(), provider: "vertex"})
+		if d.an.provider != "vertex" || d.an.on {
+			t.Errorf("vertex credentials: provider %q on %v, want vertex, off until a project is set", d.an.provider, d.an.on)
+		}
+	}
+}
 
 // The model Hoop hosts is the first provider offered, named for the person,
 // never by its URL; and a sidecar running on it says so in System.

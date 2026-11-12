@@ -308,16 +308,24 @@ func newDraft(id string, m machine) (*draft, error) {
 		d.an.trigger = []string{"delete", "update"}
 	}
 	// The analyzer is on by default, on the model Hoop hosts: no API key and
-	// no URL to set. A provider whose key file is already on this machine is
-	// kept, since the person set it up. An mcp lane refuses an analyzer.
-	if provider == "vertex" || keyFileStatus(d.an.keyFile) != nil {
+	// no URL to set. A provider the person already set up on this machine is
+	// kept instead, so nothing goes to Hoop they did not choose: any
+	// provider's key file in keyDir (the one the environment names first),
+	// or Vertex when its credentials are set, which still needs a project
+	// and so starts off. An mcp lane refuses an analyzer; grpc and spanner
+	// rate only decoded payloads, which need descriptors no default can
+	// name, so theirs starts off too.
+	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol)
+	switch own := ownProvider(provider, keyDir); {
+	case provider == "vertex":
+		d.an.on = false
+	case own != "":
+		d.an.provider, d.an.model = own, starterModels[own]
+		d.an.keyFile = filepath.Join(keyDir, own+".key")
+	default:
 		d.an.provider, d.an.model = hoop.Name, analyzer.HostedModel
 		d.an.keyFile = filepath.Join(keyDir, hoop.Name+".key")
 	}
-	//
-	// grpc and spanner rate only decoded payloads, which need descriptors
-	// no default can name, so their analyzer starts off.
-	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol)
 	if kind != "" {
 		// The demo shows the AI with no key to set up: the model Hoop
 		// hosts (DEP-161) rates each read, and a high-risk one waits for
@@ -328,6 +336,22 @@ func newDraft(id string, m machine) (*draft, error) {
 			high:    string(analyzer.ActionRequireApproval), medium: string(analyzer.ActionWarn), low: string(analyzer.ActionAllow)}
 	}
 	return d, nil
+}
+
+// ownProvider is a provider whose key file is already in keyDir: preferred
+// first (the one the environment names), then any other this binary links.
+// "" when there is none.
+func ownProvider(preferred, keyDir string) string {
+	candidates := append([]string{preferred}, analyzer.RegisteredProviders()...)
+	for _, p := range candidates {
+		if p == hoop.Name || p == "vertex" || !slices.Contains(analyzer.RegisteredProviders(), p) {
+			continue
+		}
+		if keyFileStatus(filepath.Join(keyDir, p+".key")) == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // hosted reports the model Hoop hosts: no key file, no model to name.
