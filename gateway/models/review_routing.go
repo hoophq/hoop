@@ -15,6 +15,19 @@ const (
 	ReviewRoutingModeStatic = "static"
 )
 
+// Notify fallbacks: the routed notifications reached no user and no
+// channel, so the review was notified as a review without routing is: in
+// the listener's Slack channels or the default channel.
+const (
+	// ReviewRoutingNotifyNoIntegration: no notify key is integrated.
+	ReviewRoutingNotifyNoIntegration = "no_integration"
+	// ReviewRoutingNotifyNoTarget: the decision selected no reachable user
+	// and no channel.
+	ReviewRoutingNotifyNoTarget = "no_target"
+	// ReviewRoutingNotifyNotDelivered: every post failed.
+	ReviewRoutingNotifyNotDelivered = "not_delivered"
+)
+
 // ReviewRouting is the AI routing decision of a review (ENG-663). It holds
 // opaque user ids only; an API response resolves the names.
 type ReviewRouting struct {
@@ -28,7 +41,15 @@ type ReviewRouting struct {
 	NotifiedUsers  []ReviewRoutingUser        `json:"notified_users,omitempty"`
 	Channels       []ReviewRoutingChannel     `json:"channels,omitempty"`
 	Unreachable    []ReviewRoutingUnreachable `json:"unreachable,omitempty"`
-	DecidedAt      time.Time                  `json:"decided_at"`
+	// UndeliveredChannels are the channels that did not get the review: a
+	// configured candidate the integration does not reach from this
+	// listener, or a post that failed.
+	UndeliveredChannels []ReviewRoutingUndeliveredChannel `json:"undelivered_channels,omitempty"`
+	// NotifyFallback is set when the routed notifications reached nobody
+	// and the review was posted as without routing: a ReviewRoutingNotify*
+	// value.
+	NotifyFallback string    `json:"notify_fallback,omitempty"`
+	DecidedAt      time.Time `json:"decided_at"`
 }
 
 // ReviewRoutingIntegration is one notify key of the routing configuration
@@ -57,6 +78,13 @@ type ReviewRoutingChannel struct {
 type ReviewRoutingUnreachable struct {
 	UserID      string `json:"user_id"`
 	Integration string `json:"integration"`
+	Cause       string `json:"cause"`
+}
+
+// ReviewRoutingUndeliveredChannel is a channel that did not get the review.
+type ReviewRoutingUndeliveredChannel struct {
+	Integration string `json:"integration"`
+	ID          string `json:"id"`
 	Cause       string `json:"cause"`
 }
 

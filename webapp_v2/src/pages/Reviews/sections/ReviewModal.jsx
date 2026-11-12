@@ -43,6 +43,7 @@ import {
   fallbackCauseLabel,
   integrationLabel,
   isHandoffReview,
+  notifyFallbackLabel,
   notifyIntegrationLabel,
   isSettled,
   isSidecarReview,
@@ -190,6 +191,7 @@ function RoutingSection({ routing }) {
   const notified = list(routing.notified_users)
   const channels = list(routing.channels)
   const unreachable = list(routing.unreachable)
+  const undelivered = list(routing.undelivered_channels)
   const notify = list(routing.integrations)
 
   return (
@@ -294,6 +296,27 @@ function RoutingSection({ routing }) {
                 </Text>
               ))}
             </Stack>
+          </DetailRow>
+        )}
+
+        {undelivered.length > 0 && (
+          <DetailRow icon={Hash} label="Channels not reached" align="flex-start">
+            <Stack gap={6}>
+              {undelivered.map((channel) => (
+                <Text key={`${channel.integration}:${channel.id}`} size="sm">
+                  {`${channel.id} (${integrationLabel(channel.integration)})`}
+                  <Text span size="sm" c="dimmed">
+                    {channel.cause ? `: ${channel.cause}` : ''}
+                  </Text>
+                </Text>
+              ))}
+            </Stack>
+          </DetailRow>
+        )}
+
+        {routing.notify_fallback && (
+          <DetailRow icon={BellRing} label="Notification fallback" align="flex-start">
+            <Text size="sm">{notifyFallbackLabel(routing.notify_fallback)}</Text>
           </DetailRow>
         )}
 

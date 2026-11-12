@@ -88,6 +88,17 @@ export function notifyIntegrationLabel(entry) {
   return `${name}: ${DELIVERY_LABEL[entry.delivery] ?? DELIVERY_LABEL.dm}`
 }
 
+// routing.notify_fallback: the routed notifications reached nobody, so the
+// review was posted as one without routing (the listener's Slack channels or
+// the default channel). A value this build does not know shows as sent.
+const NOTIFY_FALLBACK = {
+  no_integration: 'No notify integration is set up.',
+  no_target: 'The AI agent selected nobody it could reach.',
+  not_delivered: 'Every routed notification failed.',
+}
+export const notifyFallbackLabel = (value) =>
+  `${NOTIFY_FALLBACK[value] ?? `The routed notifications reached nobody (${value}).`} Posted as without routing.`
+
 // The table's rule cell: the approval rule, else the risk level and the route.
 export function ruleLabel(review) {
   if (review?.access_request_rule_name) return review.access_request_rule_name

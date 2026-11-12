@@ -19520,7 +19520,7 @@ const docTemplate = `{
                     "example": "timeout"
                 },
                 "fallback_detail": {
-                    "description": "Detail of the fallback, bounded",
+                    "description": "Detail of the fallback: fixed text per cause. A provider's error text is in the gateway log only",
                     "type": "string",
                     "readOnly": true,
                     "example": "no answer in 20s"
@@ -19562,11 +19562,30 @@ const docTemplate = `{
                     },
                     "readOnly": true
                 },
+                "notify_fallback": {
+                    "description": "Set when the routed notifications reached no user and no channel: the approval request was then posted as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
+                    "type": "string",
+                    "enum": [
+                        "no_integration",
+                        "no_target",
+                        "not_delivered"
+                    ],
+                    "readOnly": true,
+                    "example": "no_target"
+                },
                 "reason": {
                     "description": "The reason the AI gave, at most 500 characters",
                     "type": "string",
                     "readOnly": true,
                     "example": "The sre group approved similar statements fast."
+                },
+                "undelivered_channels": {
+                    "description": "The channels that did not get the approval request: a configured candidate the integration does not reach from this listener, or a failed post",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewRoutingUndeliveredChannel"
+                    },
+                    "readOnly": true
                 },
                 "unreachable": {
                     "description": "The selected users an integration could not reach",
@@ -19626,6 +19645,33 @@ const docTemplate = `{
                     "example": true
                 },
                 "name": {
+                    "description": "The integration",
+                    "type": "string",
+                    "enum": [
+                        "slack",
+                        "teams"
+                    ],
+                    "readOnly": true,
+                    "example": "slack"
+                }
+            }
+        },
+        "openapi.ReviewRoutingUndeliveredChannel": {
+            "type": "object",
+            "properties": {
+                "cause": {
+                    "description": "Why it did not get the approval request",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "not reachable from this listener"
+                },
+                "id": {
+                    "description": "The channel id",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "C0123ABC"
+                },
+                "integration": {
                     "description": "The integration",
                     "type": "string",
                     "enum": [

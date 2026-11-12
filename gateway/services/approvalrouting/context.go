@@ -44,7 +44,14 @@ type routeContext struct {
 	// routes are the notify keys, in name order.
 	routes       []*route
 	integrations []models.ReviewRoutingIntegration
+	// unreachableChannels are the configured channel candidates the
+	// integration does not reach in this listener's scope. Never offered.
+	unreachableChannels []models.ReviewRoutingUndeliveredChannel
 }
+
+// causeChannelNotReachable is why a configured channel candidate is not
+// offered: the integration does not list it for this listener.
+const causeChannelNotReachable = "not reachable from this listener"
 
 type member struct {
 	groups []string
@@ -353,16 +360,24 @@ func (rc *routeContext) loadRoutes(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("failed listing the %s channels: %w", name, err)
 		}
 		channelNames := map[string]string{}
+		var reachableIDs []string
 		for _, ch := range reachable {
 			channelNames[ch.ID] = ch.Name
+			reachableIDs = append(reachableIDs, ch.ID)
 		}
+		// Only a channel the integration reaches in this listener's scope is
+		// offered. A configured candidate outside it is recorded instead: it
+		// can be stale, or a channel another listener's approvers read.
 		ids := normalizeNames(cfg.ChannelsCandidates)
 		if len(ids) == 0 {
-			for _, ch := range reachable {
-				ids = append(ids, ch.ID)
-			}
+			ids = reachableIDs
 		}
 		for _, id := range normalizeNames(ids) {
+			if _, ok := channelNames[id]; !ok {
+				rc.unreachableChannels = append(rc.unreachableChannels, models.ReviewRoutingUndeliveredChannel{
+					Integration: name, ID: id, Cause: causeChannelNotReachable})
+				continue
+			}
 			r.allowed[id] = models.ReviewRoutingChannel{Integration: name, ID: id, Name: channelNames[id]}
 			r.order = append(r.order, id)
 		}

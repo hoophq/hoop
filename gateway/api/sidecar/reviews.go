@@ -721,14 +721,16 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 
 // notifyFiledReview tells the approvers a review exists: through the
 // integrations the routing selected, else as before routing (notifySlack).
+// A routed notification that reaches nobody falls back to notifySlack too.
 func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
 	decision *approvalrouting.RouteDecision) {
+	unrouted := func() { notifySlack(sidecar, rev, listenerName, display) }
 	if !decision.Notifies() {
-		notifySlack(sidecar, rev, listenerName, display)
+		unrouted()
 		return
 	}
 	approvalrouting.Notify(context.Background(), models.DB, sidecar.OrgID, decision,
-		routingCard(sidecar, rev, listenerName, display))
+		routingCard(sidecar, rev, listenerName, display), unrouted)
 }
 
 // routeFiling runs the shared routing step for a new review of this

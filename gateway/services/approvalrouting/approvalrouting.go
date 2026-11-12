@@ -52,7 +52,14 @@ const (
 const (
 	maxReasonRunes = 500
 	maxDetailRunes = 300
+	// maxLogErrorRunes bounds an error the gateway log keeps of a fallback.
+	maxLogErrorRunes = 1000
 )
+
+// detailProviderError is the stored detail of CauseProviderError. A
+// provider's error text can carry a key fragment or an upstream body, so
+// it goes to the gateway log only.
+const detailProviderError = "the AI provider returned an error; the gateway log has the detail"
 
 // RouteInput is what one filing knows about the request it routes.
 type RouteInput struct {
@@ -166,7 +173,7 @@ func RouteReview(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisio
 	rc := &routeContext{in: in, candidates: candidates}
 	if err := rc.load(ctx, db); err != nil {
 		if ctx.Err() != nil {
-			return rc.fallback(CauseTimeout, "reading the routing context: "+err.Error()), nil
+			return rc.fallback(CauseTimeout, fmt.Sprintf("the routing context was not read in %s", budget), err), nil
 		}
 		return nil, err
 	}
@@ -174,19 +181,19 @@ func RouteReview(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisio
 	client, err := clientFactory(ctx, db, in.OrgID)
 	switch {
 	case ctx.Err() != nil:
-		return rc.fallback(CauseTimeout, fmt.Sprintf("no AI provider read in %s", budget)), nil
+		return rc.fallback(CauseTimeout, fmt.Sprintf("no AI provider read in %s", budget), err), nil
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		return rc.fallback(CauseNoProvider, "the organization has no AI provider for the session analyzer"), nil
+		return rc.fallback(CauseNoProvider, "the organization has no AI provider for the session analyzer", nil), nil
 	case err != nil:
-		return rc.fallback(CauseProviderError, err.Error()), nil
+		return rc.fallback(CauseProviderError, detailProviderError, err), nil
 	}
 
 	resp, err := client.Chat(ctx, rc.chatRequest())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
-			return rc.fallback(CauseTimeout, fmt.Sprintf("no answer in %s", budget)), nil
+			return rc.fallback(CauseTimeout, fmt.Sprintf("no answer in %s", budget), err), nil
 		}
-		return rc.fallback(CauseProviderError, err.Error()), nil
+		return rc.fallback(CauseProviderError, detailProviderError, err), nil
 	}
 	return rc.decide(resp), nil
 }
@@ -209,47 +216,58 @@ type toolCallArgs struct {
 func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	switch {
 	case resp == nil:
-		return rc.fallback(CauseNoToolCall, "the provider returned no answer")
+		return rc.fallback(CauseNoToolCall, "the provider returned no answer", nil)
 	case strings.TrimSpace(resp.Refusal) != "":
-		return rc.fallback(CauseRefusal, "the model refused: "+resp.Refusal)
+		return rc.fallback(CauseRefusal, "the model refused: "+resp.Refusal, nil)
 	case len(resp.ToolCalls) == 0 && strings.TrimSpace(resp.Content) != "":
-		return rc.fallback(CauseRefusal, "the model answered in prose: "+resp.Content)
+		return rc.fallback(CauseRefusal, "the model answered in prose: "+resp.Content, nil)
 	case len(resp.ToolCalls) == 0:
-		return rc.fallback(CauseNoToolCall, "the model called no tool")
+		return rc.fallback(CauseNoToolCall, "the model called no tool", nil)
 	case len(resp.ToolCalls) > 1:
-		return rc.fallback(CauseNoToolCall, fmt.Sprintf("the model called %d tools, not one", len(resp.ToolCalls)))
+		return rc.fallback(CauseNoToolCall, fmt.Sprintf("the model called %d tools, not one", len(resp.ToolCalls)), nil)
 	}
 	call := resp.ToolCalls[0]
 	if call.Name != toolName {
-		return rc.fallback(CauseInvalidDecision, fmt.Sprintf("the model called the unknown tool %q", call.Name))
+		return rc.fallback(CauseInvalidDecision, fmt.Sprintf("the model called the unknown tool %q", call.Name), nil)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(call.Arguments), &fields); err != nil {
-		return rc.fallback(CauseInvalidDecision, "the tool input is not a JSON object: "+err.Error())
+		return rc.fallback(CauseInvalidDecision, "the tool input is not a JSON object: "+err.Error(), nil)
 	}
 	for _, f := range toolFields {
 		if v, ok := fields[f]; !ok || string(v) == "null" {
-			return rc.fallback(CauseInvalidDecision, fmt.Sprintf("the tool input has no %s", f))
+			return rc.fallback(CauseInvalidDecision, fmt.Sprintf("the tool input has no %s", f), nil)
 		}
 	}
 	var args toolCallArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return rc.fallback(CauseInvalidDecision, "the tool input does not match the schema: "+err.Error())
+		return rc.fallback(CauseInvalidDecision, "the tool input does not match the schema: "+err.Error(), nil)
 	}
 	reason := boundText(args.Reason, maxReasonRunes)
 	if reason == "" {
-		return rc.fallback(CauseInvalidDecision, "the tool input has a blank reason")
+		return rc.fallback(CauseInvalidDecision, "the tool input has a blank reason", nil)
 	}
 
-	// Groups: candidates only, in candidate order.
+	// Groups: candidates only, in candidate order, with an active member to
+	// decide: a group nobody can approve in would hold the statement until
+	// it expires.
 	var groups []string
+	empty := false
 	for _, g := range rc.candidates {
-		if slices.Contains(args.Groups, g) {
-			groups = append(groups, g)
+		if !slices.Contains(args.Groups, g) {
+			continue
 		}
+		if rc.groupMembers[g] == 0 {
+			empty = true
+			continue
+		}
+		groups = append(groups, g)
 	}
 	if len(groups) == 0 {
-		return rc.fallback(CauseNoValidGroup, "no selected group is a candidate")
+		if empty {
+			return rc.fallback(CauseNoValidGroup, "no selected group has an active member", nil)
+		}
+		return rc.fallback(CauseNoValidGroup, "no selected group is a candidate", nil)
 	}
 
 	// Users: members of a selected group, never the requester.
@@ -288,24 +306,30 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 }
 
 // fallback is static routing: every candidate gets the review, and the
-// notifications keep today's behavior.
-func (rc *routeContext) fallback(cause, detail string) *RouteDecision {
+// notifications keep today's behavior. detail is fixed text: every viewer of
+// the approval reads it. raw is the error behind the fallback, nil for
+// none; only the gateway log keeps it, bounded.
+func (rc *routeContext) fallback(cause, detail string, raw error) *RouteDecision {
 	record := rc.record(models.ReviewRoutingModeStatic, rc.candidates)
 	record.FallbackCause = cause
 	record.FallbackDetail = boundText(detail, maxDetailRunes)
-	log.With("org", rc.in.OrgID, "sidecar", rc.in.SidecarID, "listener", rc.in.ListenerName,
-		"cause", cause).Infof("approval routing fell back to static routing: %s", record.FallbackDetail)
+	l := log.With("org", rc.in.OrgID, "sidecar", rc.in.SidecarID, "listener", rc.in.ListenerName, "cause", cause)
+	if raw != nil {
+		l = l.With("error", boundText(raw.Error(), maxLogErrorRunes))
+	}
+	l.Infof("approval routing fell back to static routing: %s", record.FallbackDetail)
 	return &RouteDecision{Groups: slices.Clone(rc.candidates), Record: record}
 }
 
 // record starts the stored decision.
 func (rc *routeContext) record(mode string, groups []string) *models.ReviewRouting {
 	return &models.ReviewRouting{
-		Mode:         mode,
-		Candidates:   slices.Clone(rc.candidates),
-		Groups:       slices.Clone(groups),
-		Integrations: slices.Clone(rc.integrations),
-		DecidedAt:    time.Now().UTC(),
+		Mode:                mode,
+		Candidates:          slices.Clone(rc.candidates),
+		Groups:              slices.Clone(groups),
+		Integrations:        slices.Clone(rc.integrations),
+		UndeliveredChannels: slices.Clone(rc.unreachableChannels),
+		DecidedAt:           time.Now().UTC(),
 	}
 }
 

@@ -1770,7 +1770,7 @@ type ReviewRouting struct {
 	Mode string `json:"mode" enums:"ai,static" readonly:"true" example:"ai"`
 	// Why the AI routing fell back. Set with mode static
 	FallbackCause string `json:"fallback_cause,omitempty" enums:"no_provider,timeout,provider_error,no_tool_call,refusal,invalid_decision,no_valid_group" readonly:"true" example:"timeout"`
-	// Detail of the fallback, bounded
+	// Detail of the fallback: fixed text per cause. A provider's error text is in the gateway log only
 	FallbackDetail string `json:"fallback_detail,omitempty" readonly:"true" example:"no answer in 20s"`
 	// The reason the AI gave, at most 500 characters
 	Reason string `json:"reason,omitempty" readonly:"true" example:"The sre group approved similar statements fast."`
@@ -1786,6 +1786,10 @@ type ReviewRouting struct {
 	Channels []ReviewRoutingChannel `json:"channels,omitempty" readonly:"true"`
 	// The selected users an integration could not reach
 	Unreachable []ReviewRoutingUnreachable `json:"unreachable,omitempty" readonly:"true"`
+	// The channels that did not get the approval request: a configured candidate the integration does not reach from this listener, or a failed post
+	UndeliveredChannels []ReviewRoutingUndeliveredChannel `json:"undelivered_channels,omitempty" readonly:"true"`
+	// Set when the routed notifications reached no user and no channel: the approval request was then posted as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed
+	NotifyFallback string `json:"notify_fallback,omitempty" enums:"no_integration,no_target,not_delivered" readonly:"true" example:"no_target"`
 	// When the decision was made
 	DecidedAt time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
@@ -1832,6 +1836,16 @@ type ReviewRoutingUnreachable struct {
 	Integration string `json:"integration" enums:"slack,teams" readonly:"true" example:"slack"`
 	// Why it could not reach the user
 	Cause string `json:"cause" readonly:"true" example:"no slack id"`
+}
+
+// ReviewRoutingUndeliveredChannel is a channel that did not get the approval request.
+type ReviewRoutingUndeliveredChannel struct {
+	// The integration
+	Integration string `json:"integration" enums:"slack,teams" readonly:"true" example:"slack"`
+	// The channel id
+	ID string `json:"id" readonly:"true" example:"C0123ABC"`
+	// Why it did not get the approval request
+	Cause string `json:"cause" readonly:"true" example:"not reachable from this listener"`
 }
 
 // ApprovalRoutingIntegrations is what AI routing can notify through.

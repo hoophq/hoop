@@ -6449,7 +6449,7 @@
             "type": "string"
           },
           "fallback_detail": {
-            "description": "Detail of the fallback, bounded",
+            "description": "Detail of the fallback: fixed text per cause. A provider's error text is in the gateway log only",
             "example": "no answer in 20s",
             "readOnly": true,
             "type": "string"
@@ -6491,11 +6491,30 @@
             "readOnly": true,
             "type": "array"
           },
+          "notify_fallback": {
+            "description": "Set when the routed notifications reached no user and no channel: the approval request was then posted as without routing, in the listener's Slack channels or the default channel. no_integration: no notify integration is set up. no_target: the AI selected no reachable user and no channel. not_delivered: every post failed",
+            "enum": [
+              "no_integration",
+              "no_target",
+              "not_delivered"
+            ],
+            "example": "no_target",
+            "readOnly": true,
+            "type": "string"
+          },
           "reason": {
             "description": "The reason the AI gave, at most 500 characters",
             "example": "The sre group approved similar statements fast.",
             "readOnly": true,
             "type": "string"
+          },
+          "undelivered_channels": {
+            "description": "The channels that did not get the approval request: a configured candidate the integration does not reach from this listener, or a failed post",
+            "items": {
+              "$ref": "#/components/schemas/openapi.ReviewRoutingUndeliveredChannel"
+            },
+            "readOnly": true,
+            "type": "array"
           },
           "unreachable": {
             "description": "The selected users an integration could not reach",
@@ -6555,6 +6574,33 @@
             "type": "boolean"
           },
           "name": {
+            "description": "The integration",
+            "enum": [
+              "slack",
+              "teams"
+            ],
+            "example": "slack",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ReviewRoutingUndeliveredChannel": {
+        "properties": {
+          "cause": {
+            "description": "Why it did not get the approval request",
+            "example": "not reachable from this listener",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The channel id",
+            "example": "C0123ABC",
+            "readOnly": true,
+            "type": "string"
+          },
+          "integration": {
             "description": "The integration",
             "enum": [
               "slack",

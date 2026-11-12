@@ -99,10 +99,12 @@ func routeCall(t *testing.T, args map[string]any) *laia.ChatResponse {
 	return &laia.ChatResponse{ToolCalls: []laia.ToolCall{{ID: "call-1", Name: "route_approval", Arguments: string(raw)}}}
 }
 
-// fakeSlack records the destination of every chat.postMessage.
+// fakeSlack records the destination of every chat.postMessage. A channel in
+// refused answers channel_not_found.
 type fakeSlack struct {
-	mu    sync.Mutex
-	posts []string
+	mu      sync.Mutex
+	posts   []string
+	refused map[string]bool
 }
 
 func (f *fakeSlack) destinations() []string {
@@ -111,17 +113,32 @@ func (f *fakeSlack) destinations() []string {
 	return append([]string{}, f.posts...)
 }
 
+// refuse makes the channels answer channel_not_found.
+func (f *fakeSlack) refuse(channels ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, ch := range channels {
+		f.refused[ch] = true
+	}
+}
+
 // useSlack registers a Slack integration for the test org with defaultChannel.
 func useSlack(t *testing.T, defaultChannel string) *fakeSlack {
 	t.Helper()
-	f := &fakeSlack{}
+	f := &fakeSlack{refused: map[string]bool{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		channel := r.FormValue("channel")
 		f.mu.Lock()
-		f.posts = append(f.posts, r.FormValue("channel"))
+		f.posts = append(f.posts, channel)
+		refused := f.refused[channel]
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"ok":true,"channel":%q,"ts":"1.0"}`, r.FormValue("channel"))
+		if refused {
+			fmt.Fprint(w, `{"ok":false,"error":"channel_not_found"}`)
+			return
+		}
+		fmt.Fprintf(w, `{"ok":true,"channel":%q,"ts":"1.0"}`, channel)
 	}))
 	t.Cleanup(srv.Close)
 	svc := slackservice.NewWithAPIClient(slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/")), "T1", defaultChannel)
@@ -175,7 +192,8 @@ func waitNotified(t *testing.T, sc *models.Sidecar, reviewID string) *models.Rev
 	var r *models.ReviewRouting
 	require.Eventually(t, func() bool {
 		r = storedRouting(t, sc, reviewID)
-		return r != nil && (len(r.NotifiedUsers) > 0 || len(r.Channels) > 0 || len(r.Unreachable) > 0)
+		return r != nil && (len(r.NotifiedUsers) > 0 || len(r.Channels) > 0 || len(r.Unreachable) > 0 ||
+			r.NotifyFallback != "")
 	}, 15*time.Second, 50*time.Millisecond)
 	return r
 }
@@ -209,6 +227,9 @@ func TestARoutedLevelFilesToTheGroupsTheAISelects(t *testing.T) {
 	slackFake := useSlack(t, "C-DEFAULT")
 	sc := seedLevelSidecar(t, "routed", "routed-rule",
 		routedSpec("routed-rule", `{"slack": {"delivery": "both", "channels_candidates": ["C-PAY", "C-SRE"]}}`))
+	// The listener reaches both candidate channels.
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, sc.ID,
+		[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: []string{"C-PAY", "C-SRE"}}}))
 	alice := seedUser(t, "Alice", "active", "U-ALICE", "sre")
 	bob := seedUser(t, "Bob", "active", "", "sre")
 	carol := seedUser(t, "Carol", "active", "U-CAROL", "payments")
@@ -244,7 +265,9 @@ func TestARoutedLevelFilesToTheGroupsTheAISelects(t *testing.T) {
 	// carol is not in sre, dave is inactive, the sidecar is the requester.
 	assert.Equal(t, []models.ReviewRoutingUser{{ID: alice.ID, Integrations: []string{"slack"}}}, r.NotifiedUsers)
 	assert.Equal(t, []models.ReviewRoutingUnreachable{{UserID: bob.ID, Integration: "slack", Cause: "no slack id"}}, r.Unreachable)
-	assert.Equal(t, []models.ReviewRoutingChannel{{Integration: "slack", ID: "C-PAY"}}, r.Channels)
+	assert.Equal(t, []models.ReviewRoutingChannel{{Integration: "slack", ID: "C-PAY", Name: "C-PAY"}}, r.Channels)
+	assert.Empty(t, r.UndeliveredChannels)
+	assert.Empty(t, r.NotifyFallback)
 	// The DM goes to the slack_id; the default channel gets nothing.
 	assert.ElementsMatch(t, []string{"C-PAY", "U-ALICE"}, slackFake.destinations())
 
@@ -649,7 +672,8 @@ func TestNotifyDropsAUserThePrincipalNamesAtPostTime(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`UPDATE private.users SET email = ? WHERE id = ?`, principal, alice.ID).Error)
 	rev := seedStatusReview(t, sc, models.ReviewStatusPending)
 	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
-		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}})
+		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
+		func() { t.Error("a review that reached a user is not posted as without routing") })
 	assert.Equal(t, []string{"U-BOB"}, slackFake.destinations())
 	r := storedRouting(t, sc, rev.ID)
 	require.NotNil(t, r)
@@ -763,4 +787,153 @@ func TestCandidatesSlowerThanTheLimitAreAnError(t *testing.T) {
 		OrgID: statusTestOrgID, ListenerName: "appdb", Routing: daemon.ApprovalRouting{}})
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 3*time.Second)
+}
+
+// A provider's error text can carry a key fragment or an upstream body. The
+// approval shows a fixed detail; the error goes to the gateway log only.
+func TestAProviderErrorIsNotShownToTheApprovalViewers(t *testing.T) {
+	startStatusTestDB(t)
+	sc := seedLevelSidecar(t, "provider-error", "provider-error-rule", routedSpec("provider-error-rule", ""))
+	const secret = "sk-proj-QuixoticSecret1234"
+	for i, factory := range []approvalrouting.ClientFactory{
+		failingFactory(errors.New("401 Incorrect API key provided: " + secret)),
+		clientOf(&fakeLLM{err: errors.New(`upstream answered {"error":"` + secret + `"}`)}),
+	} {
+		restore := approvalrouting.SetClientFactory(factory)
+		rec := fileLevel(sc, fmt.Sprintf("DELETE FROM payments WHERE id = %d", 200+i), "high")
+		restore()
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		filed := decodeReviewResponse(t, rec)
+		r := storedRouting(t, sc, filed.Review.ID)
+		require.NotNil(t, r)
+		assert.Equal(t, approvalrouting.CauseProviderError, r.FallbackCause)
+		assert.Equal(t, "the AI provider returned an error; the gateway log has the detail", r.FallbackDetail)
+		raw, err := json.Marshal(getApproval(t, filed.Review.ID))
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), secret)
+		assert.NotContains(t, rec.Body.String(), secret)
+	}
+}
+
+// A group with no active member cannot approve: the AI cannot route the
+// review to it alone, and it is dropped beside a group that can.
+func TestAGroupWithNoActiveMemberIsNotSelected(t *testing.T) {
+	startStatusTestDB(t)
+	seedUser(t, "Alice", "active", "", "sre")
+	seedUser(t, "Gone", "inactive", "", "payments")
+	route := func(groups ...string) *approvalrouting.RouteDecision {
+		t.Helper()
+		t.Cleanup(approvalrouting.SetClientFactory(clientOf(&fakeLLM{resp: routeCall(t, map[string]any{
+			"groups": groups, "notify_users": []string{}, "channels": []any{}, "reason": "r"})})))
+		d, err := approvalrouting.RouteReview(context.Background(), models.DB, approvalrouting.RouteInput{
+			OrgID: statusTestOrgID, ListenerName: "appdb",
+			Routing: daemon.ApprovalRouting{Candidates: []string{"payments", "sre"}}})
+		require.NoError(t, err)
+		return d
+	}
+
+	d := route("payments")
+	assert.Equal(t, models.ReviewRoutingModeStatic, d.Record.Mode)
+	assert.Equal(t, approvalrouting.CauseNoValidGroup, d.Record.FallbackCause)
+	assert.Equal(t, "no selected group has an active member", d.Record.FallbackDetail)
+	assert.Equal(t, []string{"payments", "sre"}, d.Groups, "the fallback files to every candidate")
+
+	d = route("payments", "sre")
+	assert.Equal(t, models.ReviewRoutingModeAI, d.Record.Mode)
+	assert.Equal(t, []string{"sre"}, d.Groups)
+	assert.Equal(t, []string{"sre"}, d.Record.Groups)
+}
+
+// Only a channel Slack reaches from this listener is offered. A configured
+// candidate outside it is recorded, never offered and never posted.
+func TestOnlyAChannelTheListenerReachesIsOffered(t *testing.T) {
+	startStatusTestDB(t)
+	slackFake := useSlack(t, "")
+	sc := seedLevelSidecar(t, "reach", "reach-rule", routedSpec("reach-rule",
+		`{"slack": {"delivery": "channel", "channels_candidates": ["C-PAY", "C-ELSEWHERE"]}}`))
+	other := seedStatusSidecar(t, "reach-other")
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, sc.ID,
+		[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: []string{"C-PAY"}}}))
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, other.ID,
+		[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: []string{"C-ELSEWHERE"}}}))
+	seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	llm := &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"sre"}, "notify_users": []string{},
+		"channels": []map[string]string{{"integration": "slack", "channel": "C-PAY"},
+			{"integration": "slack", "channel": "C-ELSEWHERE"}},
+		"reason": "r"})}
+	useLLM(t, llm)
+
+	filed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 41", "high"))
+	var r *models.ReviewRouting
+	require.Eventually(t, func() bool {
+		r = storedRouting(t, sc, filed.Review.ID)
+		return r != nil && len(r.Channels) > 0
+	}, 15*time.Second, 50*time.Millisecond)
+	assert.NotContains(t, llm.lastRequest(t), "C-ELSEWHERE", "another listener's channel is not offered")
+	assert.Equal(t, []models.ReviewRoutingChannel{{Integration: "slack", ID: "C-PAY", Name: "C-PAY"}}, r.Channels)
+	assert.Equal(t, []models.ReviewRoutingUndeliveredChannel{
+		{Integration: "slack", ID: "C-ELSEWHERE", Cause: "not reachable from this listener"}}, r.UndeliveredChannels)
+	assert.Equal(t, []string{"C-PAY"}, slackFake.destinations())
+	got := getApproval(t, filed.Review.ID)
+	require.NotNil(t, got.Routing)
+	assert.Equal(t, []openapi.ReviewRoutingUndeliveredChannel{
+		{Integration: "slack", ID: "C-ELSEWHERE", Cause: "not reachable from this listener"}}, got.Routing.UndeliveredChannels)
+}
+
+// A routed review that reaches no user and no channel is posted as a review
+// without routing is, and the record says why: never less than before.
+func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
+	startStatusTestDB(t)
+	slackFake := useSlack(t, "C-DEFAULT")
+	alice := seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	for i, tc := range []struct {
+		name, notify string
+		listener     []string
+		refuse       []string
+		users        []string
+		channels     []map[string]string
+		fallback     string
+		posts        []string
+		undelivered  []models.ReviewRoutingUndeliveredChannel
+	}{
+		{name: "no-target", notify: `{"slack": {"delivery": "dm"}}`, users: []string{},
+			fallback: models.ReviewRoutingNotifyNoTarget, posts: []string{"C-DEFAULT"}},
+		{name: "teams-only", notify: `{"teams": {"delivery": "dm"}}`, users: []string{alice.ID},
+			fallback: models.ReviewRoutingNotifyNoIntegration, posts: []string{"C-DEFAULT"}},
+		{name: "refused", notify: `{"slack": {"delivery": "channel"}}`, users: []string{},
+			listener: []string{"C-BAD", "C-GOOD"}, refuse: []string{"C-BAD"},
+			channels: []map[string]string{{"integration": "slack", "channel": "C-BAD"}},
+			fallback: models.ReviewRoutingNotifyNotDelivered, posts: []string{"C-BAD", "C-BAD", "C-GOOD"},
+			undelivered: []models.ReviewRoutingUndeliveredChannel{
+				{Integration: "slack", ID: "C-BAD", Cause: "channel_not_found"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := "nobody-rule-" + tc.name
+			sc := seedLevelSidecar(t, "nobody-"+tc.name, rule, routedSpec(rule, tc.notify))
+			if tc.listener != nil {
+				require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, sc.ID,
+					[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: tc.listener}}))
+			}
+			slackFake.refuse(tc.refuse...)
+			channels := tc.channels
+			if channels == nil {
+				channels = []map[string]string{}
+			}
+			useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+				"groups": []string{"sre"}, "notify_users": tc.users, "channels": channels, "reason": "r"})})
+			before := len(slackFake.destinations())
+
+			filed := decodeReviewResponse(t, fileLevel(sc, fmt.Sprintf("DELETE FROM payments WHERE id = %d", 50+i), "high"))
+			r := waitNotified(t, sc, filed.Review.ID)
+			assert.Equal(t, models.ReviewRoutingModeAI, r.Mode)
+			assert.Equal(t, tc.fallback, r.NotifyFallback)
+			assert.Empty(t, r.NotifiedUsers)
+			assert.Empty(t, r.Channels)
+			assert.Equal(t, tc.undelivered, r.UndeliveredChannels)
+			require.Eventually(t, func() bool { return len(slackFake.destinations())-before == len(tc.posts) },
+				15*time.Second, 50*time.Millisecond)
+			assert.Equal(t, tc.posts, slackFake.destinations()[before:])
+		})
+	}
 }

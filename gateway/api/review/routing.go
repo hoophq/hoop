@@ -26,6 +26,7 @@ func toOpenApiRouting(r *models.ReviewRouting) *openapi.ReviewRouting {
 		Reason:         r.Reason,
 		Candidates:     append([]string{}, r.Candidates...),
 		Groups:         append([]string{}, r.Groups...),
+		NotifyFallback: r.NotifyFallback,
 		DecidedAt:      r.DecidedAt,
 	}
 	for _, i := range r.Integrations {
@@ -47,6 +48,10 @@ func toOpenApiRouting(r *models.ReviewRouting) *openapi.ReviewRouting {
 	for _, u := range r.Unreachable {
 		out.Unreachable = append(out.Unreachable, openapi.ReviewRoutingUnreachable{
 			UserID: u.UserID, Integration: u.Integration, Cause: u.Cause})
+	}
+	for _, c := range r.UndeliveredChannels {
+		out.UndeliveredChannels = append(out.UndeliveredChannels, openapi.ReviewRoutingUndeliveredChannel{
+			Integration: c.Integration, ID: c.ID, Cause: c.Cause})
 	}
 	return out
 }

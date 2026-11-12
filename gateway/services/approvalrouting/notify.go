@@ -144,8 +144,11 @@ func (p *notifyPlan) route(integration string) *route {
 
 // Notify posts the review through the integrations of the decision and
 // records who and where it reached. Call it after the review exists,
-// detached from the request: posting can take minutes.
-func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, card ReviewCard) {
+// detached from the request: posting can take minutes. unrouted posts the
+// review as without routing; Notify calls it when the routed notifications
+// reach no user and no channel, so a held statement is never announced
+// less than without routing.
+func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, card ReviewCard, unrouted func()) {
 	if !d.Notifies() {
 		return
 	}
@@ -153,8 +156,10 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 	defer cancel()
 
 	rec := *d.Record
-	rec.NotifiedUsers, rec.Channels, rec.Unreachable = nil, nil, nil
+	rec.NotifiedUsers, rec.Channels, rec.Unreachable, rec.NotifyFallback = nil, nil, nil, ""
+	rec.UndeliveredChannels = slices.Clone(d.Record.UndeliveredChannels)
 	notified := map[string][]string{}
+	integrated, posted := false, false
 	users := d.plan.recipients(ctx, db, card.ReviewID)
 	for _, r := range d.plan.routes {
 		dm := r.delivery != DeliveryChannel
@@ -167,6 +172,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 			}
 			continue
 		}
+		integrated = true
 		var t Targets
 		if dm {
 			t.HoopUserIDs = slices.Clone(users)
@@ -177,6 +183,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		if len(t.HoopUserIDs) == 0 && len(t.ChannelIDs) == 0 {
 			continue
 		}
+		posted = true
 		res := r.notifier.Post(ctx, db, orgID, card, t)
 		for _, u := range t.HoopUserIDs {
 			if cause, failed := res.Failed[u]; failed {
@@ -190,6 +197,8 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 			if cause, failed := res.Failed[ch.ID]; failed {
 				log.With("review-id", card.ReviewID, "integration", r.integration, "channel", ch.ID).
 					Warnf("the channel did not accept the routed review, %s", cause)
+				rec.UndeliveredChannels = append(rec.UndeliveredChannels, models.ReviewRoutingUndeliveredChannel{
+					Integration: r.integration, ID: ch.ID, Cause: boundText(cause, maxDetailRunes)})
 				continue
 			}
 			rec.Channels = append(rec.Channels, ch)
@@ -204,11 +213,23 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		rec.NotifiedUsers = append(rec.NotifiedUsers, models.ReviewRoutingUser{ID: id, Integrations: notified[id]})
 	}
 	if len(rec.NotifiedUsers) == 0 && len(rec.Channels) == 0 {
-		log.With("review-id", card.ReviewID).Warnf("the routed review reached no user and no channel")
+		switch {
+		case !integrated:
+			rec.NotifyFallback = models.ReviewRoutingNotifyNoIntegration
+		case !posted:
+			rec.NotifyFallback = models.ReviewRoutingNotifyNoTarget
+		default:
+			rec.NotifyFallback = models.ReviewRoutingNotifyNotDelivered
+		}
+		log.With("review-id", card.ReviewID, "cause", rec.NotifyFallback).
+			Warnf("the routed review reached no user and no channel, posting it as without routing")
 	}
 	// Detached from ctx: the record must land even when the posts used the
 	// whole budget.
 	if err := models.UpdateReviewRouting(db.WithContext(context.WithoutCancel(ctx)), orgID, card.ReviewID, &rec); err != nil {
 		log.With("review-id", card.ReviewID).Warnf("failed recording the routing notifications, reason=%v", err)
+	}
+	if rec.NotifyFallback != "" {
+		unrouted()
 	}
 }
