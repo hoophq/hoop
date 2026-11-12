@@ -1570,7 +1570,7 @@ place of fixed `groups`:
 | Key | Meaning |
 |---|---|
 | `candidates` | the groups the agent selects from. Empty or absent: every group |
-| `notify.<integration>` | `slack` or `teams`. A key that is present notifies through that integration when the organization set it up. Absent `notify`: the notifications of today |
+| `notify.<integration>` | `slack` or `teams`. A key that is present notifies through that integration when the organization set it up. Only Slack notifies today: a `teams` key is accepted and recorded as not integrated until the Microsoft Teams integration ships (ENG-705). Absent `notify`: the notifications of today |
 | `notify.<integration>.delivery` | `dm`, `channel` or `both`. Empty: `dm` |
 | `notify.<integration>.channels_candidates` | the channels the agent selects from for `channel` and `both`: Slack channel ids, or Teams channel ids (`19:...@thread.tacv2`). Empty: every channel the integration reaches |
 
@@ -1583,17 +1583,25 @@ sidecar and listener (the last 100 decided reviews of the last 90 days) and
 selects one or more groups, the members of those groups to notify, and the
 channels. It reads opaque ids only, never a name or an email, and the
 statement as a shape with its values removed: no string, number, bind,
-comment or quoted name reaches it, and bare table and column names stay. The
-shape follows the lexer's dialect rules, so a statement it cannot read in
-full, and a protocol with no shape (http, grpc, ssh), sends none. It never
-notifies the requester, nor a user outside the selected groups. Only Slack
-and Microsoft Teams notify; no email is sent. The review records the groups,
-the notified users, the channels and the reason, and its details show them.
+comment or quoted name reaches it, and bare table and column names stay. A
+mongodb shape keeps `$` operators and identifier-like field names; any other
+key is `?`. The shape follows the lexer's dialect rules, so a statement it
+cannot read in full, and a protocol with no shape (http, grpc, ssh), sends
+none. It never notifies the requester, nor a user outside the selected
+groups, and never selects a group with no active member. Only Slack
+notifies; a `teams` key is recorded as not integrated (ENG-705). No email
+is sent. Only a channel Slack reaches from this listener (its channels and
+the default channel) is offered; a configured candidate outside them is
+recorded as not delivered, as is a post Slack refuses. When the routed
+notifications reach no user and no channel, the plane posts the review as
+without routing and records why. The review records the groups, the
+notified users, the channels and the reason, and its details show them.
 
 The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
 refusal, no tool call or more than one, an invalid decision or no valid group,
 the plane falls back to static routing: every candidate group gets the
-review. The review records the fallback and its cause. The routing time is
+review. The review records the fallback and its cause, with a fixed detail;
+a provider's error text goes to the gateway log only. The routing time is
 part of the hold's wait. A filing waits at least 30 seconds for the plane, or
 the analyzer `timeout_sec` when that is longer; a claim keeps `timeout_sec`.
 

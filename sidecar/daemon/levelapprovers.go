@@ -317,7 +317,7 @@ func LaneApproverWarnings(la *LaneAnalyzerConfig) []string {
 		for _, k := range slices.Sorted(maps.Keys(a.Routing.Notify)) {
 			n := a.Routing.Notify[k]
 			if k != NotifySlack && k != NotifyTeams {
-				out = append(out, fmt.Sprintf("%s.notify.%s is ignored: only %s and %s notify",
+				out = append(out, fmt.Sprintf("%s.notify.%s is ignored: only %s and %s are notify keys",
 					at, k, NotifySlack, NotifyTeams))
 				continue
 			}

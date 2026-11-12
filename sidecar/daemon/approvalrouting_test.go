@@ -121,7 +121,7 @@ func TestEachRoutingWarningIsNotedOnce(t *testing.T) {
 		t.Fatalf("a routing warning refused the lane: %v", err)
 	}
 	want := []string{
-		`approvers.high.routing.notify.email is ignored: only slack and teams notify`,
+		`approvers.high.routing.notify.email is ignored: only slack and teams are notify keys`,
 		`approvers.high.routing.notify.slack.delivery "sms" is not dm, channel or both; dm is used`,
 		`approvers.high.routing.notify.teams.channels_candidates is ignored: delivery dm posts to no channel`,
 		`approvers.medium.routing is ignored: the type is "ai_agent", and the approval agent notifies nobody`,
