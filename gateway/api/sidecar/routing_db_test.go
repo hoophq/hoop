@@ -974,3 +974,56 @@ func TestAnInvitedApproverKeepsAGroupSelectable(t *testing.T) {
 	assert.Equal(t, []models.ReviewRoutingUser{{ID: ivy.ID, Integrations: []string{"slack"}}}, r.NotifiedUsers)
 	assert.Equal(t, []string{"U-IVY"}, slackFake.destinations())
 }
+
+// failQueries makes every query match selects fail with err.
+func failQueries(t *testing.T, match func(sql string) bool, err error) {
+	t.Helper()
+	hook := func(db *gorm.DB) {
+		if match(db.Statement.SQL.String()) {
+			_ = db.AddError(err)
+		}
+	}
+	name := "test:fail-" + uuid.NewString()
+	require.NoError(t, models.DB.Callback().Query().Before("gorm:query").Register(name, hook))
+	require.NoError(t, models.DB.Callback().Row().Before("gorm:row").Register(name, hook))
+	t.Cleanup(func() {
+		_ = models.DB.Callback().Query().Remove(name)
+		_ = models.DB.Callback().Row().Remove(name)
+	})
+}
+
+// A database error can name the host, the user and the database. When the
+// Slack ids cannot be read, the record keeps a fixed cause.
+func TestASlackIDReadErrorIsNotShownToTheApprovalViewers(t *testing.T) {
+	startStatusTestDB(t)
+	useSlack(t, "")
+	sc := seedLevelSidecar(t, "slackids", "slackids-rule", routedSpec("slackids-rule", `{"slack": {"delivery": "both"}}`))
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, statusTestOrgID, sc.ID,
+		[]models.SidecarSlackChannels{{ListenerName: "appdb", Channels: []string{"C-PAY"}}}))
+	alice := seedUser(t, "Alice", "active", "U-ALICE", "sre")
+	useLLM(t, &fakeLLM{resp: routeCall(t, map[string]any{
+		"groups": []string{"sre"}, "notify_users": []string{alice.ID},
+		"channels": []map[string]string{{"integration": "slack", "channel": "C-PAY"}}, "reason": "r"})})
+	d, err := approvalrouting.RouteReview(context.Background(), models.DB, approvalrouting.RouteInput{
+		OrgID: statusTestOrgID, SidecarID: sc.ID, ListenerName: "appdb",
+		Routing: daemon.ApprovalRouting{Candidates: []string{"sre"},
+			Notify: map[string]daemon.NotifyRoute{"slack": {Delivery: "both"}}}})
+	require.NoError(t, err)
+
+	rev := seedStatusReview(t, sc, models.ReviewStatusPending)
+	const secret = "host=QuixoticDBHost user=hoop database=hoopdb"
+	failQueries(t, func(sql string) bool { return strings.Contains(sql, "SELECT id, slack_id FROM private.users") },
+		errors.New("failed to connect to `"+secret+"`"))
+	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
+		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
+		func() {})
+	r := storedRouting(t, sc, rev.ID)
+	require.NotNil(t, r)
+	const cause = "the gateway could not read the slack ids"
+	assert.Equal(t, []models.ReviewRoutingUnreachable{{UserID: alice.ID, Integration: "slack", Cause: cause}}, r.Unreachable)
+	assert.Equal(t, []models.ReviewRoutingUndeliveredChannel{{Integration: "slack", ID: "C-PAY", Cause: cause}},
+		r.UndeliveredChannels)
+	raw, err := json.Marshal(r)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "QuixoticDBHost")
+}

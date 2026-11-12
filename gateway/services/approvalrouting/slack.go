@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/lib/pq"
@@ -22,6 +23,10 @@ const SlackMaxButtons = 20
 
 // causeNoSlackID is why a user without a Slack id gets no direct message.
 const causeNoSlackID = "no slack id"
+
+// causeSlackIDsUnread is the recorded cause when the Slack ids cannot be
+// read. The error goes to the gateway log only.
+const causeSlackIDsUnread = "the gateway could not read the slack ids"
 
 // slackNotifier posts the review card the slack plugin posts today: in a
 // channel, or as a direct message to a user's slack_id.
@@ -107,7 +112,11 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 	}
 	slackIDOf, err := slackIDs(ctx, db, orgID, t.HoopUserIDs)
 	if err != nil {
-		return fail("failed reading the slack ids: " + err.Error())
+		// A database error can name the host, the user and the database:
+		// the record, which every approval viewer reads, gets a fixed cause.
+		log.With("org", orgID, "review-id", card.ReviewID).
+			Warnf("failed reading the slack ids of the routed users, reason=%s", boundText(err.Error(), maxLogErrorRunes))
+		return fail(causeSlackIDsUnread)
 	}
 
 	destinations := append([]string{}, t.ChannelIDs...)
