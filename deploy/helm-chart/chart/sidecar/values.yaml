@@ -57,9 +57,8 @@ image:
 # and not a rebuild: the checksum annotation on the Deployment rolls the pods.
 #
 # Everything the relay does is decided here — protocol, guardrails, masking,
-# audit, PII entities, AI analysis. The chart does not interpret the document
-# beyond reading admin.listen for the probe port; see the schema in
-# sidecar/README.md and the worked examples under
+# audit, PII entities, AI analysis. The chart does not interpret the document;
+# see the schema in sidecar/README.md and the worked examples under
 # deploy/docker-compose/*/sidecar/config.yaml.
 #
 # A config naming no listeners does not start. Supply this, or point
@@ -67,12 +66,11 @@ image:
 config: {}
   # log_level: info
   #
-  # # Health, stats and the audit query API. REQUIRED, and on 19000: the
-  # # relay disables admin when the address is empty and has no default port
-  # # of its own, while this chart declares 19000 and probes /healthz there.
-  # # A config that omits it or moves it is refused at render, not left to
-  # # fail every pod. 19000 is the number every config under
-  # # deploy/docker-compose/*/sidecar/ binds.
+  # # Stats, metrics, the resolved config and the audit query API. Optional,
+  # # and UNAUTHENTICATED: anything that reaches the port reads the audit
+  # # trail and each lane's rules. Leave it out to turn it off; the chart
+  # # probes its own health port (19001), not this one. When set, use 19000:
+  # # the pod declares it and the `service` Service targets it.
   # admin:
   #   listen: '0.0.0.0:19000'
   #
@@ -108,7 +106,8 @@ config: {}
   # #
   # # The numbers below are this project's conventions, the same ones every
   # # config under deploy/docker-compose/*/sidecar/ binds:
-  # #   19000 admin   15432 postgres   18080 http
+  # #   19000 admin   19001 health (set by the chart)   15432 postgres
+  # #   18080 http
   # #   11433 mssql   18443 grpc       29010 spanner
   # # mysql and mongodb have no established number here; pick your own.
   # listeners:
@@ -258,10 +257,23 @@ existingSecret: ''
 # Secret change: after rotating a key in it, change `configRevision` (above)
 # to roll the pods.
 
-# -- Admin probes on port 19000. Defaults remain /healthz. ICA deployments
-# should set readinessPath and startupPath to /readyz so model loading finishes
-# before traffic is admitted. Liveness stays /healthz; startup is opt-in.
+# -- The health listener. The chart sets HOOP_SIDECAR_HEALTH_LISTEN to
+# 0.0.0.0:<port> and declares the port on the pod. It serves /healthz and
+# /readyz only, so probes work with the admin server off. Pick a port no lane
+# and no other container in the pod binds; 19000 is refused (admin).
+health:
+  port: 19001
+
+# -- Probes, on the health port by default. Defaults remain /healthz. ICA
+# deployments should set readinessPath and startupPath to /readyz so model
+# loading finishes before traffic is admitted. Liveness stays /healthz;
+# startup is opt-in.
+#
+# `port` sends the probes elsewhere. An image older than
+# HOOP_SIDECAR_HEALTH_LISTEN binds nothing on the health port: probe it on its
+# admin port with `port: 19000`, and keep admin.listen on 0.0.0.0:19000.
 probe: {}
+  # port: 19000
   # readinessPath: /readyz
   # livenessPath: /healthz
   # startupPath: /readyz
@@ -272,8 +284,8 @@ probe: {}
   # periodSeconds: 10
 
 # -- A ClusterIP Service for the admin server on 19000, and only that.
-# Lane ports are not published here; add a Service of your own selecting
-# `app: hoopsidecar` with the ports your config binds.
+# Set enabled: false when the config leaves admin off. Lane ports are not
+# published here; see `laneServices` below.
 service:
   enabled: true
   type: ClusterIP

@@ -622,6 +622,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkHealthListen(cfg, strings.TrimSpace(os.Getenv(HealthListenEnv))); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs
@@ -911,6 +914,10 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 	if err := checkTelemetry(cfg); err != nil {
+		return err
+	}
+	healthAddr := strings.TrimSpace(os.Getenv(HealthListenEnv))
+	if err := checkHealthListen(cfg, healthAddr); err != nil {
 		return err
 	}
 	if cfg.MCP != nil && cfg.cp == nil {
@@ -1263,7 +1270,7 @@ func Run(cfg *Config, det Plugin) error {
 	}()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints)+1)
+	errCh := make(chan error, len(servers)+len(endpoints)+2)
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -1295,6 +1302,17 @@ func Run(cfg *Config, det Plugin) error {
 			// operator who configured the block expects agents to reach it.
 			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
 				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
+				errCh <- serr
+			}
+		}()
+	}
+	if addr := healthAddr; addr != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h := healthState{endpoints, endpointNames, cfg.Admin.ICAReadinessJSON, len(servers)}
+			if serr := serveHealth(ctx, addr, h, log); serr != nil {
+				log.Error("health endpoint failed", "listen", addr, "error", serr)
 				errCh <- serr
 			}
 		}()
@@ -2018,10 +2036,7 @@ func serveAdmin(
 ) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	})
+	handleHealth(mux, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
 
 	// License writes require their own secret. ICA deployment drain below has a
 	// separate token and is disabled by default. licenseHandler refuses it unless the
@@ -2029,24 +2044,6 @@ func serveAdmin(
 	// read here is unauthenticated, and a write must not be.
 	mux.Handle("PUT /license", licenseAPI)
 	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
-
-	// An ica lane's engine loads a model and starts OCR workers after the
-	// socket binds, which can take minutes, and the engine refuses
-	// connections until then. /readyz reports that, separate from
-	// /healthz; other lanes are ready once bound, so it returns 200 for them.
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if icaReadinessJSON {
-			writeICAReadiness(w, endpoints, len(servers))
-			return
-		}
-		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ready")
-	})
 
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {
