@@ -75,14 +75,7 @@ const MAIN_ITEMS = [
 const POLICY_ITEMS = [
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true, licenseFeature: 'guardrails' },
   { label: 'Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
-  {
-    label: 'Compliance Packs',
-    path: '/rulepacks',
-    icon: WandSparkles,
-    adminOnly: true,
-    featureFlag: 'experimental.rulepacks',
-    licenseFeature: 'rulepacks',
-  },
+  { label: 'Compliance Packs', path: '/compliance-packs', icon: WandSparkles, adminOnly: true },
 ];
 
 const ACCESS_ITEMS = [
@@ -123,7 +116,6 @@ const SETTINGS_ITEMS = [
         ],
       },
       { label: 'License', path: '/settings/license', adminOnly: true },
-      { label: 'Protection Rules', path: '/settings/protection-rules', adminOnly: true },
       { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true },
       { label: 'Users', path: '/organization/users', adminOnly: true },
     ],
