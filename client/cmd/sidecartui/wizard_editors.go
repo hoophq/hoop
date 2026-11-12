@@ -392,6 +392,9 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 			cfg.Analyzer.Temperature = &zero
 			cfg.Analyzer.TimeoutSec = int(sidecardemo.AnalyzerTimeout / time.Second)
 			l.Analyzer.Prompt = sidecardemo.AnalyzerPrompt(d.demoKind)
+			tables, resources := sidecardemo.AnalyzerScope(d.demoKind)
+			l.Analyzer.Trigger = &policy.AITrigger{Any: []policy.AITriggerItem{{
+				Operations: ops(d.an.trigger...), Tables: tables, Resources: resources}}}
 		}
 	}
 	// An http_header rule may only name a header the listener captures.

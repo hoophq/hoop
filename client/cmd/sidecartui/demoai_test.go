@@ -47,8 +47,14 @@ func TestDemoDraftsTurnTheHostedAnalyzerOn(t *testing.T) {
 		if la.Prompt != sidecardemo.AnalyzerPrompt(kind) {
 			t.Errorf("%s: the lane does not carry the demo guidance", id)
 		}
-		if la.Trigger == nil || len(la.Trigger.Operations) == 0 {
-			t.Errorf("%s: no trigger: every statement would go to the model", id)
+		// Only the AI step's data goes to the model: the lane holds, so a
+		// read the model cannot rate is refused, and the other steps must
+		// not depend on it.
+		tables, resources := sidecardemo.AnalyzerScope(kind)
+		if la.Trigger == nil || len(la.Trigger.Operations) != 0 || len(la.Trigger.Any) != 1 ||
+			!slices.Equal(la.Trigger.Any[0].Tables, tables) || !slices.Equal(la.Trigger.Any[0].Resources, resources) ||
+			len(la.Trigger.Any[0].Operations) == 0 {
+			t.Errorf("%s: trigger = %+v, want one item scoped to the AI step's data", id, la.Trigger)
 		}
 		if err := validateDraft(t, d); err != nil {
 			t.Errorf("%s: the demo draft does not validate: %v", id, err)
@@ -149,6 +155,17 @@ func TestAIStepWithoutAHoldFailsLoudly(t *testing.T) {
 	tr.apply(tourResult{step: step, status: 200, body: "rows"})
 	if tr.done[step] || tr.result.err == nil || !strings.Contains(tr.result.err.Error(), "did not hold") {
 		t.Fatalf("an unheld AI step passed: done %v, err %v", tr.done[step], tr.result.err)
+	}
+
+	// The model unreachable: the holding lane refuses the read. The tour
+	// says why, for this step and for any other, and ticks neither.
+	for _, i := range []int{0, step} {
+		tr.run(i)
+		tr.apply(tourResult{step: i, status: 403,
+			body: "risk analysis unavailable and this lane holds statements for approval; denying"})
+		if tr.done[i] || tr.result.err == nil || !strings.Contains(tr.result.err.Error(), "could not reach the model") {
+			t.Fatalf("step %d refused by an unreachable model: done %v, err %v", i, tr.done[i], tr.result.err)
+		}
 	}
 
 	tr.run(step)

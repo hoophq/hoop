@@ -36,3 +36,15 @@ func AnalyzerTrigger(kind Kind) []string {
 	}
 	return []string{"get"}
 }
+
+// AnalyzerScope narrows those reads to the data the AI step is about: the
+// customers table, or the export path. A lane that holds for approval
+// denies what it cannot classify (analyzer fail closed), so with the model
+// unreachable only these reads are refused, and the steps that read other
+// data still work.
+func AnalyzerScope(kind Kind) (tables, resources []string) {
+	if kind == KindPostgres {
+		return []string{"customers"}, nil
+	}
+	return nil, []string{"/users/export"}
+}
