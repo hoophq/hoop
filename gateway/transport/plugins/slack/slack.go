@@ -314,8 +314,12 @@ func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) er
 	return nil
 }
 
-// SendApprovedMessage sends a message informing the session is ready
+// SendApprovedMessage sends a message informing the session is ready. A review
+// owner with no Slack ID (a sidecar review, or an unlinked user) gets nothing.
 func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
+	if slackID == "" {
+		return
+	}
 	if slacksvc := slack.GetServiceInstance(orgID); slacksvc != nil {
 		msg := fmt.Sprintf("Your session is ready.\nFollow this link to see the details: %s/sessions/%s",
 			apiURL, sid)
