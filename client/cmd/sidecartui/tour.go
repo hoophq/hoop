@@ -74,6 +74,12 @@ type tour struct {
 // stepTimeout is the time a step may take: quick for most, and for the AI
 // step the time a held statement waits for the person (analyzer.ReviewWait)
 // and a margin.
+//
+// quickWait outlasts the demo analyzer's own timeout (sidecardemo.AnalyzerTimeout):
+// every read goes to the model, and with the model unreachable the analyzer
+// gives up and lets the read through before the step does.
+const quickWait = 15 * time.Second
+
 func stepTimeout(s sidecardemo.Step, quick time.Duration) time.Duration {
 	if s.Approval {
 		return analyzer.ReviewWait + time.Minute
@@ -163,7 +169,7 @@ func (t *tour) run(i int) tea.Cmd {
 func (t *tour) runHTTP(i int) tea.Cmd {
 	s := t.steps[i]
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, 5*time.Second))
+		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, quickWait))
 		defer cancel()
 		var body io.Reader
 		if s.Body != "" {
@@ -204,7 +210,7 @@ func (t *tour) runPG(i int) tea.Cmd {
 			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
 		}
 		start := time.Now()
-		res, err := pgQuery(target, s.SQL, stepTimeout(s, 15*time.Second))
+		res, err := pgQuery(target, s.SQL, stepTimeout(s, quickWait))
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -372,7 +378,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 	lines = append(lines, "")
 
 	switch r := t.result; {
-	case t.running == t.cur && t.held:
+	case t.held:
 		lines = append(lines, shimmer("⧗ Waiting for your approval…", now),
 			ansi.Truncate(stText.Render("The AI analyzer held it. Press ")+stKey.Render("enter")+
 				stText.Render(" to read why, then approve or reject it."), w, "…"))

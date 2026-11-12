@@ -1,11 +1,19 @@
 package sidecardemo
 
+import "time"
+
 // The demo's AI step: the model Hoop hosts (DEP-161) rates each read, and the
 // one the guidance below calls high risk is held until the person at the
 // terminal approves it. A small model at temperature 0 still needs the risk
 // named for it: with the built-in guidance alone it rates a full export of
 // the card numbers low. The guidance names the data, not the step, so a
 // statement typed by hand is rated by the same rules.
+
+// AnalyzerTimeout bounds one classification in the demo. Every read goes to
+// the model, so with the model unreachable each one waits this long before
+// the analyzer lets it through (fail open). Shorter than the analyzer's
+// default, and shorter than the tour's step timeout.
+const AnalyzerTimeout = 8 * time.Second
 
 // AnalyzerPrompt is the lane guidance the demo config carries.
 func AnalyzerPrompt(kind Kind) string {
