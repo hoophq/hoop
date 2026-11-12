@@ -162,7 +162,7 @@ func TestAIStepWithoutAHoldFailsLoudly(t *testing.T) {
 	for _, i := range []int{0, step} {
 		tr.run(i)
 		tr.apply(tourResult{step: i, status: 403,
-			body: "risk analysis unavailable and this lane holds statements for approval; denying"})
+			body: analyzer.UnavailableMessage + " and this lane holds statements for approval; denying"})
 		if tr.done[i] || tr.result.err == nil || !strings.Contains(tr.result.err.Error(), "could not reach the model") {
 			t.Fatalf("step %d refused by an unreachable model: done %v, err %v", i, tr.done[i], tr.result.err)
 		}

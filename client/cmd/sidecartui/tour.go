@@ -223,10 +223,15 @@ func (t *tour) apply(r tourResult) {
 	t.running = -1
 	switch {
 	case r.err != nil:
-	case strings.Contains(r.body, analyzerDown):
+	case strings.Contains(r.body, analyzer.UnavailableMessage):
 		// The demo lane holds for approval, so a read the model could
 		// not rate is refused. Say why, not the step's usual answer.
-		r.err = errModelDown
+		what := "the users export"
+		if t.pg() {
+			what = "customer reads"
+		}
+		r.err = fmt.Errorf("refused: the AI analyzer could not reach the model Hoop hosts, and this demo "+
+			"holds %s for approval, so it refuses what it cannot rate. Check the network; see Logs (6)", what)
 	case t.steps[r.step].Approval && !t.sawHold:
 		// Answered without a hold: the model rated it below high.
 		r.err = errNoHold
@@ -246,15 +251,7 @@ func (t *tour) setHeld(held bool) {
 	}
 }
 
-// analyzerDown is the start of the denial a holding lane answers when the
-// model could not rate a statement (sidecar/analyzer, evaluator failure).
-const analyzerDown = "risk analysis unavailable"
-
-var (
-	errModelDown = errors.New("refused: the AI analyzer could not reach the model Hoop hosts, and this demo " +
-		"holds customer reads for approval, so it refuses what it cannot rate. Check the network; see Logs (6)")
-	errNoHold = errors.New("the AI analyzer did not hold it: the model rated it below high risk. See Logs (6)")
-)
+var errNoHold = errors.New("the AI analyzer did not hold it: the model rated it below high risk. See Logs (6)")
 
 // summary is the one-line "what runs" for a step: the HTTP method and path, or
 // the SQL statement.
