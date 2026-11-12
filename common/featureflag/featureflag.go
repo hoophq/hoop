@@ -75,6 +75,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.postgres_fast_masking": {
+		Name:        "experimental.postgres_fast_masking",
+		Description: "Faster data masking on native Postgres connections, for IDEs such as DBeaver. In responses to catalog queries, object names and definitions read from system tables are not masked; table data, comments, permission lists, computed values and system views still are. Output guardrails still run on every column. When off, every column of every result is masked.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
