@@ -1,5 +1,9 @@
 package analyzer
 
+// UnavailableMessage starts the denial an evaluator answers when it could not
+// classify a statement and does not fail open (Evaluator.failure).
+const UnavailableMessage = "risk analysis unavailable"
+
 // The model Hoop hosts for sidecars without an LLM of their own (DEP-161).
 // The analyzer/hoop provider calls it; the daemon reports these values when
 // the config's use_hoop_llm_provider leaves model and endpoint empty.

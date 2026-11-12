@@ -967,13 +967,16 @@ func (e *Evaluator) classify(
 // would rather pass traffic than lose a database to a model vendor's outage;
 // it was never an answer about a statement a human was supposed to see, and
 // reading it as one would turn every outage into a bypass of the approval.
+//
+// UnavailableMessage starts every such denial, so a client (the CLI demo's
+// tour) can tell it from a rule's.
 func (e *Evaluator) failure(err error) policy.Verdict {
 	if e.cfg.FailOpen && !e.holds {
 		return policy.Verdict{Err: err}
 	}
-	msg := "risk analysis unavailable; denying"
+	msg := UnavailableMessage + "; denying"
 	if e.holds {
-		msg = "risk analysis unavailable and this lane holds statements for " +
+		msg = UnavailableMessage + " and this lane holds statements for " +
 			"approval; denying"
 	}
 	return policy.Verdict{
