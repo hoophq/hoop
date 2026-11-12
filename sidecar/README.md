@@ -929,7 +929,7 @@ license: /etc/hoop-inspect/license.json
 # file alone.
 # control_plane_url: https://cp.example.com
 
-# listen serves the probes and the authenticated writes; api_listen serves the
+# listen serves the probes and the ICA drain; api_listen serves the
 # UNAUTHENTICATED read routes and is off unless set. See "Health and admin
 # listeners".
 admin:

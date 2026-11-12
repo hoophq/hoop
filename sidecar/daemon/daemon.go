@@ -2004,8 +2004,8 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 // path, so a platform can probe or scrape them without reaching the proxy,
 // and vice versa.
 //
-// addr (admin.listen) serves /healthz, /readyz and the two authenticated
-// writes, and no audit data or lane rules. apiAddr (admin.api_listen) serves
+// addr (admin.listen) serves /healthz, /readyz and the token-gated ICA
+// drain, and no audit data or lane rules. apiAddr (admin.api_listen) serves
 // the unauthenticated read routes. Either is skipped when empty.
 //
 // Both bind before either serves, and a bind or serve failure is returned:

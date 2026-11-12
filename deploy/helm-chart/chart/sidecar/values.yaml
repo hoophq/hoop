@@ -67,7 +67,7 @@ image:
 config: {}
   # log_level: info
   #
-  # # Probes (/healthz, /readyz) and the authenticated writes. REQUIRED, and
+  # # Probes (/healthz, /readyz) and the ICA drain. REQUIRED, and
   # # on 19000: the relay disables admin when the address is empty and has no
   # # default port of its own, while this chart declares 19000 and probes
   # # /healthz there. A config that omits it or moves it is refused at render,

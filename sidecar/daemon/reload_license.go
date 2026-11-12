@@ -87,7 +87,7 @@ func (r *reloader) seedLicenseFile() {
 // A document different from the one the file held last time is a rotation.
 //
 // The compare is against the FILE's last document, not the license in
-// force, so re-reading an unchanged file never undoes an admin install.
+// force: only a change in the file itself is a rotation.
 //
 // Polling for the reason the config file is polled: a Kubernetes Secret or
 // ConfigMap volume update is an atomic symlink swap that a stat follows.

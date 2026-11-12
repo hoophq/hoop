@@ -156,8 +156,8 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 		t.Errorf("/readyz on admin.listen = %d, want 200", code)
 	}
 	// PUT /license was removed: nothing on either listener installs one.
-	if code, _ := httpCall(t, http.MethodPut, admin+"/license"); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
-		t.Errorf("PUT /license on admin.listen = %d, want 404 or 405", code)
+	if code, _ := httpCall(t, http.MethodPut, admin+"/license"); code != http.StatusNotFound {
+		t.Errorf("PUT /license on admin.listen = %d, want 404", code)
 	}
 	for _, path := range []string{"/stats", "/metrics", "/config", "/events", "/api/sessions"} {
 		if code, _ := httpCall(t, http.MethodGet, admin+path); code != http.StatusNotFound {

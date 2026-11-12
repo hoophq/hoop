@@ -96,7 +96,7 @@ the volume and HOOP_SIDECAR_CONFIG all have to agree.
 
 {{/*
 Where the probes go: `probe.port` when set, else the admin port, 19000.
-admin.listen serves only /healthz, /readyz and two authenticated writes, so
+admin.listen serves only /healthz, /readyz and the token-gated ICA drain, so
 probing it exposes nothing; the read routes live on admin.api_listen.
 */}}
 {{- define "hoopsidecar.probePort" -}}

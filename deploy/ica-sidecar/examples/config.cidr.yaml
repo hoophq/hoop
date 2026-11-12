@@ -21,7 +21,7 @@
 log_level: info
 
 admin:
-  listen: 127.0.0.1:19000        # /healthz /readyz and the authenticated writes
+  listen: 127.0.0.1:19000        # /healthz /readyz and POST /v1/drain (token-gated)
   api_listen: 127.0.0.1:19002    # /stats /metrics /config: unauthenticated, loopback only
 
 audit:
