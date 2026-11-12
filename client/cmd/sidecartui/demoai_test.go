@@ -38,6 +38,11 @@ func TestAnExistingProviderIsKeptOverHoopsModel(t *testing.T) {
 			t.Errorf("%s.key with no env var: provider %q on %v, want %s on", p, d.an.provider, d.an.on, p)
 		}
 	}
+	// An API key only in the environment, with no key file, keeps the
+	// default: Hoop's model (DES-244).
+	if d, _ := newDraft("postgres", machine{keyDir: t.TempDir(), provider: "openai"}); !d.an.hosted() || !d.an.on {
+		t.Errorf("OPENAI_API_KEY with no key file: provider %q on %v, want Hoop's model on", d.an.provider, d.an.on)
+	}
 	if slices.Contains(analyzer.RegisteredProviders(), "vertex") {
 		d, _ := newDraft("postgres", machine{keyDir: t.TempDir(), provider: "vertex"})
 		if d.an.provider != "vertex" || d.an.on {
