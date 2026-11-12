@@ -1,12 +1,14 @@
 package apisidecar
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/gateway/services/approvalrouting"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	slackplugin "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -219,7 +222,7 @@ func checkFilingFields(req openapi.SidecarReviewRequest) error {
 // level's hand-off agent selected the hold.
 func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest, statement []byte) {
 	level := analyzer.RiskLevel(req.RiskLevel)
-	approver, ruleName, err := authorizedRiskLevel(models.DB, sidecar, req.ListenerName, level, req.Handoff)
+	approver, ruleName, protocol, err := authorizedRiskLevel(models.DB, sidecar, req.ListenerName, level, req.Handoff)
 	if err != nil {
 		var refusal levelNotAuthorized
 		if errors.As(err, &refusal) {
@@ -239,6 +242,12 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 		policy:     services.ReviewPolicyForLevel(sidecar.OrgID, approver),
 		level:      string(level),
 		viaHandoff: req.Handoff,
+		protocol:   protocol,
+	}
+	// A level with routing files to the groups the routing step selects,
+	// once fileHeldStatement knows the review is new.
+	if approver != nil && approver.Routing != nil {
+		filing.routing = approver.Routing
 	}
 	// The limits are those of the block's approval_rule: an older build files
 	// this level under that rule, so both builds get the same limits.
@@ -285,6 +294,9 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	// consumed before the re-read. Either way one more pass settles it.
 	// One clock for both, so the insert expires the holder the read found lapsed.
 	now := time.Now().UTC()
+	// decision is the routing of the review this request files, made once:
+	// a second pass after a lost race reuses it.
+	var decision *approvalrouting.RouteDecision
 	const attempts = 2
 	for range attempts {
 		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
@@ -296,6 +308,19 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 			return
+		}
+
+		// Routing runs only for a new review, before it exists, so its
+		// group rows are the routed groups alone. Its time counts inside
+		// the hold: the deadline runs from now.
+		if filing.routing != nil && decision == nil {
+			decision, err = routeFiling(c.Request.Context(), sidecar, req, statement, filing)
+			if err != nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed routing the sidecar approval request")
+				return
+			}
+			filing.policy = services.ReviewPolicyForGroups(sidecar.OrgID, decision.Groups)
+			filing.routingRecord = decision.Record
 		}
 
 		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, filing, now)
@@ -322,7 +347,7 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 			}
 		}
 
-		answerFiledReview(c, sidecar, req, filing.label, rev, display)
+		answerFiledReview(c, sidecar, req, filing.label, rev, display, decision)
 		return
 	}
 
@@ -559,7 +584,7 @@ func authenticatedSidecar(c *gin.Context) *models.Sidecar {
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
-	label string, rev *models.Review, display string) {
+	label string, rev *models.Review, display string, decision *approvalrouting.RouteDecision) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "under", label).
 		Infof("registered a sidecar review")
@@ -582,7 +607,7 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	//
 	// Nothing in the response depends on it: the review is already persisted
 	// and visible to an approver either way.
-	go notifySlack(sidecar, rev, req.ListenerName, display)
+	go notifyFiledReview(sidecar, rev, req.ListenerName, display, decision)
 
 	// Forward is false: the review was filed a moment ago and no human has
 	// seen it. The sidecar denies this statement and carries the review id.
@@ -695,15 +720,83 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 	})
 }
 
+// notifyFiledReview tells the approvers a review exists: through the
+// integrations the routing selected, else as before routing (notifySlack).
+// A routed notification that reaches nobody falls back to notifySlack too.
+func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
+	decision *approvalrouting.RouteDecision) {
+	if !decision.Notifies() {
+		notifySlack(sidecar, rev, listenerName, display, nil)
+		return
+	}
+	unrouted := func(skip []string) bool { return notifySlack(sidecar, rev, listenerName, display, skip) }
+	approvalrouting.Notify(context.Background(), models.DB, sidecar.OrgID, decision,
+		routingCard(sidecar, rev, listenerName, display), unrouted)
+}
+
+// routeFiling runs the shared routing step for a new review of this
+// listener. The sidecar is no user: the requester is the principal the
+// body names, and the model reads the shape of the raw statement only.
+func routeFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest, statement []byte,
+	filing sidecarFiling) (*approvalrouting.RouteDecision, error) {
+	listenerName := req.ListenerName
+	connection := listenerName
+	mirror, err := models.GetSidecarMirror(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
+	switch {
+	case err == nil:
+		connection = mirror.Name
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
+	}
+	// Detached from the request: a sidecar that hangs up must not turn the
+	// decision into a timeout fallback for the review it already waits on.
+	return approvalrouting.RouteReview(context.WithoutCancel(ctx), models.DB, approvalrouting.RouteInput{
+		OrgID:        sidecar.OrgID,
+		Principal:    req.Principal,
+		SidecarID:    sidecar.ID,
+		ListenerName: listenerName,
+		Connection:   connection,
+		Protocol:     filing.protocol,
+		RiskLevel:    filing.level,
+		Statement:    string(statement),
+		Routing:      *filing.routing,
+	})
+}
+
+// routingCard is the review message newSlackReviewRequest describes, for
+// any integration.
+func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) approvalrouting.ReviewCard {
+	msg := newSlackReviewRequest(sidecar, rev, listenerName, display)
+	return approvalrouting.ReviewCard{
+		ReviewID:        msg.ID,
+		SessionID:       msg.SessionID,
+		Requester:       msg.Name,
+		RequesterEmail:  msg.Email,
+		RequesterGroups: msg.UserGroups,
+		Connection:      msg.Connection,
+		ConnectionType:  msg.ConnectionType,
+		Sidecar:         sidecar.Name,
+		Listener:        listenerName,
+		RiskLevel:       rev.RiskLevel.String,
+		Statement:       msg.Script,
+		ApprovalURL:     msg.WebappURL,
+		Groups:          msg.ApprovalGroups,
+		ExpiresAt:       msg.ExpiresAt,
+	}
+}
+
 // notifySlack posts the review to the org's Slack channel, so a human learns it
-// exists rather than finding it by looking.
+// exists rather than finding it by looking. It reports whether a channel
+// accepted the message. A channel in skip is not posted to: the routed post
+// already tried it, and it refused, or its answer was lost and a second
+// message would be a duplicate whose buttons nothing rewrites.
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string, skip []string) bool {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
-		return
+		return false
 	}
 
 	// The listener's channels, else the org default channel as a fallback.
@@ -715,10 +808,21 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 			Warnf("failed reading the listener slack channels, posting to the default channel only, reason=%v", err)
 		channels = nil
 	}
-	if len(channels) == 0 && slackSvc.DefaultChannel() == "" {
+	if len(channels) == 0 {
+		if def := slackSvc.DefaultChannel(); def != "" {
+			channels = []string{def}
+		}
+	}
+	if len(channels) == 0 {
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
 			Warnf("no slack channel is set for this listener or the org, nobody was notified of this review")
-		return
+		return false
+	}
+	channels = slices.DeleteFunc(channels, func(c string) bool { return slices.Contains(skip, c) })
+	if len(channels) == 0 {
+		log.With("sid", rev.SessionID, "review-id", rev.ID).
+			Warnf("the routed post already tried every slack channel of this listener, nobody was notified of this review")
+		return false
 	}
 
 	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
@@ -729,7 +833,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 	if len(req.ApprovalGroups) == 0 || len(req.ApprovalGroups) >= slackplugin.SlackMaxButtons {
 		log.With("review-id", rev.ID).Warnf("not sending a review message with %d approval groups",
 			len(req.ApprovalGroups))
-		return
+		return false
 	}
 
 	result := slackSvc.PostMessageReview(req)
@@ -738,9 +842,10 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 		// was not invited to. Nobody can act on this review from Slack.
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
 			Warnf("no slack channel accepted the review message, nobody was notified, %v", result)
-		return
+		return false
 	}
 	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("slack review message, %v", result)
+	return true
 }
 
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the
@@ -889,18 +994,26 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 // risk level of this listener, against the COMPOSED document as
 // authorizedApprovalRule does. With handoff the level must hand off to an
 // agent that may select require_approval. It returns the level's approvers
-// entry and the block's approval_rule ("" when it names none).
+// entry, the block's approval_rule ("" when it names none) and the
+// listener's protocol.
 func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName string, level analyzer.RiskLevel,
-	handoff bool) (*daemon.LevelApprover, string, error) {
+	handoff bool) (*daemon.LevelApprover, string, string, error) {
 	listeners, err := composedListeners(db, sidecar)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	block := listenerHoldsForHuman(listeners, listenerName, level, handoff)
 	if block == nil {
-		return nil, "", levelNotAuthorized{listenerName: listenerName, level: string(level), handoff: handoff}
+		return nil, "", "", levelNotAuthorized{listenerName: listenerName, level: string(level), handoff: handoff}
 	}
-	return block.LevelApprover(level), block.ApprovalRule, nil
+	// listenerHoldsForHuman found exactly one listener of this name.
+	var protocol string
+	for _, l := range listeners {
+		if l.Name == listenerName {
+			protocol = l.Protocol
+		}
+	}
+	return block.LevelApprover(level), block.ApprovalRule, protocol, nil
 }
 
 // composedListeners are the listeners of the document served to this
@@ -999,6 +1112,12 @@ type sidecarFiling struct {
 	policy                  *services.ReviewPolicy
 	forceGroups             pq.StringArray
 	pendingTTL, approvalTTL *int
+	// protocol is the listener's protocol, set under a risk level.
+	protocol string
+	// routing is the level's AI routing; nil files to the policy as is.
+	routing *daemon.ApprovalRouting
+	// routingRecord is the routing decision the review stores.
+	routingRecord *models.ReviewRouting
 }
 
 // createSidecarReview writes the session and the review one statement needs to
@@ -1085,6 +1204,7 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		AccessRequestRuleName: filing.ruleName,
 		RiskLevel:             sql.NullString{String: filing.level, Valid: filing.level != ""},
 		ViaHandoff:            filing.viaHandoff,
+		Routing:               filing.routingRecord,
 
 		// Fixed at filing like the policy, so a rule edit moves no live review.
 		ExpiresAt:      models.SidecarReviewDeadline(now, filing.pendingTTL),

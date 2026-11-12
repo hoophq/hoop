@@ -1030,7 +1030,8 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 		if !humanHolds(la) || ruleHolds(la) && la.ApprovalRule == "" {
 			return nil
 		}
-		return ac.cp.reviewer(listener, la.ApprovalRule, la.reserves(), ac.log)
+		return planReviewer{cp: ac.cp, listener: listener, rule: la.ApprovalRule, reserve: la.reserves(),
+			routed: la.routedLevels(), log: ac.log}
 	}
 	if ac.local != nil && humanHolds(la) {
 		return ac.local(listener)

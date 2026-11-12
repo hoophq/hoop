@@ -126,8 +126,14 @@ func (AISessionAnalyzerRules) TableName() string {
 }
 
 func GetAIProvider(orgID uuid.UUID, feature AIProviderFeature) (*AIProvider, error) {
+	return GetAIProviderWithDB(DB, orgID, feature)
+}
+
+// GetAIProviderWithDB is GetAIProvider through db, so a caller can bound the
+// read with db.WithContext. It returns gorm.ErrRecordNotFound with none.
+func GetAIProviderWithDB(db *gorm.DB, orgID uuid.UUID, feature AIProviderFeature) (*AIProvider, error) {
 	var p AIProvider
-	err := DB.Where("org_id = ? AND feature = ?", orgID, string(feature)).First(&p).Error
+	err := db.Where("org_id = ? AND feature = ?", orgID, string(feature)).First(&p).Error
 	if err != nil {
 		return nil, err
 	}

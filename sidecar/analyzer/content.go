@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/lexer"
 )
 
 func init() {
@@ -137,6 +140,35 @@ func stripSQLLiterals(s string) string {
 	return out.String()
 }
 
+// StatementShape returns text with every value removed, for the control
+// plane: the approval routing agent reads the shape of a held statement and
+// no value in it (ENG-663). ok is false for a protocol with no shape, for a
+// SQL statement the lexer cannot read in full, and for a mongodb command
+// that does not decode.
+//
+// A SQL shape is the lexer's tokens under the protocol's dialect (see
+// lexer.Shape): strings, numbers, binds and quoted names are ?, comments are
+// gone. It is not the cache key's stripSQLLiterals, which keeps comments.
+// A mongodb shape keeps `$` operators and identifier-like field names; any
+// other key is "?" (mongodbRoutingShape).
+func StatementShape(protocol, text string) (string, bool) {
+	switch inspect.Protocol(protocol) {
+	case inspect.Postgres:
+		return lexer.Shape(text, lexer.Postgres)
+	case inspect.MySQL:
+		return lexer.Shape(text, lexer.MySQL)
+	case inspect.MSSQL:
+		return lexer.Shape(text, lexer.MSSQL)
+	case inspect.Oracle:
+		return lexer.Shape(text, lexer.Oracle)
+	case inspect.ClickHouse:
+		return lexer.Shape(text, lexer.ClickHouse)
+	case inspect.MongoDB:
+		return mongodbRoutingShape(text)
+	}
+	return "", false
+}
+
 // MongoDBBuilder renders a MongoDB command for classification.
 type MongoDBBuilder struct{}
 
@@ -197,18 +229,66 @@ func mongodbCacheKey(stmt inspect.Statement) string {
 }
 
 func mongodbShape(text string) string {
+	if shape, ok := mongodbStrictShape(text); ok {
+		return shape
+	}
+	return normalizeSpace(text)
+}
+
+// mongodbStrictShape is mongodbShape with no fallback: ok is false for a
+// command that does not decode, whose text keeps its values. It keeps every
+// key as sent: it feeds only the cache key, a hash that never leaves the
+// process.
+func mongodbStrictShape(text string) (string, bool) {
+	return mongodbShapeOf(text, nil)
+}
+
+// mongodbRoutingShape is mongodbStrictShape for text that leaves the
+// process: a key can be a value too (an email, a user id, a map keyed by
+// customer), so only `$` operators and identifier-like field names stay. Every
+// other key, or segment of a dotted path, is "?".
+func mongodbRoutingShape(text string) (string, bool) {
+	return mongodbShapeOf(text, mongodbRoutingKey)
+}
+
+func mongodbShapeOf(text string, keyOf func(string) string) (string, bool) {
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
-		return normalizeSpace(text)
+		return "", false
 	}
-	shaped := mongodbShapeValue(value, "")
-	encoded, err := json.Marshal(shaped)
+	encoded, err := json.Marshal(mongodbShapeValue(value, "", keyOf))
 	if err != nil {
-		return normalizeSpace(text)
+		return "", false
 	}
-	return string(encoded)
+	return string(encoded), true
+}
+
+// mongodbKeySegment is a segment of a key that names a field, not a value:
+// an identifier, optionally a `$` operator ($set, $gt), or a positional
+// operator ($, $[], $[elem]).
+var mongodbKeySegment = regexp.MustCompile(`^(\$?[A-Za-z_][A-Za-z0-9_]*|\$(\[([A-Za-z_][A-Za-z0-9_]*)?\])?)$`)
+
+// mongodbIndexSegment is an array index or a numeric key.
+var mongodbIndexSegment = regexp.MustCompile(`^[0-9]+$`)
+
+// mongodbRoutingKey keeps each dotted segment of key that is a field name or
+// an operator, and replaces a numeric one with "?". Any other segment makes
+// the whole key "?": its neighbours can be pieces of the same value, as an
+// email split at its dots.
+func mongodbRoutingKey(key string) string {
+	segments := strings.Split(key, ".")
+	for i, s := range segments {
+		switch {
+		case mongodbKeySegment.MatchString(s):
+		case mongodbIndexSegment.MatchString(s):
+			segments[i] = "?"
+		default:
+			return "?"
+		}
+	}
+	return strings.Join(segments, ".")
 }
 
 // batchFields name the arrays whose ORDER and LENGTH carry no meaning a
@@ -232,19 +312,42 @@ var batchFields = map[string]bool{
 
 // mongodbShapeValue reduces a command to its structure. field is the key the
 // value was found under, empty at the root and for array elements, and it
-// decides only whether this value is a write batch.
-func mongodbShapeValue(value any, field string) any {
+// decides only whether this value is a write batch. keyOf rewrites each key;
+// nil keeps it. Two keys keyOf maps onto one stay apart with a #n suffix.
+func mongodbShapeValue(value any, field string, keyOf func(string) string) any {
 	switch value := value.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(value))
-		for key, item := range value {
-			out[key] = mongodbShapeValue(item, key)
+		if keyOf == nil {
+			for key, item := range value {
+				out[key] = mongodbShapeValue(item, key, nil)
+			}
+			return out
+		}
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		// One keyOf call and one counter per key: a statement can hold
+		// thousands of keys that all map onto "?". keyOf never returns '#',
+		// so base#n cannot meet another base.
+		seen := make(map[string]int, len(keys))
+		for _, key := range keys {
+			base := keyOf(key)
+			n := seen[base] + 1
+			seen[base] = n
+			name := base
+			if n > 1 {
+				name = base + "#" + strconv.Itoa(n)
+			}
+			out[name] = mongodbShapeValue(value[key], key, keyOf)
 		}
 		return out
 	case []any:
 		out := make([]any, 0, len(value))
 		for _, item := range value {
-			out = append(out, mongodbShapeValue(item, ""))
+			out = append(out, mongodbShapeValue(item, "", keyOf))
 		}
 		if !batchFields[field] {
 			return out

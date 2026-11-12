@@ -175,7 +175,7 @@ type pinRef struct {
 func (e *Evaluator) holdPinned(ctx context.Context, stmt inspect.Statement, notes map[string]string,
 	mode ReviewMode, source string, pin pinRef) policy.Verdict {
 	id := pin.reviewID
-	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
+	res, err := e.ask(ctx, e.cfg.Timeout, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.Claim(c, id)
 	})
 	switch {
