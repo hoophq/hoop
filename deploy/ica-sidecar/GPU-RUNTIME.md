@@ -124,6 +124,6 @@ that the public archive URL is reachable and prints the exact URL/digest in its
 summary. It does not edit repository variables or update existing deployments.
 
 Use the complete [manual GPU release flow](GPU-RELEASE.md) to build a matching
-runtime, image and native bundle for an existing Hoop release and add download
-links to its release page. For local Docker packaging, pass the printed URL/SHA
+runtime, image and native bundle for a selected Hoop release and record download
+links/checksums in the matching private libhoop-ica engine release notes. For local Docker packaging, pass the printed URL/SHA
 as explicit build arguments described in [GPU.md](GPU.md).

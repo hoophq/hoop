@@ -167,8 +167,8 @@ The export contains `binaries/hoop-ica-gpu-assets_<version>_Linux_amd64.tar.gz`
 and its checksum file. Verify the published outer checksum before extraction.
 GPU image/bundle publication now uses the explicitly dispatched
 [manual GPU release flow](GPU-RELEASE.md) in private libhoop-ica. It packages the
-selected existing Hoop release and adds GPU download links/checksums to its
-release page. Normal PR/tag workflows publish CPU flavors and do not build ICA
+selected existing Hoop release and records GPU download links/checksums in the
+matching private libhoop-ica engine release. The Hoop release page is not edited. Normal PR/tag workflows publish CPU flavors and do not build ICA
 GPU images, even if old global GPU URL/SHA variables are still set. Local Docker
 commands above continue accepting explicit runtime URL/SHA inputs.
 
