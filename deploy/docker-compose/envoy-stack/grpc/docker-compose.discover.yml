@@ -68,7 +68,7 @@ services:
       - "18445:18445"   # legacy-open: reflection off, fail_open
       - "18446:18446"   # pinned: wrong digest, refuses
       - "19000:19000"   # admin: /healthz, /readyz
-      - "19002:19002"   # read API: /stats, /config, /api/*
+      - "127.0.0.1:19002:19002"   # read API: /stats, /config, /api/*; no auth, loopback only
     depends_on:
       ledger-reflect: { condition: service_healthy }
       ledger: { condition: service_healthy }

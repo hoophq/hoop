@@ -113,7 +113,7 @@ services:
       # query API on 19002. Host ports 19001 and 19003 so this stack
       # coexists with envoy-stack's 19000 and 19002.
       - "19001:19000"
-      - "19003:19002"
+      - "127.0.0.1:19003:19002"  # no auth: loopback only
     depends_on:
       # Neither emulator image can carry a healthcheck (no shell), so
       # service_started is the strongest condition available; run.sh does

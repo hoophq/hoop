@@ -170,7 +170,7 @@ CMD ["hoop", "start", "sidecar"]
 
 ```bash
 docker build -t my-hoop-inspect:1.149.0 .
-docker run -d --name inspect -p 15432:15432 -p 19000:19000 -p 19002:19002 my-hoop-inspect:1.149.0
+docker run -d --name inspect -p 15432:15432 -p 19000:19000 -p 127.0.0.1:19002:19002 my-hoop-inspect:1.149.0
 ```
 
 `--config` also reads `HOOP_SIDECAR_CONFIG`, which is why the `CMD` carries no

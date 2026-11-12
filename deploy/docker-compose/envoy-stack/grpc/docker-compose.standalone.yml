@@ -83,7 +83,7 @@ services:
     ports:
       - "18443:18443"   # the TLS gRPC lane -- the front door
       - "19000:19000"   # admin: /healthz, /readyz
-      - "19002:19002"   # read API: /stats, /config, /api/sessions
+      - "127.0.0.1:19002:19002"   # read API: /stats, /config, /api/sessions; no auth, loopback only
     depends_on:
       grpc-descriptors: { condition: service_completed_successfully }
       lane-certs: { condition: service_completed_successfully }

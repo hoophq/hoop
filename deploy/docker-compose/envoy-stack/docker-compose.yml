@@ -110,7 +110,7 @@ services:
       # query API on 19002. The data-path listeners are reached over the
       # compose network by Envoy, never from the host.
       - "19000:19000"
-      - "19002:19002"
+      - "127.0.0.1:19002:19002"  # no auth: loopback only
     depends_on:
       appdb: { condition: service_healthy }
       # httpbin ships no healthcheck; service_started is the strongest
