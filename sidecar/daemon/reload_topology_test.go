@@ -17,9 +17,9 @@ import (
 	"time"
 )
 
-// testRunningReloader is testReloader with the lanes actually served: every
-// lane is built and bound through a laneRuntime on 127.0.0.1:0, so a
-// document that adds or removes a listener has sockets to open and close.
+// testRunningReloader is testReloader with the lanes served: every lane is
+// built and bound through a laneRuntime on 127.0.0.1:0, so a document that
+// adds or removes a listener has sockets to open and close.
 func testRunningReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer, *laneRuntime) {
 	t.Helper()
 	cfg, err := LoadConfigBytes([]byte(raw))
@@ -86,8 +86,8 @@ func laneNames(rt *laneRuntime) []string {
 	return out
 }
 
-// stillOpen reports whether the peer kept c: a read times out rather than
-// returning EOF.
+// stillOpen reports whether the peer kept c: a read times out, with no
+// EOF.
 func stillOpen(c net.Conn) bool {
 	_ = c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 	_, err := c.Read(make([]byte, 1))
@@ -172,8 +172,8 @@ func TestAnAddedListenerStartsInPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer open.Close()
-	// A silent client: the relay waits for its startup message, and the
-	// held upstream never hangs up on the other side.
+	// The client sends nothing: the relay waits for its startup message,
+	// and the held upstream keeps the other side open.
 	if !stillOpen(open) {
 		t.Fatal("test bug: the connection did not survive before the reload")
 	}
@@ -205,15 +205,15 @@ func TestAnAddedListenerStartsInPlace(t *testing.T) {
 	if _, ok := rl.servers["second"]; !ok {
 		t.Error("the added lane has no swap target; the next rule edit would skip it")
 	}
-	// The next document is compared against the set that now runs: the
-	// same bytes are unchanged, not a second add.
+	// The reloader compares the next document against the set that now
+	// runs, so the same bytes read as unchanged.
 	if got := handleWith(rl, buf, drifted); got != reloadUnchanged {
 		t.Errorf("second pass = %v, want unchanged", got)
 	}
 }
 
 // A listener whose name is gone stops: its socket closes, its connections
-// end, and nothing else changes.
+// end, and the other lane keeps its socket and connections.
 func TestARemovedListenerStopsInPlace(t *testing.T) {
 	base := withUpstream(t, reloadBase)
 	two := editJSON(t, base, `"listeners": [{`, `"listeners": [`+secondListener(t)+`{`)
@@ -260,9 +260,9 @@ func TestARemovedListenerStopsInPlace(t *testing.T) {
 	}
 }
 
-// A document whose added listener cannot bind is refused as a whole: the
-// running lanes keep their rules, nothing new runs, and the reason names
-// the listener and the bind error.
+// The reloader refuses, as a whole, a document whose added listener cannot
+// bind: the running lanes keep their rules, no added lane runs, and the
+// reason names the listener and the bind error.
 func TestAnAddedListenerOnAHeldPortRefusesTheWholeDocument(t *testing.T) {
 	held, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -349,8 +349,8 @@ func TestAChangedListenerNamesItselfOnTheRestartPath(t *testing.T) {
 	}
 }
 
-// A unix socket lane binds a path on add and unlinks it on remove; a dead
-// socket file left at the path by an unclean shutdown is reclaimed.
+// A unix socket lane binds a path on add and unlinks it on remove; Listen
+// reclaims a dead socket file an unclean shutdown left at the path.
 func TestAUnixSocketListenerIsAddedAndRemovedInPlace(t *testing.T) {
 	path := unixSocketPath(t)
 	// A socket nothing answers on: listen, keep the file, close the fd.
@@ -387,8 +387,8 @@ func TestAUnixSocketListenerIsAddedAndRemovedInPlace(t *testing.T) {
 	}
 }
 
-// A unix socket path another process answers on is a bind failure, not a
-// file to reclaim: the document is refused and the other process keeps it.
+// A unix socket path another process answers on is a bind failure: the
+// reloader refuses the document and the other process keeps the socket.
 func TestAUnixSocketAnotherProcessHoldsIsRefused(t *testing.T) {
 	path := unixSocketPath(t)
 	live, err := net.Listen("unix", path)

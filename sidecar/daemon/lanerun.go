@@ -15,14 +15,14 @@ import (
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
-// This file is where a lane becomes a running server, and the one list of
+// This file turns a lane into a running server and keeps the one list of
 // those servers. Run used to hold the list as parallel slices built once;
-// a reload that adds or removes a listener (ADR-0014, amended) has to grow
-// and shrink it while /stats, /readyz, the usage ticker and the shutdown
-// loop read it, so the list is a registry under a mutex and the build and
-// bind steps are methods the startup path and the reload path share. One
-// build path: a lane started by a reload is the lane startup would have
-// built from the same document.
+// a reload that adds or removes a listener (ADR-0014, amended) grows and
+// shrinks it while /stats, /readyz, the usage ticker and the shutdown loop
+// read it, so the list is a registry under a mutex, and the build and bind
+// steps are methods the startup path and the reload path share. A lane a
+// reload starts is the lane startup would have built from the same
+// document.
 
 // bindWait bounds how long start waits for an endpoint lane to publish its
 // bound address. A bind is local and immediate; the wait only catches an
@@ -36,14 +36,14 @@ type runningLane struct {
 	protocol string
 	// relay is set for a relay lane (postgres, mysql, http, ...); endpoint
 	// for one that terminates the protocol in-process (grpc, spanner, ssh,
-	// ica, mcp). Exactly one is non-nil.
+	// ica, mcp). One of the two is set, the other nil.
 	relay    *proxy.Server
 	endpoint endpointServer
 	rules    ruleSwapper
-	// tokens is the lane's caller_token file, nil without the block. Kept
-	// so a removed lane leaves the token watcher's list with it.
+	// tokens is the lane's caller_token file, nil without the block. stop
+	// uses it to drop the file from the token watcher's list.
 	tokens *token.File
-	// stopped is set by stop before Close, so the serve goroutine does not
+	// stop sets stopped before Close, so the serve goroutine does not
 	// report the Close as a listener failure.
 	stopped *atomic.Bool
 }
@@ -76,10 +76,10 @@ func (l runningLane) serve(ctx context.Context) error {
 	return l.endpoint.Serve(ctx)
 }
 
-// laneSet is the registry of running lanes, in config order. Every reader
-// takes a snapshot; add and remove are the reloader's, closeAll is Run's
-// shutdown, after which add refuses: a lane the reloader starts during
-// shutdown would outlive the WaitGroup that joins the others.
+// laneSet is the registry of running lanes, in config order. Readers take
+// a snapshot; laneRuntime.start and stop are the reloader's, closeAll is
+// Run's shutdown, after which start refuses: a lane the reloader starts
+// during shutdown would outlive the WaitGroup that joins the others.
 type laneSet struct {
 	mu     sync.Mutex
 	lanes  []runningLane
@@ -144,10 +144,10 @@ func (s *laneSet) statSources() []statSource {
 // Stats makes runningLane a statSource stats provider.
 func (l runningLane) Stats() (active, total, denied int64) { return l.stats() }
 
-// closeAll closes every lane and refuses later adds. Endpoint lanes close
-// together: an ica lane's Close drains its sessions for up to 30s, and
-// closing lanes one after another would add those windows up past the
-// pod's termination grace period.
+// closeAll closes every lane, together, and refuses later starts: an ica
+// lane's Close drains its sessions for up to 30s, and closing lanes one
+// after another would add those windows up past the pod's termination
+// grace period.
 func (s *laneSet) closeAll(log *slog.Logger) {
 	s.mu.Lock()
 	s.closed = true
@@ -166,8 +166,8 @@ func (s *laneSet) closeAll(log *slog.Logger) {
 }
 
 // tokenWatch is the list of caller_token files watchCallerTokens re-reads.
-// A registry for the same reason laneSet is: a reload adds and removes
-// lanes, and their token files with them.
+// It is a registry for the same reason laneSet is: a reload adds and
+// removes lanes, and their token files with them.
 type tokenWatch struct {
 	mu    sync.Mutex
 	files []*token.File
@@ -222,7 +222,7 @@ type laneRuntime struct {
 	// build and leaves it in stop.
 	tokens *tokenWatch
 
-	// ctx, wg and fail are the serve side, set by Run before the first
+	// ctx, wg and fail are the serve side. Run sets them before the first
 	// start: the context every Serve runs under, the group shutdown joins,
 	// and where a Serve error goes to stop the process.
 	ctx  context.Context
@@ -230,10 +230,9 @@ type laneRuntime struct {
 	fail func(error)
 }
 
-// build wires one lane the way Run wires every startup lane (metrics,
-// telemetry recorder, caller token file) and constructs its server without
-// binding. The lane is updated in place: the reloader publishes it to
-// /config afterwards.
+// build wires one lane (metrics, telemetry recorder, caller token file)
+// and constructs its server without binding. It updates the lane in
+// place; the reloader publishes it to /config afterwards.
 func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 	ln.metrics = rt.tel.laneMetrics(ln.cfg.Protocol)
 	ln.telemetry = rt.otel.lane(ln.name, ln.cfg.Protocol)
@@ -281,10 +280,10 @@ func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 
 // start binds the lane and serves it. It returns once the socket is bound,
 // or with the bind error and nothing running: the reload path commits a
-// document only after every added lane answered this. A failure after the
-// bind (the accept loop, an engine) stops the process through fail, the
-// same as a startup lane's; a Serve that returns because stop closed the
-// lane is not a failure.
+// document only after each added lane has returned from start. A failure
+// after the bind (the accept loop, an engine) stops the process through
+// fail, the same as a startup lane's; a Serve that returns because stop
+// closed the lane is not a failure.
 func (rt *laneRuntime) start(rl runningLane) error {
 	rt.set.mu.Lock()
 	if rt.set.closed {
@@ -301,10 +300,9 @@ func (rt *laneRuntime) start(rl runningLane) error {
 	rt.wg.Add(1)
 	rt.set.mu.Unlock()
 
-	// served has exactly one reader: this function while the bind is
-	// undecided, the watcher below once it is. That is what keeps a bind
-	// failure on a reload-added lane from being reported as a process
-	// failure.
+	// served has one reader at a time: this function until the bind is
+	// decided, then watch. A bind failure on a reload-added lane therefore
+	// returns to the reloader instead of reaching fail.
 	served := make(chan error, 1)
 	go func() {
 		defer rt.wg.Done()
@@ -321,8 +319,8 @@ func (rt *laneRuntime) start(rl runningLane) error {
 		return nil
 	}
 	// An endpoint lane binds inside Serve and publishes the address once
-	// bound; that is the signal. The deadline only catches an engine that
-	// never gets there.
+	// bound, so start polls for the address. The deadline catches an
+	// engine that hangs before binding.
 	deadline := time.NewTimer(bindWait)
 	defer deadline.Stop()
 	tick := time.NewTicker(time.Millisecond)

@@ -2,8 +2,8 @@
 
 The sidecar re-reads its config while it runs. A rule edit swaps rules in
 place; a listener added to the file starts in place, a listener removed
-from it stops in place. Nothing else restarts, and every connection on the
-other lanes stays open. This overlay shows that on the base stack.
+from it stops in place. The process does not restart, and every connection
+on the other lanes stays open. This overlay shows that on the base stack.
 
 ```bash
 ./reload/run.sh          # the base stack, with the sidecar reading reload/work/
@@ -11,7 +11,7 @@ other lanes stays open. This overlay shows that on the base stack.
 ./reload/run.sh down     # tear down, including the working copy
 ```
 
-`demo.sh` exits non-zero if any check fails. What it walks:
+`demo.sh` exits non-zero if any check fails. Its steps:
 
 | Step | Edit to `reload/work/config.yaml` | The sidecar logs | Proven by |
 |---|---|---|---|
@@ -25,12 +25,12 @@ ten-second stat tick. Under a control plane the heartbeat delivers the same
 document and reaches the same outcome; the plane's sidecar page shows
 `refused` with the reason for the bind conflict.
 
-## Why a directory mount
+## The directory mount
 
 The base stack binds `sidecar/config.yaml` into the container as one file,
 and Docker binds a file by inode. Most editors and `sed -i` write a new file
 and rename it over the old one, so the container keeps reading the old inode
-and never sees the edit. The overlay binds the directory `reload/work/`
+and does not see the edit. The overlay binds the directory `reload/work/`
 instead and points `-config` into it; `run.sh` seeds it with a copy of the
 base config. A Kubernetes ConfigMap volume is a directory and an atomic
 symlink swap, which the sidecar's stat sees, so this is only a compose
@@ -38,10 +38,10 @@ concern.
 
 On macOS a bind mount propagates an in-place append with a short delay. The
 demo waits for the container to read the same bytes before it sends the
-signal; the stat tick never notices, because ten seconds is longer than the
-delay.
+signal; the ten-second stat tick is longer than the delay, so it reads the
+new bytes.
 
-## What stays restart-bound
+## Restart-bound edits
 
 Editing a running listener (its address, upstream, protocol or TLS),
 renaming one, or changing anything outside the listeners and the rules
