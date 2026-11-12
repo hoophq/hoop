@@ -181,3 +181,45 @@ func TestUnknownRuleRefusesUndecodableClientBytes(t *testing.T) {
 		t.Errorf("message = %q, want the decode error named", d.Message)
 	}
 }
+
+// parseErrorMaskPolicy applies a response mask to the statement that stands
+// for undecodable bytes, as the AI analyzer could.
+type parseErrorMaskPolicy struct{}
+
+func (parseErrorMaskPolicy) Evaluate(inspect.Statement) policy.Verdict { return policy.Verdict{} }
+
+func (parseErrorMaskPolicy) EvaluateWith(s inspect.Statement, ec *policy.EvalContext) policy.Verdict {
+	if s.Metadata[inspect.MetadataParseError] != "" {
+		ec.MaskResponse(aiMask)
+	}
+	return policy.Verdict{}
+}
+
+// reframingJunkCodec is lineOrJunkCodec with a Reframer, so a gate can run
+// a mask scope over it.
+type reframingJunkCodec struct{ lineOrJunkCodec }
+
+func (reframingJunkCodec) Rewrite(data []byte, _ func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{}, nil
+}
+func (reframingJunkCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+
+// A mask on undecodable client bytes is refused: the codec lost the stream,
+// so no response can be tied to them. Before, the mask was dropped and the
+// bytes were forwarded.
+func TestAMaskOnUndecodableClientBytesIsRefused(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		Policy:       parseErrorMaskPolicy{},
+		MaskScope:    gate.MaskScopeSerial,
+		CodecFactory: func() inspect.Codec { return reframingJunkCodec{} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d := g.Request(context.Background(), junkChunk)
+	if d.Allowed || len(d.Payload) != 0 || d.Rule != "ai-mask" || !strings.Contains(d.Message, "could not decode") {
+		t.Fatalf("masked undecodable bytes: allowed=%v rule=%q message=%q payload=%q",
+			d.Allowed, d.Rule, d.Message, d.Payload)
+	}
+}

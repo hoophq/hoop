@@ -34,21 +34,23 @@ type cache struct {
 type cacheEntry struct {
 	key      string
 	result   Result
-	handoff  map[string]handoffMemo
+	memos    map[string]agentMemo
 	expireAt time.Time
 }
 
-// handoffMemo is a hand-off decision kept with the classification it was
-// made on. The entry keys it by handoffKey: the hand-off configuration and
-// every input the agent read that the shape key does not cover.
-type handoffMemo struct {
+// agentMemo is an agent's decision kept with the classification it was made
+// on: a hand-off decision, a rule decision (ENG-662), or both from one
+// joined turn. The entry keys it by the agent's configuration and every
+// input the agent read that the shape key does not cover.
+type agentMemo struct {
 	action Action
 	reason string
+	rules  *ruleDecision
 }
 
-// maxHandoffMemos bounds the decisions one entry keeps, one per principal,
+// maxAgentMemos bounds the decisions one entry keeps, one per principal,
 // database and so on. A full entry drops them all: the cost is new calls.
-const maxHandoffMemos = 64
+const maxAgentMemos = 64
 
 // newCache returns a cache holding at most size entries for ttl each. A size
 // or ttl of zero disables caching, and a disabled cache is still a valid
@@ -94,31 +96,31 @@ func (c *cache) get(key string) (Result, bool) {
 	return ent.result, true
 }
 
-// decision returns the hand-off decision the live entry for key keeps under
-// handoffKey. It does not count as a hit or a miss.
-func (c *cache) decision(key, handoffKey string) (handoffMemo, bool) {
+// decision returns the agent decision the live entry for key keeps under
+// memoKey. It does not count as a hit or a miss.
+func (c *cache) decision(key, memoKey string) (agentMemo, bool) {
 	if !c.enabled() {
-		return handoffMemo{}, false
+		return agentMemo{}, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	el, ok := c.entries[key]
 	if !ok {
-		return handoffMemo{}, false
+		return agentMemo{}, false
 	}
 	ent := el.Value.(*cacheEntry)
 	if c.now().After(ent.expireAt) {
-		return handoffMemo{}, false
+		return agentMemo{}, false
 	}
-	m, ok := ent.handoff[handoffKey]
+	m, ok := ent.memos[memoKey]
 	return m, ok
 }
 
-// remember keeps a hand-off decision on the live entry for key, under
-// handoffKey. It does not extend the entry's TTL, and it does nothing when
-// the entry is gone: the decision then is made again with the next
+// remember keeps an agent decision on the live entry for key, under
+// memoKey. It does not extend the entry's TTL, and it does nothing when the
+// entry is gone: the decision then is made again with the next
 // classification.
-func (c *cache) remember(key, handoffKey string, m handoffMemo) {
+func (c *cache) remember(key, memoKey string, m agentMemo) {
 	if !c.enabled() {
 		return
 	}
@@ -132,10 +134,10 @@ func (c *cache) remember(key, handoffKey string, m handoffMemo) {
 	if c.now().After(ent.expireAt) {
 		return
 	}
-	if ent.handoff == nil || len(ent.handoff) >= maxHandoffMemos {
-		ent.handoff = map[string]handoffMemo{}
+	if ent.memos == nil || len(ent.memos) >= maxAgentMemos {
+		ent.memos = map[string]agentMemo{}
 	}
-	ent.handoff[handoffKey] = m
+	ent.memos[memoKey] = m
 }
 
 // put stores a verdict, evicting the least recently used entry when full.
@@ -150,7 +152,7 @@ func (c *cache) put(key string, res Result) {
 		// A new classification: a decision made on the old one is stale.
 		ent := el.Value.(*cacheEntry)
 		ent.result = res
-		ent.handoff = nil
+		ent.memos = nil
 		ent.expireAt = c.now().Add(c.ttl)
 		c.order.MoveToFront(el)
 		return

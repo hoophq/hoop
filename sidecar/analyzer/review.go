@@ -383,14 +383,14 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	var gen uint64
 	if pin.key != "" {
 		gen = e.pins.begin(pin.key)
-		defer e.pins.finish(pin.key, gen, "", "", false)
+		defer e.pins.finish(gen, pin, "", false)
 	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
 	})
 	if pin.key != "" {
 		live := err == nil && res.ID != "" && (res.Status == reviewPending || res.Status == reviewProcessing)
-		e.pins.finish(pin.key, gen, res.ID, pin.reason, live)
+		e.pins.finish(gen, pin, res.ID, live)
 	}
 	if err != nil {
 		e.errs.Add(1)

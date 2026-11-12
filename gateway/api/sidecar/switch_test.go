@@ -57,13 +57,18 @@ func importedSidecar(t *testing.T, name string) *models.Sidecar {
 
 func callAdmin(t *testing.T, handler gin.HandlerFunc, method, nameOrID, config string) (*httptest.ResponseRecorder, openapi.SidecarResponse) {
 	t.Helper()
+	return callAdminIn(t, switchOrgID, handler, method, nameOrID, config)
+}
+
+func callAdminIn(t *testing.T, orgID string, handler gin.HandlerFunc, method, nameOrID, config string) (*httptest.ResponseRecorder, openapi.SidecarResponse) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(method, "/api/sidecars/"+nameOrID,
 		bytes.NewReader([]byte(`{"configuration":`+config+`}`)))
 	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", switchOrgID).
+	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", orgID).
 		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
 	c.Params = gin.Params{{Key: "nameOrID", Value: nameOrID}}
 	handler(c)

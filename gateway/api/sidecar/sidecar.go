@@ -121,6 +121,9 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 		if err := services.CheckSidecarConfiguration(daemon.Config(sc.Configuration)); err != nil {
 			return err
 		}
+		if err := services.ValidateListenerAIRules(tx, sc); err != nil {
+			return err
+		}
 		if err := services.CheckSidecarConfigurationLimits(daemon.Config(sc.Configuration), licenseData); err != nil {
 			return err
 		}
@@ -789,16 +792,39 @@ func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Ha
 	if err != nil {
 		return servedDocument{}, fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", services.ErrSidecarRulesUnavailable, err)
 	}
+	// The library rules the analyzer levels let the AI apply are served in
+	// rule_library. They come from the organization's guardrail and data
+	// masking rows, not from this sidecar's row or its bindings, so they are
+	// read before the cache lookup and are part of its key: a library edit
+	// reaches the sidecar at its next handshake. Only the kinds an ai_rules
+	// entry names are read, and the bound rules are not folded for it.
+	library, err := services.LoadRuleLibraryRowsFor(models.DB, orgID, daemon.Config(sc.Configuration), bound.Analyzers)
+	if err != nil {
+		return servedDocument{}, err
+	}
 	// Everything below is a pure function of what was just loaded, so the
 	// answer served last time stands while its inputs do. The license's
 	// verdict is read now: a lapse is a new input.
-	fingerprint := servedFingerprint(sc, bound, licenseData, services.SidecarLicenseState(licenseData), hs)
+	fingerprint := servedFingerprint(sc, bound, library, licenseData, services.SidecarLicenseState(licenseData), hs)
 	if doc, ok := cachedServed(sc, fingerprint); ok {
 		return doc, nil
 	}
 	composed, err := services.ComposeSidecarConfigurationFrom(sc, bound)
 	if err != nil {
 		return servedDocument{}, err
+	}
+	if composed, err = services.FoldRuleLibrary(composed, library); err != nil {
+		return servedDocument{}, err
+	}
+	// A build that does not read approvers gets the held levels under
+	// approval_rule, or a refusal that names the capability
+	// (ErrSidecarCapabilityMissing). It runs before the license caps: a
+	// build that cannot decode the document is refused for that, so the
+	// refusal names the upgrade (analyzer_ai_rules, for example) rather than
+	// a license the build could not use anyway.
+	served := daemon.ServeLevelApprovers(composed, hs)
+	if err := daemon.CheckServable(served, hs); err != nil {
+		return servedDocument{}, services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
 	// The free tier caps rules PER PROCESS, and it counts what the served
 	// document authors -- so bound rules push the count up even though the
@@ -815,13 +841,6 @@ func serveDocument(sc *models.Sidecar, licenseData json.RawMessage, hs daemon.Ha
 	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return servedDocument{}, err
-	}
-	// A build that does not read approvers gets the held levels under
-	// approval_rule, or a refusal that names the capability. The fingerprint
-	// covers the handshake's capabilities, so the cache keeps this apart.
-	served := daemon.ServeLevelApprovers(composed, hs)
-	if err := daemon.CheckServable(served, hs); err != nil {
-		return servedDocument{}, services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
 	body, err := json.Marshal(servedConfig(models.SidecarConfiguration(served), licenseData))
 	if err != nil {

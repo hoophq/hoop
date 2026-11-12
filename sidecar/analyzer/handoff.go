@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -227,57 +228,80 @@ type handoffDecision struct {
 	// cause is why the agent did not decide, or nil for a decision.
 	cause error
 
+	// rules is what the rule tools that joined the turn decided. Zero on
+	// a level with no AI rule options.
+	rules ruleOutcome
+
 	// pin is what a hold this decision files pins: set for a
 	// require_review the agent selected, never for a fail-safe.
 	pin pinRef
 }
 
 // handoffKey keys a hand-off decision on a classification's cache entry: the
-// level's hand-off configuration and the exact content the agent reads. The
-// shape key drops literals and quoted identifiers, so a decision is reused
-// only for the same statement, principal, database and connection.
-func handoffKey(h *handoffLevel, content string) string {
-	return fingerprint(h.key + "\x00" + content)
+// level's hand-off configuration, its rule options when they join the turn,
+// and the exact content the agent reads. The shape key drops literals and
+// quoted identifiers, so a decision is reused only for the same statement,
+// principal, database and connection.
+func handoffKey(h *handoffLevel, rl *ruleLevel, content string) string {
+	if rl == nil {
+		return fingerprint(h.key + "\x00" + content)
+	}
+	return fingerprint(h.key + "\x00" + rl.key + "\x00" + content)
 }
 
 // handoff runs the hand-off agent for one classified statement, or reuses
 // the request a filed hold pinned (unless skipPin), or the decision the
 // cache keeps for its shape and handoffKey. It never returns an action the
 // level does not allow. Anything but one valid call of an allowed tool
-// applies the most restrictive allowed action, and that is never cached or
-// pinned.
+// applies the most restrictive allowed action and no AI rule, and that is
+// never cached or pinned.
+//
+// On a level with AI rule options the rule tools join the turn (ENG-662):
+// the agent calls one action tool and the rule tools zero or more times. A
+// malformed rule call applies no rule and keeps the action. A pin keeps the
+// rule outcome its filing applied, so a pinned resend applies the same.
 func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
 	level RiskLevel, c classified, skipPin bool) handoffDecision {
 	h := e.handoffs[level]
+	rl := e.ruleLevels[level]
 	if h == nil {
 		// New refuses this; kept so a broken invariant still denies.
 		return handoffDecision{action: ActionBlock, reason: handoffUndecided,
 			cause: fmt.Errorf("risk %q has no hand-off configuration", level)}
 	}
 	failSafe := func(reason string, cause error) handoffDecision {
-		return handoffDecision{action: h.failSafe(), reason: reason, cause: cause}
+		d := handoffDecision{action: h.failSafe(), reason: reason, cause: cause}
+		if rl != nil {
+			d.rules = failedRules(rulesUndecided, cause)
+		}
+		return d
 	}
 	// Before the cache: a decision on the shape must not reach a statement
 	// the agent could not have read in full.
 	if reason := e.incompleteFor(stmt, "hand-off agent"); reason != "" {
-		return failSafe(reason, errors.New(reason))
+		d := failSafe(reason, errors.New(reason))
+		if rl != nil {
+			d.rules.reason = reason
+		}
+		return d
 	}
-	user := ""
-	if ec != nil {
-		user = ec.Context["principal"]
-	}
-	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
+	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, principal(ec)) +
 		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
-	memoKey := handoffKey(h, content)
+	memoKey := handoffKey(h, rl, content)
 	pinKey := e.pinKey(memoKey, stmt)
 	// Before the cache, which may have lost the decision: a statement whose
-	// hold the agent selected asks about that request (handoffPins).
+	// hold the agent selected asks about that request (handoffPins), with
+	// the rule outcome that filing applied. The agent is not asked again.
 	if pin, ok := e.pins.get(pinKey); ok && pinKey != "" && !skipPin {
-		return handoffDecision{action: ActionRequireReview, reason: pin.reason,
-			pin: pinRef{key: pinKey, reason: pin.reason, reviewID: pin.reviewID}}
+		return handoffDecision{action: ActionRequireReview, reason: pin.reason, rules: pin.rules,
+			pin: pinRef{key: pinKey, reason: pin.reason, rules: pin.rules, reviewID: pin.reviewID}}
 	}
 	if m, ok := e.cache.decision(c.key, memoKey); ok {
-		return withPin(handoffDecision{action: m.action, reason: m.reason}, pinKey)
+		d := handoffDecision{action: m.action, reason: m.reason}
+		if rl != nil {
+			d.rules = ruleOutcome{decision: m.rules}
+		}
+		return withPin(d, pinKey)
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
 	if !ok {
@@ -286,27 +310,55 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	if err := e.takeCall(); err != nil {
 		return failSafe(handoffUndecided, err)
 	}
+	prompt, tools := h.prompt, h.tools
+	if rl != nil {
+		prompt = rl.joinedPrompt(h.prompt)
+		tools = append(slices.Clone(h.tools), rl.tools...)
+	}
 	var d handoffDecision
-	err := e.agentCall(ctx, caller, h.prompt, content, h.tools, func(calls []ToolCall) error {
-		action, reason, ok := parseHandoff(calls, h.tools)
+	err := e.agentCall(ctx, caller, prompt, content, tools, func(calls []ToolCall) error {
+		var actionCalls, ruleCalls []ToolCall
+		for _, call := range calls {
+			if rl != nil && rl.hasTool(call.Name) {
+				ruleCalls = append(ruleCalls, call)
+				continue
+			}
+			actionCalls = append(actionCalls, call)
+		}
+		action, reason, ok := parseHandoff(actionCalls, h.tools)
 		if !ok {
-			return fmt.Errorf("the hand-off agent answered %d tool call(s), not one allowed action with a reason",
-				len(calls))
+			return fmt.Errorf("the hand-off agent answered %d action call(s), not one allowed action with a reason",
+				len(actionCalls))
 		}
 		d = handoffDecision{action: action, reason: e.recordReason(reason)}
+		if rl != nil {
+			rd, err := rl.parse(e, level, ruleCalls, false)
+			if err != nil {
+				d.rules = failedRules(rulesUndecided, err)
+			} else {
+				d.rules = ruleOutcome{decision: rd}
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return failSafe(handoffUndecided, err)
 	}
-	e.cache.remember(c.key, memoKey, handoffMemo{action: d.action, reason: d.reason})
+	// A turn whose rule part failed is not cached: the next statement
+	// asks again rather than repeating a failure.
+	if rl == nil || d.rules.decision != nil {
+		e.cache.remember(c.key, memoKey, agentMemo{action: d.action, reason: d.reason, rules: d.rules.decision})
+	}
 	return withPin(d, pinKey)
 }
 
-// withPin marks a require_review decision with the key its hold pins.
+// withPin marks a require_review decision with the key its hold pins and
+// the rule outcome its filing applies. A rule part that failed is pinned as
+// failed: the action stands, and the resend applies no rule, as the filing
+// did.
 func withPin(d handoffDecision, key string) handoffDecision {
 	if d.action == ActionRequireReview {
-		d.pin = pinRef{key: key, reason: d.reason}
+		d.pin = pinRef{key: key, reason: d.reason, rules: d.rules}
 	}
 	return d
 }
@@ -347,15 +399,16 @@ func parseHandoff(calls []ToolCall, tools []ToolSpec) (Action, string, bool) {
 // applyHandoff runs the action the hand-off resolved to through the paths
 // the level's own action would take: allow and warn forward, block denies
 // with the recorded reason, and require_review holds under the hand-off's
-// approver. A hold on a pinned request carries how to decide again when
-// the plane says that request is over; that runs inside the hold, so it
-// holds directly.
+// approver. The AI rules of a joined turn apply only when the action is not
+// block, and before the hold. A hold on a pinned request carries how to
+// decide again when the plane says that request is over; that runs inside
+// the hold, so it holds directly.
 func (e *Evaluator) applyHandoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
 	notes map[string]string, level RiskLevel, c classified, d handoffDecision) policy.Verdict {
-	return e.resolveHandoff(notes, c, d, func(pin pinRef) policy.Verdict {
+	return e.resolveHandoff(stmt, ec, notes, level, c, d, func(pin pinRef) policy.Verdict {
 		if pin.reviewID != "" {
 			pin.again = func(hold func(pinRef) policy.Verdict) policy.Verdict {
-				return e.resolveHandoff(notes, c, e.handoff(ctx, stmt, ec, level, c, true), hold)
+				return e.resolveHandoff(stmt, ec, notes, level, c, e.handoff(ctx, stmt, ec, level, c, true), hold)
 			}
 		}
 		h := e.handoffs[level]
@@ -363,15 +416,27 @@ func (e *Evaluator) applyHandoff(ctx context.Context, stmt inspect.Statement, ec
 	})
 }
 
-// resolveHandoff applies decision d; hold runs a require_review.
-func (e *Evaluator) resolveHandoff(notes map[string]string, c classified, d handoffDecision,
-	hold func(pinRef) policy.Verdict) policy.Verdict {
+// resolveHandoff applies decision d, its AI rules first; hold runs a
+// require_review.
+func (e *Evaluator) resolveHandoff(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
+	level RiskLevel, c classified, d handoffDecision, hold func(pinRef) policy.Verdict) policy.Verdict {
 	notes[MetadataHandoffDecision] = HandoffToolName(d.action)
 	reason := d.reason
 	if reason != "" {
 		notes[MetadataHandoffReason] = reason
 	} else {
 		delete(notes, MetadataHandoffReason)
+	}
+	if e.ruleLevels[level] != nil {
+		if d.action == ActionBlock {
+			if d.rules.decision != nil {
+				notes[MetadataAIRulesError] = rulesBlocked
+			} else if d.rules.reason != "" {
+				notes[MetadataAIRulesError] = d.rules.reason
+			}
+		} else if v, ok := e.enforceRules(stmt, ec, notes, d.rules); !ok {
+			return v
+		}
 	}
 	switch d.action {
 	case ActionAllow, ActionWarn:
@@ -400,8 +465,8 @@ func (e *Evaluator) resolveHandoff(notes map[string]string, c classified, d hand
 	return e.deny(notes, msg+": "+denial)
 }
 
-// recordReason is the hand-off agent's prose as the record may keep it:
-// the whole text goes through Config.RecordRedact first, so a cut cannot
+// recordReason is the hand-off or rule agent's prose as the record may keep
+// it: the whole text goes through Config.RecordRedact first, so a cut cannot
 // split a value the detector would find, and only then is it bounded.
 // With no record redactor nothing is kept. The cache stores this result.
 func (e *Evaluator) recordReason(reason string) string {
