@@ -3830,7 +3830,8 @@ input for a call, beside the `context` every lane sends:
 ```
 
 `opa: {responses: false}` keeps the catalog from OPA. mcpproxy's
-`approval_tools` is refused (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+`approval_tools` is refused: a hold comes from the analyzer (see
+[Analyzer](#analyzer)). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
 runs one session through a lane.
 
 One sidecar session per MCP session: it opens on the first message,
@@ -3860,11 +3861,27 @@ The model reads the tool name and the arguments JSON, cut to
 - `block` refuses the one call as a tool error,
   `denied by the hoop sidecar (rule <listener>): <message>`. The session
   stays open.
-- A hold (`require_approval`) refuses the call before any approver, the AI
-  agent included, and files no approval request: the lane cannot hold a
-  tool call yet (ENG-967). A hold that a person approves still needs a
-  control plane and an `approval_rule`, or a person running
-  `hoop start sidecar` in a terminal, to start, as on the other lanes.
+- A hold (`require_approval`) files the call as on the other lanes: the tool
+  name and the arguments, byte for byte. Approved, the call runs once.
+  Rejected or expired, it is a tool error with the reason, and the session
+  stays open.
+- In `review_mode: hold` (the default) the call waits at most 4 minutes:
+  mcpproxy ends a request at 5, and an approved call keeps the last minute
+  to run. Still pending then, the answer is
+  `held for approval by the hoop sidecar (rule <listener>): ... (approval <id>)`,
+  and the same call after the approval runs it. A shorter
+  `pending_ttl_sec` ends the wait first. A client that drops the call
+  sooner ends the wait without spending the approval. So does the end of
+  the MCP session: a `DELETE`, `idle_timeout_sec`, a rules reload or a
+  shutdown.
+- `review_mode: return` answers a pending call at once with the approval
+  id, and names `approval_wait` when the sidecar has the `mcp:` block. The
+  agent waits there, then sends the same call again. Use it when reviews
+  take longer than the client waits for a tool call: 60 to 120 seconds in
+  most MCP clients.
+- A hold that a person approves needs a control plane and an
+  `approval_rule`, or a person running `hoop start sidecar` in a terminal,
+  to start, as on the other lanes.
 - A provider failure follows `fail_open`, as on the other lanes.
 - The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
   and `ai_status`.

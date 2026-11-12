@@ -1,11 +1,14 @@
 package analyzer_test
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 )
 
 func mcpCall(tool, args string) inspect.Statement {
@@ -121,56 +124,76 @@ func TestAnMCPSQLToolCallIsOneModelCallPlusOnePerStatement(t *testing.T) {
 	}
 }
 
-// ENG-967 is not done: a hold on a tool call denies at once and files nothing.
-func TestAHoldOnAnMCPToolCallFilesNothing(t *testing.T) {
-	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "r1", Status: "PENDING"}}
+// A hold files the tool name and the exact arguments, waits, and forwards the
+// call once a claim spends the approval.
+func TestAHoldOnAnMCPToolCallWaitsForTheApproval(t *testing.T) {
+	rev := &recordingReviewer{
+		res:    analyzer.ReviewResult{ID: "r1", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{{ID: "r1", Status: "PENDING"}, {Forward: true, ID: "r1", Status: "EXECUTED"}},
+	}
 	ev := holdingEvaluator(t, rev, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
-	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
-	if !v.Denied || v.Message != "call refused because an mcp lane cannot hold a call for approval yet" || v.Review != nil {
+	v := ev.Evaluate(mcpCall("delete_customer", `{"id": "7"}`))
+	if v.Denied || v.Annotations[analyzer.MetadataReviewMode] != "hold" {
 		t.Fatalf("verdict %+v", v)
 	}
-	if mode := v.Annotations[analyzer.MetadataReviewMode]; mode != "" {
-		t.Errorf("review_mode %q on a call nothing held", mode)
+	if sent := rev.statements(); len(sent) != 1 || sent[0] != "delete_customer\n{\"id\": \"7\"}" {
+		t.Fatalf("filed %q", sent)
 	}
-	if sent := rev.statements(); len(sent) != 0 {
-		t.Fatalf("a held tool call was filed: %q", sent)
+	if claimed := rev.claimedIDs(); len(claimed) != 2 {
+		t.Fatalf("claimed %q, want two claims", claimed)
 	}
 }
 
-const mcpHoldRefusal = "call refused because an mcp lane cannot hold a call for approval yet"
+// In return mode the call is refused at once with the approval id.
+func TestAnMCPToolCallInReturnModeAnswersWithTheApprovalID(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "r1", Status: "PENDING"}}
+	ev := holdingEvaluator(t, rev, func(c *analyzer.Config) {
+		c.Trigger = analyzer.Trigger{All: true}
+		c.ReviewMode = analyzer.ReviewReturn
+	})
+	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
+	if !v.Denied || v.Review == nil || v.Review.ID != "r1" || !v.Review.Return || !strings.Contains(v.Message, "approval r1") {
+		t.Fatalf("verdict %+v", v)
+	}
+	if claimed := rev.claimedIDs(); len(claimed) != 0 {
+		t.Fatalf("return mode waited: claimed %q", claimed)
+	}
+}
 
-// The approval agent never sees a held tool call: it would approve one the
-// lane cannot hold.
-func TestAnAgentApprovedHoldOnAnMCPToolCallIsRefused(t *testing.T) {
+// WithHoldWait ends the wait sooner, even before the first poll, and the
+// refusal names the approval. A limit past the hold's own wait changes nothing.
+func TestWithHoldWaitEndsTheWaitWithTheApprovalID(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		wait, limit time.Duration
+		want        string
+	}{
+		{"shorter limit", time.Minute, 20 * time.Millisecond, "still waiting for approval after 20ms"},
+		{"longer limit", 30 * time.Millisecond, time.Minute, "still waiting for approval after 30ms"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "r1", Status: "PENDING"}}
+			ev := holdingEvaluator(t, rev, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
+			analyzer.SetReviewPacing(ev, c.wait, time.Hour)
+			ec := &policy.EvalContext{ConnCtx: analyzer.WithHoldWait(context.Background(), c.limit)}
+			v := ev.EvaluateWith(mcpCall("delete_customer", `{"id":"7"}`), ec)
+			if !v.Denied || v.Review == nil || v.Review.Status != "PENDING" ||
+				!strings.Contains(v.Message, c.want) || !strings.Contains(v.Message, "(approval r1)") {
+				t.Fatalf("verdict %+v", v)
+			}
+			if claimed := rev.claimedIDs(); len(claimed) != 1 {
+				t.Fatalf("claimed %q, want one claim at the limit", claimed)
+			}
+		})
+	}
+}
+
+// The approval agent decides a held tool call as it decides any statement.
+func TestTheApprovalAgentDecidesAHeldMCPToolCall(t *testing.T) {
 	p := &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason_code":"in_scope","reason":"ok"}`)}}
 	ev := agentEvaluator(t, p, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
 	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
-	if !v.Denied || v.Message != mcpHoldRefusal {
+	if v.Denied || v.Annotations[analyzer.MetadataApprovalDecision] != "approved" {
 		t.Fatalf("verdict %+v", v)
-	}
-	if got := v.Annotations[analyzer.MetadataApprovalDecision]; got != "" {
-		t.Errorf("approval decision %q on a call nothing held", got)
-	}
-	if got := ev.Stats().Calls; got != 1 {
-		t.Errorf("model calls = %d, want the classification only", got)
-	}
-}
-
-// A hand-off that picks the hold is refused the same way, before its approver.
-func TestAHandoffHoldOnAnMCPToolCallIsRefused(t *testing.T) {
-	rev := &handoffReviewer{}
-	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a check"), approve("bounded")}}
-	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
-		Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent}},
-		func(c *analyzer.Config) { c.Review = rev; c.Trigger = analyzer.Trigger{All: true} })
-	v := ev.Evaluate(mcpCall("delete_customer", `{"id":"7"}`))
-	if !v.Denied || v.Message != mcpHoldRefusal {
-		t.Fatalf("verdict %+v", v)
-	}
-	if asks := p.asks(); len(asks) != 1 {
-		t.Errorf("asked %d time(s), want the hand-off only", len(asks))
-	}
-	if rev.filed() != 0 {
-		t.Errorf("filed %d review(s), want none", rev.filed())
 	}
 }

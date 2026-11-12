@@ -1616,11 +1616,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
+		holdWait := analyzer.ReviewWait
+		if isMCPGateway(lc) {
+			holdWait = mcpHoldWait
+		}
 		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
-			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
+			time.Duration(lc.IdleTimeoutSec)*time.Second < holdWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
-					"approval wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+					"approval wait does", lc.IdleTimeoutSec, holdWait))
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
