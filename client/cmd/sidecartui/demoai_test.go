@@ -51,6 +51,34 @@ func TestAnExistingProviderIsKeptOverHoopsModel(t *testing.T) {
 	}
 }
 
+// Leaving Hoop's model for another provider shows that provider's model and
+// key file at once, not Hoop's; a model the person typed stays.
+func TestProviderChangeShowsThatProvidersDefaults(t *testing.T) {
+	if !slices.Contains(analyzer.RegisteredProviders(), "openai") {
+		t.Skip("openai is not registered")
+	}
+	dir := t.TempDir()
+	d, err := newDraft("postgres", machine{keyDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := analyzerForm(d.an, d.protocol)
+	f.cur = slices.IndexFunc(f.fields, func(x *field) bool { return x.id == "provider" })
+	f.load()
+	for f.byID("provider").text != "openai" {
+		f.update(wkey("right"))
+	}
+	if m, k := f.byID("model").text, f.byID("key").text; m != starterModels["openai"] || k != filepath.Join(dir, "openai.key") {
+		t.Errorf("under openai the form shows model %q, key %q", m, k)
+	}
+
+	f.byID("model").text = "my-model"
+	f.update(wkey("right"))
+	if m := f.byID("model").text; m != "my-model" {
+		t.Errorf("a typed model became %q", m)
+	}
+}
+
 // The model Hoop hosts is the first provider offered, named for the person,
 // never by its URL; and a sidecar running on it says so in System.
 func TestHoopsOwnModelIsTheNamedDefault(t *testing.T) {

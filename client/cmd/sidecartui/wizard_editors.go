@@ -970,6 +970,14 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 	hideUnlessVertex := func() bool { return prov.text != "vertex" }
 	key := &field{id: "key", label: "Key file", kind: fText, text: a.keyFile, hidden: hideForVertex,
 		help: "Read as written: no ~. Must be mode 0600 or stricter."}
+	model := &field{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
+		hidden: func() bool { return prov.text == hoop.Name },
+		help:   "Any model the provider serves to your account."}
+	// A default model or key file follows the provider on screen, not only
+	// on Done: else anthropic shows Hoop's model and hoop.key.
+	prov.changed = func(prev string) {
+		model.text, key.text = followProvider(prev, prov.text, model.text, key.text, a.keyDir)
+	}
 	fields := []*field{
 		{id: "on", label: "Enabled", kind: fBool, on: a.on,
 			help: "Off writes the analyzer into the file commented out, one uncomment away."},
@@ -977,9 +985,7 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 		{id: "hostednote", kind: fNote, hidden: func() bool { return prov.text != hoop.Name }, note: func() string {
 			return stFaint.Render("Hoop runs it: no API key and no URL to set. Statement text goes to Hoop.")
 		}},
-		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
-			hidden: func() bool { return prov.text == hoop.Name },
-			help:   "Any model the provider serves to your account."},
+		model,
 		key,
 		{id: "keynote", kind: fNote, hidden: hideForVertex, note: func() string {
 			path := key.text
@@ -1005,19 +1011,28 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 	return newForm("AI analyzer", fields...)
 }
 
+// followProvider moves a model and key file that are prev's defaults, or
+// empty, to next's. A value the person typed stays.
+func followProvider(prev, next, model, keyFile, keyDir string) (string, string) {
+	if prev == next {
+		return model, keyFile
+	}
+	if model == "" || model == starterModels[prev] {
+		model = starterModels[next]
+	}
+	if keyFile == "" || keyFile == filepath.Join(keyDir, prev+".key") {
+		keyFile = filepath.Join(keyDir, next+".key")
+	}
+	return model, keyFile
+}
+
 func analyzerFromForm(f *form, a analyzerDraft) (analyzerDraft, error) {
 	f.store()
 	g := func(id string) *field { return f.byID(id) }
 	prev := a.provider
 	a.on, a.provider = g("on").on, g("provider").text
-	a.model = strings.TrimSpace(g("model").text)
-	if a.provider != prev && (a.model == "" || a.model == starterModels[prev]) {
-		a.model = starterModels[a.provider]
-	}
-	a.keyFile = strings.TrimSpace(g("key").text)
-	if a.provider != prev && a.keyFile == filepath.Join(a.keyDir, prev+".key") {
-		a.keyFile = filepath.Join(a.keyDir, a.provider+".key")
-	}
+	a.model, a.keyFile = followProvider(prev, a.provider,
+		strings.TrimSpace(g("model").text), strings.TrimSpace(g("key").text), a.keyDir)
 	a.project, a.region = strings.TrimSpace(g("project").text), strings.TrimSpace(g("region").text)
 	a.trigger = g("trigger").multi
 	a.high, a.medium, a.low = g("high").text, g("medium").text, g("low").text
