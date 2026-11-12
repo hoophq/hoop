@@ -308,11 +308,12 @@ func newDraft(id string, m machine) (*draft, error) {
 		d.an.trigger = []string{"delete", "update"}
 	}
 	// The analyzer is on by default, on the model Hoop hosts: no API key and
-	// no URL to set. A provider the person already set up on this machine is
-	// kept instead, so nothing goes to Hoop they did not choose: any
-	// provider's key file in keyDir (the one the environment names first),
-	// or Vertex when its credentials are set, which still needs a project
-	// and so starts off. An mcp lane refuses an analyzer; grpc and spanner
+	// no URL to set. A provider the person already set up for the sidecar is
+	// kept instead: any provider's key file in keyDir (the one the
+	// environment names first), or Vertex when its credentials are set,
+	// which still needs a project and so starts off. An API key only in the
+	// environment, with no key file, does not count: the default stays
+	// Hoop's model (decided by the design owner, DES-244). An mcp lane refuses an analyzer; grpc and spanner
 	// rate only decoded payloads, which need descriptors no default can
 	// name, so theirs starts off too.
 	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol)
