@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -389,6 +390,7 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 			// risk in the demo data.
 			zero := 0.0
 			cfg.Analyzer.Temperature = &zero
+			cfg.Analyzer.TimeoutSec = int(sidecardemo.AnalyzerTimeout / time.Second)
 			l.Analyzer.Prompt = sidecardemo.AnalyzerPrompt(d.demoKind)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -33,6 +34,11 @@ func TestDemoDraftsTurnTheHostedAnalyzerOn(t *testing.T) {
 		}
 		if a.Temperature == nil || *a.Temperature != 0 {
 			t.Errorf("%s: temperature = %v, want 0", id, a.Temperature)
+		}
+		// Every read goes to the model: with it unreachable the analyzer
+		// must give up before the tour's step does.
+		if a.TimeoutSec <= 0 || time.Duration(a.TimeoutSec)*time.Second >= quickWait {
+			t.Errorf("%s: timeout_sec = %d, want set and under the step's %v", id, a.TimeoutSec, quickWait)
 		}
 		if la.HighRisk != string(analyzer.ActionRequireApproval) || la.MediumRisk == string(analyzer.ActionRequireApproval) ||
 			la.LowRisk != string(analyzer.ActionAllow) {
