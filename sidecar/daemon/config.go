@@ -854,12 +854,37 @@ func (a AuditConfig) failOpen() bool { return a.FailOpen != nil && *a.FailOpen }
 // lane the reverse of the operator's posture with nothing failing.
 func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 
-// AdminConfig configures the health/stats endpoint.
+// AdminConfig configures the admin listeners.
+//
+// Listen serves the probes (/healthz, /readyz) and the token-gated ICA drain
+// (POST /v1/drain): nothing on it reads audit data or
+// rules. APIListen serves the unauthenticated read routes (/stats, /metrics,
+// /config, /events, /api/*) and is off unless set, because anything that
+// reaches it reads the audit trail and each lane's rules.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
+	// APIListen is where the read routes bind. Empty turns them off.
+	APIListen string `json:"api_listen,omitempty" cap:"admin_api_listen"`
 	// ICAReadinessJSON lets an external relay require explicit live engine
 	// inspection attestation. Default keeps the existing plaintext /readyz API.
 	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty" cap:"ica_readiness_json"`
+}
+
+// validate refuses an api_listen that is not host:port or that shares the
+// probe listener's address: the two are separate servers, so one would fail
+// to bind.
+func (a AdminConfig) validate() []string {
+	if a.APIListen == "" {
+		return nil
+	}
+	ah, ap, ok := listenHostPort(a.APIListen)
+	if !ok {
+		return []string{fmt.Sprintf("admin.api_listen %q: want host:port with a port number", a.APIListen)}
+	}
+	if lh, lp, ok := listenHostPort(a.Listen); ok && lp == ap && sameBindHost(lh, ah) {
+		return []string{fmt.Sprintf("admin.api_listen %q binds the same port as admin.listen %q; pick another port", a.APIListen, a.Listen)}
+	}
+	return nil
 }
 
 // LoadConfig reads and validates a config file.
@@ -1389,6 +1414,7 @@ func (c *Config) validate(onHost bool) error {
 	problems = append(problems, c.RuleLibrary.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 	problems = append(problems, c.Telemetry.Validate()...)
+	problems = append(problems, c.Admin.validate()...)
 	if c.Audit.QueryMaxBytes < 0 {
 		problems = append(problems, fmt.Sprintf("audit.query_max_bytes: %d is negative; omit it for the 64 MiB default", c.Audit.QueryMaxBytes))
 	}

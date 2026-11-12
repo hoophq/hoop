@@ -42,9 +42,9 @@ import (
 // unchanged URL is never refetched by a reload — a restart reads it, the
 // same way a restart reads a replaced file.
 //
-// Three goroutines drive it: the heartbeat under a plane, watchFile (the
-// config file, the license file and SIGHUP), and the admin endpoint that
-// installs a license. mu serializes them, held for one whole event, so the
+// Two goroutines drive it: the heartbeat under a plane, and watchFile (the
+// config file, the license file and SIGHUP). mu serializes them, held for one
+// whole event, so the
 // reload logic itself reads like one goroutine. What other goroutines read
 // is published apart from it: laneState through an atomic pointer the admin
 // endpoints load, the license through licenseState.
@@ -155,12 +155,10 @@ type reloader struct {
 	// `license` key: the license flag, HOOP_LICENSE, or an embedder's
 	// UseLicense. Empty when none does. Fixed for the process, because a
 	// restart reads the same precedence: while one is set, editing the key
-	// changes nothing. A license installed through the admin API does not
-	// set it, so a later change to the source in force still replaces that
-	// license, exactly as a restart would.
+	// changes nothing.
 	licOver string
 	// licManaged reports a control plane that owns the license. No local
-	// file is watched then, and the admin API refuses an install.
+	// file is watched then.
 	licManaged bool
 	// licClaimed reports a plane that just claimed the license (see
 	// claimLicense): the next document's license key is re-resolved even
@@ -184,8 +182,8 @@ type reloader struct {
 	licFilePending bool
 	licFileBroken  bool
 	// running is the config of the generation in force. A license that
-	// arrives without a config document, from its own file or the admin
-	// API, is checked against the rules it holds.
+	// arrives without a config document, from its own file, is checked
+	// against the rules it holds.
 	running *Config
 	// mu serializes the goroutines that drive this struct; see the file
 	// comment.
@@ -758,9 +756,9 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// verdict, only a document.
 	//
 	// Only the string compare decides. A file replaced behind an unchanged
-	// path is pollLicense's: re-resolving the path on every rule edit would
-	// also undo a license installed through the admin API whenever someone
-	// touched a rule. The plane never names a path, and a legacy plane that
+	// path is pollLicense's, which tracks the file's size, mtime and last
+	// document; re-reading it here on every rule edit would split that
+	// ownership. The plane never names a path, and a legacy plane that
 	// manages no license sends an empty reference that must not read as
 	// "removed".
 	newCfg.lic = r.lic.get()

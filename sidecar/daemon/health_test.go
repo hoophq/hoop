@@ -136,6 +136,141 @@ func TestHealthListenRefusesPortsTheConfigBinds(t *testing.T) {
 	}
 }
 
+// admin.listen is what platforms probe, so it must answer the probes and
+// serve none of the unauthenticated read routes; those answer on
+// admin.api_listen only.
+func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
+	addr, apiAddr := freeTCPAddr(t), freeTCPAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{})
+	go serveAdmin(ctx, addr, apiAddr, nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
+		slog.New(slog.DiscardHandler), false)
+
+	admin, api := "http://"+addr, "http://"+apiAddr
+	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, admin+"/healthz"); return code == http.StatusOK })
+	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, api+"/stats"); return code == http.StatusOK })
+
+	if code, _ := httpCall(t, http.MethodGet, admin+"/readyz"); code != http.StatusOK {
+		t.Errorf("/readyz on admin.listen = %d, want 200", code)
+	}
+	// PUT /license was removed: nothing on either listener installs one.
+	if code, _ := httpCall(t, http.MethodPut, admin+"/license"); code != http.StatusNotFound {
+		t.Errorf("PUT /license on admin.listen = %d, want 404", code)
+	}
+	for _, path := range []string{"/stats", "/metrics", "/config", "/events", "/api/sessions"} {
+		if code, _ := httpCall(t, http.MethodGet, admin+path); code != http.StatusNotFound {
+			t.Errorf("GET %s on admin.listen = %d, want 404", path, code)
+		}
+	}
+	if code, _ := httpCall(t, http.MethodGet, api+"/metrics"); code != http.StatusOK {
+		t.Errorf("GET /metrics on admin.api_listen = %d, want 200", code)
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/healthz"}, {http.MethodPut, "/license"}, {http.MethodPost, "/v1/drain"},
+	} {
+		if code, _ := httpCall(t, route.method, api+route.path); code != http.StatusNotFound {
+			t.Errorf("%s %s on admin.api_listen = %d, want 404", route.method, route.path, code)
+		}
+	}
+}
+
+// An admin.api_listen that cannot bind stops the process: admin.listen must
+// not answer probes while the read routes never started.
+func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	addr := freeTCPAddr(t)
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{})
+	done := make(chan error, 1)
+	go func() {
+		done <- serveAdmin(context.Background(), addr, held.Addr().String(), nil, nil, nil, nil, view, auditChain{},
+			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false)
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "admin.api_listen") {
+			t.Fatalf("serveAdmin with a held api_listen = %v, want an error naming admin.api_listen", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveAdmin kept running with a held api_listen")
+	}
+	// admin.listen was released, not left serving probes.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("admin.listen still held after the failure: %v", err)
+	}
+	_ = ln.Close()
+}
+
+// api_listen on admin.listen's port is two servers on one socket: one would
+// fail to bind, so the config is refused.
+func TestAdminAPIListenMustNotShareTheAdminPort(t *testing.T) {
+	for _, tc := range []struct {
+		a    AdminConfig
+		want string
+	}{
+		{AdminConfig{Listen: "0.0.0.0:19000", APIListen: "127.0.0.1:19000"}, "same port"},
+		{AdminConfig{Listen: "127.0.0.1:19000", APIListen: "127.0.0.1:019000"}, "same port"},
+		{AdminConfig{APIListen: "19002"}, "host:port"},
+		{AdminConfig{Listen: "0.0.0.0:19000", APIListen: "127.0.0.1:19002"}, ""},
+		{AdminConfig{Listen: "127.0.0.1:19000", APIListen: "10.0.0.5:19000"}, ""},
+		{AdminConfig{APIListen: "127.0.0.1:19002"}, ""},
+	} {
+		got := strings.Join(tc.a.validate(), "; ")
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("validate(%+v) = %q, want %q", tc.a, got, tc.want)
+		}
+	}
+}
+
+// With api_listen unset, the read routes are off, and a scraper still pointed
+// at admin.listen reads why instead of a bare 404.
+func TestAdminListenerAloneSaysWhereTheReadRoutesWent(t *testing.T) {
+	addr := freeTCPAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{})
+	go serveAdmin(ctx, addr, "", nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
+		slog.New(slog.DiscardHandler), false)
+
+	base := "http://" + addr
+	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, base+"/healthz"); return code == http.StatusOK })
+	for _, path := range []string{"/stats", "/metrics", "/config", "/events", "/api/sessions"} {
+		code, body := httpCall(t, http.MethodGet, base+path)
+		if code != http.StatusNotFound || !strings.Contains(body, "admin.api_listen") {
+			t.Errorf("GET %s on admin.listen = %d %q, want 404 naming admin.api_listen", path, code, body)
+		}
+	}
+}
+
+// A health port that admin.api_listen also binds is refused like any other
+// listener of the config.
+func TestHealthListenRefusesTheAdminAPIPort(t *testing.T) {
+	cfg := &Config{Admin: AdminConfig{Listen: "0.0.0.0:19000", APIListen: "127.0.0.1:19002"}}
+	if err := checkHealthListen(cfg, "0.0.0.0:19002"); err == nil || !strings.Contains(err.Error(), "admin.api_listen") {
+		t.Errorf("checkHealthListen on the API port = %v, want an error naming admin.api_listen", err)
+	}
+}
+
+// A sidecar older than api_listen refuses a whole document that holds a key
+// it cannot decode, so the plane must not serve it one.
+func TestAdminAPIListenIsNotServedToAnOlderSidecar(t *testing.T) {
+	cfg := Config{Admin: AdminConfig{Listen: "0.0.0.0:19000", APIListen: "127.0.0.1:19002"}}
+	if err := CheckServable(cfg, Handshake{Version: "1.306.0"}); err == nil || !strings.Contains(err.Error(), "admin_api_listen") {
+		t.Errorf("CheckServable to 1.306.0 = %v, want a refusal naming admin_api_listen", err)
+	}
+	if err := CheckServable(cfg, Handshake{Capabilities: SidecarCapabilities()}); err != nil {
+		t.Errorf("CheckServable to a current build = %v, want nil", err)
+	}
+}
+
 func freeTCPAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

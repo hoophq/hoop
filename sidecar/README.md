@@ -80,7 +80,7 @@ cd deploy/docker-compose/envoy-stack
 
 ```bash
 curl -s localhost:19000/healthz                        # ok
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 **3. Walk the lanes.** `./demo.sh` runs every one of these in order and prints
@@ -105,8 +105,8 @@ curl -sk https://localhost:8443/status/503 -H 'X-Hoop-User: alice' -w '\n%{http_
 **4. Read the evidence** the sidecar recorded:
 
 ```bash
-curl -s localhost:19000/stats                  | python3 -m json.tool
-curl -s 'localhost:19000/api/sessions?limit=1' | python3 -m json.tool
+curl -s localhost:19002/stats                  | python3 -m json.tool
+curl -s 'localhost:19002/api/sessions?limit=1' | python3 -m json.tool
 docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
@@ -121,7 +121,8 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 |---|---|
 | 8443 | Envoy HTTPS, to the `httpbin` lane |
 | 5433 | Envoy TCP, to the `appdb` lane |
-| 19000 | sidecar admin: `/healthz`, `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
+| 19000 | sidecar admin: `/healthz`, `/readyz` |
+| 19002 | sidecar admin API (`admin.api_listen`): `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 9901 | Envoy admin |
 
 That Postgres listener is `envoy:5432` inside the compose network and `5433` on
@@ -740,8 +741,8 @@ the caps under `limits`, where a `null` means the license lifted one.
 
 #### Changing the license of a running process
 
-No restart is needed to renew or replace a license. Three ways, and a
-restart picks the same license the running process ends up with:
+No restart is needed to renew or replace a license. Two ways, and a restart
+picks the same license the running process ends up with:
 
 - **Replace the file.** When the source in force (`-license`,
   `HOOP_LICENSE` or the `license` key) names a path, the process stats that
@@ -752,34 +753,16 @@ restart picks the same license the running process ends up with:
   `subPath`, and point the source at the file in it.
 - **Edit the `license` key** in the config file, when no flag or
   `HOOP_LICENSE` outranks it. It applies with the next config reload.
-- **`PUT /license` on the admin listener**, with the document as the body.
-  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
-  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
-  send it from the host or through an encrypted tunnel (`kubectl
-  port-forward`, SSH), never across a network others can read:
-
-  ```bash
-  curl -X PUT --data-binary @license.json \
-    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
-  ```
-
-  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
-  the same report `/config` serves. Status `401` is a missing or wrong
-  secret, `403` means the endpoint is off, `409` means a control plane owns
-  the license, and `422` is a license this process refuses, with the reason.
-  The license lives in memory: the next change to the source in force
-  replaces it, and so does a restart. Update the source as well.
 
 A replaced file or an edited key is the owner's change, so it is in force
 even when it covers fewer rules; then the relay stops, as when a term ends.
-The admin API is stricter: it takes only a current license that covers the
-running rules, so a holder of the secret cannot stop the relay. It also
-takes only a document, never a path.
 
 A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
-change in a running process; use a path, the admin API, or a restart. Under
-a control plane that owns the license, set it there: the file is not
-watched and the admin API answers `409`.
+change in a running process; use a path or a restart. Under a control plane
+that owns the license, set it there: the file is not watched.
+
+`PUT /license` on the admin listener was removed. A process that still finds
+`HOOP_SIDECAR_ADMIN_SECRET` set warns at startup and ignores it.
 
 Connecting a licensed standalone sidecar to a control plane takes a restart.
 After it, a control plane that manages licenses (every current gateway) is the
@@ -946,10 +929,12 @@ license: /etc/hoop-inspect/license.json
 # file alone.
 # control_plane_url: https://cp.example.com
 
-# Optional and UNAUTHENTICATED: omit it to turn it off. See "Health and admin
+# listen serves the probes and the ICA drain; api_listen serves the
+# UNAUTHENTICATED read routes and is off unless set. See "Health and admin
 # listeners".
 admin:
-  listen: 127.0.0.1:19000   # /healthz /readyz /stats /metrics /config /events /api/*, PUT /license
+  listen: 127.0.0.1:19000       # /healthz /readyz, POST /v1/drain (ICA, token-gated)
+  api_listen: 127.0.0.1:19002   # /stats /metrics /config /events /api/*
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:
@@ -1173,7 +1158,7 @@ inheritance happens at startup. Debugging a denial that never fired starts
 here, again against the stack config:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 ```json
@@ -1199,27 +1184,38 @@ never the signature.
 
 ### Health and admin listeners
 
-The admin listener (`admin.listen`) serves `/stats`, `/metrics`, `/config`,
-`/events` and `/api/*` with no authentication. Whoever reaches the port reads
-the audit trail and each lane's rules. It is off when `admin.listen` is empty.
+The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
+one authenticated write, the ICA `POST /v1/drain`. It serves
+no audit data and no lane rules, so a platform can probe it. A workspace that
+reaches it learns whether the process is up, and from `/readyz` the names of
+the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
+`admin.ica_readiness_json`, the ICA inspection state (`status`,
+`inspection_enabled`, `graphics_bypassed`, `protocol_validation_enabled`).
 
-A platform that probes the process does not need it. Set
-`HOOP_SIDECAR_HEALTH_LISTEN` to an address, and the process binds a second
-listener there that serves `GET /healthz` and `GET /readyz` and nothing else:
+The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
+have no authentication: whoever reaches them reads the audit trail and each
+lane's rules. They are on a separate listener, `admin.api_listen`, which is
+off unless set. It must not share `admin.listen`'s port. A bind failure on
+either admin listener stops the process.
 
-```bash
-HOOP_SIDECAR_HEALTH_LISTEN=0.0.0.0:19001 hoop-inspect -config config.yaml
-curl -s localhost:19001/healthz   # ok
-curl -s localhost:19001/readyz    # ready, or 503 naming the lanes still loading
+```yaml
+admin:
+  listen: 0.0.0.0:19000        # probes
+  api_listen: 127.0.0.1:19002  # read routes, loopback only
 ```
 
-It is an environment variable and not a config key: the probe belongs to the
-deployment, not to a document a control plane serves. A bind failure stops
-the process, like a lane that cannot bind. The Helm chart sets it to
-`0.0.0.0:19001` and probes there, so a pod runs with admin off.
+Releases before this split served the read routes on `admin.listen`. A
+scraper or script that reads them there needs `api_listen` set and its URL
+moved to that port.
 
-With admin off, the audit trail still leaves the process through `audit.file`,
-the control plane copy (see "Connecting it to a Control Plane") and OTLP (see
+`HOOP_SIDECAR_HEALTH_LISTEN` binds one more listener with `/healthz` and
+`/readyz` only, for a deployment that probes a port other than
+`admin.listen`. It is an environment variable and not a config key. A bind
+failure stops the process, like a lane that cannot bind, and a port another
+listener of the config binds is refused at startup.
+
+The audit trail also leaves the process through `audit.file`, the control
+plane copy (see "Connecting it to a Control Plane") and OTLP (see
 "OpenTelemetry").
 
 ### Sharing a rule block between lanes
@@ -2510,7 +2506,7 @@ would merge requests whose risk can differ. Watch the hit rate at `/stats`
 before enabling a blocking action:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
+curl -s localhost:19002/config | python3 -m json.tool   # what each lane sends
 ```
 
 Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
@@ -2699,7 +2695,8 @@ entry: an older build ignores an `extra` key it does not read.
 
 #### Watching the analyzer: `/metrics`
 
-The admin listener serves `GET /metrics` in the Prometheus text format. A
+The admin API listener (`admin.api_listen`) serves `GET /metrics` in the
+Prometheus text format. A
 process with no analyzer answers an empty document, so a scrape job pointed
 at every sidecar does not mark one down.
 
@@ -6116,7 +6113,7 @@ Three places say it, and they agree because they read the same resolved config.
 **`GET /stats`**, whose `addr` is the address the listener bound:
 
 ```bash
-curl -s localhost:19000/stats | python3 -m json.tool
+curl -s localhost:19002/stats | python3 -m json.tool
 ```
 
 ```json

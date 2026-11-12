@@ -26,6 +26,8 @@ import (
 type portUse struct {
 	what string // "listener postgres", "admin", "MCP server", "demo API"
 	addr string
+	// key is the config key that names addr; "" is listen.
+	key string
 	// demo marks the demo API's address, which the file names under the
 	// demo key and as the demo listener's upstream.
 	demo bool
@@ -65,6 +67,9 @@ func portUses(cfg *daemon.Config, demoAPI string) []portUse {
 	}
 	if cfg.Admin.Listen != "" {
 		out = append(out, portUse{what: "admin server", addr: cfg.Admin.Listen})
+	}
+	if cfg.Admin.APIListen != "" {
+		out = append(out, portUse{what: "admin API server", addr: cfg.Admin.APIListen, key: "api_listen"})
 	}
 	if cfg.MCP != nil && cfg.MCP.Listen != "" {
 		out = append(out, portUse{what: "MCP server", addr: cfg.MCP.Listen})
@@ -143,8 +148,8 @@ func freeFrom(addr string, taken map[string]bool) string {
 
 // usePorts rewrites the file at path to bind each conflict's free address.
 // Only the lines that name the address under a key that binds it change
-// (listen, and for the demo API its key and the upstream that points at
-// it), so the person's comments and layout survive.
+// (listen or api_listen, and for the demo API its key and the upstream that
+// points at it), so the person's comments and layout survive.
 func usePorts(path string, conflicts []portConflict) error {
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -162,8 +167,11 @@ func usePorts(path string, conflicts []portConflict) error {
 			return fmt.Errorf("no free port was found near %s", c.addr)
 		}
 		keys := map[string]bool{"listen": true}
-		if c.demo {
+		switch {
+		case c.demo:
 			keys = map[string]bool{"upstream": true, configyaml.DemoAPIKey: true}
+		case c.key != "":
+			keys = map[string]bool{c.key: true}
 		}
 		next, n, err := replaceKeyValues(data, keys, c.addr, c.free)
 		if err != nil {

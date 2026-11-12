@@ -4,7 +4,8 @@
 #
 #   postgres :55432  <- relay :15432   (appdb lane)
 #   httpbin  :58080  <- relay :18080   (api lane)
-#                       relay :19000   admin
+#                       relay :19000   admin (/healthz, /readyz)
+#                       relay :19002   read API (/stats, /config, /api/*)
 #
 # The relay runs as a background process rather than a container, so its audit
 # stream lands in a file you can grep and the binary is the one you just built.

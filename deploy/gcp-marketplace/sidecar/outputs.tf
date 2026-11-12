@@ -19,6 +19,6 @@ output "lane_ports" {
 }
 
 output "admin_service" {
-  description = "Service of the admin server on 19000: /stats, /config. Empty when the config document turns admin off."
-  value       = module.values.admin_service_enabled ? local.fullname : ""
+  description = "Service of the admin server on 19000: /healthz, /readyz."
+  value       = local.fullname
 }
