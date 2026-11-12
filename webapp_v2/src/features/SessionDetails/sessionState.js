@@ -65,6 +65,10 @@ export function reviewBadgeStatus(status) {
   return ['APPROVED', 'PENDING', 'REJECTED'].includes(status) ? status : null
 }
 
+// Who created the session. A sidecar session files an email principal in
+// `user` only (user_name is empty), so the name falls back to it.
+export const createdBy = (session) => session?.user_name || session?.user || ''
+
 // Who ran an approved review, when it was not the user who created the session
 // (NB12). A review the MCP federation reset to APPROVED did not finish its run.
 export function executedBy({ review, user } = {}) {
