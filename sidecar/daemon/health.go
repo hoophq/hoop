@@ -16,8 +16,8 @@ import (
 //
 // It exists so a deployment can probe a port other than admin.listen. Like
 // admin.listen, it serves no audit data or rules: those are on
-// admin.api_listen. It answers only whether the process is up and its lanes
-// are ready.
+// admin.api_listen. It answers whether the process is up and, from /readyz,
+// names the lanes that are not ready yet (or the ICA inspection state).
 //
 // An environment variable and never a config key: the probe belongs to the
 // deployment that declares it, not to a document a control plane serves.

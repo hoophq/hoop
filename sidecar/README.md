@@ -1203,14 +1203,18 @@ never the signature.
 ### Health and admin listeners
 
 The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
-the two authenticated writes, `PUT /license` and `POST /v1/drain`. Nothing on
-it reads audit data or rules, so a platform can probe it and a workspace that
-reaches it learns only whether the process is up.
+the two authenticated writes, `PUT /license` and `POST /v1/drain`. It serves
+no audit data and no lane rules, so a platform can probe it. A workspace that
+reaches it learns whether the process is up, and from `/readyz` the names of
+the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
+`admin.ica_readiness_json`, the ICA inspection state (`status`,
+`inspection_enabled`, `graphics_bypassed`, `protocol_validation_enabled`).
 
 The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
 have no authentication: whoever reaches them reads the audit trail and each
 lane's rules. They are on a separate listener, `admin.api_listen`, which is
-off unless set. It must not share `admin.listen`'s port.
+off unless set. It must not share `admin.listen`'s port. A bind failure on
+either admin listener stops the process.
 
 ```yaml
 admin:
