@@ -183,7 +183,7 @@ func mcpCallerCheck(ln lane) (*MCPCallerCheck, error) {
 }
 
 // watchCallerTokens re-reads the token files on the config file's schedule:
-// a stat every interval, and a forced read on SIGHUP. The list is read per
+// a stat every interval, and a forced read on SIGHUP. It reads the list per
 // tick, because a reload adds and removes lanes, and their files with them.
 //
 // It is its own goroutine rather than part of the reloader, because the

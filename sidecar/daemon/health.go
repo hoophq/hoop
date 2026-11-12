@@ -118,7 +118,7 @@ func sameBindHost(a, b string) bool {
 
 // healthState is what /readyz reads. The admin listener and the health
 // listener build their routes from one value, so a probe gets the same answer
-// from either. The lanes are read per probe: a reload adds and removes them.
+// from either. Each probe reads the lanes: a reload adds and removes them.
 type healthState struct {
 	lanes *laneSet
 	// icaReadinessJSON is admin.ica_readiness_json: /readyz answers with the

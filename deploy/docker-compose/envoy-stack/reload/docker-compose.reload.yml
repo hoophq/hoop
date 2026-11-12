@@ -5,19 +5,18 @@
 # Run it from the envoy-stack directory, after ./run.sh has minted the certs
 # and built the image at least once. reload/run.sh does both lines.
 #
-# What changes: one mount and the -config path. The base stack binds
+# The overlay changes one mount and the -config path. The base stack binds
 # sidecar/config.yaml as a single file, and Docker binds a file by inode, so
 # an editor that writes a new file and renames it over the old one (sed -i,
-# most editors) leaves the container reading the old inode forever. This
-# overlay binds the directory reload/work/ instead, which the demo fills with
-# a copy of the base config and then edits; the sidecar's
-# stat-every-ten-seconds watcher (or a SIGHUP) sees every edit. A Kubernetes
-# ConfigMap volume is a directory too, which is why it works there without
-# this note.
+# most editors) leaves the container reading the old inode. This overlay
+# binds the directory reload/work/ instead, which the demo fills with a copy
+# of the base config and then edits; the sidecar's stat-every-ten-seconds
+# watcher (or a SIGHUP) sees each edit. A Kubernetes ConfigMap volume is a
+# directory too, so the swap works there without this overlay.
 #
-# The data-path ports the demo adds are reached over the compose network
-# from the client container, like appdb-opa's :15433, so nothing is
-# published and nothing in Envoy changes.
+# The client container reaches the data-path ports the demo adds over the
+# compose network, like appdb-opa's :15433, so the overlay publishes no port
+# and changes nothing in Envoy.
 
 services:
   hoop-inspect:

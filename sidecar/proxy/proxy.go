@@ -463,8 +463,8 @@ func (s *Server) reclaimStaleSocket() error {
 // Listen binds the configured address without accepting. Serve binds on its
 // own when Listen was not called; a caller that has to know the bind outcome
 // before it commits to the lane (a reload adding a listener) calls Listen
-// first and Serve after. Idempotent: a second call on a bound server is a
-// no-op, and a server Close ended refuses to bind again.
+// first and Serve after. A second call on a bound server is a no-op, and a
+// server that Close ended refuses to bind again.
 func (s *Server) Listen() error {
 	s.mu.Lock()
 	bound, closing := s.listener != nil, s.closing

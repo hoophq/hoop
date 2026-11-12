@@ -119,8 +119,8 @@ type reloader struct {
 	// A fetched config whose baseline differs needs a restart.
 	baseline []byte
 	// listeners is every running listener's non-rule document, keyed by
-	// name. A listener whose document changed needs a restart; one whose
-	// name is new is started, one whose name is gone is stopped.
+	// name. A listener whose document changed needs a restart; applyOwned
+	// starts one whose name is new and stops one whose name is gone.
 	listeners map[string][]byte
 	// rt starts and stops lanes. Nil in a harness that runs no server, and
 	// then a document that adds or removes a listener is restart-bound.
@@ -710,7 +710,7 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 }
 
 // applyOwned runs one owner's full document against the running process:
-// rule-only drift swaps, a listener added or removed is started or stopped,
+// rule-only drift swaps, a listener added or removed starts or stops,
 // anything beyond that is restart-bound. from names the document's owner
 // in the logs: "control plane" or "config file".
 func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadOutcome {
@@ -899,8 +899,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		docs[ln.name] = doc
 		// The running lane's masker presence is the build-time one: this
 		// check refuses every document that would change it, so no swap
-		// ever moves it. An added lane has no running counterpart; its
-		// server is built with whatever the document says.
+		// ever moves it. An added lane has no running counterpart; build
+		// constructs its server from the document alone.
 		if topo.added[ln.name] {
 			continue
 		}
@@ -911,12 +911,13 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		}
 	}
 
-	// Added lanes bind FIRST, before any rule swaps and before any removed
-	// lane closes, so a bind that fails leaves the process exactly as it
-	// was: the document is refused as a whole, the lanes it started are
-	// closed again, and the running generation keeps serving. A port
-	// another process holds, a socket path the process cannot write, an
-	// engine that will not start: each is this one refusal, named.
+	// Added lanes bind first, before any rule swaps and before any removed
+	// lane closes, so a bind that fails leaves the process as it was:
+	// applyOwned refuses the whole document, closes the lanes it started,
+	// and the running generation keeps serving. The refusal names the
+	// listener and the error, whether a port another process holds, a
+	// socket path the process cannot write, or an engine that will not
+	// start.
 	started := make(map[string]runningLane, len(topo.added))
 	for i := range lanes {
 		if !topo.added[lanes[i].name] {
@@ -964,8 +965,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		}
 		target, ok := r.servers[ln.name]
 		if !ok {
-			// The topology diff guarantees every lane not added is
-			// running, so a miss is a bug worth a line, not a silent skip.
+			// The topology diff guarantees that each lane not added is
+			// running, so a miss is a bug and gets a line.
 			log.Warn("no running server for a reloaded lane", "listener", ln.name)
 			continue
 		}
@@ -982,9 +983,10 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		swapped++
 	}
 
-	// Removed lanes close LAST: their socket closes and every connection
-	// on them with it, the way a restart would end them, scoped to the
-	// lane the document dropped. The other lanes never notice.
+	// Removed lanes close last: their socket closes and every connection
+	// on it with it, the way a restart would end them, scoped to the lane
+	// the document dropped. The other lanes keep their sockets and
+	// connections.
 	for _, name := range topo.removed {
 		old := r.prevLanes[name]
 		r.tel.drainAnalyzers(old.analyzers)
@@ -1045,8 +1047,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		}
 		sections[ln.name] = next
 		if topo.added[ln.name] {
-			// Nothing to compare against; the lane counts under
-			// "listeners" below, not as every section moving.
+			// An added lane has no running sections to compare; it
+			// counts under "listeners" below.
 			continue
 		}
 		for name, doc := range next {
@@ -1105,10 +1107,10 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	return json.Marshal(&cp)
 }
 
-// globalDoc is nonRuleDoc without the listeners: what a running process can
-// change in neither a rule swap nor a listener start or stop. The reloader
-// compares the two halves apart, so a listener added or removed is seen as
-// that and not as "the document changed".
+// globalDoc is nonRuleDoc without the listeners: the part a running process
+// changes in neither a rule swap nor a listener start or stop. The reloader
+// compares the two halves apart, so diffTopology sees a listener added or
+// removed instead of a changed baseline.
 func globalDoc(c *Config) ([]byte, error) {
 	cp := nonRuleConfig(c)
 	cp.Listeners = nil
@@ -1162,8 +1164,8 @@ type topology struct {
 // restart-bound instead. Three things keep it on the restart path:
 //
 //   - a running listener whose address, upstream, protocol, TLS or any
-//     other non-rule field moved: rebinding under live traffic is ADR-0014's
-//     option 2, not taken;
+//     other non-rule field moved: ADR-0014 rejected rebinding under live
+//     traffic (option 2), and this amendment leaves that in place;
 //   - a listener without a name while the set changed: unnamed lanes are
 //     keyed listener[i], so an insert renames every lane after it, and the
 //     diff would close live lanes to reopen them;

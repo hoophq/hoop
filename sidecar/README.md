@@ -235,22 +235,23 @@ way, per RPC or per connection; turning masking on or off on one of them is
 the exception and logs `restart to apply it`, because it is a server option
 fixed at build.
 
-A listener added to the file is started in place: its socket binds, it is
-logged as `listener started`, and `/stats` lists it. A listener whose name
-is gone is stopped: its socket closes and every connection on it with it,
-logged as `listener stopped`. The other lanes never notice either. Every
-lane kind starts and stops this way, unix sockets included (the path is
-bound on add and unlinked on remove). The added lanes bind BEFORE anything
-else in the document moves, so a listener that cannot bind (a port another
-process holds, a socket path the process cannot write) refuses the whole
-document: nothing starts, no rule swaps, the running lanes keep serving,
-and the log names the listener and the error. Fix it and save the file
-again. Three edits to the listener set stay restart-bound and say so,
-naming the listener: editing a running listener's own fields (address,
-upstream, protocol, TLS, a grpc lane's `descriptors`); renaming one, which
-is a remove and an add on one address; and adding or removing a listener
-while any listener has no `name`, because unnamed lanes are keyed by
-position and an insert would rename the ones after it.
+The sidecar starts a listener added to the file in place: the socket binds,
+the log says `listener started`, and `/stats` lists it. It stops a listener
+whose name is gone: the socket closes and every connection on it with it,
+and the log says `listener stopped`. The other lanes keep their sockets and
+connections. Every lane kind starts and stops this way, unix sockets
+included (the sidecar binds the path on add and unlinks it on remove).
+Added lanes bind before anything else in the document moves, so a listener
+that cannot bind (a port another process holds, a socket path the process
+cannot write) refuses the whole document: no lane starts, no rule swaps,
+the running lanes keep serving, and the log names the listener and the
+error. Fix it and save the file again. Three edits to the listener set stay
+restart-bound, and the log names the listener: editing a running
+listener's own fields (address, upstream, protocol, TLS, a grpc lane's
+`descriptors`); renaming one, which is a remove and an add on one address;
+and adding or removing a listener while any listener has no `name`, because
+unnamed lanes are keyed by position and an insert would rename the ones
+after it.
 
 An edit beyond that (audit, admin, log_level, the top-level analyzer
 section, adding `control_plane_url`) logs `restart to apply it` once and

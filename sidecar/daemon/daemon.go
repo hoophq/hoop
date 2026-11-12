@@ -1037,17 +1037,16 @@ func Run(cfg *Config, det Plugin) error {
 	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
 	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
-	// Two server SHAPES, one registry of lane facts. A relay lane pumps
-	// bytes through a Gate and runs proxy.Server; an ENDPOINT lane
-	// terminates the protocol itself and runs the one libhoop built — the
-	// grpc transport (ADR-0013) or the ssh endpoint (ADR-0015). The
-	// registry (laneSet) is what /stats, /readyz, the usage ticker and the
-	// shutdown loop read, and what a reload that adds or removes a listener
-	// grows and shrinks; the runtime is the one build path both share.
-	// Nothing binds here: every lane is built, then every lane is started
-	// below, so a lane that cannot be built (a token file it cannot read,
-	// an engine this build did not link) stops startup before any socket
-	// opens.
+	// A relay lane pumps bytes through a Gate and runs proxy.Server; an
+	// endpoint lane terminates the protocol itself and runs the server
+	// libhoop built: the grpc transport (ADR-0013) or the ssh endpoint
+	// (ADR-0015). Both shapes register in one laneSet, which /stats,
+	// /readyz, the usage ticker and the shutdown loop read, and which a
+	// reload that adds or removes a listener grows and shrinks. The
+	// runtime is the one build path startup and reload share. This loop
+	// builds every lane without binding; the loop below starts them, so a
+	// lane that cannot be built (a token file it cannot read, an engine
+	// this build did not link) stops startup before any socket opens.
 	rt := &laneRuntime{cfg: cfg, sink: auditSink, tel: tel, otel: otel, log: log,
 		set: &laneSet{}, tokens: &tokenWatch{}}
 	built := make([]runningLane, 0, len(lanes))
@@ -1185,7 +1184,7 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
-	// the series closes on the last window. Both inputs are read per
+	// the series closes on the last window. usage reads both inputs per
 	// window: the registry for the lanes a reload added since, the view
 	// for the analyzer instances it swapped in.
 	usage := func() { tel.trackUsage(rt.set.statSources(), view.Load().lanes) }
@@ -1202,9 +1201,9 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}()
 
-	// errCh carries the first failure; later ones are logged where they
-	// happen and dropped, which is what a bounded channel sized for a lane
-	// count that a reload can grow has to do.
+	// errCh carries the first failure. fail drops later ones, which the
+	// lane that hit them has logged; a reload can grow the lane count, so
+	// the channel cannot be sized to it.
 	var wg sync.WaitGroup
 	errCh := make(chan error, 1)
 	fail := func(err error) {
@@ -1216,9 +1215,9 @@ func Run(cfg *Config, det Plugin) error {
 	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
 	for i, b := range built {
 		if serr := rt.start(b); serr != nil {
-			// Reported through the same channel a Serve failure uses, so
+			// fail reports it through the channel a Serve failure uses, so
 			// the select below runs the one shutdown path. The lanes not
-			// started yet hold no socket; an engine among them is released.
+			// started yet hold no socket; close releases an engine among them.
 			log.Error("listener failed", "listener", b.name, "error", serr)
 			fail(serr)
 			for _, rest := range built[i:] {
@@ -1939,8 +1938,8 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		// The registry, not the startup slices: a lane a reload added is
-		// listed, one it removed is not.
+		// The registry lists a lane a reload added and drops one it
+		// removed; the startup slices would show neither.
 		running := lanes.snapshot()
 		out := make([]stat, 0, len(running))
 		for _, l := range running {

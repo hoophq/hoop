@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Adds a listener to a running sidecar, uses it, removes it, and shows a
-# listener that cannot bind being refused -- with no restart, and with a
+# Adds a listener to a running sidecar, uses it, removes it, and shows the
+# sidecar refuse a listener that cannot bind, with no restart and with a
 # session on another lane open the whole time.
 #
 # Prereqs: ./reload/run.sh
@@ -26,9 +26,9 @@ COMPOSE=(docker compose -f docker-compose.yml -f reload/docker-compose.reload.ym
 CONFIG=reload/work/config.yaml
 PG_LIVE="${COMPOSE[*]} exec -T client env PGPASSWORD=apppass PGSSLMODE=disable psql -h hoop-inspect -p 15434 -U appuser -d appdb"
 
-# The admin endpoint is read over the compose network, not the published
-# port: a laptop may have something else on 19000, and the client container
-# reaches the sidecar by name either way.
+# stats reads the admin endpoint over the compose network: a laptop may have
+# something else on the published port 19000, and the client container
+# reaches the sidecar by name.
 stats() { "${COMPOSE[@]}" exec -T client curl -s http://hoop-inspect:19000/stats; }
 
 if [[ ! -f "$CONFIG" ]] || ! stats >/dev/null 2>&1; then
@@ -48,8 +48,8 @@ lane_count() { stats | python3 -c 'import json,sys; print(len(json.load(sys.stdi
 #
 # It first waits for the container to see the edit: a bind mount on macOS
 # (Docker Desktop, OrbStack) propagates an append with a short delay, and a
-# SIGHUP that lands before it re-reads the old bytes. The ten-second poll
-# never notices, because by then the bytes are there.
+# SIGHUP that lands before it re-reads the old bytes. By the ten-second
+# poll the bytes are there.
 reload() {
     local before
     for _ in $(seq 1 100); do
@@ -94,7 +94,7 @@ ok "session open (pid $SESSION)"
 h "ADD / a fourth lane, appdb-live on :15434, appended to the config"
 cat >> "$CONFIG" <<'EOF'
 
-  # Added by reload/demo.sh: a second door to appdb, started by a reload.
+  # Added by reload/demo.sh: a second door to appdb that a reload starts.
   - name: appdb-live
     protocol: postgres
     listen: 0.0.0.0:15434
@@ -116,8 +116,8 @@ echo "$OUT" | grep -q 'REDACTED:EMAIL_ADDRESS' && ok "the new lane enforces and 
 
 # -------------------------------------------------------------- bind conflict
 h "REFUSED / a lane on :19000, the admin port, cannot bind"
-note "The whole document is refused: the lane is not started, the running"
-note "lanes keep their rules, and the reason names the listener and the error."
+note "The sidecar refuses the whole document: the lane does not start, the"
+note "running lanes keep their rules, and the reason names the listener and the error."
 cp "$CONFIG" reload/work/config.good.yaml
 cat >> "$CONFIG" <<'EOF'
   - name: cannot-bind
