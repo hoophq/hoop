@@ -297,13 +297,21 @@ func (r *SessionReview) Scan(value any) error {
 	return json.Unmarshal(data, r)
 }
 
-func (s *Session) GetBlobInput() (BlobInputType, error) {
-	var blob Blob
-	err := DB.Raw(`
+const sessionBlobInputQuery = `
 	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
 	FROM private.sessions s
-	INNER JOIN private.blobs AS b ON b.type = 'session-input' AND  b.id = s.blob_input_id
-	WHERE s.org_id = ? AND s.id = ?`, s.OrgID, s.ID).
+	INNER JOIN private.blobs AS b ON b.type = 'session-input' AND b.org_id = s.org_id AND b.id = s.blob_input_id
+	WHERE s.org_id = ? AND s.id = ?`
+
+const sessionBlobStreamQuery = `
+	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
+	FROM private.sessions s
+	INNER JOIN private.blobs AS b ON b.type = 'session-stream' AND b.org_id = s.org_id AND b.id = s.blob_stream_id
+	WHERE s.org_id = ? AND s.id = ?`
+
+func (s *Session) GetBlobInput() (BlobInputType, error) {
+	var blob Blob
+	err := DB.Raw(sessionBlobInputQuery, s.OrgID, s.ID).
 		First(&blob).Error
 	if err == gorm.ErrRecordNotFound {
 		return "", nil
@@ -327,11 +335,7 @@ func (s *Session) GetBlobInput() (BlobInputType, error) {
 // It returns nil if the session does not have a blob stream associated with it.
 func (s *Session) GetBlobStream() (*Blob, error) {
 	var blob Blob
-	err := DB.Raw(`
-	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
-	FROM private.sessions s
-	INNER JOIN private.blobs AS b ON b.type = 'session-stream' AND  b.id = s.blob_stream_id
-	WHERE s.org_id = ? AND s.id = ?`, s.OrgID, s.ID).
+	err := DB.Raw(sessionBlobStreamQuery, s.OrgID, s.ID).
 		First(&blob).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
@@ -348,9 +352,7 @@ func (s *Session) GetBlobStream() (*Blob, error) {
 // Report if the blob is stored as database wire protocol format
 func (b Blob) IsWireProtocol() bool { return ptr.ToString(b.BlobFormat) == BlobFormatWireProtoType }
 
-func GetSessionByID(orgID, sid string) (*Session, error) {
-	session := &Session{}
-	err := DB.Raw(`
+const sessionByIDQuery = `
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.recording_format, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
@@ -399,10 +401,14 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		s.created_at, s.ended_at
 	FROM private.sessions s
 	LEFT JOIN private.connections c ON c.org_id = s.org_id AND c.name = s.connection
-	LEFT JOIN private.blobs b ON b.id = s.blob_input_id
+	LEFT JOIN private.blobs b ON b.org_id = s.org_id AND b.id = s.blob_input_id
 	LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 	WHERE s.org_id = ? AND s.id = ?
-	`, orgID, sid).First(session).Error
+	`
+
+func GetSessionByID(orgID, sid string) (*Session, error) {
+	session := &Session{}
+	err := DB.Raw(sessionByIDQuery, orgID, sid).First(session).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound

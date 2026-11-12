@@ -6,3 +6,9 @@ func SessionListFilterSQL(isAuditorOrAdmin bool, opt SessionOption) (from, where
 	sh := newSessionListShape(isAuditorOrAdmin, opt)
 	return sh.from(), sh.where()
 }
+
+const (
+	SessionByIDQuery       = sessionByIDQuery
+	SessionBlobInputQuery  = sessionBlobInputQuery
+	SessionBlobStreamQuery = sessionBlobStreamQuery
+)
