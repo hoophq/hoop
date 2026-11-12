@@ -229,8 +229,6 @@ const (
 	PlaneLicenseSource = "the control plane"
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
-	// adminLicenseSource names a license installed through PUT /license.
-	adminLicenseSource = "the admin API"
 )
 
 // setConfigFormat records the format of the document that is AUTHORITATIVE
@@ -1240,22 +1238,22 @@ func Run(cfg *Config, det Plugin) error {
 		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
 	}
 
-	adminSecret := os.Getenv(AdminSecretEnv)
 	var runAdmin func() error
 	if cfg.Admin.Listen != "" || cfg.Admin.APIListen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
-		licenseAPI := licenseHandler(adminSecret, rl, log)
 		runAdmin = func() error {
 			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-				view, ac, analyzerCfg, am, licState, otel, licenseAPI, log, cfg.Admin.ICAReadinessJSON)
+				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON)
 		}
 	}
-	if cfg.Admin.Listen == "" && strings.TrimSpace(adminSecret) != "" {
-		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
-			"hint", "set admin.listen to install a license through the admin API")
+	// PUT /license is gone. An operator who still sets its secret expects a
+	// way to install a license, so say where it went instead of ignoring it.
+	if strings.TrimSpace(os.Getenv(removedAdminSecretEnv)) != "" {
+		log.Warn(removedAdminSecretEnv+" is set, but PUT /license was removed; the variable does nothing",
+			"hint", "replace the license file the license source names, set HOOP_LICENSE and restart, or set it in the control plane")
 	}
 	if cfg.Admin.Listen != "" && cfg.Admin.APIListen == "" {
 		log.Info("admin read routes are off: /stats, /metrics, /config, /events and /api/* answer only on admin.api_listen",
@@ -2026,7 +2024,6 @@ func serveAdmin(
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	otel *otelExporter,
-	licenseAPI http.Handler,
 	log *slog.Logger,
 	icaReadinessJSON bool,
 ) error {
@@ -2052,11 +2049,9 @@ func serveAdmin(
 	probes := http.NewServeMux()
 	handleHealth(probes, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
 
-	// License writes require their own secret. ICA deployment drain below has a
-	// separate token and is disabled by default. licenseHandler refuses it unless the
-	// operator set AdminSecretEnv, and then asks for that secret: every
-	// read on the API listener is unauthenticated, and a write must not be.
-	probes.Handle("PUT /license", licenseAPI)
+	// The one write here is the ICA deployment drain. It has its own token
+	// and is off unless the operator sets it: every read route is
+	// unauthenticated, and a write must not be.
 	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
 
 	// Releases up to 1.306 served the read routes here. A scraper still

@@ -146,7 +146,7 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, apiAddr, nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
-		http.NotFoundHandler(), slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), false)
 
 	admin, api := "http://"+addr, "http://"+apiAddr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, admin+"/healthz"); return code == http.StatusOK })
@@ -154,6 +154,10 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 
 	if code, _ := httpCall(t, http.MethodGet, admin+"/readyz"); code != http.StatusOK {
 		t.Errorf("/readyz on admin.listen = %d, want 200", code)
+	}
+	// PUT /license was removed: nothing on either listener installs one.
+	if code, _ := httpCall(t, http.MethodPut, admin+"/license"); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+		t.Errorf("PUT /license on admin.listen = %d, want 404 or 405", code)
 	}
 	for _, path := range []string{"/stats", "/metrics", "/config", "/events", "/api/sessions"} {
 		if code, _ := httpCall(t, http.MethodGet, admin+path); code != http.StatusNotFound {
@@ -186,7 +190,7 @@ func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- serveAdmin(context.Background(), addr, held.Addr().String(), nil, nil, nil, nil, view, auditChain{},
-			nil, nil, nil, nil, http.NotFoundHandler(), slog.New(slog.DiscardHandler), false)
+			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false)
 	}()
 	select {
 	case err := <-done:
@@ -234,7 +238,7 @@ func TestAdminListenerAloneSaysWhereTheReadRoutesWent(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, "", nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
-		http.NotFoundHandler(), slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), false)
 
 	base := "http://" + addr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, base+"/healthz"); return code == http.StatusOK })

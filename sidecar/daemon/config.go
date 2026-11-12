@@ -849,8 +849,8 @@ func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 
 // AdminConfig configures the admin listeners.
 //
-// Listen serves the probes (/healthz, /readyz) and the two authenticated
-// writes (PUT /license, POST /v1/drain): nothing on it reads audit data or
+// Listen serves the probes (/healthz, /readyz) and the token-gated ICA drain
+// (POST /v1/drain): nothing on it reads audit data or
 // rules. APIListen serves the unauthenticated read routes (/stats, /metrics,
 // /config, /events, /api/*) and is off unless set, because anything that
 // reaches it reads the audit trail and each lane's rules.

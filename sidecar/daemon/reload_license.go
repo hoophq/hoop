@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -11,35 +9,21 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 )
 
-// A license changes at runtime in three ways, and a restart reads the same
-// answer as the running process in every one of them:
+// A license changes at runtime in two ways, and a restart reads the same
+// answer as the running process in both:
 //
 //   - the owner's document names another license: a plane rotation, or an
 //     edit of the config file's `license` key (applyOwned);
 //   - the file a local source names is replaced behind the same path: a
-//     renewal dropped onto a mount (pollLicense);
-//   - an operator installs one through PUT /license on the admin listener
-//     (installLicense). That one lives in memory: the next change to the
-//     source in force replaces it, and so does a restart.
+//     renewal dropped onto a mount (pollLicense).
 //
-// None of them drops a rule to fit a smaller license. A rotation the owner
-// made is published and the relay stops, the controlled drain an ended term
-// gets; an install through the admin API is refused instead, because a
-// caller holding the admin secret must not be able to stop the relay.
-
-var (
-	// errLicenseManaged refuses an admin install under a plane that owns
-	// the license: the fleet's license is set in one place.
-	errLicenseManaged = errors.New("the control plane owns the license of this sidecar; " +
-		"set the organization's license in the control plane")
-	// errLicenseRefused wraps every reason an admin install was refused.
-	errLicenseRefused = errors.New("license refused")
-)
+// Neither drops a rule to fit a smaller license. A rotation the owner made
+// is published and the relay stops, the controlled drain an ended term gets.
 
 // claimLicense runs, under mu, when the plane's license header first says it
 // manages the license: a gateway upgraded under a running sidecar. From then
 // on the plane is the only source, as resolveLicenseFor decides at startup:
-// no local file or PUT /license changes it again, for the life of the
+// no local file changes it again, for the life of the
 // process. The plane's license itself is evaluated by applyOwned together
 // with the document that carries it, so an answer that narrows the license
 // and trims the rules applies as one generation.
@@ -51,7 +35,7 @@ func (r *reloader) claimLicense(log *slog.Logger) {
 	// The document may be byte-identical to the last one: its license key
 	// now means something else, so it runs again.
 	r.lastHandled = nil
-	log.Info("the control plane now manages the license; local license sources and PUT /license no longer change it")
+	log.Info("the control plane now manages the license; local license sources no longer change it")
 }
 
 // licenseFile is the reference pollLicense watches: the source in force when
@@ -197,47 +181,4 @@ func (r *reloader) licenseProblems(next license.Status) []string {
 		}
 	}
 	return problems
-}
-
-// installLicense adopts a license document sent to the admin API. installed
-// is false when the document is the one already in force.
-//
-// Stricter than a rotation, because the caller is not the owner of the
-// config: only a current license is taken, and one that does not cover the
-// running rules is refused rather than stopping the relay.
-func (r *reloader) installLicense(log *slog.Logger, doc string) (lic license.Status, installed bool, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.licManaged {
-		return license.Status{}, false, errLicenseManaged
-	}
-	doc = strings.TrimSpace(doc)
-	if doc == "" || doc[0] != '{' {
-		// license.Load reads anything else as a PATH. A request must never
-		// make this process open a file it names.
-		return license.Status{}, false, fmt.Errorf("%w: the body must be the license document Hoop issued, "+
-			"braces included", errLicenseRefused)
-	}
-	next := license.Load(license.Ref{Value: doc, Source: adminLicenseSource})
-	switch next.State() {
-	case license.StateValid:
-	case license.StateExpired:
-		return next, false, fmt.Errorf("%w: %s", errLicenseRefused, next.Reason())
-	default:
-		return next, false, fmt.Errorf("%w: %v", errLicenseRefused, next.Err)
-	}
-	if cur := r.lic.get(); sameLicenseDoc(next, cur) {
-		return cur, false, nil
-	}
-	if problems := r.licenseProblems(next); len(problems) > 0 {
-		return next, false, fmt.Errorf("%w: it does not cover the running configuration: %s",
-			errLicenseRefused, strings.Join(problems, "; "))
-	}
-	r.lic.set(next)
-	r.lic.overCap.Store(false)
-	r.retryRefused()
-	log.Info("license installed through the admin API; it lasts until the license source " +
-		"in force changes or the process restarts")
-	log.Info(next.Line())
-	return next, true, nil
 }

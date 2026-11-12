@@ -741,8 +741,8 @@ the caps under `limits`, where a `null` means the license lifted one.
 
 #### Changing the license of a running process
 
-No restart is needed to renew or replace a license. Three ways, and a
-restart picks the same license the running process ends up with:
+No restart is needed to renew or replace a license. Two ways, and a restart
+picks the same license the running process ends up with:
 
 - **Replace the file.** When the source in force (`-license`,
   `HOOP_LICENSE` or the `license` key) names a path, the process stats that
@@ -753,34 +753,16 @@ restart picks the same license the running process ends up with:
   `subPath`, and point the source at the file in it.
 - **Edit the `license` key** in the config file, when no flag or
   `HOOP_LICENSE` outranks it. It applies with the next config reload.
-- **`PUT /license` on the admin listener**, with the document as the body.
-  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
-  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
-  send it from the host or through an encrypted tunnel (`kubectl
-  port-forward`, SSH), never across a network others can read:
-
-  ```bash
-  curl -X PUT --data-binary @license.json \
-    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
-  ```
-
-  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
-  the same report `/config` serves. Status `401` is a missing or wrong
-  secret, `403` means the endpoint is off, `409` means a control plane owns
-  the license, and `422` is a license this process refuses, with the reason.
-  The license lives in memory: the next change to the source in force
-  replaces it, and so does a restart. Update the source as well.
 
 A replaced file or an edited key is the owner's change, so it is in force
 even when it covers fewer rules; then the relay stops, as when a term ends.
-The admin API is stricter: it takes only a current license that covers the
-running rules, so a holder of the secret cannot stop the relay. It also
-takes only a document, never a path.
 
 A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
-change in a running process; use a path, the admin API, or a restart. Under
-a control plane that owns the license, set it there: the file is not
-watched and the admin API answers `409`.
+change in a running process; use a path or a restart. Under a control plane
+that owns the license, set it there: the file is not watched.
+
+`PUT /license` on the admin listener was removed. A process that still finds
+`HOOP_SIDECAR_ADMIN_SECRET` set warns at startup and ignores it.
 
 Connecting a licensed standalone sidecar to a control plane takes a restart.
 After it, a control plane that manages licenses (every current gateway) is the
@@ -951,7 +933,7 @@ license: /etc/hoop-inspect/license.json
 # UNAUTHENTICATED read routes and is off unless set. See "Health and admin
 # listeners".
 admin:
-  listen: 127.0.0.1:19000       # /healthz /readyz, PUT /license, POST /v1/drain
+  listen: 127.0.0.1:19000       # /healthz /readyz, POST /v1/drain (ICA, token-gated)
   api_listen: 127.0.0.1:19002   # /stats /metrics /config /events /api/*
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
@@ -1203,7 +1185,7 @@ never the signature.
 ### Health and admin listeners
 
 The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
-the two authenticated writes, `PUT /license` and `POST /v1/drain`. It serves
+one authenticated write, the ICA `POST /v1/drain`. It serves
 no audit data and no lane rules, so a platform can probe it. A workspace that
 reaches it learns whether the process is up, and from `/readyz` the names of
 the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
