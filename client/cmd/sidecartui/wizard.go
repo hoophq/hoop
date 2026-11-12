@@ -128,11 +128,13 @@ func demoKindFor(id string) sidecardemo.Kind {
 
 func newWizard(mach machine, validate func(string) (string, error), dir string, now func() time.Time) *wizard {
 	w := &wizard{now: now, page: pgProtocol, mach: mach, validate: validate, dir: dir}
+	// The Postgres demo comes first: a real SQL connection, and the one the
+	// AI analyzer step reads best in.
 	w.protos.items = append(w.protos.items,
-		menuItem{id: demoHTTPID, label: "Demo (HTTP)",
-			detail: "an invented API with fake users, nothing to set up"},
 		menuItem{id: demoPGID, label: "Demo (Postgres)",
-			detail: "hoop's public read-only demo database (dellstore on AWS RDS), nothing to set up"})
+			detail: "hoop's public read-only demo database (dellstore on AWS RDS), nothing to set up"},
+		menuItem{id: demoHTTPID, label: "Demo (HTTP)",
+			detail: "an invented API with fake users, nothing to set up"})
 	for _, p := range daemon.ServableProtocols() {
 		detail := daemon.ProtocolLabel(p)
 		if f, ok := mach.foundFor(p); ok {

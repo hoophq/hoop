@@ -307,8 +307,17 @@ func newDraft(id string, m machine) (*draft, error) {
 	default:
 		d.an.trigger = []string{"delete", "update"}
 	}
-	// An mcp lane refuses an analyzer.
-	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	// The analyzer is on by default, on the model Hoop hosts: no API key and
+	// no URL to set. A provider whose key file is already on this machine is
+	// kept, since the person set it up. An mcp lane refuses an analyzer.
+	if provider == "vertex" || keyFileStatus(d.an.keyFile) != nil {
+		d.an.provider, d.an.model = hoop.Name, analyzer.HostedModel
+		d.an.keyFile = filepath.Join(keyDir, hoop.Name+".key")
+	}
+	//
+	// grpc and spanner rate only decoded payloads, which need descriptors
+	// no default can name, so their analyzer starts off.
+	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol)
 	if kind != "" {
 		// The demo shows the AI with no key to set up: the model Hoop
 		// hosts (DEP-161) rates each read, and a high-risk one waits for
@@ -323,6 +332,25 @@ func newDraft(id string, m machine) (*draft, error) {
 
 // hosted reports the model Hoop hosts: no key file, no model to name.
 func (a analyzerDraft) hosted() bool { return a.provider == hoop.Name }
+
+// hostedLabel names the model Hoop hosts wherever a provider is shown: the
+// person never sees its URL, as with any other provider.
+const hostedLabel = "Hoop's own model (default)"
+
+// providerOptions lists the providers this binary links, the model Hoop hosts
+// first: it is the default and needs nothing from the person.
+func providerOptions() []string {
+	out := []string{}
+	for _, p := range analyzer.RegisteredProviders() {
+		if p != hoop.Name {
+			out = append(out, p)
+		}
+	}
+	if slices.Contains(analyzer.RegisteredProviders(), hoop.Name) {
+		out = append([]string{hoop.Name}, out...)
+	}
+	return out
+}
 
 // keyFileStatus is nil when path is a key file the analyzer will accept.
 func keyFileStatus(path string) error {
@@ -506,12 +534,15 @@ func analyzerHint(a analyzerDraft, listener string) []string {
 	if env, ok := keyEnv[a.provider]; ok {
 		out = append(out, fmt.Sprintf("  mkdir -p %s && (umask 077; printf %%s \"$%s\" > %s)", a.keyDir, env, a.keyFile), "")
 	}
-	out = append(out, "then add this block, and the lane block to listener "+listener+":", "",
-		"analyzer:", "  provider: "+a.provider, "  model: "+a.model)
-	if a.provider == "vertex" {
-		out = append(out, "  extra: {project: my-gcp-project, region: global}")
-	} else {
-		out = append(out, "  credentials_file: "+a.keyFile)
+	out = append(out, "then add this block, and the lane block to listener "+listener+":", "", "analyzer:")
+	switch {
+	case a.hosted():
+		out = append(out, "  use_hoop_llm_provider: true   # "+hostedLabel+": no API key")
+	case a.provider == "vertex":
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model,
+			"  extra: {project: my-gcp-project, region: global}")
+	default:
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model, "  credentials_file: "+a.keyFile)
 	}
 	out = append(out, "", "    analyzer:", "      trigger: {operations: ["+strings.Join(a.trigger, ", ")+"]}",
 		"      high: "+a.high, "      medium: "+a.medium, "      low: "+a.low)
@@ -558,8 +589,8 @@ func (d *draft) analyzerSummary() string {
 		return "off"
 	}
 	if d.an.hosted() {
-		return fmt.Sprintf("Hoop-hosted model (%s), no key · high→%s, medium→%s, low→%s",
-			analyzer.HostedModel, d.an.high, d.an.medium, d.an.low)
+		return fmt.Sprintf("%s, no API key · high→%s, medium→%s, low→%s",
+			hostedLabel, d.an.high, d.an.medium, d.an.low)
 	}
 	return fmt.Sprintf("%s %s · high→%s, medium→%s, low→%s", d.an.provider, d.an.model, d.an.high, d.an.medium, d.an.low)
 }
@@ -902,8 +933,9 @@ var riskActionLabel = map[string]string{
 }
 
 func analyzerForm(a analyzerDraft, protocol string) *form {
-	providers := analyzer.RegisteredProviders()
-	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider}
+	providers := providerOptions()
+	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider,
+		optLabel: map[string]string{hoop.Name: hostedLabel + ", no API key"}}
 	if !slices.Contains(providers, prov.text) && len(providers) > 0 {
 		prov.text = providers[0]
 	}
@@ -918,7 +950,7 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 			help: "Off writes the analyzer into the file commented out, one uncomment away."},
 		prov,
 		{id: "hostednote", kind: fNote, hidden: func() bool { return prov.text != hoop.Name }, note: func() string {
-			return stFaint.Render("The model Hoop hosts: no key file. Statement text is sent to Hoop.")
+			return stFaint.Render("Hoop runs it: no API key and no URL to set. Statement text goes to Hoop.")
 		}},
 		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
 			hidden: func() bool { return prov.text == hoop.Name },
