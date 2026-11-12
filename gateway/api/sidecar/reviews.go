@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -724,11 +725,11 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 // A routed notification that reaches nobody falls back to notifySlack too.
 func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
 	decision *approvalrouting.RouteDecision) {
-	unrouted := func() bool { return notifySlack(sidecar, rev, listenerName, display) }
 	if !decision.Notifies() {
-		unrouted()
+		notifySlack(sidecar, rev, listenerName, display, nil)
 		return
 	}
+	unrouted := func(skip []string) bool { return notifySlack(sidecar, rev, listenerName, display, skip) }
 	approvalrouting.Notify(context.Background(), models.DB, sidecar.OrgID, decision,
 		routingCard(sidecar, rev, listenerName, display), unrouted)
 }
@@ -786,11 +787,13 @@ func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
 // exists rather than finding it by looking. It reports whether a channel
-// accepted the message.
+// accepted the message. A channel in skip is not posted to: the routed post
+// already tried it, and it refused, or its answer was lost and a second
+// message would be a duplicate whose buttons nothing rewrites.
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) bool {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string, skip []string) bool {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
 		return false
@@ -805,9 +808,20 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 			Warnf("failed reading the listener slack channels, posting to the default channel only, reason=%v", err)
 		channels = nil
 	}
-	if len(channels) == 0 && slackSvc.DefaultChannel() == "" {
+	if len(channels) == 0 {
+		if def := slackSvc.DefaultChannel(); def != "" {
+			channels = []string{def}
+		}
+	}
+	if len(channels) == 0 {
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
 			Warnf("no slack channel is set for this listener or the org, nobody was notified of this review")
+		return false
+	}
+	channels = slices.DeleteFunc(channels, func(c string) bool { return slices.Contains(skip, c) })
+	if len(channels) == 0 {
+		log.With("sid", rev.SessionID, "review-id", rev.ID).
+			Warnf("the routed post already tried every slack channel of this listener, nobody was notified of this review")
 		return false
 	}
 

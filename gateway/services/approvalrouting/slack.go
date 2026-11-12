@@ -153,6 +153,7 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 	}
 	res := svc.PostMessageReview(req)
 	out.Posted = res.Posted
+	out.Tried = normalizeNames(t.ChannelIDs)
 	for dest, cause := range res.Failed {
 		if u, ok := userOf[dest]; ok {
 			out.Failed[u] = cause

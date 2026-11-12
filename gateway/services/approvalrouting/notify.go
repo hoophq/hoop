@@ -59,10 +59,13 @@ type Targets struct {
 }
 
 // PostResult reports a post. Failed maps a channel id or a hoop user id
-// onto the cause.
+// onto the cause. Tried are the channel ids sent to the integration's API,
+// accepted or not; a failure before it (no integration, too many groups,
+// unread ids) tried none.
 type PostResult struct {
 	Posted int
 	Failed map[string]string
+	Tried  []string
 }
 
 // Notifier is one notification integration. Register one with
@@ -148,8 +151,11 @@ func (p *notifyPlan) route(integration string) *route {
 // review as without routing and reports whether a channel accepted it;
 // Notify calls it when the routed notifications reach no user and no
 // channel, so a held statement is never announced less than without
-// routing, and records the outcome.
-func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, card ReviewCard, unrouted func() bool) {
+// routing, and records the outcome. skip are the Slack channels the routed
+// posts already sent to: a second post there would repeat a refusal, or
+// duplicate a message whose answer was lost.
+func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, card ReviewCard,
+	unrouted func(skip []string) bool) {
 	if !d.Notifies() {
 		return
 	}
@@ -162,6 +168,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 	rec.UndeliveredChannels = slices.Clone(d.Record.UndeliveredChannels)
 	notified := map[string][]string{}
 	integrated, posted := false, false
+	var tried []string
 	users := d.plan.recipients(ctx, db, card.ReviewID)
 	for _, r := range d.plan.routes {
 		dm := r.delivery != DeliveryChannel
@@ -187,6 +194,9 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		}
 		posted = true
 		res := r.notifier.Post(ctx, db, orgID, card, t)
+		if r.integration == IntegrationSlack {
+			tried = append(tried, res.Tried...)
+		}
 		for _, u := range t.HoopUserIDs {
 			if cause, failed := res.Failed[u]; failed {
 				rec.Unreachable = append(rec.Unreachable, models.ReviewRoutingUnreachable{
@@ -225,7 +235,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		}
 		log.With("review-id", card.ReviewID, "cause", rec.NotifyFallback).
 			Warnf("the routed review reached no user and no channel, posting it as without routing")
-		rec.NotifyFallbackPosted = unrouted()
+		rec.NotifyFallbackPosted = unrouted(tried)
 	}
 	// Detached from ctx: the record must land even when the posts used the
 	// whole budget.

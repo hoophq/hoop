@@ -673,7 +673,7 @@ func TestNotifyDropsAUserThePrincipalNamesAtPostTime(t *testing.T) {
 	rev := seedStatusReview(t, sc, models.ReviewStatusPending)
 	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
 		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
-		func() bool { t.Error("a review that reached a user is not posted as without routing"); return false })
+		func([]string) bool { t.Error("a review that reached a user is not posted as without routing"); return false })
 	assert.Equal(t, []string{"U-BOB"}, slackFake.destinations())
 	r := storedRouting(t, sc, rev.ID)
 	require.NotNil(t, r)
@@ -894,19 +894,28 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 		users        []string
 		channels     []map[string]string
 		fallback     string
+		posted       bool
 		posts        []string
 		undelivered  []models.ReviewRoutingUndeliveredChannel
 	}{
 		{name: "no-target", notify: `{"slack": {"delivery": "dm"}}`, users: []string{},
-			fallback: models.ReviewRoutingNotifyNoTarget, posts: []string{"C-DEFAULT"}},
+			fallback: models.ReviewRoutingNotifyNoTarget, posted: true, posts: []string{"C-DEFAULT"}},
 		{name: "teams-only", notify: `{"teams": {"delivery": "dm"}}`, users: []string{alice.ID},
-			fallback: models.ReviewRoutingNotifyNoIntegration, posts: []string{"C-DEFAULT"}},
+			fallback: models.ReviewRoutingNotifyNoIntegration, posted: true, posts: []string{"C-DEFAULT"}},
+		// The fallback skips the channel the routed post already tried.
 		{name: "refused", notify: `{"slack": {"delivery": "channel"}}`, users: []string{},
 			listener: []string{"C-BAD", "C-GOOD"}, refuse: []string{"C-BAD"},
 			channels: []map[string]string{{"integration": "slack", "channel": "C-BAD"}},
-			fallback: models.ReviewRoutingNotifyNotDelivered, posts: []string{"C-BAD", "C-BAD", "C-GOOD"},
+			fallback: models.ReviewRoutingNotifyNotDelivered, posted: true, posts: []string{"C-BAD", "C-GOOD"},
 			undelivered: []models.ReviewRoutingUndeliveredChannel{
 				{Integration: "slack", ID: "C-BAD", Cause: "channel_not_found"}}},
+		// Its only channel already refused: no second post, and nobody reached.
+		{name: "refused-only", notify: `{"slack": {"delivery": "channel"}}`, users: []string{},
+			listener: []string{"C-REFUSED"}, refuse: []string{"C-REFUSED"},
+			channels: []map[string]string{{"integration": "slack", "channel": "C-REFUSED"}},
+			fallback: models.ReviewRoutingNotifyNotDelivered, posted: false, posts: []string{"C-REFUSED"},
+			undelivered: []models.ReviewRoutingUndeliveredChannel{
+				{Integration: "slack", ID: "C-REFUSED", Cause: "channel_not_found"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rule := "nobody-rule-" + tc.name
@@ -928,7 +937,7 @@ func TestARoutedReviewThatReachesNobodyIsPostedAsWithoutRouting(t *testing.T) {
 			r := waitNotified(t, sc, filed.Review.ID)
 			assert.Equal(t, models.ReviewRoutingModeAI, r.Mode)
 			assert.Equal(t, tc.fallback, r.NotifyFallback)
-			assert.True(t, r.NotifyFallbackPosted, "a channel accepted the post as without routing")
+			assert.Equal(t, tc.posted, r.NotifyFallbackPosted)
 			assert.Empty(t, r.NotifiedUsers)
 			assert.Empty(t, r.Channels)
 			assert.Equal(t, tc.undelivered, r.UndeliveredChannels)
@@ -1042,7 +1051,11 @@ func TestASlackIDReadErrorIsNotShownToTheApprovalViewers(t *testing.T) {
 		errors.New("failed to connect to `"+secret+"`"))
 	approvalrouting.Notify(context.Background(), models.DB, statusTestOrgID, d,
 		approvalrouting.ReviewCard{ReviewID: rev.ID, SessionID: rev.SessionID, Groups: []string{"sre"}},
-		func() bool { return false })
+		func(skip []string) bool {
+			// No channel reached Slack: the post as without routing may use C-PAY.
+			assert.Empty(t, skip)
+			return false
+		})
 	r := storedRouting(t, sc, rev.ID)
 	require.NotNil(t, r)
 	const cause = "the gateway could not read the slack ids"

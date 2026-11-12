@@ -1595,8 +1595,9 @@ is sent. Only a channel Slack reaches from this listener (its channels and
 the default channel) is offered; a configured candidate outside them is
 recorded as not delivered, as is a post Slack refuses. When the routed
 notifications reach no user and no channel, the plane tries to post the
-review as without routing, and records why and whether a channel accepted
-that post. The review records the groups, the notified users, the channels
+review as without routing, skipping a channel the routed post already
+tried, and records why and whether a channel accepted that post. The
+review records the groups, the notified users, the channels
 and the reason, and its details show them.
 
 The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
