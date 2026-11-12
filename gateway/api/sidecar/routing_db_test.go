@@ -379,7 +379,7 @@ func TestEveryFallbackCauseFilesToEveryCandidate(t *testing.T) {
 			{Name: "route_approval", Arguments: `{}`}, {Name: "route_approval", Arguments: `{}`}}}})},
 		{cause: approvalrouting.CauseRefusal, factory: clientOf(&fakeLLM{resp: &laia.ChatResponse{Content: "I cannot route this."}})},
 		// An explicit provider refusal, with no content and no tool call.
-		{cause: approvalrouting.CauseRefusal, detail: "the model stopped with stop_reason refusal",
+		{cause: approvalrouting.CauseRefusal, detail: "the model refused to decide",
 			factory: clientOf(&fakeLLM{resp: &laia.ChatResponse{Refusal: "the model stopped with stop_reason refusal"}})},
 		{cause: approvalrouting.CauseInvalidDecision, factory: clientOf(&fakeLLM{resp: &laia.ChatResponse{ToolCalls: []laia.ToolCall{
 			{Name: "route_approval", Arguments: `{not json`}}}})},
@@ -1026,4 +1026,33 @@ func TestASlackIDReadErrorIsNotShownToTheApprovalViewers(t *testing.T) {
 	raw, err := json.Marshal(r)
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "QuixoticDBHost")
+}
+
+// A refusal, prose or a malformed tool call stores fixed text per cause: the
+// model's own words and a JSON error go to the gateway log only.
+func TestARefusalOrInvalidDecisionStoresFixedText(t *testing.T) {
+	startStatusTestDB(t)
+	const secret = "QuixoticModelWords"
+	for _, tc := range []struct {
+		resp          *laia.ChatResponse
+		cause, detail string
+	}{
+		{&laia.ChatResponse{Refusal: "I refuse: " + secret}, approvalrouting.CauseRefusal, "the model refused to decide"},
+		{&laia.ChatResponse{Content: "Route it to " + secret}, approvalrouting.CauseRefusal,
+			"the model answered in prose, not with the tool"},
+		{&laia.ChatResponse{ToolCalls: []laia.ToolCall{{Name: secret, Arguments: `{}`}}},
+			approvalrouting.CauseInvalidDecision, "the model called an unknown tool"},
+		{&laia.ChatResponse{ToolCalls: []laia.ToolCall{{Name: "route_approval", Arguments: `{"` + secret + ``}}},
+			approvalrouting.CauseInvalidDecision, "the tool input is not a JSON object"},
+		{routeCall(t, map[string]any{"groups": secret, "notify_users": []string{}, "channels": []any{}, "reason": "r"}),
+			approvalrouting.CauseInvalidDecision, "the tool input does not match the schema"},
+	} {
+		restore := approvalrouting.SetClientFactory(clientOf(&fakeLLM{resp: tc.resp}))
+		d, err := approvalrouting.RouteReview(context.Background(), models.DB, approvalrouting.RouteInput{
+			OrgID: statusTestOrgID, ListenerName: "appdb", Routing: daemon.ApprovalRouting{Candidates: []string{"sre"}}})
+		restore()
+		require.NoError(t, err)
+		assert.Equal(t, tc.cause, d.Record.FallbackCause)
+		assert.Equal(t, tc.detail, d.Record.FallbackDetail)
+	}
 }

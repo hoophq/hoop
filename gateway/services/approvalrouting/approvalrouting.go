@@ -212,15 +212,17 @@ type toolCallArgs struct {
 	Reason string `json:"reason"`
 }
 
-// decide validates the model's answer and builds the decision.
+// decide validates the model's answer and builds the decision. A fallback
+// stores fixed text: the model's own words and a JSON error go to the gateway
+// log only.
 func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	switch {
 	case resp == nil:
 		return rc.fallback(CauseNoToolCall, "the provider returned no answer", nil)
 	case strings.TrimSpace(resp.Refusal) != "":
-		return rc.fallback(CauseRefusal, "the model refused: "+resp.Refusal, nil)
+		return rc.fallback(CauseRefusal, "the model refused to decide", errors.New(resp.Refusal))
 	case len(resp.ToolCalls) == 0 && strings.TrimSpace(resp.Content) != "":
-		return rc.fallback(CauseRefusal, "the model answered in prose: "+resp.Content, nil)
+		return rc.fallback(CauseRefusal, "the model answered in prose, not with the tool", errors.New(resp.Content))
 	case len(resp.ToolCalls) == 0:
 		return rc.fallback(CauseNoToolCall, "the model called no tool", nil)
 	case len(resp.ToolCalls) > 1:
@@ -228,11 +230,12 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	}
 	call := resp.ToolCalls[0]
 	if call.Name != toolName {
-		return rc.fallback(CauseInvalidDecision, fmt.Sprintf("the model called the unknown tool %q", call.Name), nil)
+		return rc.fallback(CauseInvalidDecision, "the model called an unknown tool",
+			fmt.Errorf("unknown tool %q", call.Name))
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(call.Arguments), &fields); err != nil {
-		return rc.fallback(CauseInvalidDecision, "the tool input is not a JSON object: "+err.Error(), nil)
+		return rc.fallback(CauseInvalidDecision, "the tool input is not a JSON object", err)
 	}
 	for _, f := range toolFields {
 		if v, ok := fields[f]; !ok || string(v) == "null" {
@@ -241,7 +244,7 @@ func (rc *routeContext) decide(resp *laia.ChatResponse) *RouteDecision {
 	}
 	var args toolCallArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return rc.fallback(CauseInvalidDecision, "the tool input does not match the schema: "+err.Error(), nil)
+		return rc.fallback(CauseInvalidDecision, "the tool input does not match the schema", err)
 	}
 	reason := boundText(args.Reason, maxReasonRunes)
 	if reason == "" {

@@ -1770,7 +1770,7 @@ type ReviewRouting struct {
 	Mode string `json:"mode" enums:"ai,static" readonly:"true" example:"ai"`
 	// Why the AI routing fell back. Set with mode static
 	FallbackCause string `json:"fallback_cause,omitempty" enums:"no_provider,timeout,provider_error,no_tool_call,refusal,invalid_decision,no_valid_group" readonly:"true" example:"timeout"`
-	// Detail of the fallback: fixed text per cause. A provider's error text is in the gateway log only
+	// Detail of the fallback: fixed text per cause. Provider errors, database errors and the model's own words are in the gateway log only
 	FallbackDetail string `json:"fallback_detail,omitempty" readonly:"true" example:"no answer in 20s"`
 	// The reason the AI gave, at most 500 characters
 	Reason string `json:"reason,omitempty" readonly:"true" example:"The sre group approved similar statements fast."`

@@ -1601,8 +1601,9 @@ notified users, the channels and the reason, and its details show them.
 The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
 refusal, no tool call or more than one, an invalid decision or no valid group,
 the plane falls back to static routing: every candidate group gets the
-review. The review records the fallback and its cause, with a fixed detail;
-a provider's error text goes to the gateway log only. The routing time is
+review. The review records the fallback and its cause, with fixed text per
+cause; a provider or database error and the model's own words go to the
+gateway log only. The routing time is
 part of the hold's wait. A filing waits at least 30 seconds for the plane, or
 the analyzer `timeout_sec` when that is longer; a claim keeps `timeout_sec`.
 
