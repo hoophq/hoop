@@ -66,13 +66,13 @@ func IncrementSessionMaskedMetrics(db *gorm.DB, sessionID string, maskedMetrics 
 	return nil
 }
 
-func IncrementSessionAnalyzedMetrics(db *gorm.DB, sessionID string, analyzedMetrics map[string]int64) error {
+func IncrementSessionAnalyzedMetrics(db *gorm.DB, orgID, sessionID string, analyzedMetrics map[string]int64) error {
 	if len(analyzedMetrics) == 0 {
 		return nil
 	}
 
 	session := &Session{}
-	if err := db.Table("private.sessions").Where("id = ?", sessionID).First(session).Error; err != nil {
+	if err := db.Table("private.sessions").Where("org_id = ? AND id = ?", orgID, sessionID).First(session).Error; err != nil {
 		return err
 	}
 

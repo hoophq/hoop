@@ -33,12 +33,8 @@ func BareExecWithTimeout(orgID string, req *pbsystem.BareExecRequest, timeout ti
 }
 
 func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecRequest, timeout time.Duration) *pbsystem.BareExecResponse {
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, err := pbsystem.NewBareExecRequest(req)
 	if err != nil {
