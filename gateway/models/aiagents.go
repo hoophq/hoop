@@ -209,11 +209,9 @@ func GetAIAgentContext(keyHash string) (*Context, error) {
 	}, nil
 }
 
-// UpdateAIAgentLastUsed sets the last_used_at timestamp for an AI agent.
+// UpdateAIAgentLastUsed sets last_used_at for an AI agent, at most once per lastUsedInterval.
 func UpdateAIAgentLastUsed(id string) {
-	DB.Table("private.ai_agents").
-		Where("id = ?", id).
-		Update("last_used_at", time.Now().UTC())
+	touchLastUsed(&aiAgentLastUsedGate, "private.ai_agents", id)
 }
 
 func RevokeAIAgent(orgID, id, deactivatedBy string) error {
