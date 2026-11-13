@@ -795,6 +795,21 @@ func TestAPlaneTakeoverRebuildsADemoLaneWithUnchangedRules(t *testing.T) {
 		t.Errorf("the demo lane was kept with its terminal reviewer; log:\n%s", buf)
 	}
 
+	// The plane hands the configuration back to the file: the demo lane is
+	// rebuilt again, and files at the terminal once more.
+	file := writeConfig(t, reloadBase)
+	rl.configPath, rl.load = file, LoadConfig
+	buf.Reset()
+	if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadApplied {
+		t.Fatalf("handover outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if rl.ac.lanesFromPlane || !rl.ac.filesLocally("appdb") {
+		t.Error("after the handover the demo lane did not file at the terminal again")
+	}
+	if !strings.Contains(buf.String(), "swapped=1") {
+		t.Errorf("the handover kept the demo lane on the plane's reviewer; log:\n%s", buf)
+	}
+
 	// Without a demo lane, an unchanged lane is kept as before.
 	rl2, buf2 := testReloader(t, reloadBase)
 	rl2.diskMode = true

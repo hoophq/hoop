@@ -438,6 +438,8 @@ func TestLocalReviewerFirstWinsOverThePlane(t *testing.T) {
 			cp:         &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t"), diskMode: diskMode},
 			local:      func(string) analyzer.Reviewer { return local },
 			localFirst: opts.localFirst,
+			// What setupAnalyzer sets from the boot owner.
+			lanesFromPlane: !diskMode,
 		}
 	}
 	isPlane := func(r analyzer.Reviewer) bool { _, ok := r.(planReviewer); return ok }

@@ -1044,15 +1044,12 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 }
 
 // filesLocally reports a listener whose human holds go to the local reviewer
-// although a plane is configured: one WithLocalReviewerFirst named, in a
-// process whose lanes come from the local file. A plane that serves the
-// lanes itself keeps its approvers, whatever the listener is called, also
-// when it takes the configuration from the file after boot (lanesFromPlane).
+// although a plane is configured: one WithLocalReviewerFirst named, while the
+// lanes come from the local file. A plane that serves the lanes keeps its
+// approvers, whatever the listener is called. lanesFromPlane is set at setup
+// and moved by every takeover or handover, so it is the owner of now.
 func (ac *analyzerDeps) filesLocally(listener string) bool {
-	if ac == nil || ac.local == nil || ac.lanesFromPlane || !slices.Contains(ac.localFirst, listener) {
-		return false
-	}
-	return ac.cp == nil || ac.cp.diskMode
+	return ac != nil && ac.local != nil && !ac.lanesFromPlane && slices.Contains(ac.localFirst, listener)
 }
 
 // budget key prefixes. The map in analyzerDeps is process-wide and keyed by
@@ -1368,9 +1365,11 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		cp:         cfg.cp,
 		local:      cfg.localReviewer,
 		localFirst: cfg.localReviewerFirst,
-		det:        det,
-		mcp:        cfg.MCP != nil,
-		metrics:    newAnalyzerMetrics(a.providerName(), a.modelName()),
+		// The boot owner; a reload moves it (applyOwned).
+		lanesFromPlane: cfg.cp != nil && !cfg.cp.diskMode,
+		det:            det,
+		mcp:            cfg.MCP != nil,
+		metrics:        newAnalyzerMetrics(a.providerName(), a.modelName()),
 	}, nil
 }
 

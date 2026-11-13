@@ -51,8 +51,12 @@ type Options struct {
 	// Approvals section says so and links to them.
 	ControlPlane string
 	// LocalApprovals keeps Approvals at this terminal although ControlPlane
-	// is set: the demo's holds are filed here (daemon.WithLocalReviewerFirst).
+	// is set: the demo's holds are filed here (daemon.WithLocalReviewerFirst)
+	// while its lanes come from the file.
 	LocalApprovals bool
+	// PlaneOwnsConfig: at boot the control plane serves the lanes, so its
+	// approvers decide. The ownership logs move it after boot.
+	PlaneOwnsConfig bool
 	// OpenURL opens a URL in the person's browser; nil hides that key.
 	OpenURL func(string) error
 }
@@ -318,6 +322,7 @@ func runTUI(opts Options, run func() error) error {
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
 	m.controlPlane, m.openURL = opts.ControlPlane, opts.OpenURL
 	m.localApprovals = opts.LocalApprovals
+	m.st.System.PlaneOwnsConfig = opts.PlaneOwnsConfig
 	if opts.Demo != nil {
 		// The demo opens on its guide: a person who just booted it has
 		// not sent anything yet, and the empty Wire tells them nothing.

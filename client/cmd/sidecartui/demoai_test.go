@@ -297,6 +297,34 @@ func TestAIStepBlockedSaysBlocked(t *testing.T) {
 	}
 }
 
+// A hold on another listener is not the AI step's: the tour neither shows it
+// as its own nor opens it on enter.
+func TestTourTakesOnlyItsOwnLanesHold(t *testing.T) {
+	m := model{st: NewState(time.Now()), tour: newTour(&DemoOptions{Kind: sidecardemo.KindPostgres, Listeners: []string{"demo"}})}
+	m.st.ApplyLocalReview(LocalReview{ID: "other-1", Listener: "prod", Status: statusPending, Statement: "select 1"})
+	if got := m.tourPending(); len(got) != 0 {
+		t.Fatalf("tourPending = %v, want none: the hold is on prod", got)
+	}
+	m.st.ApplyLocalReview(LocalReview{ID: "demo-1", Listener: "demo", Status: statusPending, Statement: "select 2"})
+	if got := m.tourPending(); !slices.Equal(got, []string{"demo-1"}) {
+		t.Fatalf("tourPending = %v, want [demo-1]", got)
+	}
+}
+
+// A demo that boots with the plane serving its lanes shows the plane's
+// approvals until the plane hands the configuration to the file.
+func TestDemoApprovalsStartWithTheBootOwner(t *testing.T) {
+	m := model{st: NewState(time.Now()), controlPlane: "https://plane.example", localApprovals: true}
+	m.st.System.PlaneOwnsConfig = true
+	if !m.planeApprovals() {
+		t.Fatal("a demo booted plane-owned showed local approvals")
+	}
+	m.st.ApplyLog(LogRecord{Level: "INFO", Msg: daemon.LogFileOwnsConfig})
+	if m.planeApprovals() {
+		t.Fatal("the handover did not bring the approvals to the terminal")
+	}
+}
+
 // The plane taking the configuration from the file moves a demo's approvals
 // to the plane; handing it back returns them to the terminal.
 func TestDemoApprovalsFollowWhoOwnsTheConfig(t *testing.T) {

@@ -2163,8 +2163,9 @@ type analyzerDeps struct {
 	localFirst []string
 
 	// lanesFromPlane: the lanes this ac builds come from the plane's own
-	// document, after a takeover. cp.diskMode keeps its boot value, so a
-	// reload sets this on its staged copy; see filesLocally.
+	// document. Set at setup from the boot owner; cp.diskMode keeps that
+	// boot value, so a reload sets this on its staged copy, both ways.
+	// See filesLocally.
 	lanesFromPlane bool
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:

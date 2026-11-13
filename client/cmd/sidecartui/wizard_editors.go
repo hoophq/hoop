@@ -437,17 +437,28 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 		if len(d.an.trigger) > 0 {
 			l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(d.an.trigger...)}
 		}
-		if d.isDemo() && d.an.hosted() {
-			// The demo's AI step must hold the same statement every time:
-			// the lowest temperature, and guidance that names what is high
-			// risk in the demo data.
-			zero := 0.0
-			cfg.Analyzer.Temperature = &zero
+		if d.isDemo() {
+			// The demo's AI step must hold the same statement every time,
+			// whichever provider rates it: guidance that names what is high
+			// risk in the demo data, and only that data sent to the model.
 			cfg.Analyzer.TimeoutSec = int(sidecardemo.AnalyzerTimeout / time.Second)
 			l.Analyzer.Prompt = sidecardemo.AnalyzerPrompt(d.demoKind)
 			tables, resources := sidecardemo.AnalyzerScope(d.demoKind)
 			l.Analyzer.Trigger = &policy.AITrigger{Any: []policy.AITriggerItem{{
 				Operations: ops(d.an.trigger...), Tables: tables, Resources: resources}}}
+			if d.an.hosted() {
+				// The lowest temperature. Only on Hoop's model: some
+				// providers' models refuse a temperature.
+				zero := 0.0
+				cfg.Analyzer.Temperature = &zero
+			}
+		} else if d.an.hosted() {
+			// The default nobody chose must not stop traffic: before it, a
+			// new config ran with no analyzer. With Hoop's model out of
+			// reach, a statement it cannot rate passes (a holding lane
+			// still refuses it).
+			open := true
+			cfg.Analyzer.FailOpen = &open
 		}
 	}
 	// An http_header rule may only name a header the listener captures.

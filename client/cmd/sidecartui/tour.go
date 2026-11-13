@@ -38,6 +38,9 @@ type DemoOptions struct {
 	Ports sidecardemo.Ports
 	// Kind is which demo this is: HTTP or Postgres. The zero value is HTTP.
 	Kind sidecardemo.Kind
+	// Listeners are the demo's lanes. Only a hold on one of them is the AI
+	// step's; empty takes any.
+	Listeners []string
 }
 
 type tourResult struct {
@@ -69,6 +72,8 @@ type tour struct {
 	// the AI step's, or any other the analyzer held. sawHold is true once
 	// the running step saw one.
 	held, sawHold bool
+	// listeners are the demo's lanes (DemoOptions.Listeners).
+	listeners []string
 }
 
 // stepTimeout is the time a step may take: quick for most, and for the AI
@@ -79,6 +84,10 @@ type tour struct {
 // with the model unreachable the analyzer gives up and the demo lane refuses
 // the read (fail closed) before the step times out.
 const quickWait = 15 * time.Second
+
+// httpQuickWait is the HTTP demo's wait for a step that is not the AI step,
+// as before it: only the export goes to the model (AnalyzerScope).
+const httpQuickWait = 5 * time.Second
 
 func stepTimeout(s sidecardemo.Step, quick time.Duration) time.Duration {
 	if s.Approval {
@@ -98,7 +107,7 @@ func newTour(o *DemoOptions) *tour {
 	}
 	steps := sidecardemo.StepsFor(kind)
 	return &tour{kind: kind, steps: steps, done: make([]bool, len(steps)), running: -1,
-		open: o.OpenURL, ports: p}
+		open: o.OpenURL, ports: p, listeners: o.Listeners}
 }
 
 // pg reports whether this is the Postgres demo.
@@ -168,7 +177,7 @@ func (t *tour) run(i int) tea.Cmd {
 func (t *tour) runHTTP(i int) tea.Cmd {
 	s := t.steps[i]
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, quickWait))
+		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, httpQuickWait))
 		defer cancel()
 		var body io.Reader
 		if s.Body != "" {
