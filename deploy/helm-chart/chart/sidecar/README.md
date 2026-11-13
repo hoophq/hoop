@@ -38,6 +38,89 @@ The image reference lives only in `values.yaml` (`image.repository`,
 image values, so `helm upgrade --reuse-values` refuses to render. Upgrade it
 with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
 
+## Logging in on the free plan
+
+The free plan runs logged in. With no token, no identity and no license, as
+in the minimum values above, the pod logs in on its first start. It writes
+the login as JSON lines on stdout:
+
+```bash
+kubectl logs deploy/hoopsidecar | grep sidecar_login
+```
+
+```json
+{"time":"2026-10-16T20:00:00Z","level":"INFO","msg":"sidecar login required: approve the code in the web app","event":"sidecar_login_required","control_plane_url":"https://use.hoop.dev","verification_url":"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK","user_code":"BCDF-GHJK","expires_in":600}
+{"time":"2026-10-16T20:01:10Z","level":"INFO","msg":"sidecar login approved","event":"sidecar_login_approved","control_plane_url":"https://use.hoop.dev","sidecar":"edge-1"}
+```
+
+An admin opens `verification_url`, checks that the page shows the same code,
+and approves it in the web app. The sidecar then joins that admin's
+organization. The code expires after `expires_in` seconds. The login goes to
+the config's `control_plane_url`, else `https://use.hoop.dev`. Step by step,
+with screenshots:
+https://hoop.dev/docs/control-plane/connect-sidecar#connect-with-approval-no-token
+
+> **The pod must have somewhere to save the login.** The login is saved in
+> `credentials.json`, in `~/.hoop/sidecar`. The image has no writable home
+> folder, so without a state volume (below) the save fails after the
+> approval: the pod exits with `was approved but its token could not be
+> saved`, and the web app keeps a sidecar this pod cannot use. Delete that
+> sidecar in the web app. Use a token or a state volume.
+
+### Use a token (recommended)
+
+Log in once, then give the pod the token:
+
+1. Get the token from the web app (Connect an existing Sidecar), or log in
+   on your own machine with `hoop start sidecar` and read the token with
+   `hoop sidecar status --token`.
+2. Set it with `controlPlane.url`. The chart refuses a token without a URL:
+
+```yaml
+controlPlane:
+  url: https://use.hoop.dev
+  token: hsc_...
+```
+
+`controlPlane.url` must be the plane that issued the token. That is
+`https://use.hoop.dev`, unless the login went to another plane
+(`HOOP_CONTROL_PLANE_URL` or the config's `control_plane_url`).
+`hoop sidecar status --token` prints each token with its plane.
+
+To keep the token out of the release values, put `HOOP_SIDECAR_TOKEN` in
+`existingSecret` instead, still with `controlPlane.url`.
+
+### Or keep the login on a volume
+
+Point `HOOP_SIDECAR_STATE_DIR` at a volume that survives a restart. The pod
+logs in once and the next pod reuses the login. This fits one replica: a pod
+that finds no saved login logs in on its own.
+
+```yaml
+extraSecret:
+  HOOP_SIDECAR_STATE_DIR: /var/lib/hoop-sidecar
+extraVolumes:
+  - name: sidecar-state
+    persistentVolumeClaim:
+      claimName: hoop-sidecar-state
+extraVolumeMounts:
+  - name: sidecar-state
+    mountPath: /var/lib/hoop-sidecar
+podSecurityContext:
+  fsGroup: 10001
+```
+
+The image runs as uid 10001. `fsGroup: 10001` lets it write to the volume.
+The path is not a secret. It sits in `extraSecret` because the chart has no
+other key for an environment variable.
+
+### Already on a token, an identity or a license
+
+Nothing changes when the values already set `controlPlane.token`,
+`controlPlane.identity` or `license`: the pod does not log in. The `-ica` and
+`-ica-gpu` images run `hoop-inspect`, which never logs in. It connects with a
+token or an identity, as before.
+
 ## Ports
 
 The chart declares exactly one port, literally: **19000**, the admin server.
@@ -170,7 +253,7 @@ under `deploy/docker-compose/` binds:
 | `configRevision` | Rollout trigger for `existingConfigMap`. Change it whenever that ConfigMap's content changes, or the pods never pick it up |
 | `license` | License document or a path to one → `HOOP_LICENSE`. Changing it rolls the pods; see "Rotating the license without a restart" |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
-| `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
+| `controlPlane.token` | Token from the sidecar's registration or login → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity`. Needs `controlPlane.url`. Without a token, an identity or a license, the pod logs in; see "Logging in on the free plan" |
 | `controlPlane.identity` | Authenticate with the pod's service account instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server. The control plane creates the sidecar on first contact; see "Service account identity" below |
 | `controlPlane.identityAudience` | Audience of the identity token. Default: `controlPlane.url`. Set it when one control plane serves several organizations; see "Several organizations on one control plane" below. Under `gcp` → `HOOP_SIDECAR_IDENTITY_AUDIENCE`. Refused without `controlPlane.identity` |
 | `controlPlane.tokenExpirationSeconds` | Lifetime of the projected token under `identity: kubernetes`. Default `3600`. An integer, minimum `600`: the chart refuses to render otherwise. The kubelet rotates it |
@@ -431,8 +514,8 @@ Two, both deliberate:
 
 There is no `spiffe` block. SPIFFE authenticates an agent to the gateway; this
 process does not dial the gateway. It authenticates to a control plane with
-`controlPlane.token` or `controlPlane.identity`, or to nothing at all when it
-runs standalone.
+`controlPlane.token` or `controlPlane.identity`. With neither, the free plan
+logs in (see "Logging in on the free plan"); a licensed pod runs standalone.
 
 ## Service account identity
 
