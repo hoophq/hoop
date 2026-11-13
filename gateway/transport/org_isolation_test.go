@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
@@ -47,7 +48,7 @@ func startIsolationDB(t *testing.T) {
 	t.Cleanup(func() { plugintypes.RegisteredPlugins = previous })
 }
 
-func newIsolationProxy(t *testing.T, orgID, sid, agentID string) *streamclient.ProxyStream {
+func newIsolationProxy(t *testing.T, orgID, sid, agentID string) (*streamclient.ProxyStream, *fakeConnectServer) {
 	t.Helper()
 	pctx := &plugintypes.Context{
 		SID:                      sid,
@@ -67,7 +68,7 @@ func newIsolationProxy(t *testing.T, orgID, sid, agentID string) *streamclient.P
 	proxy := streamclient.NewProxy(pctx, transport)
 	require.NoError(t, proxy.Save())
 	t.Cleanup(func() { _ = proxy.Close(nil) })
-	return proxy
+	return proxy, transport
 }
 
 // An org must not reach the agent of another org, also through a row that
@@ -92,7 +93,7 @@ func TestAgentDispatchIsOrgScoped(t *testing.T) {
 	assert.Nil(t, streamclient.GetAgentStream("", streamID))
 	assert.False(t, streamclient.IsAgentOnline(isoOrgA, streamID))
 
-	proxy := newIsolationProxy(t, isoOrgA, "00000000-0000-0000-0000-0000000011a1", agentB.ID)
+	proxy, _ := newIsolationProxy(t, isoOrgA, "00000000-0000-0000-0000-0000000011a1", agentB.ID)
 	assert.False(t, proxy.IsAgentOnline())
 	assert.ErrorIs(t, proxy.SendToAgent(&pb.Packet{Type: "test"}), pb.ErrAgentOffline)
 
@@ -208,4 +209,50 @@ func TestConnectClosesRefusedExecSession(t *testing.T) {
 	require.NoError(t, models.DB.Callback().Query().Remove(failLookup))
 	assert.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	assert.Equal(t, "done", readStatus(ownSID))
+}
+
+// An agent must not write to a session of another org, live or stored.
+func TestAgentPacketsAreOrgScoped(t *testing.T) {
+	startIsolationDB(t)
+	const (
+		agentA    = "00000000-0000-0000-0000-0000000011a2"
+		agentB    = "00000000-0000-0000-0000-0000000011b2"
+		liveSID   = "00000000-0000-0000-0000-0000000011a7"
+		storedSID = "00000000-0000-0000-0000-0000000011a8"
+	)
+	_, clientA := newIsolationProxy(t, isoOrgA, liveSID, agentA)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.sessions (id, org_id, connection, connection_type, verb, status)
+		VALUES (?, ?, 'pg', 'database', 'exec', 'done')`, storedSID, isoOrgA).Error)
+
+	runAgent := func(orgID, agentID string) {
+		packets := []*pb.Packet{
+			{Type: pbclient.WriteStdout, Payload: []byte("from " + orgID),
+				Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(liveSID)}},
+			{Type: pbclient.SessionAnalyzerMetrics, Payload: []byte(`{"EMAIL_ADDRESS":3}`),
+				Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(storedSID)}},
+		}
+		if orgID != isoOrgA {
+			packets = append(packets, &pb.Packet{Type: pbclient.SessionClose,
+				Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(liveSID)}})
+		}
+		agent := streamclient.NewAgent(models.Agent{ID: agentID, OrgID: orgID, Name: "agent"}, &fakeConnectServer{
+			ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("origin", pb.ConnectionOriginAgent)), recv: packets})
+		pctx := &plugintypes.Context{OrgID: orgID, AgentID: agentID, ClientOrigin: pb.ConnectionOriginAgent}
+		_ = (&Server{}).listenAgentMessages(pctx, agent)
+	}
+	analyzed := func() (count int64) {
+		require.NoError(t, models.DB.Raw(`SELECT COALESCE(SUM(count_analyzed), 0) FROM private.session_metrics
+			WHERE session_id = ?`, storedSID).Scan(&count).Error)
+		return count
+	}
+
+	runAgent(isoOrgB, agentB)
+	assert.Empty(t, clientA.sent, "the agent of org B wrote to a client of org A")
+	assert.NotNil(t, streamclient.GetProxyStream(liveSID), "the agent of org B closed a session of org A")
+	assert.Zero(t, analyzed(), "the agent of org B wrote metrics on a session of org A")
+
+	runAgent(isoOrgA, agentA)
+	require.Len(t, clientA.sent, 1, "the agent of org A still writes to its client")
+	assert.Equal(t, "from "+isoOrgA, string(clientA.sent[0].Payload))
+	assert.Equal(t, int64(3), analyzed())
 }

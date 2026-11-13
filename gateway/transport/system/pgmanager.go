@@ -30,12 +30,8 @@ func RunPgManagerApply(orgID, agentID string, req *pbsystem.PgManagerApplyReques
 }
 
 func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, err := pbsystem.NewPgManagerPlanRequest(req)
 	if err != nil {
@@ -67,12 +63,8 @@ func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManager
 }
 
 func dispatchPgManagerApply(st *streamclient.AgentStream, req *pbsystem.PgManagerApplyRequest) *pbsystem.PgManagerApplyResponse {
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, err := pbsystem.NewPgManagerApplyRequest(req)
 	if err != nil {

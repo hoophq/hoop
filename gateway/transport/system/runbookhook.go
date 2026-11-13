@@ -31,12 +31,8 @@ func RunRunbookHook(orgID, agentID string, req *pbsystem.RunbookHookRequest) *pb
 		return newRunbookHookErr(req.SID, "agent stream not found for %v", agentID)
 	}
 
-	dataCh := make(chan []byte)
-	systemStore.Set(req.ID, dataCh)
-	defer func() {
-		systemStore.Del(req.ID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.ID)
+	defer done()
 
 	payload, _ := json.Marshal(req)
 	err := st.Send(&proto.Packet{

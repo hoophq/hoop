@@ -20,12 +20,8 @@ func RunDBProvisioner(orgID, agentID string, req *pbsystem.DBProvisionerRequest)
 		return pbsystem.NewError(req.SID, "agent stream not found for %v", agentID)
 	}
 
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, _ := pbsystem.NewDbProvisionerRequest(req)
 	err := st.Send(&proto.Packet{
