@@ -2,12 +2,15 @@ package transport
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
+	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -21,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 const (
@@ -159,4 +163,49 @@ func TestConnectRefusesForeignSessionID(t *testing.T) {
 	} {
 		assert.NoError(t, refuseForeignSession(tc.orgID, tc.sid), "org %v, session %q", tc.orgID, tc.sid)
 	}
+}
+
+// A refused API exec closes the row it wrote as open, also when the session
+// lookup fails. The row of another org stays open.
+func TestConnectClosesRefusedExecSession(t *testing.T) {
+	startIsolationDB(t)
+	const (
+		ownSID     = "00000000-0000-0000-0000-0000000011a5"
+		foreignSID = "00000000-0000-0000-0000-0000000011b5"
+	)
+	for _, s := range []struct{ id, orgID string }{{ownSID, isoOrgA}, {foreignSID, isoOrgB}} {
+		require.NoError(t, models.UpsertSession(models.Session{
+			ID: s.id, OrgID: s.orgID, UserID: "user-a", Connection: "pg-a", ConnectionType: "database",
+			Verb: "exec", Status: "open", CreatedAt: time.Now().UTC(),
+		}))
+	}
+	connect := func(sid string) error {
+		ctx := context.WithValue(t.Context(), authinterceptor.GatewayContextKey{}, &authinterceptor.GatewayContext{
+			UserContext: models.Context{OrgID: isoOrgA, UserID: "user-a"},
+			Connection:  types.ConnectionInfo{Name: "pg-a", AccessModeExec: "enabled"},
+		})
+		return (&Server{}).Connect(&fakeConnectServer{ctx: metadata.NewIncomingContext(ctx, metadata.Pairs(
+			"origin", pb.ConnectionOriginClientAPI, "verb", pb.ClientVerbExec,
+			"session-id", sid, "plain-exec-key", clientexec.PlainExecSecretKey))})
+	}
+	readStatus := func(sid string) string {
+		var s string
+		require.NoError(t, models.DB.Raw(`SELECT status FROM private.sessions WHERE id = ?`, sid).Scan(&s).Error)
+		return s
+	}
+
+	err := connect(foreignSID)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
+	assert.Equal(t, "open", readStatus(foreignSID))
+
+	const failLookup = "test:fail-session-org-lookup"
+	require.NoError(t, models.DB.Callback().Query().Before("gorm:query").Register(failLookup, func(db *gorm.DB) {
+		if db.Statement.Table == "sessions" && slices.Equal(db.Statement.Selects, []string{"org_id"}) {
+			_ = db.AddError(errors.New("connection reset by peer"))
+		}
+	}))
+	err = connect(ownSID)
+	require.NoError(t, models.DB.Callback().Query().Remove(failLookup))
+	assert.Equal(t, codes.Internal, status.Code(err), "%v", err)
+	assert.Equal(t, "done", readStatus(ownSID))
 }
