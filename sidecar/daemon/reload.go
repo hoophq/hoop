@@ -614,6 +614,17 @@ func (r *reloader) ownerLicenseApplies() bool {
 // rotates the license the tiny document carries), a takeover runs the
 // plane's full document through the same swap-or-restart decision as any
 // owned drift, and the mode flips only on a document that applied.
+// LogPlaneOwnsConfig and LogFileOwnsConfig are logged when the control plane
+// takes the configuration from the local file, or hands it back. The CLI's
+// TUI reads them: approvals of a demo lane stay at the terminal only while
+// the file serves (WithLocalReviewerFirst).
+const (
+	LogPlaneOwnsConfig = "the control plane took ownership of the configuration; " +
+		"the config file's document no longer serves"
+	LogFileOwnsConfig = "the control plane handed the configuration to the local file; " +
+		"the file's document now serves"
+)
+
 func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	var planeDoc Config
 	on := json.Unmarshal(raw, &planeDoc) == nil &&
@@ -625,8 +636,7 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		out := r.applyOwned(log, raw, "control plane")
 		if out == reloadApplied {
 			r.diskMode = false
-			log.Info("the control plane took ownership of the configuration; " +
-				"the config file's document no longer serves")
+			log.Info(LogPlaneOwnsConfig)
 		}
 		return out
 	}
@@ -688,8 +698,7 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 	}
 	if out == reloadApplied && flipped {
 		r.diskMode = true
-		log.Info("the control plane handed the configuration to the local file; "+
-			"the file's document now serves", "path", r.configPath)
+		log.Info(LogFileOwnsConfig, "path", r.configPath)
 	}
 	return out
 }

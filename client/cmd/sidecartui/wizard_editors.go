@@ -613,11 +613,18 @@ func (d *draft) analyzerSummary() string {
 		}
 		return "off"
 	}
-	if d.an.hosted() {
-		return fmt.Sprintf("%s, no API key · high→%s, medium→%s, low→%s",
-			hostedLabel, d.an.high, d.an.medium, d.an.low)
+	// The trigger is not in the form: the summary names it, and the file
+	// is where it changes.
+	looks := "every statement"
+	if len(d.an.trigger) > 0 {
+		looks = strings.Join(d.an.trigger, ", ")
 	}
-	return fmt.Sprintf("%s %s · high→%s, medium→%s, low→%s", d.an.provider, d.an.model, d.an.high, d.an.medium, d.an.low)
+	who := d.an.provider + " " + d.an.model
+	if d.an.hosted() {
+		who = hostedLabel + ", no API key"
+	}
+	return fmt.Sprintf("%s · looks at %s · high→%s, medium→%s, low→%s",
+		who, looks, d.an.high, d.an.medium, d.an.low)
 }
 
 func (d *draft) piiSummary() string {

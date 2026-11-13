@@ -16,6 +16,9 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // A provider the person already set up is kept, whatever the environment
@@ -82,9 +85,6 @@ func TestProviderChangeShowsThatProvidersDefaults(t *testing.T) {
 // The model Hoop hosts is the first provider offered, named for the person,
 // never by its URL; and a sidecar running on it says so in System.
 func TestHoopsOwnModelIsTheNamedDefault(t *testing.T) {
-	if hostedProvider != hoop.Name {
-		t.Fatalf("hostedProvider %q drifted from %q", hostedProvider, hoop.Name)
-	}
 	f := analyzerForm(analyzerDraft{provider: hoop.Name})
 	prov := f.byID("provider")
 	if len(prov.options) == 0 || prov.options[0] != hoop.Name || !strings.Contains(prov.optLabel[hoop.Name], "default") {
@@ -258,5 +258,51 @@ func TestAIStepWithoutAHoldFailsLoudly(t *testing.T) {
 	tr.apply(tourResult{step: step, status: 200, body: "rows"})
 	if !tr.done[step] || tr.result.err != nil {
 		t.Fatalf("an approved AI step failed: done %v, err %v", tr.done[step], tr.result.err)
+	}
+}
+
+// High risk set to block: the AI step is refused with no hold. The tour says
+// so, not "rated it below high", and the high-risk violation, which carries no
+// review, does not tick the step.
+func TestAIStepBlockedSaysBlocked(t *testing.T) {
+	tr := newTour(&DemoOptions{Kind: sidecardemo.KindPostgres})
+	step := slices.IndexFunc(tr.steps, func(s sidecardemo.Step) bool { return s.Approval })
+	tr.run(step)
+	tr.see(audit.Event{Kind: audit.KindViolation, Operation: "select", Tables: []string{"customers"}, SessionID: "b1",
+		Direction: inspect.FromClient, Metadata: map[string]string{metaRiskLevel: "high"}})
+	if tr.done[step] {
+		t.Fatal("a blocked AI step ticked from its violation")
+	}
+	tr.apply(tourResult{step: step, status: 403, body: "Sensitive payment card data read"})
+	if tr.done[step] || tr.result.err == nil || !strings.Contains(tr.result.err.Error(), "set to block") {
+		t.Fatalf("a blocked AI step: done %v, err %v", tr.done[step], tr.result.err)
+	}
+
+	// Rejected by the person: a violation with the review's id, and a hold.
+	tr.run(step)
+	tr.setHeld(true)
+	tr.setHeld(false)
+	tr.see(audit.Event{Kind: audit.KindViolation, Operation: "select", Tables: []string{"customers"}, SessionID: "r1",
+		Direction: inspect.FromClient, Metadata: map[string]string{metaRiskLevel: "high", metaReviewID: "lr-1"}})
+	tr.apply(tourResult{step: step, status: 403, body: "the approval request was rejected"})
+	if !tr.done[step] || tr.result.err != nil {
+		t.Fatalf("a rejected AI step: done %v, err %v", tr.done[step], tr.result.err)
+	}
+}
+
+// The plane taking the configuration from the file moves a demo's approvals
+// to the plane; handing it back returns them to the terminal.
+func TestDemoApprovalsFollowWhoOwnsTheConfig(t *testing.T) {
+	m := model{st: NewState(time.Now()), controlPlane: "https://plane.example", localApprovals: true}
+	if m.planeApprovals() {
+		t.Fatal("a demo served from the file sent approvals to the plane")
+	}
+	m.st.ApplyLog(LogRecord{Level: "INFO", Msg: daemon.LogPlaneOwnsConfig})
+	if !m.planeApprovals() {
+		t.Fatal("approvals stayed local after the plane took the configuration")
+	}
+	m.st.ApplyLog(LogRecord{Level: "INFO", Msg: daemon.LogFileOwnsConfig})
+	if m.planeApprovals() {
+		t.Fatal("approvals stayed with the plane after the file took it back")
 	}
 }

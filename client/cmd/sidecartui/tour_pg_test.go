@@ -183,10 +183,10 @@ func TestPostgresTourTicksStepsFromTheAuditTrail(t *testing.T) {
 	if tr.done[2] {
 		t.Fatal("the guardrail's DROP ticked Ask for approval")
 	}
-	// A rejected AI hold is a violation with the high verdict: done too.
+	// A rejected AI hold is a violation with the high verdict and its review: done too.
 	rej := newTour(&DemoOptions{Kind: sidecardemo.KindPostgres})
 	rej.see(audit.Event{Kind: "violation", Operation: "select", Tables: []string{"customers"}, SessionID: "r1", Direction: inspect.FromClient,
-		Metadata: map[string]string{"risk_level": "high"}})
+		Metadata: map[string]string{"risk_level": "high", "review_id": "lr-1"}})
 	if !rej.done[2] || rej.done[1] {
 		t.Fatalf("a rejected hold: done = %v, want Ask for approval only", rej.done)
 	}

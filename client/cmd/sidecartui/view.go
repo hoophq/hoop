@@ -229,8 +229,11 @@ func (m model) content(w, h int) string {
 }
 
 // planeApprovals reports that approvals are decided in the control plane, not
-// at this terminal.
-func (m model) planeApprovals() bool { return m.controlPlane != "" && !m.localApprovals }
+// at this terminal. A demo's local approvals end when the plane takes the
+// configuration from the file.
+func (m model) planeApprovals() bool {
+	return m.controlPlane != "" && (!m.localApprovals || m.st.System.PlaneOwnsConfig)
+}
 
 // controlPlaneReviews is the Approvals section of a sidecar connected to a
 // control plane. Held statements are filed with the plane and decided by
