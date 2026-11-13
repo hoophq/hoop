@@ -3,6 +3,8 @@ package models
 import (
 	"sync"
 	"time"
+
+	"github.com/hoophq/hoop/common/log"
 )
 
 const lastUsedInterval = time.Minute
@@ -45,7 +47,11 @@ func touchLastUsed(g *lastUsedGate, table, id string, now time.Time) {
 	res := DB.Table(table).
 		Where("id = ? AND (last_used_at IS NULL OR last_used_at <= ?)", id, now.Add(-lastUsedInterval)).
 		Update("last_used_at", now)
-	if res.Error != nil || res.RowsAffected > 0 {
+	if res.Error != nil {
+		log.With("table", table, "id", id).Warnf("failed updating last_used_at, reason=%v", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
 		return
 	}
 	// Another replica wrote the row: open the gate when its interval ends.
@@ -53,7 +59,11 @@ func touchLastUsed(g *lastUsedGate, table, id string, now time.Time) {
 		LastUsedAt *time.Time `gorm:"column:last_used_at"`
 	}
 	err := DB.Table(table).Select("last_used_at").Where("id = ?", id).Scan(&row).Error
-	if err == nil && row.LastUsedAt != nil {
+	if err != nil {
+		log.With("table", table, "id", id).Warnf("failed reading last_used_at, reason=%v", err)
+		return
+	}
+	if row.LastUsedAt != nil {
 		g.set(id, row.LastUsedAt.Add(lastUsedInterval))
 	}
 }
