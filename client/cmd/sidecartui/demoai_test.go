@@ -99,6 +99,58 @@ func TestHoopsOwnModelIsTheNamedDefault(t *testing.T) {
 
 // Both demos boot with the AI analyzer on, on the model Hoop hosts: no key
 // file, temperature 0, the demo's guidance, and high risk held for approval.
+// A demo rated by another provider keeps the demo's guidance and scope: only
+// the AI step's data goes to the model. Only Hoop's model gets temperature 0.
+func TestADemoOnAnotherProviderKeepsItsScope(t *testing.T) {
+	d, err := newDraft(demoPGID, noMachine())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.an.provider, d.an.model = "openai", starterModels["openai"]
+	cfg, _, err := d.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, la := cfg.Analyzer, cfg.Listeners[0].Analyzer
+	if la.Prompt != sidecardemo.AnalyzerPrompt(sidecardemo.KindPostgres) {
+		t.Error("the demo lost its guidance on another provider")
+	}
+	if la.Trigger == nil || len(la.Trigger.Any) != 1 || !slices.Contains(la.Trigger.Any[0].Tables, "customers") {
+		t.Errorf("trigger = %+v, want the demo's customers scope", la.Trigger)
+	}
+	if a.Temperature != nil {
+		t.Errorf("temperature = %v on openai, want unset", *a.Temperature)
+	}
+}
+
+// A new config the person did not set an analyzer up for runs on Hoop's model
+// and passes what it cannot rate: before, it had no analyzer at all. The demo
+// holds for approval, so it still refuses (fail closed).
+func TestTheHostedDefaultFailsOpenOutsideTheDemo(t *testing.T) {
+	d, err := newDraft("postgres", noMachine())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := d.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := cfg.Analyzer; a == nil || a.FailOpen == nil || !*a.FailOpen {
+		t.Errorf("analyzer = %+v, want fail_open on the hosted default", a)
+	}
+	demo, err := newDraft(demoPGID, noMachine())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dcfg, _, err := demo.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dcfg.Analyzer.FailOpen != nil {
+		t.Error("the demo's analyzer fails open")
+	}
+}
+
 func TestDemoDraftsTurnTheHostedAnalyzerOn(t *testing.T) {
 	for id, kind := range map[string]sidecardemo.Kind{demoPGID: sidecardemo.KindPostgres, demoHTTPID: sidecardemo.KindHTTP} {
 		d, err := newDraft(id, noMachine())
