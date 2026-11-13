@@ -80,7 +80,7 @@ cd deploy/docker-compose/envoy-stack
 
 ```bash
 curl -s localhost:19000/healthz                        # ok
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 **3. Walk the lanes.** `./demo.sh` runs every one of these in order and prints
@@ -105,8 +105,8 @@ curl -sk https://localhost:8443/status/503 -H 'X-Hoop-User: alice' -w '\n%{http_
 **4. Read the evidence** the sidecar recorded:
 
 ```bash
-curl -s localhost:19000/stats                  | python3 -m json.tool
-curl -s 'localhost:19000/api/sessions?limit=1' | python3 -m json.tool
+curl -s localhost:19002/stats                  | python3 -m json.tool
+curl -s 'localhost:19002/api/sessions?limit=1' | python3 -m json.tool
 docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
@@ -121,7 +121,8 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 |---|---|
 | 8443 | Envoy HTTPS, to the `httpbin` lane |
 | 5433 | Envoy TCP, to the `appdb` lane |
-| 19000 | sidecar admin: `/healthz`, `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
+| 19000 | sidecar admin: `/healthz`, `/readyz` |
+| 19002 | sidecar admin API (`admin.api_listen`): `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 9901 | Envoy admin |
 
 That Postgres listener is `envoy:5432` inside the compose network and `5433` on
@@ -740,8 +741,8 @@ the caps under `limits`, where a `null` means the license lifted one.
 
 #### Changing the license of a running process
 
-No restart is needed to renew or replace a license. Three ways, and a
-restart picks the same license the running process ends up with:
+No restart is needed to renew or replace a license. Two ways, and a restart
+picks the same license the running process ends up with:
 
 - **Replace the file.** When the source in force (`-license`,
   `HOOP_LICENSE` or the `license` key) names a path, the process stats that
@@ -752,34 +753,16 @@ restart picks the same license the running process ends up with:
   `subPath`, and point the source at the file in it.
 - **Edit the `license` key** in the config file, when no flag or
   `HOOP_LICENSE` outranks it. It applies with the next config reload.
-- **`PUT /license` on the admin listener**, with the document as the body.
-  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
-  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
-  send it from the host or through an encrypted tunnel (`kubectl
-  port-forward`, SSH), never across a network others can read:
-
-  ```bash
-  curl -X PUT --data-binary @license.json \
-    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
-  ```
-
-  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
-  the same report `/config` serves. Status `401` is a missing or wrong
-  secret, `403` means the endpoint is off, `409` means a control plane owns
-  the license, and `422` is a license this process refuses, with the reason.
-  The license lives in memory: the next change to the source in force
-  replaces it, and so does a restart. Update the source as well.
 
 A replaced file or an edited key is the owner's change, so it is in force
 even when it covers fewer rules; then the relay stops, as when a term ends.
-The admin API is stricter: it takes only a current license that covers the
-running rules, so a holder of the secret cannot stop the relay. It also
-takes only a document, never a path.
 
 A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
-change in a running process; use a path, the admin API, or a restart. Under
-a control plane that owns the license, set it there: the file is not
-watched and the admin API answers `409`.
+change in a running process; use a path or a restart. Under a control plane
+that owns the license, set it there: the file is not watched.
+
+`PUT /license` on the admin listener was removed. A process that still finds
+`HOOP_SIDECAR_ADMIN_SECRET` set warns at startup and ignores it.
 
 Connecting a licensed standalone sidecar to a control plane takes a restart.
 After it, a control plane that manages licenses (every current gateway) is the
@@ -946,10 +929,12 @@ license: /etc/hoop-inspect/license.json
 # file alone.
 # control_plane_url: https://cp.example.com
 
-# Optional and UNAUTHENTICATED: omit it to turn it off. See "Health and admin
+# listen serves the probes and the ICA drain; api_listen serves the
+# UNAUTHENTICATED read routes and is off unless set. See "Health and admin
 # listeners".
 admin:
-  listen: 127.0.0.1:19000   # /healthz /readyz /stats /metrics /config /events /api/*, PUT /license
+  listen: 127.0.0.1:19000       # /healthz /readyz, POST /v1/drain (ICA, token-gated)
+  api_listen: 127.0.0.1:19002   # /stats /metrics /config /events /api/*
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:
@@ -1173,7 +1158,7 @@ inheritance happens at startup. Debugging a denial that never fired starts
 here, again against the stack config:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool
+curl -s localhost:19002/config | python3 -m json.tool
 ```
 
 ```json
@@ -1199,27 +1184,38 @@ never the signature.
 
 ### Health and admin listeners
 
-The admin listener (`admin.listen`) serves `/stats`, `/metrics`, `/config`,
-`/events` and `/api/*` with no authentication. Whoever reaches the port reads
-the audit trail and each lane's rules. It is off when `admin.listen` is empty.
+The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
+one authenticated write, the ICA `POST /v1/drain`. It serves
+no audit data and no lane rules, so a platform can probe it. A workspace that
+reaches it learns whether the process is up, and from `/readyz` the names of
+the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
+`admin.ica_readiness_json`, the ICA inspection state (`status`,
+`inspection_enabled`, `graphics_bypassed`, `protocol_validation_enabled`).
 
-A platform that probes the process does not need it. Set
-`HOOP_SIDECAR_HEALTH_LISTEN` to an address, and the process binds a second
-listener there that serves `GET /healthz` and `GET /readyz` and nothing else:
+The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
+have no authentication: whoever reaches them reads the audit trail and each
+lane's rules. They are on a separate listener, `admin.api_listen`, which is
+off unless set. It must not share `admin.listen`'s port. A bind failure on
+either admin listener stops the process.
 
-```bash
-HOOP_SIDECAR_HEALTH_LISTEN=0.0.0.0:19001 hoop-inspect -config config.yaml
-curl -s localhost:19001/healthz   # ok
-curl -s localhost:19001/readyz    # ready, or 503 naming the lanes still loading
+```yaml
+admin:
+  listen: 0.0.0.0:19000        # probes
+  api_listen: 127.0.0.1:19002  # read routes, loopback only
 ```
 
-It is an environment variable and not a config key: the probe belongs to the
-deployment, not to a document a control plane serves. A bind failure stops
-the process, like a lane that cannot bind. The Helm chart sets it to
-`0.0.0.0:19001` and probes there, so a pod runs with admin off.
+Releases before this split served the read routes on `admin.listen`. A
+scraper or script that reads them there needs `api_listen` set and its URL
+moved to that port.
 
-With admin off, the audit trail still leaves the process through `audit.file`,
-the control plane copy (see "Connecting it to a Control Plane") and OTLP (see
+`HOOP_SIDECAR_HEALTH_LISTEN` binds one more listener with `/healthz` and
+`/readyz` only, for a deployment that probes a port other than
+`admin.listen`. It is an environment variable and not a config key. A bind
+failure stops the process, like a lane that cannot bind, and a port another
+listener of the config binds is refused at startup.
+
+The audit trail also leaves the process through `audit.file`, the control
+plane copy (see "Connecting it to a Control Plane") and OTLP (see
 "OpenTelemetry").
 
 ### Sharing a rule block between lanes
@@ -1551,6 +1547,7 @@ An `approvers.<level>` entry has these keys:
 |---|---|
 | `type` | `human` or `ai_agent`. Required |
 | `groups` | who may approve a `human` level. Empty: the administrators |
+| `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
 
 A `human` level files its approval request with the risk level and no
@@ -1571,7 +1568,99 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `groups` on an `ai_agent` level | nobody would ask those people |
 | `prompt` on a `human` level | no agent reads it |
 | a blank entry in `groups` | it matches no group |
+| `groups` and `routing` on one entry | they are alternatives |
+| a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
+
+**AI routing of approval requests (`routing`).** A `human` level can let an
+AI agent on the control plane select who gets each approval request, in
+place of fixed `groups`:
+
+```yaml
+    analyzer:
+      high: require_approval
+      approvers:
+        high:
+          type: human
+          routing:
+            candidates: [payments-approvers, sre]   # empty or absent: every group
+            notify:
+              slack: {delivery: both, channels_candidates: [C0123ABC]}
+              teams: {delivery: channel, channels_candidates: ["19:abc@thread.tacv2"]}
+        medium: {type: human, groups: [sre]}        # static, as before
+```
+
+| Key | Meaning |
+|---|---|
+| `candidates` | the groups the agent selects from. Empty or absent: every group |
+| `notify.<integration>` | `slack` or `teams`. A key that is present notifies through that integration when the organization set it up. Only Slack notifies today: a `teams` key is accepted and recorded as not integrated until the Microsoft Teams integration ships (ENG-705). Absent `notify`: the notifications of today |
+| `notify.<integration>.delivery` | `dm`, `channel` or `both`. Empty: `dm` |
+| `notify.<integration>.channels_candidates` | the channels the agent selects from for `channel` and `both`: Slack channel ids, or Teams channel ids (`19:...@thread.tacv2`). Empty: every channel the integration reaches |
+
+`routing: {}` is valid: AI routing over every group, with the notifications
+of today.
+
+The control plane runs the routing when it opens the review, with the
+organization's AI provider. The agent reads the approval history of this
+sidecar and listener (the last 100 decided reviews of the last 90 days) and
+selects one or more groups, the members of those groups to notify, and the
+channels. It reads opaque ids only, never a name or an email, and the
+statement as a shape with its values removed: no string, number, bind,
+comment or quoted name reaches it, and bare table and column names stay. A
+mongodb shape keeps `$` operators and identifier-like field names; any other
+key is `?`. A value used as a key that looks like an identifier still
+reaches the model: `roles.jsmith`, a customer id such as `cus_N3x7Ab`, or
+ObjectId hex that starts with a letter. The shape follows the lexer's
+dialect rules, so a statement it cannot read in full, and a protocol with
+no shape (http, grpc, ssh), sends none. It never notifies the requester,
+nor a user outside the selected groups, and never selects a group with no
+member who can approve (an active or invited user other than the
+requester). Only Slack notifies; a `teams` key is recorded as not
+integrated (ENG-705). No email is sent. Only a channel Slack reaches from
+this listener (its channels and the default channel) is offered; a
+configured candidate outside them is recorded as not delivered, as is a
+post Slack refuses. When the routed notifications reach no user and no
+channel, the plane falls back and records why, how and whether it reached
+anyone. `delivery: dm` means direct messages only: a Slack route with `dm`
+falls back to a Slack direct message to every approver of the selected
+groups (active or invited, with a Slack id, never the requester), and never
+posts in a channel; with nobody to message, nothing is posted. Otherwise the
+plane posts the review as without routing, skipping a channel the routed
+post already tried. Without a Slack route, the fallback posts in a channel
+only when a configured route allows one, else it sends the direct messages.
+The review records the groups, the notified users, the channels and the
+reason, and its details show them.
+
+The routing has 20 seconds. On no AI provider, a timeout, a provider error, a
+refusal, no tool call or more than one, an invalid decision or no valid group,
+the plane falls back to static routing: every candidate group gets the
+review. The review records the fallback and its cause, with fixed text per
+cause; a provider or database error and the model's own words go to the
+gateway log only. The routing time is
+part of the hold's wait. A filing waits at least 30 seconds for the plane, or
+the analyzer `timeout_sec` when that is longer; a claim keeps `timeout_sec`.
+
+The sidecar files the level as before and never the routing: the plane reads
+`routing` from the document it served to this sidecar, as it reads `groups`.
+A routed level's filing also carries `principal`, the statement's user as the
+sidecar sees it (identity header, database user; at most 256 bytes), so the
+plane can keep the requester out. A static level or an `approval_rule`
+filing never sends it. It applies to a hand-off hold too: `approvers.<level>`
+on an `ai-handoff` level that can select `require_approval`.
+
+These are noted by `-validate` and on startup, and are not refused:
+
+| Setting | What happens |
+|---|---|
+| `routing` on an `ai_agent` level | ignored: the approval agent notifies nobody |
+| a `notify` key other than `slack` or `teams` | ignored |
+| `delivery` other than `dm`, `channel` or `both` | `dm` is used |
+| `channels_candidates` with `delivery: dm` (or no delivery) | ignored: a DM posts to no channel |
+
+A sidecar that does not report the `analyzer_approval_routing` capability
+cannot read `routing`, and the control plane refuses to serve it a block that
+sets one, naming the capability. There is no downgrade: static `groups` or an
+`approval_rule` would page other people.
 
 **The approval agent (`type: ai_agent`).** The lane's own provider and model
 decide in the sidecar, at once, with no wait and no poll. Nothing is filed
@@ -1653,7 +1742,8 @@ otherwise none, and only administrators approve. So no one approves a level
 on an older sidecar that they could not approve on a new one: more
 oversight, not less. A block with `approvers` and no `approval_rule` is
 refused to such a sidecar, naming the capability and the release that adds
-it.
+it. So is a block whose `approvers` set `routing`, with or without an
+`approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects
@@ -1759,7 +1849,11 @@ pin names can remove it. A pin lives at most 30 minutes after its filing, and
 1024 newer pins push
 it out. It is per sidecar process: a restart, a reload or another replica asks
 the agent again. A fail-safe is never pinned. The statements metric reports
-`require_review` for a resend that claimed a pin.
+`require_review` for a resend that claimed a pin. On a level with AI rule
+options the pin also keeps the rule outcome the filing applied, and the resend
+applies it again: the same guardrails and masks, or none when the filing's
+rule part failed. When the pinned request is over and the agent decides
+again, the masks already attached stay, and the new decision adds its own.
 
 The audit record keeps `risk_action: ai-handoff` and adds `handoff_decision`
 (`allow`, `warn`, `block` or `require_approval`) and `handoff_reason`. The
@@ -1804,6 +1898,138 @@ and `match_ignore`. The deprecated `ai_analysis` rule form cannot hand off.
 not report the capability is refused the block, naming the capability and the
 release that adds it. The plane serves no downgrade: an older sidecar has no
 action that lets the agent choose.
+
+**AI-applied Guardrails and Data Masking (`ai_rules`).** On an `allow`,
+`warn`, `require_approval` or `ai-handoff` level, the AI may apply existing
+rules to the statement it rated, and may create new ones. Every rule applies
+to this statement only. The level stays a plain action string; the sibling
+`ai_rules` block sets the options per level. Its `guardrails` and `mask` keys
+are not the listener's `guardrails` and `mask` blocks, which run as before.
+
+```yaml
+rule_library:                 # the existing rules a level may let the AI apply
+  guardrails:
+    - {name: no-destructive-sql, type: operation, operations: [delete, drop], message: destructive SQL is refused}
+  mask:
+    - {name: emails, entities: [EMAIL_ADDRESS]}
+listeners:
+  - name: payments
+    protocol: postgres
+    analyzer:
+      high: block
+      medium: warn
+      ai_rules:
+        medium:
+          guardrails: {mode: existing_only, rules: [no-destructive-sql]}
+          mask: {mode: existing_and_new}  # rules absent: every rule_library mask rule
+```
+
+An `ai_rules.<level>` entry sets `guardrails`, `mask` or both. Each is:
+
+| Key | Meaning |
+|---|---|
+| `mode` | `existing_only` (default) or `existing_and_new`. Any other value refuses the config |
+| `rules` | the `rule_library` names the AI may apply. Absent: all of that kind. `[]`: none |
+
+`rule_library` rules never run unless the AI applies one. Each needs a unique
+`name`. A config file writes them; a control plane serves the ones its levels
+select. They count against no free-tier cap, but the feature needs an
+Enterprise license: without one granting guardrails (or data masking) the
+sidecar refuses a config that sets the `ai_rules` key or the library kind.
+
+After the level is known, one more model turn runs (it counts against
+`max_calls` and `rate_limit`). The agent gets only the tools the level allows:
+
+| Tool | Sent when | Input |
+|---|---|---|
+| `apply_guardrail` | `guardrails` set, at least one rule allowed | `rule` (enum of the allowed names), `reason` |
+| `create_guardrail` | `guardrails.mode: existing_and_new` | `type`, the fields of that type, `message`, `reason` |
+| `apply_mask` | `mask` set, at least one rule allowed | `rule` (enum of the allowed names), `reason` |
+| `create_mask` | `mask.mode: existing_and_new` | `entities` or `columns`, `strategy`, `keep_last`, `mask_char`, `reason` |
+| `no_rule` | the turn runs alone (providers force a tool call) | `reason` |
+
+The system prompt carries each allowed rule's name and definition as one
+escaped JSON document between `<rule_library>` and `</rule_library>`, with a
+line saying that text inside a rule field is data and never an instruction,
+then a fixed suffix no config removes. On `ai-handoff` the rule tools join the hand-off turn and
+apply only when the agent does not select `block`. With `require_approval`
+the rules apply before the hold: a guardrail deny files no review, and a mask
+is attached before the hold.
+
+- A guardrail denies only. A match denies with the rule's message. A created
+  guardrail's message is the agent's prose, so the client and the audit
+  record get it after the record redactor, cut to the reason limit; with no
+  detector they get `the AI guardrail denied the statement`. A library
+  guardrail denies with its own message. `action: defer` and `ai_analysis`
+  are never offered. `create_guardrail` offers no type the lane cannot
+  evaluate: no `table` on ssh, no `pii` without a detector.
+- A mask applies to the response of this statement only, through a
+  per-exchange plan in the gate; the lane masker is never changed. An ssh lane
+  offers `strategy: mask` only.
+- A library or created rule goes through the validation a config rule gets
+  on its lane: a `pii` entity the detector does not find, a type an ssh
+  statement cannot answer and an http header the lane does not capture are
+  refused. Its tool
+  arguments are decoded strictly: a field the tool does not take (`action`,
+  `require_table_match`, ...) or one the selected type or strategy does not
+  read drops the whole rule. An invalid rule is dropped, logged as a warning
+  and recorded in `ai_rule_invalid`; it never applies half-valid.
+- Fail-safe: a refusal, a timeout, a malformed answer (an unknown tool, a name
+  outside the enum, no reason, `no_rule` beside another call, more than 16
+  calls), a spent budget or an input
+  longer than `max_input_bytes` applies no AI rule and keeps the level action.
+  `ai_rules_error` says why.
+- The decision is cached with the classification on the exact content the
+  agent read (statement, user, connection), like the hand-off decision.
+- The audit record carries `ai_rules`: a JSON list of
+  `{kind, rule | definition, reason, matched}` (`matched` on guardrails), and
+  `ai_rule_invalid`: `{kind, definition, reason, error}`. Reasons,
+  definitions and errors are the agent's prose: each whole value goes
+  through the record redactor before it is cut, and the cache keeps that
+  form. With no detector, no reason is kept, a definition keeps only its
+  `type` or `strategy`, and an error is a fixed text. The rule that enforces
+  is the one the agent sent; only its denial text is the record form.
+
+Every mask path fails closed. Where the response of one statement cannot be
+told apart, the gate denies the statement the AI masked; where a masked
+response might leave unmasked, it denies the response. An AI mask on client
+bytes the codec could not decode (`unknown` with `parse_error`) is denied on
+every protocol: the codec lost the stream. The message says why:
+
+| Protocol | A mask applies to | Refused |
+|---|---|---|
+| `grpc`, `spanner` (with `descriptors`, or `discover` without `fail_open`) | every response of the call | never |
+| `http` | the response to its request, until the next request after it | any request while that response is not complete; a masked request behind an outstanding one; a masked WebSocket message. After the connection forwarded client bytes the codec could not decode, every masked request (the gate no longer knows which response is next; reconnect), and every request when a mask was installed in that same read. Before any of its bytes leave, a masked response whose head is not whole in the first read, or whose non-empty body is compressed (any `Content-Encoding` but `identity`), chunked (the codec masks it in pieces that can split a value), close-delimited, longer than 16 MiB (the codec's masking limit), or of a media type the codec does not read (it reads none, JSON types and text types: `text/*`, `application/xml`, `application/yaml`, `application/javascript`, form-urlencoded); and an upgrade. Heads end at CRLFCRLF or LFLF, as the codec reads them |
+| `postgres` | the response up to its own ReadyForQuery | a masked statement while an earlier response is outstanding (counted from the first byte of the connection); a masked `Parse` (extended query protocol); a statement sent before the masked response ended; a masked statement sent with others in one read |
+| `mysql`, `oracle`, `clickhouse` | every server byte for the rest of the connection | every later statement on the connection (the gate reads no end-of-response marker on these lanes; reconnect); a masked statement sent with others in one read |
+| `mssql`, `mongodb`, `ssh`, `ica`, `mcp`, plug-ins, grpc without descriptors, `grpc.raw`, `grpc.discover.fail_open` | nothing | every masked statement or tool call (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so. On `mcp` the engine masks every result with the lane's mask rules and does not say which tool call a result answers. `grpc.raw` rewrites only the declared `string_fields` and forwards the rest; `fail_open` forwards what it cannot decode while discovery fails |
+
+On postgres the gate counts, from the first byte of the connection, the
+responses the client asked for and the ReadyForQuery messages the server
+sent. A masked statement is admitted only when nothing is outstanding, and
+its plan ends at its own marker, never at another statement's. When the
+count is in doubt (lost framing, more markers than requests, a masked read
+that asks for no response or for several), the plan lasts for the
+connection and the connection takes no further statement. Bytes the codec
+still holds when a connection ends belong to the exchange in flight: an
+unmasked exchange's bytes leave unchanged, and a masked exchange's are
+dropped, not forwarded, because a codec forwards a partial frame as it came.
+The drop is recorded on the trail and logged; the client gets the truncated
+response the upstream sent.
+
+| Setting | Result |
+|---|---|
+| `ai_rules.<level>` on a `block` or `defer` level | refused |
+| `ai_rules.<level>` with neither `guardrails` nor `mask` | refused |
+| `mode` other than `existing_only` or `existing_and_new` | refused |
+| a name in `rules` that `rule_library` does not hold | warned; the name is ignored |
+| a `rule_library` rule that is invalid, or does not deny | warned; the rule is ignored |
+| a level left with no rule to apply and none to create | warned |
+| `mask` on a protocol without a scope, or on `mysql`, `oracle` or `clickhouse` (table above) | warned |
+
+`ai_rules` and `rule_library` need capability `analyzer_ai_rules`. The plane
+serves no downgrade: a sidecar that does not report the capability is refused
+the document, naming the capability.
 
 **Deprecated spellings.** `require_review` is the earlier spelling of
 `require_approval`. A local file that uses it, or a listener `approval_rule`,
@@ -2285,7 +2511,7 @@ would merge requests whose risk can differ. Watch the hit rate at `/stats`
 before enabling a blocking action:
 
 ```bash
-curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
+curl -s localhost:19002/config | python3 -m json.tool   # what each lane sends
 ```
 
 Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
@@ -2474,7 +2700,8 @@ entry: an older build ignores an `extra` key it does not read.
 
 #### Watching the analyzer: `/metrics`
 
-The admin listener serves `GET /metrics` in the Prometheus text format. A
+The admin API listener (`admin.api_listen`) serves `GET /metrics` in the
+Prometheus text format. A
 process with no analyzer answers an empty document, so a scrape job pointed
 at every sidecar does not mark one down.
 
@@ -3873,6 +4100,11 @@ The model reads the tool name and the arguments JSON, cut to
 - A provider failure follows `fail_open`, as on the other lanes.
 - The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
   and `ai_status`.
+- `ai_rules`: an AI guardrail refuses the one call it matches. An AI mask
+  refuses the call it masks: the lane masks every result with its mask
+  rules and cannot tie a mask to one call's result. The lane warns at start.
+  A `require_approval` level refuses the call before the rule turn, so no
+  model call is spent and no `ai_rules` is recorded for it.
 
 A control plane serves an analyzer on an mcp lane only to a sidecar that
 reports `mcp_analyzer`.
@@ -5886,7 +6118,7 @@ Three places say it, and they agree because they read the same resolved config.
 **`GET /stats`**, whose `addr` is the address the listener bound:
 
 ```bash
-curl -s localhost:19000/stats | python3 -m json.tool
+curl -s localhost:19002/stats | python3 -m json.tool
 ```
 
 ```json

@@ -135,7 +135,7 @@ spec:
         config_document:
           name: config_document
           title: Config document
-          tooltip: The whole sidecar config, YAML or JSON. admin.listen, when set, must be 0.0.0.0:19000; leave admin out to turn it off.
+          tooltip: The whole sidecar config, YAML or JSON. admin.listen must be 0.0.0.0:19000.
           section: sidecar
           xGoogleProperty:
             type: ET_MULTI_LINE_STRING

@@ -8,7 +8,7 @@ import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
-import { analyzerLabel, auditEnabled, hasConfiguration } from '../config'
+import { ADMIN_ADDRESSES, adminWith, analyzerLabel, auditEnabled, hasConfiguration } from '../config'
 import { opaSummary, resolveOPA } from '../features'
 import { configState } from '../status'
 import { saveErrorMessage } from '../useListenerEditor'
@@ -103,8 +103,42 @@ export default function GlobalSettings({ sidecar, editable }) {
   // One write at a time: a later response could land first and install the older snapshot.
   const canEdit = editable && !saving
 
-  const listen = config?.admin?.listen ?? ''
   const logLevel = config?.log_level || 'info'
+
+  // One row per admin address (ADMIN_ADDRESSES); an empty address is that listener's off switch.
+  const addressRow = ({ label, key, placeholder, done }) => {
+    const address = config?.admin?.[key] ?? ''
+    return (
+      <Row key={key} label={label}>
+        {editing === key ? (
+          <Editing
+            onSave={() => save({ admin: adminWith(config?.admin, key, draft) }, done)}
+            onCancel={cancel}
+            saving={saving}
+            error={error}
+          >
+            <TextInput
+              aria-label={`${label} endpoint`}
+              placeholder={placeholder}
+              size="xs"
+              ff="monospace"
+              w={280}
+              value={draft}
+              onChange={(e) => change(e.currentTarget.value)}
+              autoFocus
+            />
+          </Editing>
+        ) : (
+          <>
+            <Text size="sm" ff={address ? 'monospace' : undefined}>
+              {address || 'Off'}
+            </Text>
+            {canEdit && <EditButton onClick={() => edit(key, address)} />}
+          </>
+        )}
+      </Row>
+    )
+  }
 
   return (
     <>
@@ -140,35 +174,7 @@ export default function GlobalSettings({ sidecar, editable }) {
         )}
         {configured && (
           <>
-            <Row label="Admin">
-              {editing === 'admin' ? (
-                // An empty address is the off switch: the daemon opens no endpoint for it.
-                <Editing
-                  onSave={() => save({ admin: { listen: draft.trim() } }, 'Admin endpoint updated.')}
-                  onCancel={cancel}
-                  saving={saving}
-                  error={error}
-                >
-                  <TextInput
-                    aria-label="Admin endpoint"
-                    placeholder="127.0.0.1:19000"
-                    size="xs"
-                    ff="monospace"
-                    w={280}
-                    value={draft}
-                    onChange={(e) => change(e.currentTarget.value)}
-                    autoFocus
-                  />
-                </Editing>
-              ) : (
-                <>
-                  <Text size="sm" ff={listen ? 'monospace' : undefined}>
-                    {listen || 'Off'}
-                  </Text>
-                  {canEdit && <EditButton onClick={() => edit('admin', listen)} />}
-                </>
-              )}
-            </Row>
+            {ADMIN_ADDRESSES.map(addressRow)}
             <Row label="Log level">
               {editing === 'log_level' ? (
                 <Editing

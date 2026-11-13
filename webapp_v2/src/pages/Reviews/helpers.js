@@ -56,6 +56,62 @@ export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
 export const isHandoffReview = (review) => review?.via_handoff === true
 export const HANDOFF_ROUTE = 'Hand-off → Hold for approval'
 
+// How the review found its approvers when its level uses AI routing
+// (ENG-663). Absent for a static level. `mode` "static" means the AI routing
+// fell back and every candidate group got the review.
+export const ROUTING_AI = 'ai'
+export const reviewRouting = (review) => (review?.routing && typeof review.routing === 'object' ? review.routing : null)
+
+const FALLBACK_CAUSE = {
+  no_provider: 'No AI provider is set up.',
+  timeout: 'The AI agent did not answer in time.',
+  provider_error: 'The AI provider returned an error.',
+  no_tool_call: 'The AI agent did not return exactly one decision.',
+  refusal: 'The AI agent refused to decide.',
+  invalid_decision: 'The AI agent returned a decision that is not valid.',
+  no_valid_group: 'The AI agent selected no valid group.',
+}
+
+// The fallback cause in plain words. A cause this build does not know shows as sent.
+export const fallbackCauseLabel = (cause) =>
+  FALLBACK_CAUSE[cause] ?? (cause ? `AI routing did not complete (${cause}).` : 'AI routing did not complete.')
+
+const INTEGRATION_LABEL = { slack: 'Slack', teams: 'MS Teams' }
+export const integrationLabel = (key) => INTEGRATION_LABEL[key] ?? key
+
+// One entry of routing.integrations: a notify key and its state when the AI
+// decided. An integration that was not set up notified nobody.
+const DELIVERY_LABEL = { dm: 'Direct message', channel: 'Channel', both: 'Direct message and channel' }
+export function notifyIntegrationLabel(entry) {
+  const name = integrationLabel(entry?.name)
+  if (entry?.integrated !== true) return `${name}: not set up`
+  return `${name}: ${DELIVERY_LABEL[entry.delivery] ?? DELIVERY_LABEL.dm}`
+}
+
+// routing.notify_fallback: the routed notifications reached nobody, so the
+// gateway fell back. routing.notify_fallback_delivery says how: "dm" sends a
+// Slack direct message to every approver of the selected groups (a dm route
+// never posts in a channel); otherwise it posts the review as one without
+// routing (the listener's Slack channels or the default channel).
+// routing.notify_fallback_posted says whether that reached anyone. A value
+// this build does not know shows as sent.
+const NOTIFY_FALLBACK = {
+  no_integration: 'No notify integration is set up.',
+  no_target: 'The AI agent selected nobody it could reach.',
+  not_delivered: 'Every routed notification failed.',
+}
+const fallbackOutcome = (delivery, posted) => {
+  if (delivery === 'dm') {
+    return posted === true
+      ? 'Sent by direct message to every approver of the selected groups.'
+      : 'No approver of the selected groups could get a direct message.'
+  }
+  return posted === true ? 'Posted as without routing.' : 'The post as without routing reached nobody either.'
+}
+export const notifyFallbackLabel = (value, posted, delivery) =>
+  `${NOTIFY_FALLBACK[value] ?? `The routed notifications reached nobody (${value}).`} ` +
+  fallbackOutcome(delivery, posted)
+
 // The table's rule cell: the approval rule, else the risk level and the route.
 export function ruleLabel(review) {
   if (review?.access_request_rule_name) return review.access_request_rule_name

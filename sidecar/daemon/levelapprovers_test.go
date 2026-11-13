@@ -104,6 +104,13 @@ func TestApproversRefusals(t *testing.T) {
 		"blank group": {approverBlock(LevelApprovers{High: human("dba", " ")}), "approvers.high: groups[1] is blank"},
 		"level that does not hold": {approverBlock(LevelApprovers{Low: agent("")}),
 			`approvers.low names an approver, and the low risk action "" holds nothing`},
+		"groups beside routing": {approverBlock(LevelApprovers{High: &LevelApprover{Type: analyzer.ApproverHuman,
+			Groups: []string{"dba"}, Routing: &ApprovalRouting{}}}), "approvers.high: groups and routing are alternatives"},
+		"blank routing candidate": {approverBlock(LevelApprovers{High: &LevelApprover{Type: analyzer.ApproverHuman,
+			Routing: &ApprovalRouting{Candidates: []string{"sre", ""}}}}), "approvers.high: routing.candidates[1] is blank"},
+		"blank channel candidate": {approverBlock(LevelApprovers{Medium: &LevelApprover{Type: analyzer.ApproverHuman,
+			Routing: &ApprovalRouting{Notify: map[string]NotifyRoute{"teams": {Delivery: "channel",
+				ChannelsCandidates: []string{" "}}}}}}), "approvers.medium: routing.notify.teams.channels_candidates[0] is blank"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tc.la.ApprovalRule = "dba-rule"

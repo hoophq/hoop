@@ -167,7 +167,7 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 	// is started in-process and the pool is capped at one connection (the
 	// embedded backend serves a single wire-protocol session at a time).
 	pgURI := appconfig.Get().PgURI()
-	migrateURI, dbMaxOpenConns := pgURI, 0
+	migrateURI, dbMaxOpenConns := pgURI, appconfig.Get().PgMaxOpenConns()
 	if opts.Database == DBPglite {
 		inst, perr := pglite.Start(ctx, appconfig.Get().PgliteDataDir())
 		if perr != nil {

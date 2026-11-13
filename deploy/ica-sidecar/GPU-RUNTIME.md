@@ -23,7 +23,11 @@ Use a trusted Linux amd64 machine with a real target GPU, such as the RTX 5090.
 `build-gpu-runtime.py` does not rent/start an instance, install system packages,
 fetch models or source, or publish anything. It requires:
 
-- Python 3.9+, Git, CMake 3.24+, a compatible C++ compiler, `ldd` and `patchelf`.
+- Python 3.9+, Git, CMake 3.24+, a C++20 compiler/library with `std::format`
+  (GCC 13+ for the pinned TurboOCR source), `ldd` and `patchelf`. On older
+  distributions, select an isolated toolchain with `CC`, `CXX` and `CUDAHOSTCXX`
+  in the runner service environment; add its runtime library directory to
+  `runtime_library_dirs`. A terminal-only export does not configure a service.
 - A working NVIDIA driver and CUDA SDK with `nvcc` and headers.
 - TensorRT, cuDNN and **CUDA-enabled** ONNX Runtime SDKs with their shared libraries.
 - TurboOCR's C++ build dependencies: OpenCV, Drogon, protobuf/gRPC, c-ares,
@@ -119,14 +123,7 @@ These are URL templates until a real asset is built and published. The job check
 that the public archive URL is reachable and prints the exact URL/digest in its
 summary. It does not edit repository variables or update existing deployments.
 
-Set those values as `ICA_GPU_ASSETS_URL` and `ICA_GPU_ASSETS_SHA256` in
-`hoophq/hoop` for its normal release, or pass them directly to the existing
-Docker build commands in
-[GPU.md](GPU.md). That release builds the `ica-gpu` image and downloadable
-`hoop-ica-gpu-assets` bundle from the **same** verified runtime. Native users then
-extract the complete bundle and run its installer; no source compilation occurs
-on the deployment host.
-
-No asset, public URL, GPU compatibility claim or deployed version is created by
-adding these source files alone. Live CUDA build/smoke and publication are separate
-explicit actions.
+Use the complete [manual GPU release flow](GPU-RELEASE.md) to build a matching
+runtime, image and native bundle for a selected Hoop release and record download
+links/checksums in the matching private libhoop-ica engine release notes. For local Docker packaging, pass the printed URL/SHA
+as explicit build arguments described in [GPU.md](GPU.md).

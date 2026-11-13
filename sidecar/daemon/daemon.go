@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,7 +57,7 @@ import (
 	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
-// Version is the release this process reports: the admin /stats endpoint,
+// Version is the release this process reports: the admin API /stats endpoint,
 // the -version flag, the control plane handshake and the User-Agent of every
 // outbound HTTP call. The shipped binary is `hoop start sidecar`, which sets
 // it to the hoop release the binary was built from, so the sidecar and the
@@ -230,8 +231,6 @@ const (
 	PlaneLicenseSource = "the control plane"
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
-	// adminLicenseSource names a license installed through PUT /license.
-	adminLicenseSource = "the admin API"
 )
 
 // setConfigFormat records the format of the document that is AUTHORITATIVE
@@ -1241,17 +1240,26 @@ func Run(cfg *Config, det Plugin) error {
 		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
 	}
 
-	adminSecret := os.Getenv(AdminSecretEnv)
-	if cfg.Admin.Listen != "" {
+	var runAdmin func() error
+	if cfg.Admin.Listen != "" || cfg.Admin.APIListen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
-	} else if strings.TrimSpace(adminSecret) != "" {
-		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
-			"hint", "set admin.listen to install a license through the admin API")
+		runAdmin = func() error {
+			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
+				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON)
+		}
+	}
+	// PUT /license is gone. An operator who still sets its secret expects a
+	// way to install a license, so say where it went instead of ignoring it.
+	if strings.TrimSpace(os.Getenv(removedAdminSecretEnv)) != "" {
+		log.Warn(removedAdminSecretEnv+" is set, but PUT /license was removed; the variable does nothing",
+			"hint", "replace the license file the license source names, set HOOP_LICENSE and restart, or set it in the control plane")
+	}
+	if cfg.Admin.Listen != "" && cfg.Admin.APIListen == "" {
+		log.Info("admin read routes are off: /stats, /metrics, /config, /events and /api/* answer only on admin.api_listen",
+			"hint", "set admin.api_listen to serve them; they have no authentication")
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1272,7 +1280,7 @@ func Run(cfg *Config, det Plugin) error {
 	}()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints)+2)
+	errCh := make(chan error, len(servers)+len(endpoints)+3)
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -1304,6 +1312,18 @@ func Run(cfg *Config, det Plugin) error {
 			// operator who configured the block expects agents to reach it.
 			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
 				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
+				errCh <- serr
+			}
+		}()
+	}
+	if runAdmin != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A bind failure stops the process: healthy probes on
+			// admin.listen must not hide read routes that never started.
+			if serr := runAdmin(); serr != nil {
+				log.Error("admin endpoint failed", "error", serr)
 				errCh <- serr
 			}
 		}()
@@ -1409,6 +1429,11 @@ type lane struct {
 	name   string
 	policy policy.Evaluator
 	masker gate.Masker
+
+	// maskScope ties a mask the lane's analyzer applies to one statement
+	// to its response (ENG-662); none on a lane whose analyzer masks no
+	// response. See laneMaskScope.
+	maskScope gate.MaskScope
 
 	// codecFactory overrides the registry for this lane. Nil means the
 	// registry default: every non-http lane that did not configure its
@@ -1525,7 +1550,28 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
+		// The block's AI rule options resolve against rule_library on a
+		// copy, so the config keeps what was written.
+		la := lc.Analyzer
+		var aiNotes []string
+		if la != nil {
+			var logger *slog.Logger
+			if ac != nil {
+				logger = ac.log
+			}
+			ai, notes, err := buildLaneAIRules(cfg.RuleLibrary, la, lc, det, logger)
+			if err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
+			if ai != nil {
+				resolved := *la
+				resolved.ai = ai
+				la = &resolved
+			}
+			aiNotes = notes
+		}
+		pol, err := buildPolicy(name, gc, la, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1560,6 +1606,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+			maskScope:    laneMaskScope(lc),
 		}
 		for _, rule := range skippedMask {
 			ln.notes = append(ln.notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, name))
@@ -1672,6 +1719,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if lc.Analyzer != nil {
 			ln.notes = append(ln.notes,
 				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
+			// What the AI rule options do not do, said where -validate
+			// and the startup log read them; none of them refuses the lane.
+			ln.notes = append(ln.notes, aiNotes...)
+			// What the approvers routing settings do not do; none refuses.
+			ln.notes = append(ln.notes, LaneApproverWarnings(lc.Analyzer)...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {
@@ -1796,6 +1848,7 @@ func buildServer(
 		Policy:              ln.policy,
 		Audit:               sink,
 		Masker:              ln.masker,
+		MaskScope:           ln.maskScope,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
 		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),
@@ -1982,13 +2035,20 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 	return out, nil
 }
 
-// serveAdmin exposes health and stats.
+// serveAdmin runs the admin listeners. Both bind separately from the data
+// path, so a platform can probe or scrape them without reaching the proxy,
+// and vice versa.
 //
-// It binds separately from the data path so a platform can scrape it without
-// reaching the proxy, and vice versa.
+// addr (admin.listen) serves /healthz, /readyz and the token-gated ICA
+// drain, and no audit data or lane rules. apiAddr (admin.api_listen) serves
+// the unauthenticated read routes. Either is skipped when empty.
+//
+// Both bind before either serves, and a bind or serve failure is returned:
+// probes that answer must not hide read routes that never started.
 func serveAdmin(
 	ctx context.Context,
 	addr string,
+	apiAddr string,
 	servers []*proxy.Server,
 	relayNames []string,
 	endpoints []endpointServer,
@@ -1999,21 +2059,65 @@ func serveAdmin(
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	otel *otelExporter,
-	licenseAPI http.Handler,
 	log *slog.Logger,
 	icaReadinessJSON bool,
-) {
+) error {
+	var probesLn, apiLn net.Listener
+	if addr != "" {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("admin listener (admin.listen): %w", err)
+		}
+		probesLn = ln
+	}
+	if apiAddr != "" {
+		ln, err := net.Listen("tcp", apiAddr)
+		if err != nil {
+			if probesLn != nil {
+				_ = probesLn.Close()
+			}
+			return fmt.Errorf("admin API listener (admin.api_listen): %w", err)
+		}
+		apiLn = ln
+	}
+
+	probes := http.NewServeMux()
+	handleHealth(probes, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
+
+	// The one write here is the ICA deployment drain. It has its own token
+	// and is off unless the operator sets it: every read route is
+	// unauthenticated, and a write must not be.
+	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
+
+	// Releases up to 1.306 served the read routes here. A scraper still
+	// pointed at this port gets a 404 that says where they went, rather than
+	// a bare one it might mistake for a typo.
+	moved := func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "moved: this route is served on admin.api_listen, which is off unless set", http.StatusNotFound)
+	}
+	for _, p := range []string{"GET /stats", "GET /metrics", "GET /config", "GET /events", "/api/"} {
+		probes.HandleFunc(p, moved)
+	}
+
+	errs := make(chan error, 2)
+	serving := 0
+	if probesLn != nil {
+		serving++
+		go func() { errs <- serveHTTP(ctx, "admin endpoint", probesLn, probes, log) }()
+	}
+	wait := func() error {
+		for range serving {
+			if err := <-errs; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if apiLn == nil {
+		return wait()
+	}
+
 	mux := http.NewServeMux()
-
-	handleHealth(mux, healthState{endpoints, endpointNames, icaReadinessJSON, len(servers)})
-
-	// License writes require their own secret. ICA deployment drain below has a
-	// separate token and is disabled by default. licenseHandler refuses it unless the
-	// operator set AdminSecretEnv, and then asks for that secret: every
-	// read here is unauthenticated, and a write must not be.
-	mux.Handle("PUT /license", licenseAPI)
-	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
-
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {
 			Name   string `json:"name"`
@@ -2225,11 +2329,11 @@ func serveAdmin(
 	}
 
 	// The query API: the endpoints a UI renders. Mounted under /api so the
-	// operational endpoints above (/healthz, /stats) stay stable and
+	// operational endpoints above (/stats, /metrics) stay stable and
 	// separately scrapeable.
 	//
-	// It sits on the ADMIN listener by design. This is a read interface to
-	// every statement every user ran; it belongs behind whatever already
+	// It sits on the admin API listener by design. This is a read interface
+	// to every statement every user ran; it belongs behind whatever already
 	// decides who may see audit data, and the data-path ports must never
 	// serve it.
 	if ac.query != nil {
@@ -2240,9 +2344,15 @@ func serveAdmin(
 			"paths", "/api/sessions, /api/sessions/{id}, /api/sessions/{id}/events, /api/events, /api/stats")
 	}
 
+	serving++
+	go func() { errs <- serveHTTP(ctx, "admin API endpoint", apiLn, mux, log) }()
+	return wait()
+}
+
+// serveHTTP serves handler on ln until ctx ends, and returns a serve failure.
+func serveHTTP(ctx context.Context, name string, ln net.Listener, handler http.Handler, log *slog.Logger) error {
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -2252,8 +2362,9 @@ func serveAdmin(
 		_ = srv.Shutdown(shutCtx)
 	}()
 
-	log.Info("admin endpoint listening", "listen", addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("admin endpoint failed", "error", err)
+	log.Info(name+" listening", "listen", ln.Addr().String())
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("%s: %w", name, err)
 	}
+	return nil
 }

@@ -13,12 +13,14 @@ type ToolInput struct {
 }
 
 // ToolProperty is one argument. Type is a JSON Schema type ("string",
-// "integer", "number", "boolean"); Enum, when set, lists the only values the
-// model may send.
+// "integer", "number", "boolean", "array"); Enum, when set, lists the only
+// values the model may send. Items describes the elements of an "array",
+// and must be set for one.
 type ToolProperty struct {
 	Type        string
 	Description string
 	Enum        []string
+	Items       *ToolProperty
 }
 
 // ToolCall is one tool the model called. Args is the argument object as the

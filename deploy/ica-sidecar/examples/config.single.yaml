@@ -18,9 +18,11 @@
 log_level: info
 
 admin:
-  # /healthz, /readyz, /stats, /metrics, /config. Unauthenticated: keep it on
-  # loopback, and put a network control in front if another host must reach it.
+  # /healthz, /readyz and the token-gated drain and license writes.
   listen: 127.0.0.1:19000
+  # /stats, /metrics, /config. Unauthenticated: keep it on loopback, and put a
+  # network control in front if another host must reach it.
+  api_listen: 127.0.0.1:19002
 
 audit:
   # One JSON row per session event (start, end, refusal), never a frame or a

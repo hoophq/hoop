@@ -134,6 +134,10 @@ func (c *Config) checkLimits(lic license.Status) []string {
 			total, renderSites(sites), limit.mask, licenseAdvice(lic)))
 	}
 
+	// AI rule options are an Enterprise feature, refused here like a cap:
+	// a lapsed license stops a process that uses them (dependsOnLicense).
+	problems = append(problems, c.aiRuleLicenseProblems(lic)...)
+
 	return problems
 }
 

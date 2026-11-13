@@ -91,21 +91,15 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
           {{- end }}
-        # Health only: /healthz and /readyz. The probes below use it, so the
-        # pod starts whether or not the config turns the admin listener on.
-        - name: HOOP_SIDECAR_HEALTH_LISTEN
-          value: '0.0.0.0:{{ include "hoopsidecar.healthPort" . }}'
-        # The health and admin servers, and nothing else. Every lane port
-        # comes from the config document and differs per deployment, so none
-        # is declared here; a containerPort is informational either way, and
-        # a lane is reached through whatever fronts this pod — an Envoy
-        # sidecar over loopback, or a Service of your own carrying this
-        # chart's selector labels — the chart README has one to paste. The
-        # admin port binds only when the config sets admin.listen to it.
+        # The admin server, and nothing else. It serves /healthz and /readyz
+        # for the probes below; the read routes are on admin.api_listen, which
+        # this chart does not publish. Every lane port comes from the config
+        # document and differs per deployment, so none is declared here; a
+        # containerPort is informational either way, and a lane is reached
+        # through whatever fronts this pod — an Envoy sidecar over loopback,
+        # or a Service of your own carrying this chart's selector labels —
+        # the chart README has one to paste.
         ports:
-        - name: health
-          containerPort: {{ include "hoopsidecar.healthPort" . }}
-          protocol: TCP
         - name: admin
           containerPort: 19000
           protocol: TCP

@@ -2,17 +2,12 @@ package daemon
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
@@ -268,9 +263,6 @@ func TestALegacyPlaneStillWatchesTheConfigKeyFile(t *testing.T) {
 	if got := rl.lic.get(); got.State() != license.StateMissing {
 		t.Errorf("a local file changed the license after the plane claimed it; log:\n%s", &buf)
 	}
-	if _, _, err := rl.installLicense(log, signer.Document(licensetest.Enterprise())); !errors.Is(err, errLicenseManaged) {
-		t.Errorf("installLicense after the claim: %v, want the plane's refusal", err)
-	}
 }
 
 // A plane that claims the very document already in force rotates nothing,
@@ -311,142 +303,5 @@ func TestNamingAControlPlaneWarnsTheLocalLicenseWillBeIgnored(t *testing.T) {
 	pollWith(rl, buf)
 	if buf.Len() != before {
 		t.Errorf("the warning repeated on an untouched file:\n%s", buf.String()[before:])
-	}
-}
-
-// An admin install is in force until the source in force changes. A rule
-// edit and a SIGHUP over an unchanged license file keep it; a renewal on the
-// flag's path replaces it, the same license a restart would pick.
-func TestAnAdminInstallLastsUntilTheSourceInForceChanges(t *testing.T) {
-	signer := licensetest.NewSigner(t)
-	licPath := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
-	rl, cfgPath, buf := startedWith(t, reloadBase, flagLicenseSource, licPath)
-	log := slog.New(slog.NewTextHandler(buf, nil))
-
-	if _, installed, err := rl.installLicense(log, signer.Document(licensetest.Enterprise())); err != nil || !installed {
-		t.Fatalf("installLicense = %v, %v; want installed", installed, err)
-	}
-	admin := rl.lic.get()
-
-	editFile(t, cfgPath, editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`))
-	pollWith(rl, buf)
-	rl.hangup(log)
-	if got := rl.lic.get(); !sameLicenseDoc(got, admin) || got.Source != adminLicenseSource {
-		t.Fatalf("license from %q after a rule edit and a SIGHUP, want the admin install; log:\n%s", got.Source, buf)
-	}
-
-	editFile(t, licPath, signer.Document(licensetest.Enterprise()))
-	pollWith(rl, buf)
-	if got := rl.lic.get(); got.Source != flagLicenseSource || sameLicenseDoc(got, admin) {
-		t.Errorf("license from %q after the flag's file was renewed, want %s; log:\n%s",
-			got.Source, flagLicenseSource, buf)
-	}
-}
-
-// What the admin API refuses, and that a refusal leaves the license in force
-// and the relay running.
-func TestAnAdminInstallRefusesWhatItCannotRunUnder(t *testing.T) {
-	signer := licensetest.NewSigner(t)
-	licPath := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
-	rl, _, buf := startedWith(t, overCapBase, fileLicenseSource, licPath)
-	log := slog.New(slog.NewTextHandler(buf, nil))
-	was := rl.lic.get()
-
-	// A valid license on disk, named by path: the body must never make the
-	// process open a file.
-	other := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
-	for name, body := range map[string]string{
-		"a path":                     other,
-		"an expired license":         signer.Document(licensetest.Expiring(-time.Hour)),
-		"an unsigned license":        strings.Replace(signer.Document(licensetest.Enterprise()), `"signature":"`, `"signature":"x`, 1),
-		"one that does not cover it": signer.Document(licensetest.Enterprise(license.FeatureDataMasking)),
-		"nothing":                    "",
-	} {
-		if _, installed, err := rl.installLicense(log, body); !errors.Is(err, errLicenseRefused) || installed {
-			t.Errorf("%s: installed=%v err=%v, want refused", name, installed, err)
-		}
-	}
-	if !sameLicenseDoc(rl.lic.get(), was) || rl.lic.overCap.Load() {
-		t.Errorf("a refused install changed the license or asked for a stop; log:\n%s", buf)
-	}
-
-	// The license already in force is an answer, not a refusal.
-	doc, err := os.ReadFile(licPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, installed, err := rl.installLicense(log, string(doc)); err != nil || installed {
-		t.Errorf("same document: installed=%v err=%v, want unchanged", installed, err)
-	}
-}
-
-func TestAnAdminInstallIsRefusedUnderAPlaneThatOwnsTheLicense(t *testing.T) {
-	rl, buf := testReloader(t, reloadBase)
-	_, _, err := rl.installLicense(slog.New(slog.NewTextHandler(buf, nil)),
-		licensetest.Document(t, licensetest.Enterprise()))
-	if !errors.Is(err, errLicenseManaged) {
-		t.Fatalf("err = %v, want the plane's refusal", err)
-	}
-	if rl.lic.get().State() != license.StateMissing {
-		t.Error("the plane's license was replaced")
-	}
-}
-
-// The HTTP contract: off without a secret, closed without the right one, and
-// the license report (never the document) on success.
-func TestPutLicense(t *testing.T) {
-	signer := licensetest.NewSigner(t)
-	licPath := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
-	rl, _, buf := startedWith(t, reloadBase, license.EnvVar, licPath)
-	log := slog.New(slog.NewTextHandler(buf, nil))
-	doc := signer.Document(licensetest.Enterprise())
-
-	put := func(secret, auth, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPut, "/license", strings.NewReader(body))
-		if auth != "" {
-			req.Header.Set("Authorization", auth)
-		}
-		w := httptest.NewRecorder()
-		licenseHandler(secret, rl, log).ServeHTTP(w, req)
-		return w
-	}
-	for _, tc := range []struct {
-		name, secret, auth, body string
-		want                     int
-	}{
-		{"no secret configured", "", "Bearer s3cret", doc, http.StatusForbidden},
-		{"no credential", "s3cret", "", doc, http.StatusUnauthorized},
-		{"wrong secret", "s3cret", "Bearer nope", doc, http.StatusUnauthorized},
-		{"a prefix of the secret", "s3cret", "Bearer s3cre", doc, http.StatusUnauthorized},
-		{"too large", "s3cret", "Bearer s3cret", strings.Repeat(" ", maxLicenseBody+1), http.StatusRequestEntityTooLarge},
-		{"not a license", "s3cret", "Bearer s3cret", "{}", http.StatusUnprocessableEntity},
-	} {
-		if w := put(tc.secret, tc.auth, tc.body); w.Code != tc.want {
-			t.Errorf("%s: status %d, want %d: %s", tc.name, w.Code, tc.want, w.Body)
-		}
-	}
-	if rl.lic.get().Source != license.EnvVar {
-		t.Fatal("a refused request changed the license")
-	}
-
-	w := put("s3cret", "Bearer s3cret", doc)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d, want 200: %s", w.Code, w.Body)
-	}
-	if strings.Contains(w.Body.String(), "signature") {
-		t.Errorf("the answer hands out the signature: %s", w.Body)
-	}
-	var got struct {
-		Outcome string         `json:"outcome"`
-		License map[string]any `json:"license"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Outcome != "installed" || got.License["state"] != "valid" || got.License["source"] != adminLicenseSource {
-		t.Errorf("answer = %+v, want installed, valid, from %s", got, adminLicenseSource)
-	}
-	if w := put("s3cret", "Bearer s3cret", doc); !strings.Contains(w.Body.String(), `"outcome":"unchanged"`) {
-		t.Errorf("repeat: %s, want unchanged", w.Body)
 	}
 }

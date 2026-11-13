@@ -109,7 +109,7 @@ import (
 )
 
 // version is the release this binary reports at -version and on the admin
-// /stats endpoint. A build stamps it with -ldflags "-X main.version=<hoop
+// API /stats endpoint. A build stamps it with -ldflags "-X main.version=<hoop
 // release>", the same value `hoop start sidecar` reports; unstamped reads
 // "unknown".
 var version = "unknown"

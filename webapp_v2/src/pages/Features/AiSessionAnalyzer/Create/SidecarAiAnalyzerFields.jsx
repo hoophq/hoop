@@ -16,9 +16,11 @@ import {
   NO_HOLD_ON_MCP,
   REVIEW_MODE_HOLD,
   REVIEW_MODES,
+  appliesAIRules,
   isHandoffAction,
   isHoldAction,
 } from '@/pages/sidecarRuleVocabulary'
+import AIPolicyCard from '../components/AIPolicyCard'
 import OptionalLabel from '../components/OptionalLabel'
 import LevelApprover from './sections/LevelApprover'
 import LevelHandoff from './sections/LevelHandoff'
@@ -76,6 +78,10 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     setAllowed,
     setApprover,
     groupOptionsFor,
+    ruleLibraryStatus,
+    aiRuleOptionsFor,
+    setAIFeature,
+    toggleAIRule,
     pendingMinutes,
     editPendingMinutes,
     approvalMinutes,
@@ -88,6 +94,27 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     mcpBound,
     noTrigger,
   } = editor
+
+  // The AI policy settings card of a level whose action applies AI rules:
+  // Allow, Warn, Hold for approval and Hand off (not Block, not Defer, and
+  // not an unset level, which shows no card).
+  const policyCard = (level) => {
+    const action = form[level]
+    if (action === '' || !appliesAIRules(action)) return null
+    let helper
+    if (isHoldAction(action)) helper = 'Rules apply before the approval.'
+    else if (isHandoffAction(action)) helper = 'Rules apply when the agent does not block.'
+    return (
+      <AIPolicyCard
+        ai={form.ai[level]}
+        status={ruleLibraryStatus}
+        optionsFor={(key) => aiRuleOptionsFor(level, key)}
+        onFeature={(key, patch) => setAIFeature(level, key, patch)}
+        onToggleRule={(key, name) => toggleAIRule(level, key, name)}
+        helper={helper}
+      />
+    )
+  }
 
   return (
     <Stack gap="xxlAlt">
@@ -211,6 +238,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               />
               {isHoldAction(form[level]) && (
                 <LevelApprover
+                  policy={policyCard(level)}
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
@@ -224,6 +252,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
+                  policy={policyCard(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
                   onApprover={(approver) => setApprover(level, approver)}
@@ -231,6 +260,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   mcpBound={mcpBound}
                 />
               )}
+              {!isHoldAction(form[level]) && !isHandoffAction(form[level]) && policyCard(level)}
             </Stack>
           </SectionRow>
         ))}

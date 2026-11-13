@@ -16,6 +16,7 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0
+	github.com/hoophq/libhoop-ica v0.9.1
 )
 
 require (
@@ -42,7 +43,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 // indirect
-	github.com/hoophq/libhoop-ica v0.8.0 // indirect
 	github.com/hoophq/mcpproxy v0.2.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect

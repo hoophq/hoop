@@ -141,15 +141,15 @@ docker compose run --rm -T --user 0 --entrypoint /bin/sh hoop-inspect \
 c_step "Starting hoop-inspect"
 docker compose up -d --wait hoop-inspect
 curl -sf http://localhost:19001/healthz >/dev/null || die "sidecar admin :19001 not healthy"
-c_ok "spanner lane :29010, bqstorage lane :29060, admin :19001"
+c_ok "spanner lane :29010, bqstorage lane :29060, admin :19001, API :19003"
 
 cat <<'EOF'
 
 ready
 
   Walk the lanes:   ./demo.sh
-  Admin API:        curl -s localhost:19001/stats
-                    curl -s 'localhost:19001/api/sessions?limit=5'
+  Read API:         curl -s localhost:19003/stats
+                    curl -s 'localhost:19003/api/sessions?limit=5'
   A call, by hand:  docker compose run --rm grpcurl -plaintext \
                       -protoset /descriptors/spanner.pb \
                       -d '{"database":"projects/demo/instances/demo-instance/databases/demodb"}' \

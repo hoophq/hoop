@@ -24,6 +24,12 @@ database with a fixed password in the manifest; use an external database.
 
 Setup steps: "Credentials from an existing Secret" in [../../README.md](../../README.md).
 
+## Database pool
+
+| Value | Default | Description |
+|---|---|---|
+| `config.POSTGRES_MAX_OPEN_CONNS` | `50` | Most PostgreSQL connections one pod opens. Past it a query waits in process instead of taking a server slot, so a burst of API requests cannot exhaust `max_connections` for every caller. The database serves the sum over every pod: size the sum at 2-4 x its vCPUs and divide by the pods that can run at once (the control-plane chart does this from `postgresPool.connectionBudget`). |
+
 ## Entra ID without a client secret
 
 | Value | Default | Description |

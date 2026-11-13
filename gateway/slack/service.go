@@ -325,11 +325,13 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 }
 
 // ReviewPostResult is where a review message was posted: every channel it was
-// sent to, how many accepted it, and why the others did not.
+// sent to, how many accepted it, and why the others did not. Failed maps each
+// channel that did not get the message onto the cause.
 type ReviewPostResult struct {
 	Channels int
 	Posted   int
 	Errors   []string
+	Failed   map[string]string
 }
 
 // String is the line SendMessageReview has always returned and callers log.
@@ -470,16 +472,21 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 	slackChannels := reviewChannels(msg, s.slackChannel)
 
 	var errs []string
+	failed := map[string]string{}
 	posted := 0
 	for i, slackChannel := range slackChannels {
 		// A review settled while the loop slept takes no more buttons.
 		if s.settledReview(msg.ID) != nil {
 			errs = append(errs, fmt.Sprintf("review settled, %d channels skipped", len(slackChannels)-i))
+			for _, skipped := range slackChannels[i:] {
+				failed[skipped] = "the review was settled before the post"
+			}
 			break
 		}
 		channelID, timestamp, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf(`"%v - %v"`, slackChannel, err))
+			failed[slackChannel] = err.Error()
 		} else {
 			posted++
 			m := sentReviewMessage{
@@ -505,7 +512,7 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 			time.Sleep(time.Millisecond * 1200)
 		}
 	}
-	return ReviewPostResult{Channels: len(slackChannels), Posted: posted, Errors: errs}
+	return ReviewPostResult{Channels: len(slackChannels), Posted: posted, Errors: errs, Failed: failed}
 }
 
 // sentReviewMessage records where a review message landed so it can be

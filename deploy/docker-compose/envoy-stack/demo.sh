@@ -184,7 +184,7 @@ docker compose logs hoop-inspect --since 60s 2>/dev/null \
   | ./sidecar/read-audit.py
 
 h "SIDECAR / counters"
-curl -s http://localhost:19000/stats | python3 -m json.tool 2>/dev/null | sed 's/^/  /'
+curl -s http://localhost:19002/stats | python3 -m json.tool 2>/dev/null | sed 's/^/  /'
 
 h "Summary"
 cat <<'EOF'

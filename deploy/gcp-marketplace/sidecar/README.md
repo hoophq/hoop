@@ -84,7 +84,7 @@ on its own, with no login code, from 1.279.2.
 | `upstream` | `simple`: the resource, `host:port` |
 | `service_port` | `simple`: the port clients connect to. Default: the protocol's usual port (5432 for postgres) |
 | `guardrail_preset` | `simple`: `none` (default, audit only) or `read-only`, one rule that denies the write operations. `postgres` only |
-| `config_document` | `document`: the whole config, JSON or YAML. `admin.listen`, when set, must be `0.0.0.0:19000`; leave `admin` out to turn the admin server off |
+| `config_document` | `document`: the whole config, JSON or YAML. `admin.listen` must be `0.0.0.0:19000` |
 | `existing_config_map` | `configmap`: a ConfigMap in `namespace` whose `config.yaml` is the config |
 | `control_plane_url`, `control_plane_token` | `control_plane`: take the config from a hoop control plane. The plane must already hold this sidecar's configuration: this mode ships no local document to seed it |
 | `lane_ports` | `configmap`, `control_plane`: listener ports to publish on the lane Service, comma separated, e.g. `15432,18080` |
@@ -163,11 +163,14 @@ psql -h 127.0.0.1 -U USER DATABASE
 Credentials do not change: the sidecar passes the login through to the
 resource.
 
-The `admin_service` output serves `/healthz`, `/stats` and `/config` on 19000:
+The `admin_service` output serves `/healthz` and `/readyz` on 19000. The
+read routes (`/stats`, `/config`, `/api/*`) have no authentication and are
+off unless a `document` config sets `admin.api_listen`; with
+`api_listen: 127.0.0.1:19002`, reach them through the pod:
 
 ```bash
-kubectl -n hoop-sidecar port-forward svc/ADMIN_SERVICE 19000
-curl -s localhost:19000/stats
+kubectl -n hoop-sidecar port-forward deploy/ADMIN_SERVICE 19002
+curl -s localhost:19002/stats
 ```
 
 In `simple` mode the audit trail goes to the pod's log, so Cloud Logging

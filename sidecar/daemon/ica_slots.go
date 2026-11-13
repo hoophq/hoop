@@ -113,13 +113,19 @@ func (c *Config) validateICASlotBinds() []string {
 				out = append(out, l.displayName(i)+": slot ports overlap another listener")
 			}
 		}
-		// An empty admin.listen disables the admin server, so there is
-		// nothing to overlap; only an explicit address is checked.
-		if c.Admin.Listen != "" {
-			_, p, _ := net.SplitHostPort(c.Admin.Listen)
+		// An empty admin address disables that server, so there is nothing
+		// to overlap; only an explicit address is checked.
+		for _, a := range []struct{ what, addr string }{
+			{"admin listener", c.Admin.Listen},
+			{"admin API listener", c.Admin.APIListen},
+		} {
+			if a.addr == "" {
+				continue
+			}
+			_, p, _ := net.SplitHostPort(a.addr)
 			n, _ := strconv.Atoi(p)
 			if n >= s.FirstPort && n < s.FirstPort+s.Count {
-				out = append(out, l.displayName(i)+": slot ports overlap admin listener")
+				out = append(out, l.displayName(i)+": slot ports overlap "+a.what)
 			}
 		}
 	}

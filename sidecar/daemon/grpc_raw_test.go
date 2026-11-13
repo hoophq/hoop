@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -151,6 +152,39 @@ func TestAMaskingRawLaneRefusesAnUndeclaredMethod(t *testing.T) {
 	}
 }
 
+// An AI mask names entities, not fields, and a raw lane rewrites only the
+// declared string fields. So a statement the AI masks is refused there:
+// forwarding it would hand the client the undeclared field in the clear.
+func TestARawLaneRefusesAStatementTheAIMasks(t *testing.T) {
+	// Field 1 carries the secret and is not declared; field 2 is.
+	upstreamAddr, stopUpstream := startRawTestUpstream(t, marshalGRPCTestMessage("server-secret", "visible"))
+	defer stopUpstream()
+
+	la := aiBlock("warn", LevelAIRule{Mask: &AIRuleOptions{}})
+	lc := ListenerConfig{
+		Name: "raw-ai-mask", Protocol: "grpc", Listen: "127.0.0.1:0", Upstream: upstreamAddr,
+		GRPC: &GRPCCodecConfig{Raw: &GRPCRawConfig{StringFields: []GRPCRawStringFields{
+			{Method: "/test.v1.Echo/Say", Response: []string{"2"}},
+		}}},
+		Analyzer: la,
+	}
+	server, _, err := buildGRPCServer(lane{cfg: lc, name: lc.Name, policy: rawTestAIMask{},
+		maskScope: laneMaskScope(lc)}, AuditConfig{}, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	status, body := callRawTestLane(t, laneAddr, marshalGRPCTestMessage("c", "request"))
+	if bytes.Contains(body, []byte("server-secret")) {
+		t.Fatalf("the undeclared field reached the client in the clear: %q", body)
+	}
+	if status != "7" {
+		t.Fatalf("grpc-status = %s, want PERMISSION_DENIED", status)
+	}
+}
+
 func TestGRPCRawConfigValidation(t *testing.T) {
 	mask := `,"mask":{"rules":[{"name":"m","entities":["EMAIL_ADDRESS"]}]}`
 	for name, tc := range map[string]struct {
@@ -209,6 +243,30 @@ func (d rawTestDenyBody) Evaluate(s inspect.Statement) policy.Verdict {
 		return policy.Deny("raw-test-deny", "refused by test")
 	}
 	return policy.Allow()
+}
+
+// rawTestAIMask masks the response of every client statement, as the AI
+// analyzer does when it applies a mask: any value holding "secret".
+type rawTestAIMask struct{}
+
+func (rawTestAIMask) Evaluate(inspect.Statement) policy.Verdict { return policy.Allow() }
+
+func (rawTestAIMask) EvaluateWith(s inspect.Statement, ec *policy.EvalContext) policy.Verdict {
+	if s.Direction == inspect.FromClient {
+		ec.MaskResponse(rawTestSecretMask{})
+	}
+	return policy.Allow()
+}
+
+type rawTestSecretMask struct{}
+
+func (rawTestSecretMask) Mask(data []byte) ([]byte, []string, int) { return data, nil, 0 }
+
+func (rawTestSecretMask) MaskCell(_ string, value []byte) ([]byte, []string, int) {
+	if bytes.Contains(value, []byte("secret")) {
+		return []byte("[AI]"), []string{"SECRET"}, 1
+	}
+	return value, nil, 0
 }
 
 func startRawTestUpstream(t *testing.T, response []byte) (string, func()) {
