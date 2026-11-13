@@ -98,6 +98,16 @@ func TestUpdateLastUsedWritesOncePerInterval(t *testing.T) {
 		assert.True(t, next.Equal(*readLastUsed(t, "private.api_keys", apiKey.ID)))
 	})
 
+	t.Run("database error opens the gate after the retry delay", func(t *testing.T) {
+		models.ResetLastUsedGates()
+		t.Cleanup(models.ResetLastUsedGates)
+		now := time.Now().UTC()
+
+		models.TouchLastUsedTableAt("private.no_such_table", apiKey.ID, now)
+		assert.False(t, models.LastUsedGateAllow(apiKey.ID, now.Add(models.LastUsedRetry-time.Nanosecond)))
+		assert.True(t, models.LastUsedGateAllow(apiKey.ID, now.Add(models.LastUsedRetry)))
+	})
+
 	// An unknown id is not an error and writes nothing.
 	models.UpdateAPIKeyLastUsed(uuid.NewString())
 }

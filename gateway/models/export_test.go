@@ -15,7 +15,14 @@ const (
 	SessionBlobStreamQuery = sessionBlobStreamQuery
 )
 
-const LastUsedInterval = lastUsedInterval
+const (
+	LastUsedInterval = lastUsedInterval
+	LastUsedRetry    = lastUsedRetry
+)
+
+func TouchLastUsedTableAt(table, id string, now time.Time) {
+	touchLastUsed(&apiKeyLastUsedGate, table, id, now)
+}
 
 // ResetLastUsedGates makes the next call behave as a call on another replica.
 func ResetLastUsedGates() {
