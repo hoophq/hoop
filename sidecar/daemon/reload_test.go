@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
 )
@@ -775,6 +776,34 @@ func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
 	// longer go to the terminal (filesLocally).
 	if !rl.ac.lanesFromPlane {
 		t.Error("the takeover left the analyzer filing holds as if the file served")
+	}
+}
+
+// A takeover that leaves the demo lane's rules as they are still rebuilds it:
+// a kept lane keeps its reviewer, and the terminal would keep approving what
+// the plane's approvers now decide.
+func TestAPlaneTakeoverRebuildsADemoLaneWithUnchangedRules(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.ac = &analyzerDeps{localFirst: []string{"appdb"},
+		local: func(string) analyzer.Reviewer { return &localReviewer{} }}
+
+	if got := applyWith(rl, buf, reloadBase); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "swapped=1") {
+		t.Errorf("the demo lane was kept with its terminal reviewer; log:\n%s", buf)
+	}
+
+	// Without a demo lane, an unchanged lane is kept as before.
+	rl2, buf2 := testReloader(t, reloadBase)
+	rl2.diskMode = true
+	rl2.ac = &analyzerDeps{}
+	if got := applyWith(rl2, buf2, reloadBase); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf2)
+	}
+	if !strings.Contains(buf2.String(), "kept=1") {
+		t.Errorf("a takeover rebuilt a lane no demo names; log:\n%s", buf2)
 	}
 }
 
