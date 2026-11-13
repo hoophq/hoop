@@ -9,10 +9,10 @@ import "time"
 // the card numbers low. The guidance names the data, not the step, so a
 // statement typed by hand is rated by the same rules.
 
-// AnalyzerTimeout bounds one classification in the demo. Every read goes to
-// the model, so with the model unreachable each one waits this long before
-// the analyzer lets it through (fail open). Shorter than the analyzer's
-// default, and shorter than the tour's step timeout.
+// AnalyzerTimeout bounds one classification in the demo. With the model
+// unreachable, each read AnalyzerScope names waits this long, then the demo
+// lane refuses it: it holds for approval, so it fails closed. Shorter than
+// the analyzer's default, and shorter than the tour's step timeout.
 const AnalyzerTimeout = 8 * time.Second
 
 // AnalyzerPrompt is the lane guidance the demo config carries.

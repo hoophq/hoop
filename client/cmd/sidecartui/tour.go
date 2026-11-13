@@ -72,22 +72,20 @@ type tour struct {
 }
 
 // stepTimeout is the time a step may take: quick for most, and for the AI
-// step the time a held statement waits for the person (analyzer.ReviewWait)
-// and a margin.
+// step as long as the demo API waits for a held request
+// (sidecardemo.HeaderWait).
 //
 // quickWait outlasts the demo analyzer's own timeout (sidecardemo.AnalyzerTimeout):
-// every read goes to the model, and with the model unreachable the analyzer
-// gives up and lets the read through before the step does.
+// with the model unreachable the analyzer gives up and the demo lane refuses
+// the read (fail closed) before the step times out.
 const quickWait = 15 * time.Second
 
 func stepTimeout(s sidecardemo.Step, quick time.Duration) time.Duration {
 	if s.Approval {
-		return analyzer.ReviewWait + time.Minute
+		return sidecardemo.HeaderWait
 	}
 	return quick
 }
-
-type tourStep sidecardemo.Step
 
 func newTour(o *DemoOptions) *tour {
 	kind := o.Kind
@@ -140,8 +138,9 @@ func (t *tour) see(ev audit.Event) {
 			continue
 		}
 		// The AI step is done whichever way the person decided: approved,
-		// it is a statement; rejected, a violation with the same verdict.
-		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation
+		// it is a statement; rejected, a violation with the same verdict and
+		// the review's id. A high-risk block has no review: not done.
+		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation && ev.Metadata[metaReviewID] != ""
 		if s.SeenKind == "" || (string(ev.Kind) != s.SeenKind && !rejected) {
 			continue
 		}
@@ -232,6 +231,9 @@ func (t *tour) apply(r tourResult) {
 		}
 		r.err = fmt.Errorf("refused: the AI analyzer could not reach the model Hoop hosts, and this demo "+
 			"holds %s for approval, so it refuses what it cannot rate. Check the network; see Logs (6)", what)
+	case t.steps[r.step].Approval && !t.sawHold && r.status == 403:
+		// Refused without a hold: High risk is set to block.
+		r.err = errBlocked
 	case t.steps[r.step].Approval && !t.sawHold:
 		// Answered without a hold: the model rated it below high.
 		r.err = errNoHold
@@ -239,6 +241,8 @@ func (t *tour) apply(r tourResult) {
 	t.result = &r
 	if r.err == nil {
 		t.done[r.step] = true
+	} else if t.steps[r.step].Approval {
+		t.done[r.step] = false
 	}
 }
 
@@ -250,6 +254,9 @@ func (t *tour) setHeld(held bool) {
 		t.sawHold = true
 	}
 }
+
+var errBlocked = errors.New("refused without asking you: High risk is set to block, not hold " +
+	"for approval, or a rule refused it. See Wire (1)")
 
 var errNoHold = errors.New("the AI analyzer did not hold it: the model rated it below high risk. See Logs (6)")
 
