@@ -13,16 +13,16 @@ import (
 
 var pgManagerTimeout = time.Second * 120
 
-func RunPgManagerPlan(agentID string, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+func RunPgManagerPlan(orgID, agentID string, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
+	st := streamclient.GetAgentStream(orgID, streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
 		return pbsystem.NewPgManagerPlanError(req.SID, "agent stream not found: %v", agentID)
 	}
 	return dispatchPgManagerPlan(st, req)
 }
 
-func RunPgManagerApply(agentID string, req *pbsystem.PgManagerApplyRequest) *pbsystem.PgManagerApplyResponse {
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+func RunPgManagerApply(orgID, agentID string, req *pbsystem.PgManagerApplyRequest) *pbsystem.PgManagerApplyResponse {
+	st := streamclient.GetAgentStream(orgID, streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
 		return pbsystem.NewPgManagerApplyError(req.SID, "agent stream not found: %v", agentID)
 	}
@@ -30,12 +30,8 @@ func RunPgManagerApply(agentID string, req *pbsystem.PgManagerApplyRequest) *pbs
 }
 
 func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, err := pbsystem.NewPgManagerPlanRequest(req)
 	if err != nil {
@@ -67,12 +63,8 @@ func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManager
 }
 
 func dispatchPgManagerApply(st *streamclient.AgentStream, req *pbsystem.PgManagerApplyRequest) *pbsystem.PgManagerApplyResponse {
-	dataCh := make(chan []byte)
-	systemStore.Set(req.SID, dataCh)
-	defer func() {
-		systemStore.Del(req.SID)
-		close(dataCh)
-	}()
+	dataCh, done := awaitResponse(st.GetOrgID(), req.SID)
+	defer done()
 
 	payload, pbType, err := pbsystem.NewPgManagerApplyRequest(req)
 	if err != nil {

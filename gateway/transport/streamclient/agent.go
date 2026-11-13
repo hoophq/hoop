@@ -37,13 +37,19 @@ type AgentStream struct {
 	metadata       metadata.MD
 }
 
-func GetAgentStream(streamAgentID streamtypes.ID) *AgentStream {
+// GetAgentStream returns the agent stream only when the agent belongs to orgID.
+func GetAgentStream(orgID string, streamAgentID streamtypes.ID) *AgentStream {
 	obj := agentStore.Get(streamAgentID.String())
 	stream, _ := obj.(*AgentStream)
+	if stream == nil || orgID == "" || stream.GetOrgID() != orgID {
+		return nil
+	}
 	return stream
 }
 
-func IsAgentOnline(streamAgentID streamtypes.ID) bool { return GetAgentStream(streamAgentID) != nil }
+func IsAgentOnline(orgID string, streamAgentID streamtypes.ID) bool {
+	return GetAgentStream(orgID, streamAgentID) != nil
+}
 func NewAgent(a models.Agent, s pb.Transport_ConnectServer) *AgentStream {
 	streamCtx := s.Context()
 	ctx, cancelFn := context.WithCancelCause(streamCtx)

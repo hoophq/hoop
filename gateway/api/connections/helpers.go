@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
@@ -682,4 +686,35 @@ func managedConnectionMessage(managedBy string) string {
 		return "unable to update a connection managed by a sidecar"
 	}
 	return "unable to update a connection managed by its agent"
+}
+
+var ErrAgentNotFound = errors.New("agent not found")
+
+// ValidateAgentID refuses an agent of another org. An unknown id passes, as
+// before: agent dispatch is org scoped and fails closed for it.
+func ValidateAgentID(orgID, agentID string) error {
+	agentOrgID, err := models.GetAgentOrgID(models.DB, agentID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	case err != nil:
+		return err
+	case agentOrgID != orgID:
+		return ErrAgentNotFound
+	}
+	return nil
+}
+
+// AbortOnInvalidAgent answers status when agentID is an agent of another org.
+func AbortOnInvalidAgent(c *gin.Context, status int, orgID, agentID string) bool {
+	err := ValidateAgentID(orgID, agentID)
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, ErrAgentNotFound):
+		c.JSON(status, gin.H{"message": err.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed validating agent: %v", err)
+	}
+	return true
 }

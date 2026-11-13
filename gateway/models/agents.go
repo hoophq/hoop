@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -97,6 +98,27 @@ func GetAgentByNameOrID(orgID, nameOrID string) (*Agent, error) {
 		return nil, ErrNotFound
 	}
 	return &agent, err
+}
+
+// GetAgentOrgID returns gorm.ErrRecordNotFound when no agent has this id.
+func GetAgentOrgID(db *gorm.DB, id string) (string, error) {
+	var orgID string
+	err := db.Table("private.agents").
+		Select("org_id").
+		Where("id = ?", id).
+		Take(&orgID).
+		Error
+	if isInvalidUUIDText(err) {
+		return "", gorm.ErrRecordNotFound
+	}
+	return orgID, err
+}
+
+// isInvalidUUIDText reports a value Postgres cannot read as a uuid. Postgres
+// parses the id, because it reads more spellings of a uuid than uuid.Parse.
+func isInvalidUUIDText(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "22P02"
 }
 
 func GetAgentByToken(token string) (*Agent, error) {
