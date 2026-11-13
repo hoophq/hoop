@@ -60,12 +60,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 The PostgreSQL pool cap one pod starts with. postgresPool.connectionBudget
 is the database-wide budget for this release, divided by the pods that can
-run at once: replicas, plus maxSurge with RollingUpdate (Kubernetes' default
-surge is 25%, rounded up). Without a budget, config.POSTGRES_MAX_OPEN_CONNS
-is the per-pod value, 50 by default. Both set is a contradiction: refused.
+run at once: replicas, plus maxSurge unless the strategy is Recreate. An
+omitted strategy is RollingUpdate to Kubernetes, and an omitted maxSurge is
+25%, rounded up. Without a budget, config.POSTGRES_MAX_OPEN_CONNS is the
+per-pod value, 50 by default. Both set is a contradiction: refused.
 Set is "not nil and not empty", so an explicit 0 is not read as unset:
-a per-pod 0 reaches the gateway, which refuses to start on it, and a
-budget below 1 is refused here.
+a per-pod 0 reaches the gateway, which refuses to start on it; a budget
+that is not a positive integer, or is below the pod count, is refused here.
 */}}
 {{- define "hoopcontrolplane.pgMaxOpenConns" -}}
 {{- $perPod := (.Values.config | default dict).POSTGRES_MAX_OPEN_CONNS -}}
@@ -76,14 +77,17 @@ budget below 1 is refused here.
 {{- fail "set postgresPool.connectionBudget or config.POSTGRES_MAX_OPEN_CONNS, not both" -}}
 {{- end -}}
 {{- if $budgetSet -}}
-{{- if lt (int $budget) 1 -}}
-{{- fail (printf "postgresPool.connectionBudget must be >= 1, got %v" $budget) -}}
+{{- if or (ne (toString (int $budget)) (toString $budget)) (lt (int $budget) 1) -}}
+{{- fail (printf "postgresPool.connectionBudget must be a positive integer, got %v" $budget) -}}
 {{- end -}}
 {{- $replicas := int (.Values.replicas | default 1) -}}
 {{- $pods := $replicas -}}
 {{- $strategy := .Values.deploymentStrategy | default dict -}}
-{{- if eq ($strategy.type | default "") "RollingUpdate" -}}
-{{- $surge := ($strategy.rollingUpdate | default dict).maxSurge | default "25%" -}}
+{{- if ne ($strategy.type | default "") "Recreate" -}}
+{{- $surge := ($strategy.rollingUpdate | default dict).maxSurge -}}
+{{- if or (kindIs "invalid" $surge) (eq (toString $surge) "") -}}
+{{- $surge = "25%" -}}
+{{- end -}}
 {{- if hasSuffix "%" (toString $surge) -}}
 {{- $pct := trimSuffix "%" (toString $surge) | float64 -}}
 {{- $pods = add $replicas (ceil (divf (mulf $replicas $pct) 100.0) | int) -}}
@@ -91,7 +95,10 @@ budget below 1 is refused here.
 {{- $pods = add $replicas (int $surge) -}}
 {{- end -}}
 {{- end -}}
-{{- max 1 (div (int $budget) $pods) -}}
+{{- if lt (int $budget) $pods -}}
+{{- fail (printf "postgresPool.connectionBudget %v is below the %d pods that can run at once (replicas plus maxSurge); every pod needs at least 1" $budget $pods) -}}
+{{- end -}}
+{{- div (int $budget) $pods -}}
 {{- else if $perPodSet -}}
 {{- $perPod -}}
 {{- else -}}

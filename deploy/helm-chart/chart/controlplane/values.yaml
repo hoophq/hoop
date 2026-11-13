@@ -188,8 +188,9 @@ deploymentStrategy:
 # The database serves the sum over every pod, so size the sum: 2-4 x the
 # database's vCPUs is where throughput peaks; past that, connections only
 # queue on the CPU. The chart divides the budget by the pods that can run at
-# once (replicas, plus maxSurge with RollingUpdate) and starts each with the
-# result as POSTGRES_MAX_OPEN_CONNS, so a change of replicas keeps the sum.
+# once (replicas, plus maxSurge unless the strategy is Recreate) and starts
+# each with the result as POSTGRES_MAX_OPEN_CONNS, so a change of replicas
+# keeps the sum. A budget below that pod count fails the render.
 # Set this or config.POSTGRES_MAX_OPEN_CONNS, not both.
 postgresPool:
   connectionBudget: null

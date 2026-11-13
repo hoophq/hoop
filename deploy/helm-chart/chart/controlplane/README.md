@@ -305,7 +305,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |
 | `replicas` | `1` | See Replicas |
-| `postgresPool.connectionBudget` | unset | PostgreSQL connections for the whole release, 2-4 x the database's vCPUs. Divided by the pods that can run at once (`replicas`, plus `maxSurge` with RollingUpdate) into each pod's `POSTGRES_MAX_OPEN_CONNS`, never below 1 |
+| `postgresPool.connectionBudget` | unset | PostgreSQL connections for the whole release, 2-4 x the database's vCPUs. Divided by the pods that can run at once (`replicas`, plus `maxSurge` unless the strategy is `Recreate`) into each pod's `POSTGRES_MAX_OPEN_CONNS`. A budget below that pod count, or not a positive integer, fails the render |
 | `deploymentStrategy.type` | `Recreate` | At one replica, RollingUpdate's default surge runs two Slack sockets per upgrade |
 | `readinessProbe` / `livenessProbe` | `{}` / `{}` | Off. Rendered verbatim when set — see Probes |
 | `service.enabled` / `service.type` / `service.annotations` | `true` / `ClusterIP` / `{}` | One port, 8009 |
