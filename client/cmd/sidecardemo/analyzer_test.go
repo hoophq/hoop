@@ -36,8 +36,10 @@ func TestEachDemoHasOneAIStep(t *testing.T) {
 			t.Errorf("%s: the step does not say how to decide: %q", kind, s.Expect)
 		}
 	}
-	if !strings.Contains(PGSteps[2].SQL, "creditcard") || strings.Contains(strings.ToUpper(PGSteps[2].SQL), "LIMIT") {
-		t.Errorf("the Postgres AI step is not the full card export: %q", PGSteps[2].SQL)
+	// The card columns make it high risk; the LIMIT keeps an approved run
+	// from pulling the whole table through the sidecar into the tour.
+	if !strings.Contains(PGSteps[2].SQL, "creditcard") || !strings.Contains(strings.ToUpper(PGSteps[2].SQL), "LIMIT") {
+		t.Errorf("the Postgres AI step is not a bounded card read: %q", PGSteps[2].SQL)
 	}
 	if Steps[2].Method != "GET" || Steps[2].Path != "/users/export" {
 		t.Errorf("the HTTP AI step is %s %s, want GET /users/export", Steps[2].Method, Steps[2].Path)
