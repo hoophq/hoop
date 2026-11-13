@@ -131,7 +131,7 @@ var PGSteps = []Step{
 	},
 	{
 		Title: "Ask for approval", Approval: true,
-		SQL:      "SELECT customerid, firstname, lastname, creditcardtype, creditcard, creditcardexpiration FROM customers;",
+		SQL:      "SELECT customerid, firstname, lastname, creditcardtype, creditcard, creditcardexpiration FROM customers LIMIT 50;",
 		Expect:   "Held: the AI rates the card export high risk and asks you. Press enter to decide.",
 		Why:      "The AI analyzer rated the statement high risk, so the sidecar held it until you decided. Approved, it reaches the database; rejected, the client gets the reason.",
 		SeenKind: "statement", SeenOp: "select", SeenRisk: "high",
