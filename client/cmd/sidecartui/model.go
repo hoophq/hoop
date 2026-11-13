@@ -231,7 +231,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.tour != nil {
-			m.tour.setHeld(len(m.pendingLocal()) > 0)
+			m.tour.setHeld(len(m.tourPending()) > 0)
 		}
 		return m, nil
 	case droppedMsg:
@@ -287,7 +287,7 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// the tour. Not a: in the dialog a approves, so a double press
 		// would release a statement nobody read.
 		if (k.String() == "enter" || k.String() == "space") && m.tour.held {
-			if p := m.pendingLocal(); len(p) > 0 {
+			if p := m.tourPending(); len(p) > 0 {
 				m.openModal(p[0])
 				return m, nil
 			}

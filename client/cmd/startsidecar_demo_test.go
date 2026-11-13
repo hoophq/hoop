@@ -11,7 +11,8 @@ import (
 
 // Only a listener that forwards to the demo's own upstream has its holds filed
 // at the terminal under a plane: never a listener of a config without the demo
-// key, and never one that forwards elsewhere.
+// key. A demo config with a listener that forwards elsewhere, or has no name,
+// names none: its approvals all stay where the rest of the config's go.
 func TestSidecarDemoListenersNamesOnlyTheDemoLane(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -26,8 +27,20 @@ func TestSidecarDemoListenersNamesOnlyTheDemoLane(t *testing.T) {
 		"listeners:\n"+
 		"  - {name: demo, protocol: postgres, listen: 127.0.0.1:18082, upstream: "+pg+"}\n"+
 		"  - {name: prod, protocol: postgres, listen: 127.0.0.1:15432, upstream: 10.0.0.5:5432}\n")
-	if got := sidecarDemoListeners(demo); !slices.Equal(got, []string{"demo"}) {
+	if got := sidecarDemoListeners(demo); got != nil {
+		t.Errorf("a demo config with another listener: %v, want none", got)
+	}
+	only := write("only.yaml", "x-hoop-demo-postgres: "+pg+"\n"+
+		"listeners:\n"+
+		"  - {name: demo, protocol: postgres, listen: 127.0.0.1:18082, upstream: "+pg+"}\n")
+	if got := sidecarDemoListeners(only); !slices.Equal(got, []string{"demo"}) {
 		t.Errorf("demo config: %v, want [demo]", got)
+	}
+	unnamed := write("unnamed.yaml", "x-hoop-demo-postgres: "+pg+"\n"+
+		"listeners:\n"+
+		"  - {protocol: postgres, listen: 127.0.0.1:18082, upstream: "+pg+"}\n")
+	if got := sidecarDemoListeners(unnamed); got != nil {
+		t.Errorf("an unnamed demo listener: %v, want none", got)
 	}
 
 	plain := write("plain.yaml", "listeners:\n"+

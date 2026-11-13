@@ -1545,7 +1545,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if why := holdRefusal(cfg, lc.Name, lc.Analyzer, ac); why != "" {
+		if why := holdRefusal(cfg, name, lc.Analyzer, ac); why != "" {
 			problems = append(problems, name+": "+why)
 			continue
 		}

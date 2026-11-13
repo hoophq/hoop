@@ -930,6 +930,21 @@ func (m model) pendingLocal() []string {
 	return out
 }
 
+// tourPending are the pending local approvals of the demo's own lanes: the
+// AI step's hold, never a hold on another listener.
+func (m model) tourPending() []string {
+	if m.tour == nil || len(m.tour.listeners) == 0 {
+		return m.pendingLocal()
+	}
+	var out []string
+	for _, id := range m.pendingLocal() {
+		if slices.Contains(m.tour.listeners, m.st.Reviews[id].Lane) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // riskLine is the analyzer's verdict on one line: the level, then the model's
 // title for it. Empty when the analyzer reported nothing.
 func riskLine(r *Review) string {

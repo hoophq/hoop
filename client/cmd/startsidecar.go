@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -346,16 +347,21 @@ needs a restart.`,
 		if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
 			reviewer = sidecartui.NewReviewer()
 			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
-			// The demo's AI step holds a statement for the person at this
-			// terminal, also when the free plan runs logged in.
-			if demoLanes = sidecarDemoListeners(sidecarConfigFlag); len(demoLanes) > 0 {
-				setupOpts = append(setupOpts, daemon.WithLocalReviewerFirst(demoLanes...))
-			}
 		}
 		var cfg *daemon.Config
 		var det daemon.Plugin
 		setup := func() (err error) {
-			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
+			opts := slices.Clip(setupOpts)
+			// The demo's AI step holds a statement for the person at this
+			// terminal, also when the free plan runs logged in. Read on
+			// every setup: the logged-in first run names the file late.
+			demoLanes = nil
+			if reviewer != nil {
+				if demoLanes = sidecarDemoListeners(sidecarConfigFlag); len(demoLanes) > 0 {
+					opts = append(opts, daemon.WithLocalReviewerFirst(demoLanes...))
+				}
+			}
+			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, opts...)
 			return err
 		}
 		err = setup()
@@ -434,7 +440,8 @@ needs a restart.`,
 			defer running.stop()
 			notes = running.notes
 			if running.ports != nil {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports, Kind: running.kind}
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports, Kind: running.kind,
+					Listeners: demoLanes}
 			}
 		}
 
@@ -453,10 +460,12 @@ needs a restart.`,
 			Notes:        notes,
 			Demo:         demo,
 			ControlPlane: plane,
-			// Plane-served lanes keep the plane's approvers (daemon
-			// filesLocally); only a demo that runs from the file is local.
-			LocalApprovals: demo != nil && len(demoLanes) > 0 && cfg.LanesFromFile(),
-			OpenURL:        openBrowser,
+			// A demo files its holds here while its lanes come from the
+			// file (daemon filesLocally); PlaneOwnsConfig is who owns them
+			// at boot, and the ownership logs move it.
+			LocalApprovals:  demo != nil && len(demoLanes) > 0,
+			PlaneOwnsConfig: !cfg.LanesFromFile(),
+			OpenURL:         openBrowser,
 		}, func() error { return errors.Join(daemon.Run(cfg, det), running.err()) })
 	},
 }
@@ -568,8 +577,9 @@ func prepareSidecarDemo(path string) error {
 // sidecarDemoListeners names the listeners of a demo config that forward to
 // the demo's own upstream: hoop's demo database, or the loopback API the CLI
 // serves. The terminal approves their holds (daemon.WithLocalReviewerFirst),
-// also logged in. Any other config, or a listener that forwards elsewhere,
-// names none.
+// also logged in. Any other config names none, and so does a demo config
+// with a listener that forwards elsewhere or has no name: its approvals
+// stay where the rest of the config's go.
 func sidecarDemoListeners(path string) []string {
 	if path == "" || !configyaml.IsYAML(path) {
 		return nil
@@ -600,9 +610,10 @@ func sidecarDemoListeners(path string) []string {
 	}
 	var out []string
 	for _, l := range cfg.Listeners {
-		if l.Upstream == addr {
-			out = append(out, l.Name)
+		if l.Upstream != addr || l.Name == "" {
+			return nil
 		}
+		out = append(out, l.Name)
 	}
 	return out
 }
