@@ -11,4 +11,9 @@ const (
 	SessionByIDQuery       = sessionByIDQuery
 	SessionBlobInputQuery  = sessionBlobInputQuery
 	SessionBlobStreamQuery = sessionBlobStreamQuery
+
+	SidecarMirrorResourceUpdateQuery = sidecarMirrorResourceUpdateQuery
+	SidecarMirrorNameInUseQuery      = sidecarMirrorNameInUseQuery
+	SidecarMirrorResourceCreateQuery = sidecarMirrorResourceCreateQuery
+	OrphanResourceDeleteQuery        = orphanResourceDeleteQuery
 )
