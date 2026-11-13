@@ -67,6 +67,9 @@ per-pod value, 50 by default. Both set is a contradiction: refused.
 Set is "not nil and not empty", so an explicit 0 is not read as unset:
 a per-pod 0 reaches the gateway, which refuses to start on it; a budget
 that is not a positive integer, or is below the pod count, is refused here.
+The sum is the steady state: a RollingUpdate overlaps stopping pods (up to
+10 seconds of graceful shutdown) and pods started under an older replica
+count with the new ones, so it can briefly reach about twice the budget.
 */}}
 {{- define "hoopcontrolplane.pgMaxOpenConns" -}}
 {{- $perPod := (.Values.config | default dict).POSTGRES_MAX_OPEN_CONNS -}}

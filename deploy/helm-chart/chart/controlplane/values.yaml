@@ -189,8 +189,15 @@ deploymentStrategy:
 # database's vCPUs is where throughput peaks; past that, connections only
 # queue on the CPU. The chart divides the budget by the pods that can run at
 # once (replicas, plus maxSurge unless the strategy is Recreate) and starts
-# each with the result as POSTGRES_MAX_OPEN_CONNS, so a change of replicas
-# keeps the sum. A budget below that pod count fails the render.
+# each with the result as POSTGRES_MAX_OPEN_CONNS, so the sum holds once a
+# rollout settles. A budget below that pod count fails the render.
+#
+# The sum is the steady state. With RollingUpdate a stopping pod keeps its
+# pool for up to 10 seconds while its replacement already runs, and a pod
+# from before a replicas change keeps the cap it started with; for those
+# seconds the sum can reach about twice the budget. Keep twice the budget
+# below max_connections minus the reserved slots. Recreate removes every
+# old pod before it creates one, so it never overlaps.
 # Set this or config.POSTGRES_MAX_OPEN_CONNS, not both.
 postgresPool:
   connectionBudget: null
