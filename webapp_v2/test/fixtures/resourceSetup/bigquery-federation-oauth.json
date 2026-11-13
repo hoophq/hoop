@@ -1,0 +1,33 @@
+{
+  "name": "bq-fed-oauth",
+  "type": "custom",
+  "subtype": "bigquery",
+  "agent_id": "618bd713-4223-5529-88b3-39540114f32f",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "bq-fed-oauth-role",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "bq",
+        "query",
+        "--use_legacy_sql=false",
+        "--format=prettyjson",
+        "--project_id=$CLOUDSDK_CORE_PROJECT"
+      ],
+      "type": "custom",
+      "secret": {
+        "envvar:CLOUDSDK_CORE_PROJECT": "cDI="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "618bd713-4223-5529-88b3-39540114f32f",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "bigquery"
+    }
+  ]
+}

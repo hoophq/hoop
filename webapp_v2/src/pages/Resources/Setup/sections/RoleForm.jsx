@@ -8,7 +8,7 @@ import SetupDocsHint from '@/components/SetupDocsHint'
 import TextInput from '@/components/TextInput'
 import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
-import { CONNECTION_METHODS, supportsAwsIam } from '@/utils/connectionPolicy'
+import { CONNECTION_METHODS, supportsAwsIam, supportsIamFederation } from '@/utils/connectionPolicy'
 import { jsonCredentialToField } from '@/utils/connectionsMetadataMapper'
 import { docsUrl } from '@/utils/docsUrl'
 import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
@@ -17,6 +17,7 @@ import {
   SecretsManagerProviderSection,
 } from '@/pages/Roles/Configure/components/ConnectionMethod'
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
+import FederationSection from '@/pages/Roles/Configure/sections/FederationSection'
 import ClaudeCodeRenderer from '@/pages/Roles/Configure/sections/credentials/ClaudeCodeRenderer'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
 import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
@@ -94,10 +95,12 @@ function CredentialsForm({ form, role, fields, connection, availableSources }) {
 function RoleCredentials({ form, role, fields }) {
   const setRoleMethod = useResourceSetupStore((s) => s.setRoleMethod)
   const setRoleProvider = useResourceSetupStore((s) => s.setRoleProvider)
+  const agentId = useResourceSetupStore((s) => s.agentId)
   const connection = useStore(role.credentials, (s) => s.connection)
   // Local SSH has no credentials, so no method.
   const localSsh = useStore(role.credentials, (s) => s.drafts.subtype === 'ssh-local')
   const isSecretsManager = role.method === CONNECTION_METHODS.SECRETS_MANAGER
+  const isFederation = role.method === CONNECTION_METHODS.IAM_FEDERATION
 
   return (
     <Stack gap="xl">
@@ -108,7 +111,7 @@ function RoleCredentials({ form, role, fields }) {
             selectedMethod={role.method}
             onSelect={(method) => setRoleMethod(role.id, method)}
             awsIamAvailable={supportsAwsIam(connection.subtype)}
-            federationAvailable={false}
+            federationAvailable={supportsIamFederation(connection.subtype)}
           />
           {isSecretsManager && (
             <SecretsManagerProviderSection
@@ -122,13 +125,17 @@ function RoleCredentials({ form, role, fields }) {
         </Stack>
       )}
       <CredentialsStoreProvider value={role.credentials}>
-        <CredentialsForm
-          form={form}
-          role={role}
-          fields={fields}
-          connection={connection}
-          availableSources={isSecretsManager ? [role.provider, SOURCES.MANUAL] : null}
-        />
+        {isFederation ? (
+          <FederationSection agentId={agentId} />
+        ) : (
+          <CredentialsForm
+            form={form}
+            role={role}
+            fields={fields}
+            connection={connection}
+            availableSources={isSecretsManager ? [role.provider, SOURCES.MANUAL] : null}
+          />
+        )}
       </CredentialsStoreProvider>
     </Stack>
   )

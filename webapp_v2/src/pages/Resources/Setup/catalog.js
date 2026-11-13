@@ -36,6 +36,8 @@ const METADATA_DRIVEN_SUBTYPES = [
   'rdp',
   'git',
   'github',
+  // Manual and Secrets Manager use the metadata form; IAM Federation its own.
+  'bigquery',
   // Its metadata has HOST and PORT, both required, as resources/constants.cljs.
   'tcp',
 ]

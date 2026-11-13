@@ -1,6 +1,11 @@
 import { createStore } from 'zustand/vanilla'
 import { credentialsSlice } from '@/pages/Roles/Configure/utils/credentialsSlice'
 import {
+  federationSlice,
+  INITIAL_FEDERATION,
+  INITIAL_FEDERATION_TEST,
+} from '@/pages/Roles/Configure/utils/federationSlice'
+import {
   decodeForDisplay,
   decodeSecretValue,
   encodeSecretForSource,
@@ -117,8 +122,9 @@ function wireKey(key, subtype) {
   return key.slice(0, colon) + name.toUpperCase()
 }
 
-// One store per wizard role. The Configure Role credential renderers read it
-// through CredentialsStoreProvider. The secret map is empty, so every field is new.
+// One store per wizard role. The Configure Role credential renderers and the
+// federation form read it through CredentialsStoreProvider, so each role has
+// its own federation form (Q20). The secret map is empty, so every field is new.
 // drafts.subtype turns ssh into ssh-local; drafts.command holds the typed arguments.
 export function createRoleCredentialsStore({ type, subtype }) {
   const formValues = initialValues(subtype)
@@ -137,7 +143,10 @@ export function createRoleCredentialsStore({ type, subtype }) {
     mcpOAuthFlowId: null,
     mcpOAuthUrl: null,
     formState: {},
+    federation: INITIAL_FEDERATION,
+    federationTest: INITIAL_FEDERATION_TEST,
     ...slice,
+    ...federationSlice(set, get),
     replaceSecret: (key, base64Value) => {
       slice.replaceSecret(key, base64Value)
       if (key === REMOTE_URL_KEY) set(dropTokenOffServer)

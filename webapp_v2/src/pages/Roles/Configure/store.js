@@ -19,15 +19,17 @@ import {
 import { CONNECTION_METHODS, supportsIamFederation } from '@/utils/connectionPolicy'
 import { credentialsSlice } from '@/pages/Roles/Configure/utils/credentialsSlice'
 import {
-  adminCredentialsForTest,
   buildFederationConfig,
-  buildFederationTestPayload,
-  DEFAULT_FEDERATION_FORM,
   FEDERATION_PROVIDERS,
   federationFormsEqual,
   formFromConfig,
   staticSecretsMirror,
 } from '@/pages/Roles/Configure/utils/federation'
+import {
+  federationSlice,
+  INITIAL_FEDERATION as initialFederation,
+  INITIAL_FEDERATION_TEST,
+} from '@/pages/Roles/Configure/utils/federationSlice'
 
 // Page-local store for Configure Role. The staged-secrets contract is
 // the only non-obvious bit:
@@ -197,19 +199,6 @@ function buildDraftsPatch(drafts, baseline) {
   return patch
 }
 
-// `selected` is the IAM Federation card; `config` is what the gateway stores.
-const initialFederation = {
-  status: 'idle',
-  config: null,
-  form: DEFAULT_FEDERATION_FORM,
-  baselineForm: DEFAULT_FEDERATION_FORM,
-  selected: false,
-  credentialsEditing: false,
-  error: null,
-  oauthStatus: null,
-  oauthStatusError: null,
-}
-
 // Module-level so it stays monotonic across reset().
 let oauthStatusGeneration = 0
 
@@ -277,11 +266,12 @@ const initialState = {
   mcpOAuthFlowId: null,
   auxLoading: false,
   federation: initialFederation,
-  federationTest: { status: 'idle', result: null },
+  federationTest: INITIAL_FEDERATION_TEST,
 }
 
 export const useConfigureRoleStore = create((set, get) => ({
   ...initialState,
+  ...federationSlice(set, get),
 
   loadConnection: async (nameOrId) => {
     set({
@@ -293,7 +283,7 @@ export const useConfigureRoleStore = create((set, get) => ({
       renames: {},
       mcpOAuthFlowId: null,
       federation: initialFederation,
-      federationTest: { status: 'idle', result: null },
+      federationTest: INITIAL_FEDERATION_TEST,
     })
     try {
       const data = await connectionsService.getConnection(nameOrId)
@@ -342,61 +332,6 @@ export const useConfigureRoleStore = create((set, get) => ({
       })
     }
   },
-
-  selectFederation: (selected) =>
-    set((state) => ({ federation: { ...state.federation, selected } })),
-
-  setFederationForm: (patch) =>
-    set((state) => ({
-      federation: { ...state.federation, form: { ...state.federation.form, ...patch } },
-    })),
-
-  // A credential typed for one provider is the wrong kind for the other.
-  // gcp_oauth has no static service account to fall back on.
-  setFederationProvider: (provider) => {
-    get().setFederationCredentialsEditing(false)
-    get().setFederationForm(
-      provider === FEDERATION_PROVIDERS.GCP_OAUTH
-        ? { builtin_provider: provider, admin_credentials_json: '', fallback_policy: 'deny' }
-        : { builtin_provider: provider, admin_credentials_json: '' },
-    )
-  },
-
-  setFederationProjectId: (projectId) =>
-    set((state) => {
-      const form = state.federation.form
-      return {
-        federation: {
-          ...state.federation,
-          form: { ...form, extra_config: { ...form.extra_config, project_id: projectId } },
-        },
-      }
-    }),
-
-  setFederationCredentialsEditing: (credentialsEditing) =>
-    set((state) => ({ federation: { ...state.federation, credentialsEditing } })),
-
-  runFederationTest: async (email) => {
-    const { connection, drafts, federation, hideRoleInfo } = get()
-    set({ federationTest: { status: 'loading', result: null } })
-    try {
-      const { data } = await federationService.test(
-        buildFederationTestPayload({
-          email,
-          form: federation.form,
-          agentId: drafts.agent_id || connection.agent_id,
-          connection,
-          adminCredentials: adminCredentialsForTest(federation.form, connection.secret, hideRoleInfo),
-        }),
-      )
-      set({ federationTest: { status: data?.success ? 'success' : 'error', result: data } })
-    } catch (err) {
-      const message = err?.response?.data?.message || err?.message || 'Federation test failed.'
-      set({ federationTest: { status: 'error', result: { error: message } } })
-    }
-  },
-
-  resetFederationTest: () => set({ federationTest: { status: 'idle', result: null } }),
 
   loadFederationOAuthStatus: async () => {
     const name = get().connection?.name

@@ -1,0 +1,34 @@
+{
+  "name": "qa916-bq-pay-sm-then-iam",
+  "type": "custom",
+  "subtype": "bigquery",
+  "agent_id": "43bb5bee-844a-50f7-b9c4-bc68f3e4d862",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "qa916-bq-pay-sm-then-iam-role",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "bq",
+        "query",
+        "--use_legacy_sql=false",
+        "--format=prettyjson",
+        "--project_id=$CLOUDSDK_CORE_PROJECT"
+      ],
+      "type": "custom",
+      "secret": {
+        "envvar:CLOUDSDK_CORE_PROJECT": "cC1mZWQ=",
+        "filesystem:GOOGLE_APPLICATION_CREDENTIALS": "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwiY2xpZW50X2VtYWlsIjoiZmVkQHAuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLCJwcml2YXRlX2tleSI6ImsyIn0="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "43bb5bee-844a-50f7-b9c4-bc68f3e4d862",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "bigquery"
+    }
+  ]
+}
