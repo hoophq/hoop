@@ -211,7 +211,7 @@ func GetAPIKeyContext(keyHash string) (*Context, error) {
 
 // UpdateAPIKeyLastUsed sets last_used_at for an API key, at most once per lastUsedInterval.
 func UpdateAPIKeyLastUsed(id string) {
-	touchLastUsed(&apiKeyLastUsedGate, "private.api_keys", id)
+	touchLastUsed(&apiKeyLastUsedGate, "private.api_keys", id, time.Now().UTC())
 }
 
 func RevokeAPIKey(orgID, id, deactivatedBy string) error {

@@ -23,6 +23,10 @@ func ResetLastUsedGates() {
 	aiAgentLastUsedGate = lastUsedGate{}
 }
 
+func TouchAPIKeyLastUsedAt(id string, now time.Time) {
+	touchLastUsed(&apiKeyLastUsedGate, "private.api_keys", id, now)
+}
+
 func LastUsedGateAllow(id string, now time.Time) bool {
 	return apiKeyLastUsedGate.allow(id, now)
 }

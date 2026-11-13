@@ -211,7 +211,7 @@ func GetAIAgentContext(keyHash string) (*Context, error) {
 
 // UpdateAIAgentLastUsed sets last_used_at for an AI agent, at most once per lastUsedInterval.
 func UpdateAIAgentLastUsed(id string) {
-	touchLastUsed(&aiAgentLastUsedGate, "private.ai_agents", id)
+	touchLastUsed(&aiAgentLastUsedGate, "private.ai_agents", id, time.Now().UTC())
 }
 
 func RevokeAIAgent(orgID, id, deactivatedBy string) error {

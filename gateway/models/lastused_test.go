@@ -82,6 +82,22 @@ func TestUpdateLastUsedWritesOncePerInterval(t *testing.T) {
 		})
 	}
 
+	t.Run("skipped write opens the gate when the interval of the row ends", func(t *testing.T) {
+		models.ResetLastUsedGates()
+		t.Cleanup(models.ResetLastUsedGates)
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		written := now.Add(-models.LastUsedInterval / 2)
+		setLastUsed(t, "private.api_keys", apiKey.ID, written)
+
+		models.TouchAPIKeyLastUsedAt(apiKey.ID, now)
+		models.TouchAPIKeyLastUsedAt(apiKey.ID, written.Add(models.LastUsedInterval-time.Second))
+		assert.True(t, written.Equal(*readLastUsed(t, "private.api_keys", apiKey.ID)))
+
+		next := written.Add(models.LastUsedInterval)
+		models.TouchAPIKeyLastUsedAt(apiKey.ID, next)
+		assert.True(t, next.Equal(*readLastUsed(t, "private.api_keys", apiKey.ID)))
+	})
+
 	// An unknown id is not an error and writes nothing.
 	models.UpdateAPIKeyLastUsed(uuid.NewString())
 }
