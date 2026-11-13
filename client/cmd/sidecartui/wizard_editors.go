@@ -957,7 +957,7 @@ var riskActionLabel = map[string]string{
 	"defer": "report, let policy decide", "require_approval": "hold for approval",
 }
 
-func analyzerForm(a analyzerDraft, protocol string) *form {
+func analyzerForm(a analyzerDraft) *form {
 	providers := providerOptions()
 	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider,
 		optLabel: map[string]string{hoop.Name: hostedLabel + ", no API key"}}
@@ -1001,8 +1001,6 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 		{id: "project", label: "GCP project", kind: fText, text: a.project, placeholder: "my-gcp-project", hidden: hideUnlessVertex,
 			help: "Vertex uses Google Application Default Credentials."},
 		{id: "region", label: "Region", kind: fText, text: a.region, placeholder: "global", hidden: hideUnlessVertex},
-		{id: "trigger", label: "Look at", kind: fMulti, multi: a.trigger, options: opsFor(protocol), placeholder: "every statement",
-			help: "Which operations are sent to the model. Empty sends everything."},
 		{id: "high", label: "High risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.high},
 		{id: "medium", label: "Medium risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.medium},
 		{id: "low", label: "Low risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.low},
@@ -1034,7 +1032,6 @@ func analyzerFromForm(f *form, a analyzerDraft) (analyzerDraft, error) {
 	a.model, a.keyFile = followProvider(prev, a.provider,
 		strings.TrimSpace(g("model").text), strings.TrimSpace(g("key").text), a.keyDir)
 	a.project, a.region = strings.TrimSpace(g("project").text), strings.TrimSpace(g("region").text)
-	a.trigger = g("trigger").multi
 	a.high, a.medium, a.low = g("high").text, g("medium").text, g("low").text
 	if !a.on {
 		return a, nil
