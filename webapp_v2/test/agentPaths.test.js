@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { NAV, QUICK_ACCESS_ITEMS, SUGGESTION_ITEMS } from '@/layout/Sidebar/gatewayNav'
-import { AGENT_PATHS, isAgentPath } from '@/modes/agentPaths'
+import { AGENT_PATHS, UNLISTED_AGENT_PATHS, isAgentPath } from '@/modes/agentPaths'
 
 vi.mock('@/modes/agents', () => ({ AGENTS_FLAG: 'experimental.agents' }))
 
@@ -46,6 +46,24 @@ describe('isAgentPath', () => {
   )
 
   it.each([
+    '/roles/pg/configure',
+    '/Roles/pg/configure',
+    '/resource-catalog',
+    '/features/runbooks/rules/new',
+    '/features/runbooks/rules/edit/abc',
+    '/features/runbooks/edit/bash',
+  ])('closes the page without a menu entry %s', (pathname) => {
+    expect(isAgentPath(pathname)).toBe(true)
+  })
+
+  it('closes every page declared without a menu entry', () => {
+    for (const pattern of UNLISTED_AGENT_PATHS) {
+      const path = pattern.replace(/:\w+/g, 'x')
+      expect([path, isAgentPath(path)]).toEqual([path, true])
+    }
+  })
+
+  it.each([
     '/sidecars',
     '/sidecars/new',
     '/approvals',
@@ -55,6 +73,8 @@ describe('isAgentPath', () => {
     '/features/ai-session-analyzer',
     '/ai-agents-identities',
     '/resource-catalog-x',
+    '/roles',
+    '/features/runbooks',
     '/agentsx',
     '/settings/experimental',
     '/integrations/slack',
