@@ -287,7 +287,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `image.tag` | `latest` | |
 | `image.pullPolicy` | `Always` | |
 | `config.POSTGRES_DB_URI` | — | **Required.** External PostgreSQL |
-| `config.POSTGRES_MAX_OPEN_CONNS` | `50` | Most PostgreSQL connections one replica opens. Past it a query waits in process instead of taking a server slot. Size it to the server: 2-4 x its vCPUs, and `replicas x value` below `max_connections` minus the reserved slots |
+| `config.POSTGRES_MAX_OPEN_CONNS` | `50` | Most PostgreSQL connections one pod opens. Past it a query waits in process instead of taking a server slot. Set this or `postgresPool.connectionBudget`, not both |
 | `config.API_URL` | — | **Required.** Must carry a scheme |
 | `config.IDP_ISSUER` | `''` | Setting any `IDP_*` key selects OIDC. Requires `IDP_CLIENT_ID`, and `IDP_CLIENT_SECRET` or a client assertion |
 | `config.IDP_CLIENT_ID` / `IDP_CLIENT_SECRET` / `IDP_CUSTOM_SCOPES` / `IDP_GROUPS_CLAIM` / `IDP_AUDIENCE` | `''` | |
@@ -305,6 +305,7 @@ are rendered by the gateway chart and not by this one; naming one under
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |
 | `replicas` | `1` | See Replicas |
+| `postgresPool.connectionBudget` | unset | PostgreSQL connections for the whole release, 2-4 x the database's vCPUs. Divided by the pods that can run at once (`replicas`, plus `maxSurge` with RollingUpdate) into each pod's `POSTGRES_MAX_OPEN_CONNS`, never below 1 |
 | `deploymentStrategy.type` | `Recreate` | At one replica, RollingUpdate's default surge runs two Slack sockets per upgrade |
 | `readinessProbe` / `livenessProbe` | `{}` / `{}` | Off. Rendered verbatim when set — see Probes |
 | `service.enabled` / `service.type` / `service.annotations` | `true` / `ClusterIP` / `{}` | One port, 8009 |

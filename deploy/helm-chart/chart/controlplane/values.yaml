@@ -69,10 +69,9 @@ config:
   POSTGRES_DB_URI: ''
   # 'postgres://<user>:<pwd>@<db-host>:<port>/<dbname>'
 
-  ## Most PostgreSQL connections one replica opens; past it a query waits in
-  ## process instead of taking a server slot. Size it to the server: 2-4 x
-  ## its vCPUs, and replicas x value below max_connections minus the reserved
-  ## slots.
+  ## Most PostgreSQL connections one pod opens; past it a query waits in
+  ## process instead of taking a server slot. For several replicas prefer
+  ## postgresPool.connectionBudget below, which does the division.
   # POSTGRES_MAX_OPEN_CONNS: '50'
 
   # -- REQUIRED. The address the web app and every sidecar reach this on. Must
@@ -183,6 +182,18 @@ replicas: 1
 # rewritten when the review settles.
 deploymentStrategy:
   type: Recreate
+
+# -- PostgreSQL connections for the whole release.
+#
+# The database serves the sum over every pod, so size the sum: 2-4 x the
+# database's vCPUs is where throughput peaks; past that, connections only
+# queue on the CPU. The chart divides the budget by the pods that can run at
+# once (replicas, plus maxSurge with RollingUpdate) and starts each with the
+# result as POSTGRES_MAX_OPEN_CONNS, so a change of replicas keeps the sum.
+# Set this or config.POSTGRES_MAX_OPEN_CONNS, not both.
+postgresPool:
+  connectionBudget: null
+  # connectionBudget: 8   # a 2 vCPU database
 
 # -- Readiness and liveness probes. OFF by default.
 #

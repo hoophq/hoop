@@ -57,6 +57,38 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- printf "%s-extra-env" (include "hoopcontrolplane.fullname" .) -}}
 {{- end -}}
 
+{{/*
+The PostgreSQL pool cap one pod starts with. postgresPool.connectionBudget
+is the database-wide budget for this release, divided by the pods that can
+run at once: replicas, plus maxSurge with RollingUpdate (Kubernetes' default
+surge is 25%, rounded up). Without a budget, config.POSTGRES_MAX_OPEN_CONNS
+is the per-pod value, 50 by default. Both set is a contradiction: refused.
+*/}}
+{{- define "hoopcontrolplane.pgMaxOpenConns" -}}
+{{- $perPod := (.Values.config | default dict).POSTGRES_MAX_OPEN_CONNS -}}
+{{- $budget := (.Values.postgresPool | default dict).connectionBudget -}}
+{{- if and $perPod $budget -}}
+{{- fail "set postgresPool.connectionBudget or config.POSTGRES_MAX_OPEN_CONNS, not both" -}}
+{{- end -}}
+{{- if $budget -}}
+{{- $replicas := int (.Values.replicas | default 1) -}}
+{{- $pods := $replicas -}}
+{{- $strategy := .Values.deploymentStrategy | default dict -}}
+{{- if eq ($strategy.type | default "") "RollingUpdate" -}}
+{{- $surge := ($strategy.rollingUpdate | default dict).maxSurge | default "25%" -}}
+{{- if hasSuffix "%" (toString $surge) -}}
+{{- $pct := trimSuffix "%" (toString $surge) | float64 -}}
+{{- $pods = add $replicas (ceil (divf (mulf $replicas $pct) 100.0) | int) -}}
+{{- else -}}
+{{- $pods = add $replicas (int $surge) -}}
+{{- end -}}
+{{- end -}}
+{{- max 1 (div (int $budget) $pods) -}}
+{{- else -}}
+{{- $perPod | default 50 -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "hoopcontrolplane.httpPort" -}}8009{{- end -}}
 
 {{- define "hoopcontrolplane.basePath" -}}
