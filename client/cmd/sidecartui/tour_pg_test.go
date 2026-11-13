@@ -204,6 +204,25 @@ func TestPostgresTourTicksStepsFromTheAuditTrail(t *testing.T) {
 	}
 }
 
+// A masking query the model rated high and the person approved still ticks
+// "See masking"; the AI step's approved reply, masked too, does not.
+func TestAHighMaskingQueryStillTicksSeeMasking(t *testing.T) {
+	tr := newTour(&DemoOptions{Kind: sidecardemo.KindPostgres})
+	high := map[string]string{"risk_level": "high"}
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "select", Tables: []string{"customers"}, SessionID: "a1",
+		Direction: inspect.FromClient, Statement: tr.steps[2].SQL, Metadata: high})
+	tr.see(audit.Event{Kind: "masked", SessionID: "a1", Direction: inspect.FromServer})
+	if tr.done[0] {
+		t.Fatal("the AI step's masked reply ticked See masking")
+	}
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "select", Tables: []string{"customers"}, SessionID: "m1",
+		Direction: inspect.FromClient, Statement: tr.steps[0].SQL, Metadata: high})
+	tr.see(audit.Event{Kind: "masked", SessionID: "m1", Direction: inspect.FromServer})
+	if !tr.done[0] {
+		t.Fatal("an approved high-risk masking query did not tick See masking")
+	}
+}
+
 // The Postgres tour offers psql, never a browser, and copies psql.
 func TestPostgresTourOffersPsqlNotABrowser(t *testing.T) {
 	tr := newTour(&DemoOptions{Kind: sidecardemo.KindPostgres, OpenURL: func(string) error { return nil }})

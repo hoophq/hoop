@@ -68,6 +68,8 @@ type tour struct {
 	lastOp map[string]string
 	// lastRisk is each session's last analyzer verdict, matched the same way.
 	lastRisk map[string]string
+	// lastStmt is each session's last statement, matched the same way.
+	lastStmt map[string]string
 	// held is true while a statement waits at this terminal for approval:
 	// the AI step's, or any other the analyzer held. sawHold is true once
 	// the running step saw one.
@@ -128,13 +130,14 @@ func (t *tour) pg() bool { return t.kind == sidecardemo.KindPostgres }
 // The analyzer's verdict is carried the same way: the AI step's approved
 // export is masked too, and that masked reply is not "See masking".
 func (t *tour) see(ev audit.Event) {
-	op, risk := string(ev.Operation), ev.Metadata["risk_level"]
+	op, risk, stmt := string(ev.Operation), ev.Metadata["risk_level"], ev.Statement
 	if (ev.Kind == audit.KindStatement || ev.Kind == "violation") && ev.Direction != inspect.FromServer {
 		if t.lastOp == nil {
-			t.lastOp, t.lastRisk = map[string]string{}, map[string]string{}
+			t.lastOp, t.lastRisk, t.lastStmt = map[string]string{}, map[string]string{}, map[string]string{}
 		}
 		t.lastOp[string(ev.SessionID)] = op
 		t.lastRisk[string(ev.SessionID)] = risk
+		t.lastStmt[string(ev.SessionID)] = stmt
 	}
 	if op == "" {
 		op = t.lastOp[string(ev.SessionID)]
@@ -142,8 +145,16 @@ func (t *tour) see(ev audit.Event) {
 	if risk == "" {
 		risk = t.lastRisk[string(ev.SessionID)]
 	}
+	if stmt == "" {
+		stmt = t.lastStmt[string(ev.SessionID)]
+	}
+	// A high verdict keeps the AI step's reply off the other steps. Another
+	// statement the model rated high and the person approved (the masking
+	// query, say) still ticks its own step. Without the statement, the
+	// verdict alone decides.
+	aiReply := strings.EqualFold(risk, "high") && (stmt == "" || t.aiStatement(stmt))
 	for i, s := range t.steps {
-		if s.SeenRisk == "" && strings.EqualFold(risk, "high") {
+		if s.SeenRisk == "" && aiReply {
 			continue
 		}
 		// The AI step is done whichever way the person decided: approved,
@@ -163,6 +174,22 @@ func (t *tour) see(ev audit.Event) {
 			t.done[i] = true
 		}
 	}
+}
+
+// aiStatement reports a statement that is the AI step's: its SQL, or a
+// request for its path.
+func (t *tour) aiStatement(stmt string) bool {
+	norm := func(s string) string { return strings.TrimSuffix(strings.TrimSpace(s), ";") }
+	for _, s := range t.steps {
+		switch {
+		case !s.Approval:
+		case s.SQL != "" && strings.EqualFold(norm(stmt), norm(s.SQL)):
+			return true
+		case s.Path != "" && strings.Contains(stmt, s.Path):
+			return true
+		}
+	}
+	return false
 }
 
 // run sends step i's request off the UI goroutine, over the demo's protocol.
