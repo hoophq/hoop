@@ -2051,7 +2051,12 @@ request, and an approval request nobody decided expires after the 30-minute
 wait. A control plane,
 when one is configured, always wins: its approvers decide, and the
 terminal never releases a statement the plane governs. An embedder offers the
-same with `daemon.WithLocalReviewer`.
+same with `daemon.WithLocalReviewer`. One exception: the CLI's built-in demo
+(the `hoop start sidecar` setup screen's Demo) passes
+`daemon.WithLocalReviewerFirst` for the listener that fronts hoop's demo
+database or the CLI's invented API, so its AI step is approved at the
+terminal while the free plan runs logged in. It applies only while the lanes
+come from the local file; a plane that serves the lanes keeps its approvers.
 
 **The approval runs last.** The lane files the approval request only after
 every other evaluator allowed the statement, the decide-phase OPA call

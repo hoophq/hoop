@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
@@ -37,6 +38,9 @@ type DemoOptions struct {
 	Ports sidecardemo.Ports
 	// Kind is which demo this is: HTTP or Postgres. The zero value is HTTP.
 	Kind sidecardemo.Kind
+	// Listeners are the demo's lanes. Only a hold on one of them is the AI
+	// step's; empty takes any.
+	Listeners []string
 }
 
 type tourResult struct {
@@ -62,6 +66,36 @@ type tour struct {
 	// lastOp is each session's last recorded operation, which a masked
 	// event (it names none) is matched by.
 	lastOp map[string]string
+	// lastRisk is each session's last analyzer verdict, matched the same way.
+	lastRisk map[string]string
+	// lastStmt is each session's last statement, matched the same way.
+	lastStmt map[string]string
+	// held is true while a statement waits at this terminal for approval:
+	// the AI step's, or any other the analyzer held. sawHold is true once
+	// the running step saw one.
+	held, sawHold bool
+	// listeners are the demo's lanes (DemoOptions.Listeners).
+	listeners []string
+}
+
+// stepTimeout is the time a step may take: quick for most, and for the AI
+// step as long as the demo API waits for a held request
+// (sidecardemo.HeaderWait).
+//
+// quickWait outlasts the demo analyzer's own timeout (sidecardemo.AnalyzerTimeout):
+// with the model unreachable the analyzer gives up and the demo lane refuses
+// the read (fail closed) before the step times out.
+const quickWait = 15 * time.Second
+
+// httpQuickWait is the HTTP demo's wait for a step that is not the AI step,
+// as before it: only the export goes to the model (AnalyzerScope).
+const httpQuickWait = 5 * time.Second
+
+func stepTimeout(s sidecardemo.Step, quick time.Duration) time.Duration {
+	if s.Approval {
+		return sidecardemo.HeaderWait
+	}
+	return quick
 }
 
 func newTour(o *DemoOptions) *tour {
@@ -75,7 +109,7 @@ func newTour(o *DemoOptions) *tour {
 	}
 	steps := sidecardemo.StepsFor(kind)
 	return &tour{kind: kind, steps: steps, done: make([]bool, len(steps)), running: -1,
-		open: o.OpenURL, ports: p}
+		open: o.OpenURL, ports: p, listeners: o.Listeners}
 }
 
 // pg reports whether this is the Postgres demo.
@@ -92,22 +126,48 @@ func (t *tour) pg() bool { return t.kind == sidecardemo.KindPostgres }
 // records the server's CommandComplete as a statement ("SELECT 4", operation
 // unknown) between the query and its masked rows; letting it count would leave
 // the masked event matched to "unknown" and "See masking" never ticked.
+//
+// The analyzer's verdict is carried the same way: the AI step's approved
+// export is masked too, and that masked reply is not "See masking".
 func (t *tour) see(ev audit.Event) {
-	op := string(ev.Operation)
+	op, risk, stmt := string(ev.Operation), ev.Metadata["risk_level"], ev.Statement
 	if (ev.Kind == audit.KindStatement || ev.Kind == "violation") && ev.Direction != inspect.FromServer {
 		if t.lastOp == nil {
-			t.lastOp = map[string]string{}
+			t.lastOp, t.lastRisk, t.lastStmt = map[string]string{}, map[string]string{}, map[string]string{}
 		}
 		t.lastOp[string(ev.SessionID)] = op
+		t.lastRisk[string(ev.SessionID)] = risk
+		t.lastStmt[string(ev.SessionID)] = stmt
 	}
 	if op == "" {
 		op = t.lastOp[string(ev.SessionID)]
 	}
+	if risk == "" {
+		risk = t.lastRisk[string(ev.SessionID)]
+	}
+	if stmt == "" {
+		stmt = t.lastStmt[string(ev.SessionID)]
+	}
+	// A high verdict keeps the AI step's reply off the other steps. Another
+	// statement the model rated high and the person approved (the masking
+	// query, say) still ticks its own step. Without the statement, the
+	// verdict alone decides.
+	aiReply := strings.EqualFold(risk, "high") && (stmt == "" || t.aiStatement(stmt))
 	for i, s := range t.steps {
-		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
+		if s.SeenRisk == "" && aiReply {
+			continue
+		}
+		// The AI step is done whichever way the person decided: approved,
+		// it is a statement; rejected, a violation with the same verdict and
+		// the review's id. A high-risk block has no review: not done.
+		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation && ev.Metadata[metaReviewID] != ""
+		if s.SeenKind == "" || (string(ev.Kind) != s.SeenKind && !rejected) {
 			continue
 		}
 		if s.SeenTable != "" && !slices.ContainsFunc(ev.Tables, func(tb string) bool { return strings.EqualFold(tb, s.SeenTable) }) {
+			continue
+		}
+		if s.SeenRisk != "" && !strings.EqualFold(ev.Metadata["risk_level"], s.SeenRisk) {
 			continue
 		}
 		if s.SeenOp == "" || strings.EqualFold(op, s.SeenOp) {
@@ -116,9 +176,25 @@ func (t *tour) see(ev audit.Event) {
 	}
 }
 
+// aiStatement reports a statement that is the AI step's: its SQL, or a
+// request for its path.
+func (t *tour) aiStatement(stmt string) bool {
+	norm := func(s string) string { return strings.TrimSuffix(strings.TrimSpace(s), ";") }
+	for _, s := range t.steps {
+		switch {
+		case !s.Approval:
+		case s.SQL != "" && strings.EqualFold(norm(stmt), norm(s.SQL)):
+			return true
+		case s.Path != "" && strings.Contains(stmt, s.Path):
+			return true
+		}
+	}
+	return false
+}
+
 // run sends step i's request off the UI goroutine, over the demo's protocol.
 func (t *tour) run(i int) tea.Cmd {
-	t.running, t.flash = i, ""
+	t.running, t.flash, t.sawHold = i, "", false
 	if t.pg() {
 		return t.runPG(i)
 	}
@@ -128,7 +204,7 @@ func (t *tour) run(i int) tea.Cmd {
 func (t *tour) runHTTP(i int) tea.Cmd {
 	s := t.steps[i]
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), stepTimeout(s, httpQuickWait))
 		defer cancel()
 		var body io.Reader
 		if s.Body != "" {
@@ -169,7 +245,7 @@ func (t *tour) runPG(i int) tea.Cmd {
 			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
 		}
 		start := time.Now()
-		res, err := pgQuery(target, s.SQL)
+		res, err := pgQuery(target, s.SQL, stepTimeout(s, quickWait))
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -180,11 +256,43 @@ func (t *tour) runPG(i int) tea.Cmd {
 
 func (t *tour) apply(r tourResult) {
 	t.running = -1
+	switch {
+	case r.err != nil:
+	case strings.Contains(r.body, analyzer.UnavailableMessage):
+		// The demo lane holds for approval, so a read the model could
+		// not rate is refused. Say why, not the step's usual answer.
+		what := "the users export"
+		if t.pg() {
+			what = "customer reads"
+		}
+		r.err = fmt.Errorf("refused: the AI analyzer could not reach the model Hoop hosts, and this demo "+
+			"holds %s for approval, so it refuses what it cannot rate. Check the network; see Logs (6)", what)
+	case t.steps[r.step].Approval && !t.sawHold && r.status == 403:
+		// Refused without a hold: High risk is set to block.
+		r.err = errBlocked
+	case t.steps[r.step].Approval && !t.sawHold:
+		// Answered without a hold: the model rated it below high.
+		r.err = errNoHold
+	}
 	t.result = &r
 	if r.err == nil {
 		t.done[r.step] = true
 	}
 }
+
+// setHeld records whether a statement waits at this terminal, and that the
+// running step saw one.
+func (t *tour) setHeld(held bool) {
+	t.held = held
+	if held && t.running >= 0 {
+		t.sawHold = true
+	}
+}
+
+var errBlocked = errors.New("refused without asking you: High risk is set to block, not hold " +
+	"for approval, or a rule refused it. See Wire (1)")
+
+var errNoHold = errors.New("the AI analyzer did not hold it: the model rated it below high risk. See Logs (6)")
 
 // summary is the one-line "what runs" for a step: the HTTP method and path, or
 // the SQL statement.
@@ -254,6 +362,9 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 
 func (t *tour) hints() []keyHint {
 	keys := []keyHint{{"↑↓", "step"}, {"enter", "run it here"}}
+	if t.held {
+		keys = []keyHint{{"enter", "approve or reject"}, {"↑↓", "step"}}
+	}
 	copyLabel := "copy curl"
 	if t.pg() {
 		copyLabel = "copy psql"
@@ -317,6 +428,10 @@ func (t *tour) view(w, h int, now time.Time) string {
 	lines = append(lines, "")
 
 	switch r := t.result; {
+	case t.held:
+		lines = append(lines, shimmer("⧗ Waiting for your approval…", now),
+			ansi.Truncate(stText.Render("The AI analyzer held it. Press ")+stKey.Render("enter")+
+				stText.Render(" to read why, then approve or reject it."), w, "…"))
 	case t.running == t.cur:
 		verb := "sending "
 		if t.pg() {
@@ -385,7 +500,7 @@ const sqlstateRefused = "42501"
 // styles like a refused HTTP request, and any other (a mistyped column, a
 // failed login) a 400 that carries the database's own message. Only a
 // connection that never answered is the returned error.
-func pgQuery(t pgTarget, sql string) (tourResult, error) {
+func pgQuery(t pgTarget, sql string, timeout time.Duration) (tourResult, error) {
 	host, port, err := net.SplitHostPort(t.addr)
 	if err != nil {
 		return tourResult{}, err
@@ -413,7 +528,7 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {

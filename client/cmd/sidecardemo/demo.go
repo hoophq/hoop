@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/analyzer"
 )
 
 // Addr is where the demo API prefers to listen: loopback, beside the demo
@@ -80,6 +82,12 @@ type Step struct {
 	// SeenTable, when set, is a table the event must name too: two Postgres
 	// steps are both a SELECT, and only the table tells them apart.
 	SeenTable string
+	// SeenRisk, when set, is the AI analyzer's risk level the event must
+	// carry (metadata risk_level): the AI step is a read like the others.
+	SeenRisk string
+	// Approval marks the step the AI analyzer holds for the person at the
+	// terminal: it waits for their decision, not for a quick answer.
+	Approval bool
 }
 
 // Command is the step as a shell command to paste into another terminal: curl
@@ -125,6 +133,12 @@ var Steps = []Step{
 		Expect:   "403: the request never reaches the API.",
 		Why:      "The guardrail \"no-deletes\" matched the DELETE operation and the sidecar answered for the API.",
 		SeenKind: "violation", SeenOp: "delete",
+	},
+	{
+		Title: "Ask for approval", Method: "GET", Path: "/users/export", Approval: true,
+		Expect:   "Held: the AI rates the export high risk and asks you. Press enter to decide.",
+		Why:      "The AI analyzer rated the request high risk, so the sidecar held it until you decided. Approved, it reaches the API; rejected, the client gets the reason.",
+		SeenKind: "statement", SeenOp: "get", SeenRisk: "high",
 	},
 	{
 		Title: "Write through it", Method: "POST", Path: "/users",
@@ -183,6 +197,10 @@ func NewServer() *Server {
 	return s
 }
 
+// HeaderWait is how long the demo API waits for a request's headers: the
+// time a held request waits for its approval, and a margin.
+const HeaderWait = analyzer.ReviewWait + time.Minute
+
 // Serve listens on addr until ctx ends. A port already taken is returned at
 // once: booting a demo whose upstream is someone else's server would show
 // that server's data under the demo's name.
@@ -191,7 +209,11 @@ func Serve(ctx context.Context, addr string) (<-chan error, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the demo API cannot listen on %s: %w", addr, err)
 	}
-	srv := &http.Server{Handler: NewServer().Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// The sidecar opens its upstream connection when the client connects,
+	// then holds the AI step's request until a person decides. The API
+	// waits for the request as long as a hold waits (analyzer.ReviewWait),
+	// or the approved request finds the connection closed.
+	srv := &http.Server{Handler: NewServer().Handler(), ReadHeaderTimeout: HeaderWait}
 	done := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ln)
@@ -221,6 +243,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /users", func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		writeJSON(w, http.StatusOK, s.users)
+	})
+	mux.HandleFunc("GET /users/export", func(w http.ResponseWriter, _ *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		w.Header().Set("Content-Disposition", `attachment; filename="users.json"`)
 		writeJSON(w, http.StatusOK, s.users)
 	})
 	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {

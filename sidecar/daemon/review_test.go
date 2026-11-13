@@ -390,7 +390,7 @@ func TestALocalReviewerReceivesHoldsWithoutAPlane(t *testing.T) {
 	if _, err := buildLanes(cfg, nil, deps); err != nil {
 		t.Fatalf("a hold with a local reviewer and no plane was refused: %v", err)
 	}
-	if got := deps.reviewerFor("pg", cfg.Listeners[0].Analyzer, false); got != local {
+	if got := deps.reviewerFor("appdb", cfg.Listeners[0].Analyzer, false); got != local {
 		t.Fatalf("reviewerFor = %v, want the local reviewer", got)
 	}
 	if deps.reviewerFor("pg", cfg.Listeners[0].Analyzer, true) != nil {
@@ -421,6 +421,59 @@ func TestThePlaneWinsOverALocalReviewer(t *testing.T) {
 	got := deps.reviewerFor("pg", la, false)
 	if _, ok := got.(planReviewer); !ok {
 		t.Fatalf("reviewerFor = %T, want the plane's reviewer", got)
+	}
+}
+
+// WithLocalReviewerFirst (the CLI demo) files the named listener's holds with
+// the terminal even with a plane, when the lanes come from the local file. The
+// lane then needs no approval_rule. Every other case keeps the plane.
+func TestLocalReviewerFirstWinsOverThePlane(t *testing.T) {
+	local := &localReviewer{}
+	opts := &setupOptions{}
+	WithLocalReviewerFirst("appdb")(opts)
+	newDeps := func(diskMode bool) *analyzerDeps {
+		return &analyzerDeps{
+			cfg:        &AnalyzerConfig{Provider: "stub", Model: "m"},
+			provider:   highRiskProvider{},
+			cp:         &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t"), diskMode: diskMode},
+			local:      func(string) analyzer.Reviewer { return local },
+			localFirst: opts.localFirst,
+			// What setupAnalyzer sets from the boot owner.
+			lanesFromPlane: !diskMode,
+		}
+	}
+	isPlane := func(r analyzer.Reviewer) bool { _, ok := r.(planReviewer); return ok }
+
+	deps := newDeps(true)
+	cfg := holdingLane()
+	cfg.Listeners[0].Analyzer.ApprovalRule = ""
+	if _, err := buildLanes(cfg, nil, deps); err != nil {
+		t.Fatalf("a demo hold with a local reviewer was refused: %v", err)
+	}
+	if got := deps.reviewerFor("appdb", cfg.Listeners[0].Analyzer, false); got != local {
+		t.Fatalf("reviewerFor = %T, want the local reviewer", got)
+	}
+	if deps.reviewerFor("appdb", cfg.Listeners[0].Analyzer, true) != nil {
+		t.Error("an observed lane got a local reviewer")
+	}
+
+	held := holdingLane().Listeners[0].Analyzer
+	if !isPlane(deps.reviewerFor("payments", held, false)) {
+		t.Error("a listener the option does not name skipped the plane")
+	}
+	if !isPlane(newDeps(false).reviewerFor("appdb", held, false)) {
+		t.Error("a plane that serves the lanes lost its approvers to local-first")
+	}
+	// The plane takes the configuration after boot: cp.diskMode keeps its
+	// boot value, and the reload marks the lanes as the plane's.
+	taken := newDeps(true)
+	taken.lanesFromPlane = true
+	if !isPlane(taken.reviewerFor("appdb", held, false)) {
+		t.Error("after a takeover, local-first kept the plane's approvers out")
+	}
+	deps.local = nil
+	if !isPlane(deps.reviewerFor("appdb", held, false)) {
+		t.Error("without a local reviewer, local-first did not fall back to the plane")
 	}
 }
 

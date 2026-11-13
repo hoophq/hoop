@@ -319,6 +319,10 @@ func TestFailClosedDenies(t *testing.T) {
 	if strings.Contains(v.Message, "exploded") {
 		t.Errorf("the provider's error text reached the user: %q", v.Message)
 	}
+	// Clients match the denial by this prefix (the CLI demo's tour).
+	if !strings.HasPrefix(v.Message, analyzer.UnavailableMessage) {
+		t.Errorf("the denial %q does not start with UnavailableMessage", v.Message)
+	}
 }
 
 // A spent budget falls through to allow rather than denying: the local rules

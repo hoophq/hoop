@@ -544,7 +544,7 @@ func (r *reloader) reloadFile(log *slog.Logger) reloadOutcome {
 // applyFile is the standalone counterpart of apply: the file is the owner,
 // so there is no load_from_disk flag and no ownership flip to consider.
 func (r *reloader) applyFile(log *slog.Logger, raw []byte) reloadOutcome {
-	return r.applyOwned(log, raw, "config file")
+	return r.applyOwned(log, raw, false)
 }
 
 // restartForControlPlane answers a standalone file that started naming a
@@ -620,15 +620,14 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	case on:
 		return r.adoptFile(log, planeDoc.License)
 	case !on && r.diskMode:
-		out := r.applyOwned(log, raw, "control plane")
+		out := r.applyOwned(log, raw, true)
 		if out == reloadApplied {
 			r.diskMode = false
-			log.Info("the control plane took ownership of the configuration; " +
-				"the config file's document no longer serves")
+			log.Info(LogPlaneOwnsConfig)
 		}
 		return out
 	}
-	return r.applyOwned(log, raw, "control plane")
+	return r.applyOwned(log, raw, true)
 }
 
 // adoptFile serves the disk-mode answer: the config file is the source of
@@ -678,7 +677,7 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 		return reloadRetry
 	}
 	flipped := !r.diskMode
-	out := r.applyOwned(log, raw, "config file")
+	out := r.applyOwned(log, raw, false)
 	if out == reloadApplied || out == reloadUnchanged {
 		if report, rerr := localReport(local); rerr == nil {
 			r.runningFile = report
@@ -686,16 +685,31 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 	}
 	if out == reloadApplied && flipped {
 		r.diskMode = true
-		log.Info("the control plane handed the configuration to the local file; "+
-			"the file's document now serves", "path", r.configPath)
+		log.Info(LogFileOwnsConfig, "path", r.configPath)
 	}
 	return out
 }
 
+// LogPlaneOwnsConfig and LogFileOwnsConfig are logged when the control plane
+// takes the configuration from the local file, or hands it back. The CLI's
+// TUI reads them: approvals of a demo lane stay at the terminal only while
+// the file serves (WithLocalReviewerFirst).
+const (
+	LogPlaneOwnsConfig = "the control plane took ownership of the configuration; " +
+		"the config file's document no longer serves"
+	LogFileOwnsConfig = "the control plane handed the configuration to the local file; " +
+		"the file's document now serves"
+)
+
 // applyOwned runs one owner's full document against the running process:
-// rule-only drift swaps, anything beyond the rules is restart-bound. from
-// names the document's owner in the logs: "control plane" or "config file".
-func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadOutcome {
+// rule-only drift swaps, anything beyond the rules is restart-bound.
+// fromPlane is the owner: the control plane's own document, or the config
+// file's. It decides where a demo lane files its holds (filesLocally).
+func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) reloadOutcome {
+	from := "config file"
+	if fromPlane {
+		from = "control plane"
+	}
 	newCfg, err := LoadConfigBytes(raw)
 	if err != nil {
 		log.Warn("the "+from+" sent a config this build refuses; keeping the running rules",
@@ -742,10 +756,20 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// this uncommitted detector with the running maskers and pii rules.
 	// The copy shares the budgets map on purpose — budget continuity is
 	// per name, not per generation.
+	//
+	// The owner is staged the same way: lanes the plane's document builds
+	// never file a demo lane's holds at the terminal (filesLocally).
+	// A lane whose rules did not move is kept as it runs, reviewer and
+	// all, so a move of owner rebuilds every lane when a demo lane may
+	// file at the terminal.
+	ownerMoved := r.ac != nil && len(r.ac.localFirst) > 0 && r.ac.lanesFromPlane != fromPlane
 	ac := r.ac
-	if detChanged && r.ac != nil {
+	if r.ac != nil && (detChanged || r.ac.lanesFromPlane != fromPlane) {
 		staged := *r.ac
-		staged.det = det
+		if detChanged {
+			staged.det = det
+		}
+		staged.lanesFromPlane = fromPlane
 		ac = &staged
 	}
 
@@ -882,7 +906,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	viewLanes := make([]lane, 0, len(lanes))
 	for _, ln := range lanes {
 		doc := docs[ln.name]
-		if !detChanged && bytes.Equal(doc, r.laneDocs[ln.name]) {
+		if !detChanged && !ownerMoved && bytes.Equal(doc, r.laneDocs[ln.name]) {
 			// This lane's rules did not move, so its running evaluators
 			// keep serving: analyzer call budgets, verdict caches and
 			// per-rule counters survive the reload. Only an edit to THIS
@@ -914,8 +938,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// Commit, all together: the detector, the pii section it came from and
 	// the analyzer dependencies move as one, only on a document that
 	// applied.
-	if detChanged && r.ac != nil {
-		r.ac.det = det
+	if r.ac != nil {
+		if detChanged {
+			r.ac.det = det
+		}
+		r.ac.lanesFromPlane = fromPlane
 	}
 	r.det = det
 	r.piiRaw = newCfg.PII

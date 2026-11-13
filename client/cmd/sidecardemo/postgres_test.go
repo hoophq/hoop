@@ -119,7 +119,7 @@ func TestPsqlCommands(t *testing.T) {
 
 	// Parsing reads the CA at sslrootcert, so it succeeds only when the odd
 	// home directory came through as one value.
-	_, args = psqlArgs(t, PGSteps[3].Psql(p))
+	_, args = psqlArgs(t, PGSteps[len(PGSteps)-1].Psql(p))
 	cfg, err = pgconn.ParseConfig(args[0])
 	if err != nil {
 		t.Fatalf("direct step connection string %q (CA at %s): %v", args[0], ca, err)
@@ -134,7 +134,7 @@ func TestPsqlCommands(t *testing.T) {
 func TestPsqlKeepsAnAddressLiteral(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	evil := "$(touch PWNED)`touch PWNED2`'\";.example.com:5432"
-	_, args := psqlArgs(t, PGSteps[3].Psql(Ports{Listen: PGListenAddr, API: evil}))
+	_, args := psqlArgs(t, PGSteps[len(PGSteps)-1].Psql(Ports{Listen: PGListenAddr, API: evil}))
 	if !strings.Contains(args[0], "$(touch PWNED)`touch PWNED2`") {
 		t.Errorf("connection string %q lost the address's text", args[0])
 	}

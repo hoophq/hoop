@@ -102,7 +102,7 @@ func (m model) header() string {
 		chip("✕", num(m.st.Denied), "denied", stDanger, m.st.Denied > 0),
 		chip("▒", num(m.st.Masked), "masked", stStrong, m.st.Masked > 0),
 	}
-	if m.controlPlane != "" {
+	if m.planeApprovals() {
 		// Reviews are decided in the control plane; a count here would
 		// ask the person to come approve what they cannot.
 	} else if n := m.st.PendingReviews(); n > 0 && m.tab != tabReviews {
@@ -150,7 +150,7 @@ func (m model) hints() string {
 		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"←", "sections"}, {"q", "quit"}}
 	case m.tab == tabTour && m.tour != nil:
 		keys = m.tour.hints()
-	case m.tab == tabReviews && m.controlPlane != "":
+	case m.tab == tabReviews && m.planeApprovals():
 		keys = []keyHint{}
 		if m.openURL != nil {
 			keys = append(keys, keyHint{"o", "open in browser"})
@@ -204,7 +204,7 @@ func (m model) content(w, h int) string {
 	if m.tab == tabTour && m.tour != nil {
 		return pane("", m.tour.view(w-4, h-2, m.now()), w, h)
 	}
-	if m.tab == tabReviews && m.controlPlane != "" {
+	if m.tab == tabReviews && m.planeApprovals() {
 		return pane("", m.controlPlaneReviews(w-4), w, h)
 	}
 	if m.tab == tabSystem {
@@ -226,6 +226,13 @@ func (m model) content(w, h int) string {
 	list := pane(m.listTitle(len(keys)), m.list(keys, sel, w-4, lh-3), w, lh)
 	det := pane("", m.detailView(keys, sel, w-4, h-lh-2), w, h-lh)
 	return lipgloss.JoinVertical(lipgloss.Left, list, det)
+}
+
+// planeApprovals reports that approvals are decided in the control plane, not
+// at this terminal. A demo's local approvals end when the plane takes the
+// configuration from the file.
+func (m model) planeApprovals() bool {
+	return m.controlPlane != "" && (!m.localApprovals || m.st.System.PlaneOwnsConfig)
 }
 
 // controlPlaneReviews is the Approvals section of a sidecar connected to a
@@ -917,6 +924,21 @@ func (m model) pendingLocal() []string {
 	var out []string
 	for _, id := range m.st.ReviewOrder {
 		if r := m.st.Reviews[id]; r != nil && r.Local && r.Status == statusPending {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// tourPending are the pending local approvals of the demo's own lanes: the
+// AI step's hold, never a hold on another listener.
+func (m model) tourPending() []string {
+	if m.tour == nil || len(m.tour.listeners) == 0 {
+		return m.pendingLocal()
+	}
+	var out []string
+	for _, id := range m.pendingLocal() {
+		if slices.Contains(m.tour.listeners, m.st.Reviews[id].Lane) {
 			out = append(out, id)
 		}
 	}

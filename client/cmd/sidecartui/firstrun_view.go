@@ -36,7 +36,7 @@ func frWordmark(now time.Time) string {
 	// glint on black, deeper reads as one on white.
 	glint := lipgloss.NewStyle().Foreground(shade(lipgloss.Color("#1F3A9E"), lipgloss.Color("#DCE3FF"))).Bold(true)
 	glow := lipgloss.NewStyle().Foreground(shade(lipgloss.Color("#2E4FC4"), lipgloss.Color("#8AA0EE"))).Bold(true)
-	base := lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
+	base := lipgloss.NewStyle().Foreground(colPrimaryText).Bold(true)
 	rows := make([]string, len(wordmark))
 	for y, line := range wordmark {
 		var b strings.Builder
@@ -91,7 +91,7 @@ func (m firstRunModel) frFlow(now time.Time) string {
 	for i := range cells {
 		cells[i] = stFaint.Render("─")
 	}
-	dot := lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
+	dot := lipgloss.NewStyle().Foreground(colPrimaryText).Bold(true)
 	place := func(f float64) {
 		if f < 0 || f >= 1 {
 			return

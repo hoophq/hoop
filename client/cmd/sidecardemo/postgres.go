@@ -130,6 +130,13 @@ var PGSteps = []Step{
 		SeenKind: "violation", SeenOp: "drop",
 	},
 	{
+		Title: "Ask for approval", Approval: true,
+		SQL:      "SELECT customerid, firstname, lastname, creditcardtype, creditcard, creditcardexpiration FROM customers LIMIT 50;",
+		Expect:   "Held: the AI rates the card export high risk and asks you. Press enter to decide.",
+		Why:      "The AI analyzer rated the statement high risk, so the sidecar held it until you decided. Approved, it reaches the database; rejected, the client gets the reason.",
+		SeenKind: "statement", SeenOp: "select", SeenRisk: "high",
+	},
+	{
 		Title: "Run a safe query", SQL: "SELECT title, price FROM products ORDER BY price DESC LIMIT 5;",
 		Expect:   "The products as they are: nothing in them is sensitive.",
 		Why:      "The query matched no guardrail and no mask rule, so it passed through and was recorded in the audit trail like every statement.",

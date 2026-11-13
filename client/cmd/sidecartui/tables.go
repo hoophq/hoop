@@ -321,10 +321,10 @@ func (m model) menu(w, h int) string {
 			// Under a control plane the reviews are decided there, so
 			// nothing here is waiting on this person: no count, and no
 			// shimmer asking them to come.
-			if n := m.st.PendingReviews(); n > 0 && m.controlPlane == "" {
+			if n := m.st.PendingReviews(); n > 0 && !m.planeApprovals() {
 				count = num(n)
 			}
-			if m.controlPlane != "" {
+			if m.planeApprovals() {
 				count = "↗"
 			}
 		case tabLanes:
@@ -349,7 +349,7 @@ func (m model) menu(w, h int) string {
 		// Approvals belong to the control plane when there is one: the
 		// entry stays, dimmed, so the person can still go there and read
 		// where they are handled.
-		dim := i == tabReviews && m.controlPlane != ""
+		dim := i == tabReviews && m.planeApprovals()
 		switch {
 		case dim && i == m.tab && m.menuFocus:
 			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
