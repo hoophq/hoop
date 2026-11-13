@@ -1035,9 +1035,10 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 // filesLocally reports a listener whose human holds go to the local reviewer
 // although a plane is configured: one WithLocalReviewerFirst named, in a
 // process whose lanes come from the local file. A plane that serves the
-// lanes itself keeps its approvers, whatever the listener is called.
+// lanes itself keeps its approvers, whatever the listener is called, also
+// when it takes the configuration from the file after boot (lanesFromPlane).
 func (ac *analyzerDeps) filesLocally(listener string) bool {
-	if ac == nil || ac.local == nil || !slices.Contains(ac.localFirst, listener) {
+	if ac == nil || ac.local == nil || ac.lanesFromPlane || !slices.Contains(ac.localFirst, listener) {
 		return false
 	}
 	return ac.cp == nil || ac.cp.diskMode

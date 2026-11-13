@@ -614,17 +614,6 @@ func (r *reloader) ownerLicenseApplies() bool {
 // rotates the license the tiny document carries), a takeover runs the
 // plane's full document through the same swap-or-restart decision as any
 // owned drift, and the mode flips only on a document that applied.
-// LogPlaneOwnsConfig and LogFileOwnsConfig are logged when the control plane
-// takes the configuration from the local file, or hands it back. The CLI's
-// TUI reads them: approvals of a demo lane stay at the terminal only while
-// the file serves (WithLocalReviewerFirst).
-const (
-	LogPlaneOwnsConfig = "the control plane took ownership of the configuration; " +
-		"the config file's document no longer serves"
-	LogFileOwnsConfig = "the control plane handed the configuration to the local file; " +
-		"the file's document now serves"
-)
-
 func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	var planeDoc Config
 	on := json.Unmarshal(raw, &planeDoc) == nil &&
@@ -703,6 +692,17 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 	return out
 }
 
+// LogPlaneOwnsConfig and LogFileOwnsConfig are logged when the control plane
+// takes the configuration from the local file, or hands it back. The CLI's
+// TUI reads them: approvals of a demo lane stay at the terminal only while
+// the file serves (WithLocalReviewerFirst).
+const (
+	LogPlaneOwnsConfig = "the control plane took ownership of the configuration; " +
+		"the config file's document no longer serves"
+	LogFileOwnsConfig = "the control plane handed the configuration to the local file; " +
+		"the file's document now serves"
+)
+
 // applyOwned runs one owner's full document against the running process:
 // rule-only drift swaps, anything beyond the rules is restart-bound. from
 // names the document's owner in the logs: "control plane" or "config file".
@@ -753,10 +753,17 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// this uncommitted detector with the running maskers and pii rules.
 	// The copy shares the budgets map on purpose — budget continuity is
 	// per name, not per generation.
+	//
+	// The owner is staged the same way: lanes the plane's document builds
+	// never file a demo lane's holds at the terminal (filesLocally).
+	fromPlane := from == "control plane"
 	ac := r.ac
-	if detChanged && r.ac != nil {
+	if r.ac != nil && (detChanged || r.ac.lanesFromPlane != fromPlane) {
 		staged := *r.ac
-		staged.det = det
+		if detChanged {
+			staged.det = det
+		}
+		staged.lanesFromPlane = fromPlane
 		ac = &staged
 	}
 
@@ -925,8 +932,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// Commit, all together: the detector, the pii section it came from and
 	// the analyzer dependencies move as one, only on a document that
 	// applied.
-	if detChanged && r.ac != nil {
-		r.ac.det = det
+	if r.ac != nil {
+		if detChanged {
+			r.ac.det = det
+		}
+		r.ac.lanesFromPlane = fromPlane
 	}
 	r.det = det
 	r.piiRaw = newCfg.PII

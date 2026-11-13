@@ -2128,6 +2128,11 @@ type analyzerDeps struct {
 	// for the CLI's built-in demo; see filesLocally.
 	localFirst []string
 
+	// lanesFromPlane: the lanes this ac builds come from the plane's own
+	// document, after a takeover. cp.diskMode keeps its boot value, so a
+	// reload sets this on its staged copy; see filesLocally.
+	lanesFromPlane bool
+
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every
 	// other lane keeps the default. Held here rather than a prebuilt
