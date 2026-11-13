@@ -186,12 +186,13 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
-	if err := refuseConnection(clientVerb, clientOrigin[0], gwctx.Connection); err != nil {
+	err = refuseConnection(clientVerb, clientOrigin[0], gwctx.Connection)
+	if err == nil {
+		err = refuseForeignSession(gwctx.UserContext.OrgID, commongrpc.MetaGet(md, "session-id"))
+	}
+	if err != nil {
 		closeRefusedSession(gwctx.UserContext.OrgID, gwctx.UserContext.UserID, gwctx.Connection.Name,
 			func(key string) string { return commongrpc.MetaGet(md, key) }, err)
-		return err
-	}
-	if err := refuseForeignSession(gwctx.UserContext.OrgID, commongrpc.MetaGet(md, "session-id")); err != nil {
 		return err
 	}
 
