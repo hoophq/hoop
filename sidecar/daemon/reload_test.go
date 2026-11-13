@@ -759,6 +759,7 @@ func TestADiskModeLicenseRemovalDropsToTheFreeTier(t *testing.T) {
 func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
 	rl, buf := testReloader(t, reloadBase)
 	rl.diskMode = true
+	rl.ac = &analyzerDeps{}
 
 	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
 	if got := applyWith(rl, buf, drifted); got != reloadApplied {
@@ -767,8 +768,13 @@ func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
 	if rl.diskMode {
 		t.Error("the mode did not flip to plane-owned")
 	}
-	if !strings.Contains(buf.String(), "took ownership") {
+	if !strings.Contains(buf.String(), LogPlaneOwnsConfig) {
 		t.Errorf("no ownership log line:\n%s", buf)
+	}
+	// The plane's lanes keep its approvers: a demo listener's holds no
+	// longer go to the terminal (filesLocally).
+	if !rl.ac.lanesFromPlane {
+		t.Error("the takeover left the analyzer filing holds as if the file served")
 	}
 }
 

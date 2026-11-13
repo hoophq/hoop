@@ -288,6 +288,13 @@ func TestAIStepBlockedSaysBlocked(t *testing.T) {
 	if !tr.done[step] || tr.result.err != nil {
 		t.Fatalf("a rejected AI step: done %v, err %v", tr.done[step], tr.result.err)
 	}
+
+	// Run again and rated below high: the tick the person earned stays.
+	tr.run(step)
+	tr.apply(tourResult{step: step, status: 200, body: "rows"})
+	if !tr.done[step] || tr.result.err == nil {
+		t.Fatalf("a failed rerun: done %v, err %v", tr.done[step], tr.result.err)
+	}
 }
 
 // The plane taking the configuration from the file moves a demo's approvals

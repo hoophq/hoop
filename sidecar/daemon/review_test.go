@@ -462,6 +462,13 @@ func TestLocalReviewerFirstWinsOverThePlane(t *testing.T) {
 	if !isPlane(newDeps(false).reviewerFor("appdb", held, false)) {
 		t.Error("a plane that serves the lanes lost its approvers to local-first")
 	}
+	// The plane takes the configuration after boot: cp.diskMode keeps its
+	// boot value, and the reload marks the lanes as the plane's.
+	taken := newDeps(true)
+	taken.lanesFromPlane = true
+	if !isPlane(taken.reviewerFor("appdb", held, false)) {
+		t.Error("after a takeover, local-first kept the plane's approvers out")
+	}
 	deps.local = nil
 	if !isPlane(deps.reviewerFor("appdb", held, false)) {
 		t.Error("without a local reviewer, local-first did not fall back to the plane")

@@ -241,8 +241,6 @@ func (t *tour) apply(r tourResult) {
 	t.result = &r
 	if r.err == nil {
 		t.done[r.step] = true
-	} else if t.steps[r.step].Approval {
-		t.done[r.step] = false
 	}
 }
 
