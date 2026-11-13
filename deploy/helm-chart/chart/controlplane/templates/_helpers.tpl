@@ -63,14 +63,22 @@ is the database-wide budget for this release, divided by the pods that can
 run at once: replicas, plus maxSurge with RollingUpdate (Kubernetes' default
 surge is 25%, rounded up). Without a budget, config.POSTGRES_MAX_OPEN_CONNS
 is the per-pod value, 50 by default. Both set is a contradiction: refused.
+Set is "not nil and not empty", so an explicit 0 is not read as unset:
+a per-pod 0 reaches the gateway, which refuses to start on it, and a
+budget below 1 is refused here.
 */}}
 {{- define "hoopcontrolplane.pgMaxOpenConns" -}}
 {{- $perPod := (.Values.config | default dict).POSTGRES_MAX_OPEN_CONNS -}}
 {{- $budget := (.Values.postgresPool | default dict).connectionBudget -}}
-{{- if and $perPod $budget -}}
+{{- $perPodSet := not (or (kindIs "invalid" $perPod) (eq (toString $perPod) "")) -}}
+{{- $budgetSet := not (or (kindIs "invalid" $budget) (eq (toString $budget) "")) -}}
+{{- if and $perPodSet $budgetSet -}}
 {{- fail "set postgresPool.connectionBudget or config.POSTGRES_MAX_OPEN_CONNS, not both" -}}
 {{- end -}}
-{{- if $budget -}}
+{{- if $budgetSet -}}
+{{- if lt (int $budget) 1 -}}
+{{- fail (printf "postgresPool.connectionBudget must be >= 1, got %v" $budget) -}}
+{{- end -}}
 {{- $replicas := int (.Values.replicas | default 1) -}}
 {{- $pods := $replicas -}}
 {{- $strategy := .Values.deploymentStrategy | default dict -}}
@@ -84,8 +92,10 @@ is the per-pod value, 50 by default. Both set is a contradiction: refused.
 {{- end -}}
 {{- end -}}
 {{- max 1 (div (int $budget) $pods) -}}
+{{- else if $perPodSet -}}
+{{- $perPod -}}
 {{- else -}}
-{{- $perPod | default 50 -}}
+50
 {{- end -}}
 {{- end -}}
 
