@@ -62,7 +62,7 @@ func TestProviderChangeShowsThatProvidersDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := analyzerForm(d.an, d.protocol)
+	f := analyzerForm(d.an)
 	f.cur = slices.IndexFunc(f.fields, func(x *field) bool { return x.id == "provider" })
 	f.load()
 	for f.byID("provider").text != "openai" {
@@ -85,7 +85,7 @@ func TestHoopsOwnModelIsTheNamedDefault(t *testing.T) {
 	if hostedProvider != hoop.Name {
 		t.Fatalf("hostedProvider %q drifted from %q", hostedProvider, hoop.Name)
 	}
-	f := analyzerForm(analyzerDraft{provider: hoop.Name}, "postgres")
+	f := analyzerForm(analyzerDraft{provider: hoop.Name})
 	prov := f.byID("provider")
 	if len(prov.options) == 0 || prov.options[0] != hoop.Name || !strings.Contains(prov.optLabel[hoop.Name], "default") {
 		t.Errorf("provider options %v, label %q: want Hoop's own model first, named as the default", prov.options, prov.optLabel[hoop.Name])
@@ -157,7 +157,7 @@ func TestHostedProviderWritesUseHoopLLMProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := analyzerForm(d.an, d.protocol)
+	f := analyzerForm(d.an)
 	f.byID("on").on, f.byID("provider").text = true, "hoop"
 	if d.an, err = analyzerFromForm(f, d.an); err != nil {
 		t.Fatalf("the hosted model needs no model or key, got %v", err)

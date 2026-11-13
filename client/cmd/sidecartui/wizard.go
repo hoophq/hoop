@@ -344,7 +344,7 @@ func (w *wizard) overviewKey(k tea.KeyPressMsg) (tea.Cmd, wizEvent) {
 		w.page, w.list.cur = pgMasks, 0
 		w.buildList()
 	case "analyzer":
-		w.page, w.form = pgAnalyzer, analyzerForm(w.d.an, w.d.protocol)
+		w.page, w.form = pgAnalyzer, analyzerForm(w.d.an)
 	case "pii":
 		w.page, w.form = pgPII, piiForm(w.d.pii)
 	case "file":
