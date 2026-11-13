@@ -167,12 +167,7 @@ func updateSidecarConnection(tx *gorm.DB, name string, m Connection) error {
 	// theirs now and keeps its type. The mirror can still read that agent
 	// through its resource; no session opens on a mirror whatever agent it
 	// reads (refuseSidecarMirror, gateway/transport).
-	err := tx.Exec(`INSERT INTO private.resources AS r (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
-		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()
-		WHERE r.agent_id IS NULL
-		  AND NOT EXISTS (SELECT 1 FROM private.connections c
-		                  WHERE c.org_id = r.org_id AND c.resource_name = r.name AND c.name <> ?)`,
-		m.OrgID, name, m.Type, m.SubType, name).Error
+	err := tx.Exec(sidecarMirrorResourceUpdateQuery, m.OrgID, name, m.Type, m.SubType, name).Error
 	if err != nil {
 		return fmt.Errorf("failed writing resource %q, reason=%v", name, err)
 	}
@@ -253,6 +248,26 @@ func (s SidecarMirrorState) InSync(m Connection) bool {
 	return s.ResourceType.String == m.Type && s.ResourceSubType == m.SubType
 }
 
+// Each reads connections by (org_id, resource_name): index
+// idx_connections_org_resource_name.
+const (
+	sidecarMirrorResourceUpdateQuery = `INSERT INTO private.resources AS r (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
+		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()
+		WHERE r.agent_id IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM private.connections c
+		                  WHERE c.org_id = r.org_id AND c.resource_name = r.name AND c.name <> ?)`
+
+	sidecarMirrorNameInUseQuery = `SELECT EXISTS (SELECT 1 FROM private.connections WHERE org_id = ? AND (name = ? OR resource_name = ?))`
+
+	sidecarMirrorResourceCreateQuery = `INSERT INTO private.resources AS r (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
+		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()
+		WHERE r.agent_id IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM private.connections c WHERE c.org_id = r.org_id AND c.resource_name = r.name)`
+
+	orphanResourceDeleteQuery = `DELETE FROM private.resources r WHERE r.org_id = ? AND r.name = ?
+		AND NOT EXISTS (SELECT 1 FROM private.connections c WHERE c.org_id = r.org_id AND c.resource_name = r.name)`
+)
+
 // insertSidecarConnection creates a mirror under m.Name, or under its
 // fallback name when m.Name is in use. A name in use never refuses the
 // sidecar write: the sidecar config is the source of truth, and it may come
@@ -285,19 +300,14 @@ func insertSidecarConnection(tx *gorm.DB, m Connection) error {
 // (getConnectionByNameOrID), so a mirror must never inherit one.
 func createSidecarConnection(tx *gorm.DB, name string, m Connection) (bool, error) {
 	var inUse bool
-	err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM private.connections WHERE org_id = ? AND (name = ? OR resource_name = ?))`,
-		m.OrgID, name, name).Scan(&inUse).Error
+	err := tx.Raw(sidecarMirrorNameInUseQuery, m.OrgID, name, name).Scan(&inUse).Error
 	if err != nil {
 		return false, fmt.Errorf("failed checking connection %q, reason=%v", name, err)
 	}
 	if inUse {
 		return false, nil
 	}
-	res := tx.Exec(`INSERT INTO private.resources AS r (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
-		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()
-		WHERE r.agent_id IS NULL
-		  AND NOT EXISTS (SELECT 1 FROM private.connections c WHERE c.org_id = r.org_id AND c.resource_name = r.name)`,
-		m.OrgID, name, m.Type, m.SubType)
+	res := tx.Exec(sidecarMirrorResourceCreateQuery, m.OrgID, name, m.Type, m.SubType)
 	if res.Error != nil {
 		return false, fmt.Errorf("failed writing resource %q, reason=%v", name, res.Error)
 	}
@@ -325,9 +335,7 @@ func createSidecarConnection(tx *gorm.DB, name string, m Connection) (bool, erro
 
 // deleteOrphanResource removes a resource no connection uses any more.
 func deleteOrphanResource(tx *gorm.DB, orgID, name string) error {
-	err := tx.Exec(`DELETE FROM private.resources r WHERE r.org_id = ? AND r.name = ?
-		AND NOT EXISTS (SELECT 1 FROM private.connections c WHERE c.org_id = r.org_id AND c.resource_name = r.name)`,
-		orgID, name).Error
+	err := tx.Exec(orphanResourceDeleteQuery, orgID, name).Error
 	if err != nil {
 		return fmt.Errorf("failed deleting resource %q, reason=%v", name, err)
 	}
