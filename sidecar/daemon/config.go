@@ -1413,6 +1413,9 @@ func (c *Config) validate(onHost bool) error {
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.RuleLibrary.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
+	if c.ICA != nil && c.ICA.DiagnosticRecording != nil && !c.Admin.ICAReadinessJSON {
+		problems = append(problems, "ica.diagnostic_recording requires admin.ica_readiness_json: true for truthful recording readiness")
+	}
 	problems = append(problems, c.Telemetry.Validate()...)
 	problems = append(problems, c.Admin.validate()...)
 	if c.Audit.QueryMaxBytes < 0 {

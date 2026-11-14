@@ -16,7 +16,7 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0
-	github.com/hoophq/libhoop-ica v0.9.1
+	github.com/hoophq/libhoop-ica v0.11.0
 )
 
 require (
