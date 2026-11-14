@@ -443,10 +443,14 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	}
 	ctxDuration := time.Until(dba.ExpireAt)
 
+	isServiceCredential, err := models.IsServiceIdentityCredential(models.DB, dba.OrgID, dba.ID, dba.UserSubject)
+	if err != nil {
+		return nil, fmt.Errorf("failed identifying connection credential owner: %v", err)
+	}
 	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
 	var tokenVerifier idp.UserInfoTokenVerifier
-	if !isMachineCredential {
+	if !isServiceCredential {
 		var err error
 		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
 		if err != nil {
@@ -479,7 +483,7 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 		},
 	}
 
-	if !isMachineCredential {
+	if !isServiceCredential {
 		usertoken.PollingUserToken(session.ctx, func(cause error) {
 			session.cancelFn(cause.Error())
 		}, tokenVerifier, dba.UserSubject)
@@ -498,7 +502,13 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
 			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, dba.OrgID),
 		)
-	} else if dba.SessionID != "" {
+	} else if isServiceCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.ServiceIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.ServiceIdentityOrgIDHeaderKey, dba.OrgID),
+		)
+	}
+	if !isMachineCredential && dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
 	}
 	if correlationID != "" {
