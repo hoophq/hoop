@@ -328,18 +328,18 @@ func TestLanesOnOneRuntimeShareOneSessionLimit(t *testing.T) {
 	t.Cleanup(func() { newRuntime = restore })
 	cfg := resolveRuntimeConfig(daemon.ICARuntime{})
 
-	a, err := acquireRuntime(context.Background(), cfg, "", 5)
+	a, err := acquireRuntime(context.Background(), cfg, "", 5, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := acquireRuntime(context.Background(), cfg, "", 5)
+	b, err := acquireRuntime(context.Background(), cfg, "", 5, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a != b || a.limit == nil || a.limit != b.limit || a.limit.Max() != 5 || loaded != 1 {
 		t.Fatalf("two lanes on one runtime do not share one limit: %p/%p, limit %p/%p, loads %d", a, b, a.limit, b.limit, loaded)
 	}
-	c, err := acquireRuntime(context.Background(), cfg, "", 6)
+	c, err := acquireRuntime(context.Background(), cfg, "", 6, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

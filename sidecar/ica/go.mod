@@ -8,7 +8,7 @@ go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/libhoop-ica v0.9.1
+	github.com/hoophq/libhoop-ica v0.11.0
 )
 
 require (

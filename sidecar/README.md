@@ -6522,7 +6522,7 @@ The optional listener `ica.slots` block maps consecutive unprivileged ports to V
 
 `ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
 
-The adapter pins the published **libhoop-ica v0.8.0** cell API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
+The adapter pins the published **libhoop-ica v0.11.0** cell and diagnostic recording API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
 
 ### ICA GPU assets
 
@@ -6532,3 +6532,7 @@ the CPU `ica` target stays unchanged. GPU assets and TensorRT engines are an
 explicit versioned/checksummed build input. See [ICA GPU delivery](../deploy/ica-sidecar/GPU.md)
 for the asset contract, installer, configuration keys, and separate fixed-upstream
 and TPROXY examples. No OCR text inspector is enabled by this profile.
+
+### Temporary ICA diagnostic recording
+
+An explicitly acknowledged `ica.diagnostic_recording` block can record a bounded synthetic TCP reproduction before decoding/OCR/masking. It is disabled by default, requires JSON readiness and a cold restart, and restores inspection for fresh connections at expiry. See the [recording guide](../deploy/ica-sidecar/DIAGNOSTIC-RECORDING.md) and [example configuration](../deploy/ica-sidecar/examples/config.diagnostic-recording.yaml). CPU/GPU settings remain those of the normal deployment; Cell A additionally needs the updated external relay and matching expiry.

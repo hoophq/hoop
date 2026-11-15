@@ -1,0 +1,28 @@
+# Controlled TCP reproduction only: NO decoding/OCR/masking while recording.
+# This file deliberately cannot enable capture until its expiry is replaced.
+# Merge diagnostic_recording/admin into the existing CPU/GPU config instead of
+# discarding that deployment's assets, policy, source CIDRs or VDA settings.
+log_level: info
+admin:
+  listen: 127.0.0.1:19000
+  api_listen: 127.0.0.1:19001
+  ica_readiness_json: true
+audit:
+  file: '-'
+  fail_open: false
+ica:
+  diagnostic_recording:
+    acknowledge_unredacted: true
+    until: "REPLACE-WITH-ABSOLUTE-RFC3339-EXPIRY"
+    output_dir: /var/lib/hoop/ica-diagnostics/reproduction-001
+    max_bytes: 536870912
+    max_sessions: 3
+    session_timeout_sec: 900
+listeners:
+  - name: vdi-test
+    protocol: ica
+    listen: 0.0.0.0:2598
+    upstream: 10.77.0.32:2598 # EDIT: assigned VDA; no routing change implied.
+    ica:
+      tenant_id: lab
+      source_cidrs: [10.20.1.10/32] # EDIT: actual Gateway source.
