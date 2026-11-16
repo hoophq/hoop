@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 )
 
@@ -10,23 +11,27 @@ import (
 // of the pool, so a backlog of events cannot take every connection.
 const defaultSidecarEventSlots = 10
 
-var (
-	sidecarEventSlots = make(chan struct{}, defaultSidecarEventSlots)
-	sidecarHookSlots  = make(chan struct{}, defaultSidecarEventSlots)
-)
+type sidecarEventLanes struct{ ingest, hooks chan struct{} }
+
+// A slot goes back to the lanes it came from, so a resize never loses one.
+var sidecarSlots atomic.Pointer[sidecarEventLanes]
+
+func init() { sidecarSlots.Store(newSidecarEventLanes(defaultSidecarEventSlots)) }
+
+func newSidecarEventLanes(n int) *sidecarEventLanes {
+	return &sidecarEventLanes{ingest: make(chan struct{}, n), hooks: make(chan struct{}, n)}
+}
 
 // SizeSidecarEventSlots sizes the ingest and the hooks to a pool of poolSize
-// connections. Call it at boot, before the API and the reaper start.
+// connections.
 func SizeSidecarEventSlots(poolSize int) {
-	n := max(1, poolSize/5)
-	sidecarEventSlots = make(chan struct{}, n)
-	sidecarHookSlots = make(chan struct{}, n)
+	sidecarSlots.Store(newSidecarEventLanes(max(1, poolSize/5)))
 }
 
 // AdmitSidecarEvents takes an ingest slot, waiting at most wait. Not ok means
 // the replica is behind on events.
 func AdmitSidecarEvents(ctx context.Context, wait time.Duration) (release func(), ok bool) {
-	slots := sidecarEventSlots
+	slots := sidecarSlots.Load().ingest
 	release = func() { <-slots }
 	select {
 	case slots <- struct{}{}:

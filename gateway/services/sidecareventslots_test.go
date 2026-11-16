@@ -14,9 +14,36 @@ func TestSizeSidecarEventSlotsGivesAFifthOfThePool(t *testing.T) {
 	t.Cleanup(func() { SizeSidecarEventSlots(defaultSidecarEventSlots * 5) })
 	for pool, want := range map[int]int{1: 1, 4: 1, 5: 1, 50: 10, 200: 40} {
 		SizeSidecarEventSlots(pool)
-		assert.Equal(t, want, cap(sidecarEventSlots), "ingest slots for a pool of %d", pool)
-		assert.Equal(t, want, cap(sidecarHookSlots), "hook slots for a pool of %d", pool)
+		assert.Equal(t, want, cap(sidecarSlots.Load().ingest), "ingest slots for a pool of %d", pool)
+		assert.Equal(t, want, cap(sidecarSlots.Load().hooks), "hook slots for a pool of %d", pool)
 	}
+}
+
+// Run with -race: a resize while batches and hooks run.
+func TestSizeSidecarEventSlotsWhileBatchesRun(t *testing.T) {
+	t.Cleanup(func() { SizeSidecarEventSlots(defaultSidecarEventSlots * 5) })
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				if release, ok := AdmitSidecarEvents(context.Background(), time.Millisecond); ok {
+					release()
+				}
+				runSidecarSessionHooksWith(sidecarSessionHook{}, func(sidecarSessionHook) func() { return nil })
+			}
+		}()
+	}
+	for pool := range 50 {
+		SizeSidecarEventSlots(pool + 5)
+	}
+	wg.Wait()
+
+	SizeSidecarEventSlots(5)
+	release, ok := AdmitSidecarEvents(context.Background(), 0)
+	require.True(t, ok, "the new lanes start empty")
+	release()
 }
 
 func TestAdmitSidecarEventsWaitsThenRefuses(t *testing.T) {
@@ -41,7 +68,8 @@ func TestAdmitSidecarEventsWaitsThenRefuses(t *testing.T) {
 func TestRunSidecarSessionHooksWaitsForASlot(t *testing.T) {
 	t.Cleanup(func() { SizeSidecarEventSlots(defaultSidecarEventSlots * 5) })
 	SizeSidecarEventSlots(5)
-	sidecarHookSlots <- struct{}{}
+	hooks := sidecarSlots.Load().hooks
+	hooks <- struct{}{}
 
 	started := make(chan struct{})
 	go func() {
@@ -55,13 +83,13 @@ func TestRunSidecarSessionHooksWaitsForASlot(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	<-sidecarHookSlots
+	<-hooks
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("the hook did not start once a slot was free")
 	}
-	require.Eventually(t, func() bool { return len(sidecarHookSlots) == 0 }, time.Second, 5*time.Millisecond,
+	require.Eventually(t, func() bool { return len(hooks) == 0 }, time.Second, 5*time.Millisecond,
 		"the hook gives its slot back")
 }
 

@@ -57,17 +57,15 @@ func PostEvents(c *gin.Context) {
 	}
 	release, ok := services.AdmitSidecarEvents(c.Request.Context(), eventsAdmitWait)
 	if !ok {
+		// net/http reads an unread body before it answers.
+		setEventsReadDeadline(c, eventsDrainWait)
 		// A 5xx: a released sidecar drops a batch answered 429.
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "the control plane is behind on session events; resend later"})
 		return
 	}
 	defer release()
 	// A slow upload must not hold the slot.
-	if err := http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(eventsReadTimeout)); err != nil {
-		readDeadlineUnset.Do(func() {
-			log.Warnf("sidecar session events: a slow body can hold an ingest slot, the read deadline failed: %v", err)
-		})
-	}
+	setEventsReadDeadline(c, eventsReadTimeout)
 	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
 	if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -113,12 +111,23 @@ func PostEvents(c *gin.Context) {
 }
 
 // eventsAdmitWait is how long a batch waits for an ingest slot before the
-// 503, and eventsReadTimeout how long its body may take to arrive.
+// 503, eventsReadTimeout how long its body may take to arrive, and
+// eventsDrainWait how long a refused body may take to finish arriving.
 var (
-	eventsAdmitWait   = time.Second
-	eventsReadTimeout = 10 * time.Second
+	eventsAdmitWait = time.Second
+	// The sidecar's request timeout (controlPlaneTimeout): it gives up first.
+	eventsReadTimeout = 15 * time.Second
+	eventsDrainWait   = 100 * time.Millisecond
 	readDeadlineUnset sync.Once
 )
+
+func setEventsReadDeadline(c *gin.Context, d time.Duration) {
+	if err := http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(d)); err != nil {
+		readDeadlineUnset.Do(func() {
+			log.Warnf("sidecar session events: a slow body can hold an ingest slot or a 503, the read deadline failed: %v", err)
+		})
+	}
+}
 
 func answerBatchTooLarge(c *gin.Context) {
 	c.JSON(http.StatusRequestEntityTooLarge, gin.H{

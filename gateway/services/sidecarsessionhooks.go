@@ -37,7 +37,7 @@ func runSidecarSessionHooks(h sidecarSessionHook) {
 }
 
 func runSidecarSessionHooksWith(h sidecarSessionHook, fire func(sidecarSessionHook) func()) {
-	slots := sidecarHookSlots
+	slots := sidecarSlots.Load().hooks
 	slots <- struct{}{}
 	go func() {
 		send := fire(h)
