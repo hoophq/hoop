@@ -344,6 +344,8 @@ github.com/hoophq/alcatraz/ner v0.23.0 h1:6JVKEQALt0Ww5f7bkgOZF/mChRqsveOoAMeB6E
 github.com/hoophq/alcatraz/ner v0.23.0/go.mod h1:5Tg+Umlanahu9LIHSRTP4g7Jx4ESCv6oq2Z8o8I78ZA=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRnv1AqDSPsC98tnTx2nNhNLtYxBL8=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e h1:HTPuuf+8TZ4U0JgwdB13v7HRT9V0yPlKMTUogvYS1Sc=
+github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop-ica v0.11.0 h1:b19rWVX0Sa6ZSeBHQ4M+S5dzWSeHvT9smDhLz/FieAM=
 github.com/hoophq/libhoop-ica v0.11.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/mcpproxy v0.2.0 h1:q+mYWb24o1FNSLWEOSQqfPB4WMecD5j65JMI41y3c84=
