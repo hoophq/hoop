@@ -39,7 +39,7 @@ function ApproverOption({ value, label, description, selected, onSelect }) {
 // Who approves one level's hold: an AI agent with an optional prompt, or the
 // members of some groups, static or AI-routed. A bare hold from an imported
 // file names its rule.
-function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChange }) {
+function WhoApproves({ approval, approvalRule, groupOptions, groupsLoaded, onApprover, onChange }) {
   if (approval.approver === APPROVER_RULE) {
     return (
       <Text size="sm" c="dimmed">
@@ -71,7 +71,7 @@ function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChang
         />
       )}
       {approval.approver === APPROVER_HUMAN && (
-        <ApprovalRouting approval={approval} groupOptions={groupOptions} onChange={onChange} />
+        <ApprovalRouting approval={approval} groupOptions={groupOptions} groupsLoaded={groupsLoaded} onChange={onChange} />
       )}
     </Stack>
   )

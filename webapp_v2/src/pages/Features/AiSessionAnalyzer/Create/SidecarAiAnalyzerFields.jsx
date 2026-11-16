@@ -76,6 +76,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     setAllowed,
     setApprover,
     groupOptionsFor,
+    groupsStatus,
     ruleLibraryStatus,
     aiRuleOptionsFor,
     setAIFeature,
@@ -189,6 +190,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
+                  groupsLoaded={groupsStatus === 'success'}
                   onApprover={(approver) => setApprover(level, approver)}
                   onChange={(patch) => setApproval(level, patch)}
                 />
@@ -199,6 +201,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
+                  groupsLoaded={groupsStatus === 'success'}
                   policy={policyCard(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}

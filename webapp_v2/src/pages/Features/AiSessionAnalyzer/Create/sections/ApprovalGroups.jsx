@@ -44,8 +44,9 @@ export default function ApprovalGroups({ options, value, onChange, variant = 'st
     onChange(options.filter((g) => next.has(g)))
   }
 
+  // Candidates: every box checked, or none, both mean every group.
   let badge = null
-  if (all) {
+  if (all || (copy.count && value.length === 0)) {
     badge = (
       <Badge variant="light" color="green" tag chip>
         All groups

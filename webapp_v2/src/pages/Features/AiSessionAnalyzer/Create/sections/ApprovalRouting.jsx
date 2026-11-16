@@ -22,6 +22,7 @@ import {
   isKnownDelivery,
   isRoutingMode,
   notifyRouteToSpec,
+  routingModePatch,
   selectCandidates,
 } from '../approvalRouting'
 import classes from '../Create.module.css'
@@ -236,7 +237,7 @@ function Notify({ routing, onRoute }) {
 
 // How a human level's approval request finds its approvers (ENG-663): an AI
 // agent that selects groups, people and channels, or the static groups.
-export default function ApprovalRouting({ approval, groupOptions, onChange }) {
+export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, onChange }) {
   const { routing } = approval
   const setRouting = (patch) => onChange({ routing: { ...routing, ...patch } })
   const setRoute = (key, patch) =>
@@ -251,7 +252,7 @@ export default function ApprovalRouting({ approval, groupOptions, onChange }) {
         data={ROUTING_MODES}
         renderOption={renderMode}
         value={isRoutingMode(routing.mode) ? routing.mode : null}
-        onChange={(mode) => setRouting({ mode })}
+        onChange={(mode) => onChange(routingModePatch(approval, mode, groupOptions, groupsLoaded))}
         allowDeselect={false}
         rightSection={
           <Group gap="xs" wrap="nowrap" pr="xs">
@@ -276,7 +277,9 @@ export default function ApprovalRouting({ approval, groupOptions, onChange }) {
             variant="candidates"
             options={groupOptions}
             value={candidateSelection(routing.candidates, groupOptions)}
-            onChange={(selection) => setRouting({ candidates: selectCandidates(selection, groupOptions) })}
+            onChange={(selection) =>
+              setRouting({ candidates: selectCandidates(selection, groupOptions, groupsLoaded) })
+            }
           />
           <Notify routing={routing} onRoute={setRoute} />
         </>

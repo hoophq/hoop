@@ -13,15 +13,15 @@ vi.mock('@/utils/snackbar', () => ({ showSnackbar: vi.fn() }))
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => () => {} } }))
 vi.mock('@/stores/useSidecarStore', () => ({ useSidecarStore: () => [] }))
 
-const { specToForm, formToSpec, approverConfigured, handoffConfigured, APPROVER_RULE } = await import(
-  '@/pages/Features/AiSessionAnalyzer/Create/useSidecarAiAnalyzerEditor'
-)
+const { specToForm, formToSpec, approverConfigured, handoffConfigured, humanLevelsWithoutMode, APPROVER_RULE } =
+  await import('@/pages/Features/AiSessionAnalyzer/Create/useSidecarAiAnalyzerEditor')
 const {
   ROUTING_AI,
   ROUTING_STATIC,
   emptyRouting,
   readRouting,
   routingToSpec,
+  routingModePatch,
   candidateSelection,
   selectCandidates,
 } = await import('@/pages/Features/AiSessionAnalyzer/Create/approvalRouting')
@@ -58,28 +58,40 @@ describe('a new rule', () => {
     expect(spec.high ?? spec.medium ?? spec.low).toBeUndefined()
   })
 
-  it('lets the AI decide a new human hold', () => {
+  it('starts a human hold with no way to approve, and refuses to save it', () => {
     const form = { ...specToForm(null, 'r', []), high: 'require_approval' }
     form.approval.high = { ...form.approval.high, approver: 'human' }
-    expect(form.approval.high.routing.mode).toBe(ROUTING_AI)
+    expect(form.approval.high.routing.mode).toBeNull()
+    expect(approverConfigured(form.approval.high)).toBe(false)
+    expect(humanLevelsWithoutMode(form)).toEqual(['high'])
+    expect(formToSpec(form, 'r').approvers).toBeUndefined()
+    form.approval.high.routing.mode = ROUTING_AI
+    expect(humanLevelsWithoutMode(form)).toEqual([])
     expect(formToSpec(form, 'r').approvers.high).toEqual({ type: 'human', routing: {} })
   })
 })
 
 describe('the candidate groups of an AI-routed level', () => {
   it('every box checked saves no candidates, and none stored checks every box', () => {
-    const routing = emptyRouting()
+    const routing = emptyRouting(ROUTING_AI)
     expect(candidateSelection(routing.candidates, GROUPS)).toEqual(GROUPS)
-    routing.candidates = selectCandidates(GROUPS, GROUPS)
+    routing.candidates = selectCandidates(GROUPS, GROUPS, true)
     expect(routing.candidates).toBeNull()
     expect(routingToSpec(routing)).toEqual({})
     expect(candidateSelection(readRouting({}).candidates, GROUPS)).toEqual(GROUPS)
     expect(candidateSelection(readRouting({ candidates: [] }).candidates, GROUPS)).toEqual(GROUPS)
   })
 
+  it('keeps the explicit list while the org groups have not loaded', () => {
+    // Before the load, the options are the level's own stored names: all of
+    // them checked is not every group.
+    expect(selectCandidates(['engineering'], ['engineering'], false)).toEqual(['engineering'])
+    expect(selectCandidates(['engineering'], ['engineering'], true)).toBeNull()
+  })
+
   it('a partial selection is saved and read back as it is', () => {
-    const routing = emptyRouting()
-    routing.candidates = selectCandidates(['engineering'], GROUPS)
+    const routing = emptyRouting(ROUTING_AI)
+    routing.candidates = selectCandidates(['engineering'], GROUPS, true)
     expect(routingToSpec(routing)).toEqual({ candidates: ['engineering'] })
     expect(candidateSelection(readRouting({ candidates: ['engineering'] }).candidates, GROUPS)).toEqual([
       'engineering',
@@ -87,8 +99,8 @@ describe('the candidate groups of an AI-routed level', () => {
   })
 
   it('a cleared selection saves as every group', () => {
-    const routing = emptyRouting()
-    routing.candidates = selectCandidates([], GROUPS)
+    const routing = emptyRouting(ROUTING_AI)
+    routing.candidates = selectCandidates([], GROUPS, true)
     expect(routing.candidates).toEqual([])
     expect(routingToSpec(routing)).toEqual({})
   })
@@ -98,6 +110,29 @@ describe('the candidate groups of an AI-routed level', () => {
     const form = specToForm(spec, 'r', [])
     expect(form.approval.high.routing.mode).toBe(ROUTING_STATIC)
     expect(formToSpec(form, 'r').approvers.high).toEqual({ type: 'human', groups: ['engineering'] })
+  })
+
+  it('carries the selection over a change of "How approval is done"', () => {
+    const ai = { approver: 'human', groups: [], routing: { ...emptyRouting(ROUTING_AI), candidates: ['engineering'] } }
+    const toStatic = routingModePatch(ai, ROUTING_STATIC, GROUPS, true)
+    expect(toStatic.routing.mode).toBe(ROUTING_STATIC)
+    expect(toStatic.groups).toEqual(['engineering'])
+    // All candidates seed every group.
+    expect(routingModePatch({ ...ai, routing: emptyRouting(ROUTING_AI) }, ROUTING_STATIC, GROUPS, true).groups).toEqual(
+      GROUPS,
+    )
+    // Groups already chosen stay.
+    expect(routingModePatch({ ...ai, groups: ['security-analysts'] }, ROUTING_STATIC, GROUPS, true).groups).toBeUndefined()
+
+    const stat = { approver: 'human', groups: ['engineering'], routing: emptyRouting(ROUTING_STATIC) }
+    const toAI = routingModePatch(stat, ROUTING_AI, GROUPS, true)
+    expect(toAI.routing.mode).toBe(ROUTING_AI)
+    expect(toAI.routing.candidates).toEqual(['engineering'])
+    expect(toAI.groups).toBeUndefined()
+    expect(routingModePatch({ ...stat, groups: GROUPS }, ROUTING_AI, GROUPS, true).routing.candidates).toBeNull()
+    // Candidates already chosen stay.
+    const kept = { ...stat, routing: { ...emptyRouting(ROUTING_STATIC), candidates: ['security-analysts'] } }
+    expect(routingModePatch(kept, ROUTING_AI, GROUPS, true).routing.candidates).toEqual(['security-analysts'])
   })
 })
 

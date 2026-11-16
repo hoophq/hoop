@@ -89,7 +89,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
         action={
           providerConfigured
             ? { label: 'Create new rule', onClick: goCreate }
-            : { label: 'Configure AI Session Analyzer', onClick: onGoConfigure }
+            : { label: 'Configure AI Analyzer', onClick: onGoConfigure }
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
         docsLabel="AI Analyzer Configuration"

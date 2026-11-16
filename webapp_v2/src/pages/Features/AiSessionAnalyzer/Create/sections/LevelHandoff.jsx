@@ -53,6 +53,7 @@ export default function LevelHandoff({
   approval,
   approvalRule,
   groupOptions,
+  groupsLoaded,
   policy,
   onPrompt,
   onAllowed,
@@ -95,6 +96,7 @@ export default function LevelHandoff({
           approval={approval}
           approvalRule={approvalRule}
           groupOptions={groupOptions}
+          groupsLoaded={groupsLoaded}
           onApprover={onApprover}
           onChange={onApproval}
         />

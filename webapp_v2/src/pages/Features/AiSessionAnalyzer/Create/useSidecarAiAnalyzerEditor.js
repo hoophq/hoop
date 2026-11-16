@@ -165,12 +165,22 @@ function holdApprovers(f) {
   return new Set(LEVEL_KEYS.filter((level) => canHold(f, level)).map((level) => f.approval[level].approver))
 }
 
+// The held levels whose person has no "How approval is done" yet: a save
+// has nothing to write for them, so it is refused.
+export const humanLevelsWithoutMode = (f) =>
+  LEVEL_KEYS.filter(
+    (level) =>
+      canHold(f, level) && f.approval[level].approver === APPROVER_HUMAN && !isRoutingMode(f.approval[level].routing.mode),
+  )
+
 // approvers.<level> (ENG-680). A level an imported approval rule decides has
 // no entry: it files under that rule. An AI-routed human level writes its
-// routing and no groups: the sidecar refuses both.
+// routing and no groups: the sidecar refuses both. A human level with no mode
+// is refused by `save` before this runs (humanLevelsWithoutMode).
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
     if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
+    if (approval.routing.mode !== ROUTING_STATIC) return null
     return approval.groups.length > 0 ? { type: APPROVER_HUMAN, groups: approval.groups } : { type: APPROVER_HUMAN }
   }
   if (approval.approver === APPROVER_AI) {
@@ -280,12 +290,16 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       }
       return { ...f, [level]: action, approval, handoff }
     })
-  // Levels turned to a person before the groups loaded: they get every group
-  // once the list arrives, unless the editor picks groups first.
+  // A level set to "By groups" before the groups loaded gets every group once
+  // the list arrives (routingModePatch seeds from an empty option list),
+  // unless the editor picks groups first.
   const groupsLoaded = useRef(false)
   const awaitingGroups = useRef(new Set())
   const setApproval = (level, patch) => {
     if ('groups' in patch) awaitingGroups.current.delete(level)
+    if (patch.routing?.mode === ROUTING_STATIC && patch.groups?.length === 0 && !groupsLoaded.current) {
+      awaitingGroups.current.add(level)
+    }
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))
   }
   const setHandoffPrompt = (level, prompt) =>
@@ -301,19 +315,12 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const allowed = HANDOFF_CHOICES.map((c) => c.value).filter((v) => next.has(v))
       return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
     })
-  // A level that turns to a person starts with every group selected; an
-  // emptied list leaves the decision to the administrators. Picking the
-  // approver a level already has changes nothing, so an administrators-only
-  // level keeps its empty list.
+  // Picking the approver a level already has changes nothing. A person's
+  // groups are seeded when "How approval is done" is set (routingModePatch).
   const setApprover = (level, approver) => {
     if (form.approval[level].approver === approver) return
-    if (approver === APPROVER_HUMAN && !groupsLoaded.current) awaitingGroups.current.add(level)
-    else awaitingGroups.current.delete(level)
-    setForm((f) => {
-      const current = f.approval[level]
-      const groups = approver === APPROVER_HUMAN && current.groups.length === 0 ? [...groupOptions].sort() : current.groups
-      return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
-    })
+    awaitingGroups.current.delete(level)
+    setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], approver } } }))
   }
   // The rules a level's feature may name: the library's and the target
   // sidecars' own (targetLibraryEntries).
@@ -378,6 +385,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setApprovalTouched(true)
   }
   const [groupOptions, setGroupOptions] = useState([])
+  // Like ruleLibraryStatus: the candidate card collapses a full selection to
+  // "all" only once the org's groups are known.
+  const [groupsStatus, setGroupsStatus] = useState('loading')
 
   useEffect(() => {
     let cancelled = false
@@ -404,10 +414,13 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
         if (cancelled) return
         const options = Array.isArray(data) ? data : []
         setGroupOptions(options)
+        setGroupsStatus('success')
         settle(options)
       })
       .catch(() => {
-        if (!cancelled) settle([])
+        if (cancelled) return
+        setGroupsStatus('error')
+        settle([])
       })
     return () => {
       cancelled = true
@@ -451,6 +464,11 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     const spec = formToSpec(form, name.trim())
     if (!spec.high && !spec.medium && !spec.low) {
       showSnackbar({ level: 'error', text: 'Set an action for at least one risk level.' })
+      return false
+    }
+    const [missing] = humanLevelsWithoutMode(form)
+    if (missing) {
+      showSnackbar({ level: 'error', text: `Select how approval is done for ${missing} risk.` })
       return false
     }
     const payload = {
@@ -508,6 +526,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setAllowed,
     setApprover,
     groupOptionsFor,
+    groupsStatus,
     ruleLibraryStatus,
     aiRuleOptionsFor,
     setAIFeature,

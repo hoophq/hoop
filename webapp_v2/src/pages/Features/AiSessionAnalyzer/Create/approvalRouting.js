@@ -46,8 +46,9 @@ const emptyNotifyRoute = () => ({ on: false, delivery: DELIVERY_DM, channels: []
 // `candidates` null lets the AI pick from every group, the ones created later
 // included: the backend reads an absent or empty list as "all". A list is
 // the user's own selection; an empty one saves as "all" too, so the card
-// says so while it is empty.
-export const emptyRouting = (mode = ROUTING_AI) => ({
+// says so while it is empty. A new human hold has no mode: the editor picks
+// one, and a save refuses a level without it.
+export const emptyRouting = (mode = null) => ({
   mode,
   candidates: null,
   notify: Object.fromEntries(NOTIFY_INTEGRATIONS.map(({ key }) => [key, emptyNotifyRoute()])),
@@ -64,10 +65,26 @@ export const candidatesToSpec = (candidates) => (candidates?.length > 0 ? [...ca
 export const candidateSelection = (candidates, options) => (candidates === null ? options : candidates)
 
 // The next `candidates` after the user checks `selection`: every known group
-// checked is "all" (null), so a group created later is a candidate too.
-export function selectCandidates(selection, options) {
-  const all = options.length > 0 && options.every((group) => selection.includes(group))
+// checked is "all" (null), so a group created later is a candidate too. Only
+// once the org's groups have `loaded`: before, `options` is the level's own
+// names, and checking them all must not widen the selection to every group.
+export function selectCandidates(selection, options, loaded) {
+  const all = loaded && options.length > 0 && options.every((group) => selection.includes(group))
   return all ? null : options.filter((group) => selection.includes(group))
+}
+
+// The approval patch for a change of "How approval is done". The selection
+// carries over: By groups starts from the candidates when it has no groups
+// yet, and AI Decides from the groups when it has no candidates.
+export function routingModePatch(approval, mode, options, loaded) {
+  const { routing, groups } = approval
+  const patch = { routing: { ...routing, mode } }
+  if (mode === ROUTING_STATIC && groups.length === 0) {
+    patch.groups = [...candidateSelection(routing.candidates, options)]
+  } else if (mode === ROUTING_AI && !routing.candidates?.length && groups.length > 0) {
+    patch.routing.candidates = selectCandidates(groups, options, loaded)
+  }
+  return patch
 }
 
 // readRouting reads a stored `routing` value. Absent: static routing (the
