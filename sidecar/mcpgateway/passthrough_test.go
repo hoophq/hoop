@@ -20,8 +20,14 @@ const passthroughHeader = "X-Upstream-Token"
 // each caller's own credential, in front of a recorded testupstream server.
 func startPassthroughLane(t *testing.T, ln *testLane, caller *daemon.MCPCallerCheck, logs io.Writer) (string, *recordedUpstream) {
 	t.Helper()
+	return startPassthroughLaneOn(t, ln, testupstream.Handler(testupstream.NewServer("")), caller, logs)
+}
+
+// startPassthroughLaneOn is startPassthroughLane in front of upstream.
+func startPassthroughLaneOn(t *testing.T, ln *testLane, upstream http.Handler, caller *daemon.MCPCallerCheck, logs io.Writer) (string, *recordedUpstream) {
+	t.Helper()
 	rec := &recordedUpstream{}
-	up := httptest.NewServer(rec.wrap(testupstream.Handler(testupstream.NewServer(""))))
+	up := httptest.NewServer(rec.wrap(upstream))
 	t.Cleanup(up.Close)
 	if logs == nil {
 		logs = io.Discard
@@ -167,6 +173,70 @@ func TestPassthroughBehindACallerToken(t *testing.T) {
 	}
 	if ln.callers[0].Subject != "agents" {
 		t.Fatalf("caller %q, want the resolved name", ln.callers[0].Subject)
+	}
+}
+
+// A later request on a session uses its own credential, not the one that
+// opened the session.
+func TestEachRequestOnASessionUsesItsOwnCredential(t *testing.T) {
+	ln := &testLane{}
+	url, up := startPassthroughLane(t, ln, nil, nil)
+	c := &client{url: url, header: withUpstreamToken("first-pat")}
+	c.init(t)
+	c.header = withUpstreamToken("second-pat")
+	before, _ := up.all()
+	c.call(t, 3, "echo", `{"message":"hi"}`)
+	up.mu.Lock()
+	reqs := strings.Join(up.reqs[before:], "\n")
+	up.mu.Unlock()
+	if !strings.Contains(reqs, "Authorization: Bearer second-pat\r\n") || strings.Contains(reqs, "first-pat") {
+		t.Fatalf("the call reached the upstream with:\n%s", reqs)
+	}
+}
+
+// echoingUpstream quotes the Authorization it got: in the challenge of a 401 to
+// a credential holding "deny-me", and in the body of a 500 to a tools/call.
+func echoingUpstream(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(strings.NewReader(string(body)))
+		auth := r.Header.Get("Authorization")
+		switch {
+		case strings.Contains(auth, "deny-me"):
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+auth+`"`)
+			http.Error(w, "bad credential: "+auth, http.StatusUnauthorized)
+		case strings.Contains(string(body), `"tools/call"`):
+			http.Error(w, "upstream failed for "+auth, http.StatusInternalServerError)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+// An upstream error body that quotes the credential reaches the log with the
+// credential redacted, on initialize and in a session.
+func TestAnUpstreamErrorBodyDoesNotLogTheCredential(t *testing.T) {
+	const refused, failed = "deny-me-secret-0001", "ghp_quoted-secret-0002"
+	ln := &testLane{}
+	logs := &lockedBuffer{}
+	url, _ := startPassthroughLaneOn(t, ln, echoingUpstream(testupstream.Handler(testupstream.NewServer(""))), nil, logs)
+
+	if _, body := (&client{url: url, header: withUpstreamToken("Bearer " + refused)}).post(t, initializeBody); !strings.Contains(body, "[REDACTED]") {
+		t.Fatalf("initialize with a refused credential: %s", body)
+	}
+	c := &client{url: url, header: withUpstreamToken(failed)}
+	c.init(t)
+	if body := c.call(t, 3, "echo", `{"message":"hi"}`); !strings.Contains(body, "[REDACTED]") {
+		t.Fatalf("a call the upstream fails: %s", body)
+	}
+	text := logs.String()
+	if strings.Count(text, "[REDACTED]") < 2 {
+		t.Fatalf("nothing to check: the upstream errors are not in the log:\n%s", text)
+	}
+	for _, secret := range []string{refused, failed} {
+		if strings.Contains(text, secret) {
+			t.Errorf("the log holds %q:\n%s", secret, text)
+		}
 	}
 }
 

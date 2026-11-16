@@ -196,6 +196,13 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 	return append(problems, validateMCPSQL(name, m.SQL)...)
 }
 
+// reservedPassthroughHeaders are the headers an MCP client or a proxy sends
+// for its own use. The lane removes the passthrough header, so one of them
+// would break every request or forward a value that is not a credential.
+var reservedPassthroughHeaders = []string{
+	"accept", "content-type", "origin", "user-agent", "forwarded", "x-forwarded-for",
+}
+
 func validateMCPPassthrough(lc ListenerConfig, name string) []string {
 	var problems []string
 	raw := lc.MCPGateway.PassthroughHeader
@@ -204,6 +211,7 @@ func validateMCPPassthrough(lc ListenerConfig, name string) []string {
 	case !isHeaderName(h):
 		problems = append(problems, fmt.Sprintf("%s: mcp_gateway.passthrough_header %q is not a header name", name, raw))
 	case h != "authorization" && slices.Contains(reservedCallerTokenHeaders, h),
+		slices.Contains(reservedPassthroughHeaders, h),
 		strings.HasPrefix(h, "mcp-"), h == "last-event-id", analyzer.IsClientModeHeader(h):
 		problems = append(problems, fmt.Sprintf(
 			"%s: mcp_gateway.passthrough_header %q is a header HTTP framing, MCP or the sidecar already uses; pick another", name, raw))

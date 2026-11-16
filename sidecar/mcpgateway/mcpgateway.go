@@ -134,8 +134,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		default:
 			b := backend.NewRemote(lane.Name, bcfg, s.log)
 			b.Client = client
+			if tokens == nil {
+				return b, nil
+			}
 			b.TokenSource = tokens
-			return b, nil
+			return redactingBackend{b}, nil
 		}
 	}
 
@@ -327,6 +330,22 @@ func (s *server) passthrough(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(outbound.WithClientToken(r.Context(), credential)))
 	})
+}
+
+// redactingBackend removes the caller's upstream credential from the errors
+// Send returns. An upstream error body can quote it, and mcpproxy logs them.
+type redactingBackend struct{ backend.Backend }
+
+func (b redactingBackend) Send(ctx context.Context, msg []byte) error {
+	err := b.Backend.Send(ctx, msg)
+	if err == nil {
+		return nil
+	}
+	credential, ok := outbound.ClientTokenFrom(ctx)
+	if !ok || !strings.Contains(err.Error(), credential) {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), credential, "[REDACTED]"))
 }
 
 func (s *server) Close() error {

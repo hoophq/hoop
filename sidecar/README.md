@@ -4250,7 +4250,8 @@ upstream, such as a GitHub or Stripe key, in that header:
   `Authorization: Bearer <value>`. A `Bearer ` prefix on the value is
   accepted.
 - The value never reaches the audit trail, policy input, the analyzer or
-  the log.
+  the log. An upstream error that quotes it is logged with `[REDACTED]` in
+  its place.
 - A request without the header, with an empty value or with the header
   twice gets 403 `request refused: <reason>`, and the reason names the
   header.
@@ -4261,8 +4262,8 @@ upstream, such as a GitHub or Stripe key, in that header:
   request that opened it.
 - The header can be `authorization`, so a client sends the token as it
   would to the server. It cannot be the `caller_token` header, the
-  `identity_header`, `mcp-*`, `last-event-id`, or a header HTTP framing
-  or a proxy uses.
+  `identity_header`, `mcp-*`, `last-event-id`, `accept`, `content-type`,
+  `origin`, `user-agent`, or a header HTTP framing or a proxy uses.
 
 Claude Code sends it with
 `claude mcp add --transport http github http://127.0.0.1:<port>/mcp --header "X-Hoop-Upstream-Authorization: Bearer <token>"`.
