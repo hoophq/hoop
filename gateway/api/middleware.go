@@ -162,6 +162,12 @@ func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
+// Unwrap lets http.ResponseController reach the connection, e.g. to set a
+// read deadline.
+func (r *catchAll5xxResponseBodyWriter) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	defer c.Next()
 

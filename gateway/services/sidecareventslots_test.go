@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,23 +87,25 @@ func TestRunSidecarSessionHooksFreesTheSlotBeforeTheWebhooks(t *testing.T) {
 	}
 }
 
-func TestRunSidecarSessionHooksDropsWebhooksPastTheBound(t *testing.T) {
-	for range cap(sidecarWebhookSends) {
-		sidecarWebhookSends <- struct{}{}
-	}
-	t.Cleanup(func() {
-		for len(sidecarWebhookSends) > 0 {
-			<-sidecarWebhookSends
-		}
-	})
+// Many slow webhooks in flight: every session's webhooks still go out.
+func TestRunSidecarSessionHooksSendsEveryWebhook(t *testing.T) {
+	t.Cleanup(func() { SizeSidecarEventSlots(defaultSidecarEventSlots * 5) })
+	SizeSidecarEventSlots(5)
 
-	sent := make(chan struct{}, 1)
-	runSidecarSessionHooksWith(sidecarSessionHook{SessionID: "s1"},
-		func(sidecarSessionHook) func() { return func() { sent <- struct{}{} } })
-	require.Eventually(t, func() bool { return len(sidecarHookSlots) == 0 }, time.Second, 5*time.Millisecond)
+	const sessions = 1000
+	unblock := make(chan struct{})
+	var sent sync.WaitGroup
+	sent.Add(sessions)
+	for range sessions {
+		runSidecarSessionHooksWith(sidecarSessionHook{SessionID: "s"},
+			func(sidecarSessionHook) func() { return func() { <-unblock; sent.Done() } })
+	}
+	close(unblock)
+	done := make(chan struct{})
+	go func() { sent.Wait(); close(done) }()
 	select {
-	case <-sent:
-		t.Fatal("a webhook went out past the bound")
-	case <-time.After(50 * time.Millisecond):
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not every webhook went out")
 	}
 }

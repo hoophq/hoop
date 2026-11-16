@@ -10,14 +10,9 @@ import (
 // of the pool, so a backlog of events cannot take every connection.
 const defaultSidecarEventSlots = 10
 
-// maxSidecarWebhookSends bounds the webhook sends in flight. They hold no
-// database connection; past the bound a session's webhooks are dropped.
-const maxSidecarWebhookSends = 256
-
 var (
-	sidecarEventSlots   = make(chan struct{}, defaultSidecarEventSlots)
-	sidecarHookSlots    = make(chan struct{}, defaultSidecarEventSlots)
-	sidecarWebhookSends = make(chan struct{}, maxSidecarWebhookSends)
+	sidecarEventSlots = make(chan struct{}, defaultSidecarEventSlots)
+	sidecarHookSlots  = make(chan struct{}, defaultSidecarEventSlots)
 )
 
 // SizeSidecarEventSlots sizes the ingest and the hooks to a pool of poolSize

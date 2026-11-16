@@ -31,7 +31,7 @@ type sidecarSessionHook struct {
 // runSidecarSessionHooks fires in the background. It waits for a hook slot
 // first, so a database backlog holds the batch's ingest slot and new batches
 // get a 503. The webhooks go out after the slot is free: a slow webhook
-// endpoint must not hold the ingest.
+// endpoint must not hold the ingest. Their own timeout bounds them.
 func runSidecarSessionHooks(h sidecarSessionHook) {
 	runSidecarSessionHooksWith(h, fireSidecarSessionHooks)
 }
@@ -42,15 +42,8 @@ func runSidecarSessionHooksWith(h sidecarSessionHook, fire func(sidecarSessionHo
 	go func() {
 		send := fire(h)
 		<-slots
-		if send == nil {
-			return
-		}
-		select {
-		case sidecarWebhookSends <- struct{}{}:
-			defer func() { <-sidecarWebhookSends }()
+		if send != nil {
 			send()
-		default:
-			log.With("sid", h.SessionID).Warnf("dropped the sidecar session webhooks: %d sends in flight", cap(sidecarWebhookSends))
 		}
 	}()
 }

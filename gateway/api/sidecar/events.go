@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -60,8 +62,12 @@ func PostEvents(c *gin.Context) {
 		return
 	}
 	defer release()
-	// A slow upload must not hold the slot. Only a test recorder refuses it.
-	_ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(eventsReadTimeout))
+	// A slow upload must not hold the slot.
+	if err := http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(eventsReadTimeout)); err != nil {
+		readDeadlineUnset.Do(func() {
+			log.Warnf("sidecar session events: a slow body can hold an ingest slot, the read deadline failed: %v", err)
+		})
+	}
 	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
 	if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -111,6 +117,7 @@ func PostEvents(c *gin.Context) {
 var (
 	eventsAdmitWait   = time.Second
 	eventsReadTimeout = 10 * time.Second
+	readDeadlineUnset sync.Once
 )
 
 func answerBatchTooLarge(c *gin.Context) {
