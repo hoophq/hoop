@@ -3,12 +3,22 @@
 // fields it does not edit (`rest`, `otherNotify`), so a save writes them back
 // unchanged.
 
+// "How approval is done" of a human level. The AI picks the groups (the
+// recommended default of a new hold); static routing sends the request to
+// every selected group. "By rules" waits for a per-level key on the backend.
 export const ROUTING_STATIC = 'static'
 export const ROUTING_AI = 'ai'
 export const ROUTING_MODES = [
-  { value: ROUTING_STATIC, label: 'Static' },
-  { value: ROUTING_AI, label: 'AI routing' },
+  {
+    value: ROUTING_AI,
+    label: 'AI Decides',
+    description: 'AI selects the best groups from past approvals.',
+    recommended: true,
+  },
+  { value: ROUTING_STATIC, label: 'By groups', description: 'All selected groups get the request.' },
 ]
+const ROUTING_MODE_VALUES = new Set(ROUTING_MODES.map((m) => m.value))
+export const isRoutingMode = (mode) => ROUTING_MODE_VALUES.has(mode)
 
 // NotifyRoute.Delivery (sidecar/daemon/levelapprovers.go). Empty means dm.
 export const DELIVERY_DM = 'dm'
@@ -22,10 +32,10 @@ export const isKnownDelivery = (delivery) => DELIVERY_VALUES.has(delivery)
 export const deliveryUsesChannels = (delivery) => delivery === 'channel' || delivery === 'both'
 
 // The `notify` keys the plane reads. Each one notifies only when its
-// integration is set up.
+// integration is set up; Teams is recorded until the integration ships (ENG-705).
 export const NOTIFY_INTEGRATIONS = [
-  { key: 'slack', label: 'Slack' },
-  { key: 'teams', label: 'MS Teams' },
+  { key: 'slack', label: 'Slack', description: 'Send requests in Slack.' },
+  { key: 'teams', label: 'Teams', description: 'Send requests in Microsoft Teams.' },
 ]
 
 const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
@@ -33,9 +43,13 @@ const stringList = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === 'stri
 
 const emptyNotifyRoute = () => ({ on: false, delivery: DELIVERY_DM, channels: [], rest: {} })
 
-export const emptyRouting = () => ({
-  mode: ROUTING_STATIC,
-  candidates: [],
+// `candidates` null lets the AI pick from every group, the ones created later
+// included: the backend reads an absent or empty list as "all". A list is
+// the user's own selection; an empty one saves as "all" too, so the card
+// says so while it is empty.
+export const emptyRouting = (mode = ROUTING_AI) => ({
+  mode,
+  candidates: null,
   notify: Object.fromEntries(NOTIFY_INTEGRATIONS.map(({ key }) => [key, emptyNotifyRoute()])),
   // `notify` keys the plane does not read, as stored.
   otherNotify: {},
@@ -43,13 +57,26 @@ export const emptyRouting = () => ({
   rest: {},
 })
 
-// readRouting reads a stored `routing` value. Absent: static routing.
+// The candidates to save: null and an empty list both mean every group.
+export const candidatesToSpec = (candidates) => (candidates?.length > 0 ? [...candidates] : null)
+
+// The groups the card shows checked for a stored or edited `candidates`.
+export const candidateSelection = (candidates, options) => (candidates === null ? options : candidates)
+
+// The next `candidates` after the user checks `selection`: every known group
+// checked is "all" (null), so a group created later is a candidate too.
+export function selectCandidates(selection, options) {
+  const all = options.length > 0 && options.every((group) => selection.includes(group))
+  return all ? null : options.filter((group) => selection.includes(group))
+}
+
+// readRouting reads a stored `routing` value. Absent: static routing (the
+// level names its groups instead).
 export function readRouting(raw) {
-  const routing = emptyRouting()
-  if (!isObject(raw)) return routing
+  if (!isObject(raw)) return emptyRouting(ROUTING_STATIC)
+  const routing = emptyRouting(ROUTING_AI)
   const { candidates, notify, ...rest } = raw
-  routing.mode = ROUTING_AI
-  routing.candidates = stringList(candidates)
+  routing.candidates = candidatesToSpec(stringList(candidates))
   routing.rest = rest
   if (!isObject(notify)) return routing
   for (const [key, value] of Object.entries(notify)) {
@@ -85,7 +112,8 @@ export function notifyRouteToSpec(route) {
 // on, `notify` is left out and notifications work as before.
 export function routingToSpec(routing) {
   const out = { ...routing.rest }
-  if (routing.candidates.length > 0) out.candidates = [...routing.candidates]
+  const candidates = candidatesToSpec(routing.candidates)
+  if (candidates) out.candidates = candidates
   const notify = { ...routing.otherNotify }
   for (const { key } of NOTIFY_INTEGRATIONS) {
     if (routing.notify[key].on) notify[key] = notifyRouteToSpec(routing.notify[key])

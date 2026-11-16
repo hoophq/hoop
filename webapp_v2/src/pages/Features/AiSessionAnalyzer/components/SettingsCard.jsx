@@ -1,26 +1,35 @@
-import { useState } from 'react'
 import { Box, Collapse, Divider, Group, Paper, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import classes from '../Create/Create.module.css'
 
 // A collapsible card under a risk level (AI policy settings, Approver,
 // Hand-off): icon, title, subtitle and chevron in a header that is green while
-// open. A closed card shows a green check when `done`. `badge` sits beside the
-// title. The body is an inner bordered panel, or bare when `panel` is false
-// (the AI policy settings rows carry their own borders).
-export default function SettingsCard({ icon: Icon, title, subtitle, badge, done = true, panel = true, children }) {
-  const [open, setOpen] = useState(true)
+// open. The stack owns `open` (CardStack): one card of a level is open at a
+// time. A closed card shows a green check when `done`, else a grey circle; an
+// open one a white circle. `badge` sits beside the title. The body is an inner
+// bordered panel, or bare when `panel` is false.
+export default function SettingsCard({ icon: Icon, title, subtitle, badge, done, open, onToggle, panel = true, children }) {
+  let status
+  if (!open && done) {
+    status = (
+      <ThemeIcon size={22} radius="xl" variant="light" color="green" aria-label="Configured">
+        <Check size={12} aria-hidden="true" />
+      </ThemeIcon>
+    )
+  } else {
+    status = <Box w={22} h={22} bdrs="xl" bg={open ? 'var(--mantine-color-body)' : 'var(--hoop-surface-strong)'} />
+  }
   return (
     <Paper withBorder radius="lg" className={classes.clipped}>
       <UnstyledButton
         w="100%"
         p="md"
         bg={open ? 'var(--hoop-tint-green)' : 'var(--hoop-surface-muted)'}
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
       >
         <Group wrap="nowrap" gap="md">
-          <ThemeIcon size={40} radius="md" variant="light" color={open ? 'green' : 'gray'}>
+          <ThemeIcon size={40} radius="md" variant="light" color="gray">
             <Icon size={18} aria-hidden="true" />
           </ThemeIcon>
           <Stack gap={2} flex={1}>
@@ -34,13 +43,7 @@ export default function SettingsCard({ icon: Icon, title, subtitle, badge, done 
               {subtitle}
             </Text>
           </Stack>
-          {!open && done ? (
-            <ThemeIcon size={22} radius="xl" variant="light" color="green" aria-label="Configured">
-              <Check size={12} aria-hidden="true" />
-            </ThemeIcon>
-          ) : (
-            <Box w={22} h={22} bdrs="xl" bg="var(--mantine-color-body)" opacity={0.7} />
-          )}
+          {status}
           {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
         </Group>
       </UnstyledButton>

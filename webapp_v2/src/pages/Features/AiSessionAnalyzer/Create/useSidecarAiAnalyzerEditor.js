@@ -15,14 +15,20 @@ import {
   appliesAIRules,
   isHandoffAction,
   isHoldAction,
-  operationsFor,
   readLevelAIRules,
   readLevelApprover,
   readLevelHandoff,
   writeLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
-import { ROUTING_AI, emptyRouting, readRouting, routingToSpec } from './approvalRouting'
+import {
+  ROUTING_AI,
+  ROUTING_STATIC,
+  emptyRouting,
+  isRoutingMode,
+  readRouting,
+  routingToSpec,
+} from './approvalRouting'
 
 const LEVEL_KEYS = ['high', 'medium', 'low']
 
@@ -33,13 +39,24 @@ export const APPROVER_RULE = 'approval_rule'
 
 // Who approves one level's hold. A new hold uses the AI agent. A hand-off
 // level keeps here the approver of its "Hold for approval" choice. `routing`
-// is a human level's AI routing (ENG-663): static (groups) by default.
+// is a human level's "How approval is done" (ENG-663): a new hold lets the
+// AI decide.
 const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '', routing: emptyRouting() })
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
+
+// An approver is configured once it is chosen and, for a person, once "How
+// approval is done" is too. An imported rule's hold is decided by that rule.
+export const approverConfigured = (approval) =>
+  approval.approver === APPROVER_RULE ||
+  approval.approver === APPROVER_AI ||
+  (approval.approver === APPROVER_HUMAN && isRoutingMode(approval.routing.mode))
 
 // A hand-off level's prompt and allowed actions (ENG-661). A new one allows all.
 const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value) })
 const emptyHandoffs = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyHandoff()]))
+
+// A hand-off is configured once the agent has an action to pick.
+export const handoffConfigured = (handoff) => handoff.allowed.length > 0
 
 // One level's AI rule options (ENG-662), per feature: off by default. `rules`
 // null allows every library rule; `create` lets the AI create one-time rules.
@@ -59,8 +76,10 @@ function readAIRules(spec, level) {
   )
 }
 
-// A level uses AI rules when its action applies them and one feature is on.
-const usesAIRules = (action, ai) => appliesAIRules(action) && AI_RULE_FEATURES.some(({ key }) => ai[key].on)
+// The AI policy settings card is configured once one feature is on; a level
+// uses AI rules when its action applies them and the card is configured.
+export const aiPolicyConfigured = (ai) => AI_RULE_FEATURES.some(({ key }) => ai[key].on)
+const usesAIRules = (action, ai) => appliesAIRules(action) && aiPolicyConfigured(ai)
 
 // ai_rules.<level>: the features that are on. `rules` is written only for a
 // selection that is not every rule: absent allows all.
@@ -75,19 +94,17 @@ function aiRulesToSpec(ai) {
   return out
 }
 
+// A new rule sets no level: an unset level allows, and a save needs one set.
+// `trigger` and `max_calls` have no field since ENG-1157; a stored value is
+// kept as it is, so a save does not erase it.
 const EMPTY = {
-  trigger_operations: [],
-  trigger_tables: [],
-  trigger_resources: [],
-  // Items: every field one names must match (ADR-0030).
-  trigger_any: [],
-  trigger_exclude: [],
-  high: 'block',
+  trigger: null,
+  high: '',
   medium: '',
   low: '',
   prompt: '',
   message: '',
-  max_calls: '',
+  max_calls: null,
   approval_rule: '',
   review_mode: '',
   // No field edits it; kept so a save does not erase what the API set.
@@ -97,18 +114,14 @@ const EMPTY = {
 // `reviewers` are the groups of the rule's own approval rule. A level that
 // can hold with no approvers entry gets them, so it keeps its meaning as a
 // human hold.
-function specToForm(spec, ruleName, reviewers) {
+export function specToForm(spec, ruleName, reviewers) {
   if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs(), ai: emptyAIRuleLevels() }
   const imported = Boolean(spec.approval_rule) && spec.approval_rule !== ruleName
   const form = {
-    trigger_operations: spec.trigger?.operations ?? [],
-    trigger_tables: spec.trigger?.tables ?? [],
-    trigger_resources: spec.trigger?.resources ?? [],
-    trigger_any: spec.trigger?.any ?? [],
-    trigger_exclude: spec.trigger?.exclude ?? [],
+    trigger: spec.trigger ?? null,
     prompt: spec.prompt ?? '',
     message: spec.message ?? '',
-    max_calls: spec.max_calls ?? '',
+    max_calls: spec.max_calls ?? null,
     approval_rule: spec.approval_rule ?? '',
     review_mode: spec.review_mode ?? '',
     match_ignore: spec.match_ignore ?? [],
@@ -130,7 +143,12 @@ function specToForm(spec, ruleName, reviewers) {
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
-      form.approval[level] = { ...emptyApproval(), approver: APPROVER_HUMAN, groups: reviewers }
+      form.approval[level] = {
+        ...emptyApproval(),
+        approver: APPROVER_HUMAN,
+        groups: reviewers,
+        routing: emptyRouting(ROUTING_STATIC),
+      }
     }
   }
   return form
@@ -162,28 +180,9 @@ function approverToSpec(approval) {
   return null
 }
 
-
-// An item keeps only the fields it names, or is null when it names none.
-function compactItem(item) {
-  const out = {}
-  for (const key of ['operations', 'tables', 'resources']) {
-    if (item[key]?.length > 0) out[key] = item[key]
-  }
-  return Object.keys(out).length > 0 ? out : null
-}
-
-function formToSpec(f, ruleName) {
+export function formToSpec(f, ruleName) {
   const spec = {}
-  const trigger = {}
-  if (f.trigger_operations.length > 0) trigger.operations = f.trigger_operations
-  if (f.trigger_tables.length > 0) trigger.tables = f.trigger_tables
-  if (f.trigger_resources.length > 0) trigger.resources = f.trigger_resources
-  // The sidecar refuses an item that names no field, so an empty row is dropped.
-  const any = f.trigger_any.map(compactItem).filter(Boolean)
-  const exclude = f.trigger_exclude.map(compactItem).filter(Boolean)
-  if (any.length > 0) trigger.any = any
-  if (exclude.length > 0) trigger.exclude = exclude
-  if (Object.keys(trigger).length > 0) spec.trigger = trigger
+  if (f.trigger) spec.trigger = f.trigger
   const handoffs = {}
   const approvers = {}
   const aiRules = {}
@@ -201,7 +200,7 @@ function formToSpec(f, ruleName) {
   if (Object.keys(aiRules).length > 0) spec.ai_rules = aiRules
   if (f.prompt.trim() !== '') spec.prompt = f.prompt.trim()
   if (f.message.trim() !== '') spec.message = f.message.trim()
-  if (f.max_calls !== '' && f.max_calls !== null) spec.max_calls = Number(f.max_calls)
+  if (f.max_calls !== null) spec.max_calls = f.max_calls
   const held = holdApprovers(f)
   // A hold needs an approval rule; the plane keeps one named after this rule.
   // A stored one naming another rule (an imported file's) is kept.
@@ -431,25 +430,15 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       return lane?.protocol ?? ''
     })
   }, [targets, sidecars])
-  const protocol = protocols[0] ?? ''
   const mcpBound = protocols.some((p) => p.toLowerCase() === 'mcp')
-
-  const isHTTP = protocol.toLowerCase() === 'http'
-  const operations = useMemo(() => operationsFor(protocol), [protocol])
   const actions = useMemo(() => analyzerActionsFor(mcpBound), [mcpBound])
-  // Exclude alone selects nothing, so it does not count as a trigger.
-  const noTrigger =
-    form.trigger_operations.length === 0 &&
-    form.trigger_tables.length === 0 &&
-    form.trigger_resources.length === 0 &&
-    form.trigger_any.length === 0
 
   const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => canHold(form, level))
   const canSubmit = name.trim() !== '' && !submitting && !holdOnMcp
   // Plus the level's stored ones, so a removed group can still be unselected.
   const groupOptionsFor = (level) => {
     const { groups, routing } = form.approval[level]
-    return [...new Set([...groupOptions, ...groups, ...routing.candidates])].sort()
+    return [...new Set([...groupOptions, ...groups, ...(routing.candidates ?? [])])].sort()
   }
   const approvers = holdApprovers(form)
   // A person decides: the hold waits, so its mode applies.
@@ -529,11 +518,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     editApprovalMinutes,
     waits,
     humanHold,
-    isHTTP,
-    operations,
     actions,
     mcpBound,
-    noTrigger,
     canSubmit,
     submitting,
     save,
