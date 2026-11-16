@@ -2,8 +2,10 @@ package apisidecar
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +43,7 @@ const (
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
+	eventsBusyOrgID      = "00000000-0000-0000-0000-0000000000f4"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -296,6 +299,48 @@ func TestPostEventsAnswers412WhileTheFlagIsOff(t *testing.T) {
 	enableSessionEvents(t, eventsFlagOffOrgID)
 	rec = postEvents(sc, []byte(`not json`))
 	assert.Equal(t, http.StatusBadRequest, rec.Code, "with the flag on the body is read: %s", rec.Body)
+}
+
+// readSpy records whether the handler read the body.
+type readSpy struct {
+	r    io.Reader
+	read bool
+}
+
+func (s *readSpy) Read(p []byte) (int, error) {
+	s.read = true
+	return s.r.Read(p)
+}
+
+// A replica behind on events answers 503 before it reads the body, so the
+// sidecar keeps the batch and resends it after its backoff.
+func TestPostEventsAnswers503WhileTheIngestIsFull(t *testing.T) {
+	enableSessionEvents(t, eventsBusyOrgID)
+	wait := eventsAdmitWait
+	eventsAdmitWait = 0
+	t.Cleanup(func() { eventsAdmitWait = wait })
+
+	var releases []func()
+	for {
+		release, ok := services.AdmitSidecarEvents(context.Background(), 0)
+		if !ok {
+			break
+		}
+		releases = append(releases, release)
+		require.Less(t, len(releases), 1000, "the ingest never filled")
+	}
+
+	sc := memorySidecar(eventsBusyOrgID)
+	body := &readSpy{r: strings.NewReader(`not json`)}
+	rec := callPostEvents(sc, httptest.NewRequest(http.MethodPost, "/api/sidecars/events", body))
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	assert.False(t, body.read, "the body was read before the 503")
+
+	for _, release := range releases {
+		release()
+	}
+	rec = postEvents(sc, []byte(`not json`))
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "with a free slot the body is read: %s", rec.Body)
 }
 
 // The limits are refused before the database is read: no test here boots it.

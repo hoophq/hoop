@@ -29,8 +29,16 @@ type sidecarSessionHook struct {
 }
 
 // runSidecarSessionHooks fires in the background: a slow webhook endpoint
-// must not hold the sidecar's batch. Tests replace it.
-var runSidecarSessionHooks = func(h sidecarSessionHook) { go fireSidecarSessionHooks(h) }
+// must not hold the sidecar's batch. It waits for a hook slot first, so a
+// backlog holds the batch's ingest slot and new batches get a 503.
+func runSidecarSessionHooks(h sidecarSessionHook) {
+	slots := sidecarHookSlots
+	slots <- struct{}{}
+	go func() {
+		defer func() { <-slots }()
+		fireSidecarSessionHooks(h)
+	}()
+}
 
 // fireSidecarSessionHooks runs in order, so session.open goes before
 // session.close when one batch holds both. Failures are logged: an agent

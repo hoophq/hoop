@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/featureflag"
@@ -30,7 +31,7 @@ import (
 //	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request				body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarSessionEventsResponse
-//	@Failure		400,401,403,412,413,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,403,412,413,422,500,503	{object}	openapi.HTTPError
 //	@Router			/sidecars/events [post]
 func PostEvents(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -51,6 +52,13 @@ func PostEvents(c *gin.Context) {
 		answerBatchTooLarge(c)
 		return
 	}
+	release, ok := services.AdmitSidecarEvents(c.Request.Context(), eventsAdmitWait)
+	if !ok {
+		// A 5xx: a released sidecar drops a batch answered 429.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "the control plane is behind on session events; resend later"})
+		return
+	}
+	defer release()
 	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
 	if err != nil {
@@ -90,6 +98,10 @@ func PostEvents(c *gin.Context) {
 		Duplicates: result.Duplicates,
 	})
 }
+
+// eventsAdmitWait is how long a batch waits for an ingest slot before the
+// 503.
+var eventsAdmitWait = time.Second
 
 func answerBatchTooLarge(c *gin.Context) {
 	c.JSON(http.StatusRequestEntityTooLarge, gin.H{
