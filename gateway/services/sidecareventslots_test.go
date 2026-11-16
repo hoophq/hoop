@@ -63,3 +63,46 @@ func TestRunSidecarSessionHooksWaitsForASlot(t *testing.T) {
 	require.Eventually(t, func() bool { return len(sidecarHookSlots) == 0 }, time.Second, 5*time.Millisecond,
 		"the hook gives its slot back")
 }
+
+// A slow webhook endpoint holds no hook slot, so it cannot hold the ingest.
+func TestRunSidecarSessionHooksFreesTheSlotBeforeTheWebhooks(t *testing.T) {
+	t.Cleanup(func() { SizeSidecarEventSlots(defaultSidecarEventSlots * 5) })
+	SizeSidecarEventSlots(5)
+
+	unblock := make(chan struct{})
+	defer close(unblock)
+	slowWebhook := func(sidecarSessionHook) func() { return func() { <-unblock } }
+
+	runSidecarSessionHooksWith(sidecarSessionHook{SessionID: "s1"}, slowWebhook)
+	done := make(chan struct{})
+	go func() {
+		runSidecarSessionHooksWith(sidecarSessionHook{SessionID: "s2"}, slowWebhook)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the second hook waited for the first one's webhook")
+	}
+}
+
+func TestRunSidecarSessionHooksDropsWebhooksPastTheBound(t *testing.T) {
+	for range cap(sidecarWebhookSends) {
+		sidecarWebhookSends <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for len(sidecarWebhookSends) > 0 {
+			<-sidecarWebhookSends
+		}
+	})
+
+	sent := make(chan struct{}, 1)
+	runSidecarSessionHooksWith(sidecarSessionHook{SessionID: "s1"},
+		func(sidecarSessionHook) func() { return func() { sent <- struct{}{} } })
+	require.Eventually(t, func() bool { return len(sidecarHookSlots) == 0 }, time.Second, 5*time.Millisecond)
+	select {
+	case <-sent:
+		t.Fatal("a webhook went out past the bound")
+	case <-time.After(50 * time.Millisecond):
+	}
+}

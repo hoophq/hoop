@@ -28,36 +28,52 @@ type sidecarSessionHook struct {
 	Republish bool
 }
 
-// runSidecarSessionHooks fires in the background: a slow webhook endpoint
-// must not hold the sidecar's batch. It waits for a hook slot first, so a
-// backlog holds the batch's ingest slot and new batches get a 503.
+// runSidecarSessionHooks fires in the background. It waits for a hook slot
+// first, so a database backlog holds the batch's ingest slot and new batches
+// get a 503. The webhooks go out after the slot is free: a slow webhook
+// endpoint must not hold the ingest.
 func runSidecarSessionHooks(h sidecarSessionHook) {
+	runSidecarSessionHooksWith(h, fireSidecarSessionHooks)
+}
+
+func runSidecarSessionHooksWith(h sidecarSessionHook, fire func(sidecarSessionHook) func()) {
 	slots := sidecarHookSlots
 	slots <- struct{}{}
 	go func() {
-		defer func() { <-slots }()
-		fireSidecarSessionHooks(h)
+		send := fire(h)
+		<-slots
+		if send == nil {
+			return
+		}
+		select {
+		case sidecarWebhookSends <- struct{}{}:
+			defer func() { <-sidecarWebhookSends }()
+			send()
+		default:
+			log.With("sid", h.SessionID).Warnf("dropped the sidecar session webhooks: %d sends in flight", cap(sidecarWebhookSends))
+		}
 	}()
 }
 
-// fireSidecarSessionHooks runs in order, so session.open goes before
-// session.close when one batch holds both. Failures are logged: an agent
-// session drops them the same way.
-func fireSidecarSessionHooks(h sidecarSessionHook) {
+// fireSidecarSessionHooks derives the session events and returns the webhook
+// sends, in order, so session.open goes before session.close when one batch
+// holds both. Failures are logged: an agent session drops them the same way.
+func fireSidecarSessionHooks(h sidecarSessionHook) (send func()) {
 	if !h.Opened && !h.Closed && !h.Republish {
-		return
+		return nil
 	}
 	logger := log.With("sid", h.SessionID)
 	// A bare goroutine: a panic here would stop the gateway.
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf("sidecar session hooks panicked: %v", r)
+			send = nil
 		}
 	}()
 	sess, err := models.GetSessionByID(h.OrgID, h.SessionID)
 	if err != nil {
 		logger.Warnf("failed reading the sidecar session for its hooks, reason=%v", err)
-		return
+		return nil
 	}
 	sendWebhooks := webhooksEnabled(h.DB, h.OrgID, sess.Connection)
 
@@ -67,18 +83,25 @@ func fireSidecarSessionHooks(h sidecarSessionHook) {
 			logger.Warnf("failed reading the sidecar session connection, reason=%v", err)
 		}
 		events.DeriveFromSessionStart(h.OrgID, sess, conn)
-		if sendWebhooks {
+	}
+	if h.Republish || h.Closed {
+		events.DeriveFromSessionEnd(h.OrgID, sess)
+	}
+	if !sendWebhooks || (!h.Opened && !h.Closed) {
+		return nil
+	}
+	return func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("sidecar session webhooks panicked: %v", r)
+			}
+		}()
+		if h.Opened {
 			if err := webhooks.SendSidecarSessionOpen(sess); err != nil {
 				logger.Warn(err)
 			}
 		}
-	}
-	if h.Republish && !h.Closed {
-		events.DeriveFromSessionEnd(h.OrgID, sess)
-	}
-	if h.Closed {
-		events.DeriveFromSessionEnd(h.OrgID, sess)
-		if sendWebhooks {
+		if h.Closed {
 			if err := webhooks.SendSidecarSessionClose(h.OrgID, h.SessionID, h.Reaped); err != nil {
 				logger.Warn(err)
 			}

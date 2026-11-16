@@ -44,6 +44,7 @@ const (
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
 	eventsBusyOrgID      = "00000000-0000-0000-0000-0000000000f4"
+	eventsSlowBodyOrgID  = "00000000-0000-0000-0000-0000000000f5"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -341,6 +342,45 @@ func TestPostEventsAnswers503WhileTheIngestIsFull(t *testing.T) {
 	}
 	rec = postEvents(sc, []byte(`not json`))
 	assert.Equal(t, http.StatusBadRequest, rec.Code, "with a free slot the body is read: %s", rec.Body)
+}
+
+// A body that stops arriving gives its ingest slot back after the read
+// timeout, with a 503 the sidecar resends.
+func TestPostEventsAnswers503ToABodyThatStopsArriving(t *testing.T) {
+	enableSessionEvents(t, eventsSlowBodyOrgID)
+	services.SizeSidecarEventSlots(5)
+	t.Cleanup(func() { services.SizeSidecarEventSlots(50) })
+	timeout := eventsReadTimeout
+	eventsReadTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { eventsReadTimeout = timeout })
+
+	sc := memorySidecar(eventsSlowBodyOrgID)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/sidecars/events", func(c *gin.Context) {
+		c.Set("sidecar-auth", sc)
+		PostEvents(c)
+	})
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	body, stall := io.Pipe()
+	t.Cleanup(func() { _ = stall.Close() })
+	go func() { _, _ = stall.Write([]byte(`{"events":[`)) }()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/sidecars/events", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	started := time.Now()
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Less(t, time.Since(started), 5*time.Second)
+
+	release, ok := services.AdmitSidecarEvents(context.Background(), time.Second)
+	require.True(t, ok, "the only slot came back")
+	release()
 }
 
 // The limits are refused before the database is read: no test here boots it.

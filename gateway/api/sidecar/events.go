@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -59,8 +60,14 @@ func PostEvents(c *gin.Context) {
 		return
 	}
 	defer release()
+	// A slow upload must not hold the slot. Only a test recorder refuses it.
+	_ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(eventsReadTimeout))
 	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": fmt.Sprintf("the body took over %s; resend later", eventsReadTimeout)})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("reading the body: %v", err)})
 		return
@@ -100,8 +107,11 @@ func PostEvents(c *gin.Context) {
 }
 
 // eventsAdmitWait is how long a batch waits for an ingest slot before the
-// 503.
-var eventsAdmitWait = time.Second
+// 503, and eventsReadTimeout how long its body may take to arrive.
+var (
+	eventsAdmitWait   = time.Second
+	eventsReadTimeout = 10 * time.Second
+)
 
 func answerBatchTooLarge(c *gin.Context) {
 	c.JSON(http.StatusRequestEntityTooLarge, gin.H{
