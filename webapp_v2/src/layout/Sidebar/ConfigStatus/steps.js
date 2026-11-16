@@ -34,7 +34,7 @@ export const STEP_DEFS = [
       {
         checkKey: 'protection_level_set',
         label: 'Set Protection Level',
-        to: '/settings/protection-rules',
+        to: '/compliance-packs',
         icon: ShieldCogCorner,
         doneIcon: ShieldCheck,
         dividerBefore: true,

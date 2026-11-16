@@ -321,15 +321,16 @@ function Router() {
         }
       />
 
-      {/* Protection Rules */}
+      {/* Compliance packs (the protection rules page) */}
       <Route
-        path="/settings/protection-rules"
+        path="/compliance-packs"
         element={
           <Page adminOnly>
             <SettingsProtectionRules />
           </Page>
         }
       />
+      <Route path="/settings/protection-rules" element={<Navigate to="/compliance-packs" replace />} />
 
       {/* Audit Logs */}
       <Route
