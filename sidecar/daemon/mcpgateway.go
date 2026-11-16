@@ -11,10 +11,12 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -50,6 +52,15 @@ type MCPGatewayConfig struct {
 	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty" ui:"-"`
 	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty" ui:"-"`
 	SQL                map[string]MCPSQLTool      `json:"sql,omitempty" cap:"mcp_sql" ui:"-"`
+	PassthroughHeader  string                     `json:"passthrough_header,omitempty" cap:"mcp_passthrough" label:"Passthrough header" placeholder:"x-hoop-upstream-authorization" help:"Each caller sends its own credential for the MCP server in this header. The sidecar removes it, sends the value as Authorization: Bearer, and records it nowhere. A request without it is refused. streamable-http only."`
+}
+
+// passthroughHeader is the lowercased passthrough header, or "" when off.
+func (m *MCPGatewayConfig) passthroughHeader() string {
+	if m == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(m.PassthroughHeader))
 }
 
 type MCPToolOverride struct {
@@ -179,7 +190,34 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 			problems = append(problems, fmt.Sprintf("%s: mcp_gateway.tool_rate_limits[%q] must be positive", name, glob))
 		}
 	}
+	if m.PassthroughHeader != "" {
+		problems = append(problems, validateMCPPassthrough(lc, name)...)
+	}
 	return append(problems, validateMCPSQL(name, m.SQL)...)
+}
+
+func validateMCPPassthrough(lc ListenerConfig, name string) []string {
+	var problems []string
+	raw := lc.MCPGateway.PassthroughHeader
+	h := lc.MCPGateway.passthroughHeader()
+	switch {
+	case !isHeaderName(h):
+		problems = append(problems, fmt.Sprintf("%s: mcp_gateway.passthrough_header %q is not a header name", name, raw))
+	case h != "authorization" && slices.Contains(reservedCallerTokenHeaders, h),
+		strings.HasPrefix(h, "mcp-"), h == "last-event-id", analyzer.IsClientModeHeader(h):
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is a header HTTP framing, MCP or the sidecar already uses; pick another", name, raw))
+	case lc.CallerToken != nil && h == lc.CallerToken.header():
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is the caller_token header; the two carry different credentials", name, raw))
+	case strings.EqualFold(h, strings.TrimSpace(lc.IdentityHeader)):
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is the identity_header; pick another", name, raw))
+	}
+	if lc.MCPGateway.transport() == MCPTransportSSE {
+		problems = append(problems, name+": mcp_gateway.passthrough_header needs transport streamable-http: an sse stream keeps the credential of the request that opened it")
+	}
+	return problems
 }
 
 func loopbackHost(host string) bool {
