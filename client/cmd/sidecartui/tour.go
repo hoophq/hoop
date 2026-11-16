@@ -157,10 +157,17 @@ func (t *tour) see(ev audit.Event) {
 		if s.SeenRisk == "" && aiReply {
 			continue
 		}
+		// Only the AI step's own statement ticks it: another high-risk
+		// read the person approved (the masking query) does not.
+		if s.Approval && stmt != "" && !t.aiStatement(stmt) {
+			continue
+		}
 		// The AI step is done whichever way the person decided: approved,
-		// it is a statement; rejected, a violation with the same verdict and
-		// the review's id. A high-risk block has no review: not done.
-		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation && ev.Metadata[metaReviewID] != ""
+		// it is a statement; rejected, a violation with the same verdict,
+		// the review's id and the rejection. A block has no review, and an
+		// expired approval was not decided: neither is done.
+		rejected := s.SeenRisk != "" && ev.Kind == audit.KindViolation && ev.Metadata[metaReviewID] != "" &&
+			strings.Contains(ev.Message, analyzer.RejectedReason)
 		if s.SeenKind == "" || (string(ev.Kind) != s.SeenKind && !rejected) {
 			continue
 		}
@@ -267,6 +274,9 @@ func (t *tour) apply(r tourResult) {
 		}
 		r.err = fmt.Errorf("refused: the AI analyzer could not reach the model Hoop hosts, and this demo "+
 			"holds %s for approval, so it refuses what it cannot rate. Check the network; see Logs (6)", what)
+	case t.steps[r.step].Approval && t.sawHold && r.status == 403 && !strings.Contains(r.body, analyzer.RejectedReason):
+		// Held, then refused without a decision: the approval expired.
+		r.err = fmt.Errorf("not decided: %s. Run the step again", r.body)
 	case t.steps[r.step].Approval && !t.sawHold && r.status == 403:
 		// Refused without a hold: High risk is set to block.
 		r.err = errBlocked
