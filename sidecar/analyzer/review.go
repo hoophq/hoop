@@ -308,19 +308,24 @@ const (
 	reviewPoll = 5 * time.Second
 )
 
-type holdWaitKey struct{}
+type holdDeadlineKey struct{}
 
-// WithHoldWait shortens the wait of a hold on ctx to d, so a lane whose
-// caller ends the request sooner answers with the approval id first.
-func WithHoldWait(ctx context.Context, d time.Duration) context.Context {
-	return context.WithValue(ctx, holdWaitKey{}, d)
+// WithHoldDeadline ends every hold on ctx by t, so a lane whose caller ends
+// the request at a known time answers with the approval id first. One
+// deadline covers all the holds of a request: a later hold gets what is left.
+func WithHoldDeadline(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, holdDeadlineKey{}, t)
 }
 
-func (e *Evaluator) holdWait(ctx context.Context) time.Duration {
-	if d, ok := ctx.Value(holdWaitKey{}).(time.Duration); ok && d > 0 && d < e.reviewWait {
-		return d
+// holdBudget is the wait of a hold on ctx, and whether a lane's deadline
+// set it.
+func (e *Evaluator) holdBudget(ctx context.Context) (time.Duration, bool) {
+	if t, ok := ctx.Value(holdDeadlineKey{}).(time.Time); ok {
+		if left := time.Until(t); left < e.reviewWait {
+			return max(left, 0), true
+		}
 	}
-	return e.reviewWait
+	return e.reviewWait, false
 }
 
 // requestHold hands the hold to the Chain that owns ec, which runs it after
@@ -475,7 +480,7 @@ func reviewText(stmt inspect.Statement, ignore []MatchIgnore) (string, int, erro
 // at the deadline may already have spent the approval, so its answer is
 // honored.
 func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]string) policy.Verdict {
-	budget := e.holdWait(ctx)
+	budget, laneLimit := e.holdBudget(ctx)
 	deadline := time.Now().Add(budget)
 	timer := time.NewTimer(min(e.reviewPoll, budget))
 	defer timer.Stop()
@@ -508,9 +513,12 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 
 		left := time.Until(deadline)
 		if left <= 0 {
-			return e.denyHold(notes, reviewID, reviewPending, fmt.Sprintf(
-				"still waiting for approval after %s; run the statement again once it is approved",
-				budget))
+			waited := "after " + budget.String()
+			if laneLimit {
+				waited = "at the request's time limit"
+			}
+			return e.denyHold(notes, reviewID, reviewPending,
+				"still waiting for approval "+waited+"; run the statement again once it is approved")
 		}
 		timer.Reset(min(e.reviewPoll, left))
 	}

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,7 +179,7 @@ func TestMCPLaneHoldAnswersAPendingCallWithTheApproval(t *testing.T) {
 		claims            int
 	}{
 		{"return", `{"high":"require_approval","approval_rule":"tool-approvers","review_mode":"return"}`, "approval 9f97", 0},
-		{"hold", heldCallBlock, "still waiting for approval after 30ms", 1},
+		{"hold", heldCallBlock, "still waiting for approval at the request's time limit", 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cp, calls := reviewPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`)
@@ -200,6 +201,46 @@ func TestMCPLaneHoldAnswersAPendingCallWithTheApproval(t *testing.T) {
 func TestMCPLaneHoldEndsBeforeTheRequest(t *testing.T) {
 	if mcpHoldWait <= 0 || MCPRequestTimeout-mcpHoldWait < time.Minute || mcpHoldWait > analyzer.ReviewWait {
 		t.Fatalf("hold %s, request %s", mcpHoldWait, MCPRequestTimeout)
+	}
+}
+
+// The holds of one call share one deadline: after the first statement is
+// approved late, the second gets what is left, not a new wait.
+func TestMCPLaneHoldsOfOneCallShareTheDeadline(t *testing.T) {
+	start := time.Now()
+	var filings atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/first/claim") && time.Since(start) >= 800*time.Millisecond:
+			_, _ = w.Write([]byte(`{"forward":true,"review":{"id":"first","status":"EXECUTED"}}`))
+		case strings.HasSuffix(r.URL.Path, "/first/claim"):
+			_, _ = w.Write([]byte(`{"forward":false,"review":{"id":"first","status":"PENDING"}}`))
+		case strings.HasSuffix(r.URL.Path, "/second/claim"):
+			_, _ = w.Write([]byte(`{"forward":false,"review":{"id":"second","status":"PENDING"}}`))
+		case filings.Add(1) == 1:
+			_, _ = w.Write([]byte(`{"forward":false,"review":{"id":"first","status":"PENDING"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"forward":false,"review":{"id":"second","status":"PENDING"}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}
+	ls, _ := openMCPAnalyzerSession(t, heldCallBlock, "", &toolRiskProvider{}, cp, nil)
+	s := ls.(*mcpLaneSession)
+	s.holdWait = time.Second
+	call := func(args string) inspect.Statement {
+		return inspect.Statement{Protocol: inspect.MCP, Direction: inspect.FromClient,
+			Text: "delete_customer\n" + args, Operation: inspect.OpCall, Tables: []string{"delete_customer"},
+			Metadata: map[string]string{inspect.MetadataMCPMethod: "tools/call", inspect.MetadataMCPTool: "delete_customer"}}
+	}
+	begin := time.Now()
+	v := s.evaluate(context.Background(), call(`{"id":"7"}`), call(`{"id":"8"}`))
+	if v.Allowed || !v.Held || !strings.Contains(v.Message, "at the request's time limit") || !strings.Contains(v.Message, "second") {
+		t.Fatalf("verdict %+v", v)
+	}
+	if d := time.Since(begin); d > 1400*time.Millisecond {
+		t.Fatalf("the two holds took %s, past the one-second deadline", d)
 	}
 }
 

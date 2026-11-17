@@ -539,7 +539,7 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 		return MCPVerdict{Message: "session closed"}
 	}
 	defer s.calls.Done()
-	ctx, cancel := context.WithCancel(analyzer.WithHoldWait(ctx, s.holdWait))
+	ctx, cancel := context.WithCancel(analyzer.WithHoldDeadline(ctx, time.Now().Add(s.holdWait)))
 	defer cancel()
 	defer context.AfterFunc(s.ended, cancel)()
 	var v MCPVerdict

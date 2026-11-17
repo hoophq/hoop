@@ -4101,11 +4101,15 @@ The model reads the tool name and the arguments JSON, cut to
   sooner ends the wait without spending the approval. So does the end of
   the MCP session: a `DELETE`, `idle_timeout_sec`, a rules reload or a
   shutdown.
+- The 4 minutes count from the start of the call and cover all its holds.
+  A SQL tool call with two held statements spends the first approval when
+  its statement is released. If the second is still pending at the limit,
+  the call does not run, and the retry files the first statement again.
 - `review_mode: return` answers a pending call at once with the approval
   id, and names `approval_wait` when the sidecar has the `mcp:` block. The
   agent waits there, then sends the same call again. Use it when reviews
-  take longer than the client waits for a tool call: 60 to 120 seconds in
-  most MCP clients.
+  take longer than the client waits for a tool call. Check that limit in
+  the client's own settings.
 - A hold that a person approves needs a control plane and an
   `approval_rule`, or a person running `hoop start sidecar` in a terminal,
   to start, as on the other lanes.

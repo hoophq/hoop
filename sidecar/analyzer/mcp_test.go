@@ -160,22 +160,25 @@ func TestAnMCPToolCallInReturnModeAnswersWithTheApprovalID(t *testing.T) {
 	}
 }
 
-// WithHoldWait ends the wait sooner, even before the first poll, and the
-// refusal names the approval. A limit past the hold's own wait changes nothing.
-func TestWithHoldWaitEndsTheWaitWithTheApprovalID(t *testing.T) {
+// WithHoldDeadline ends the wait sooner, even before the first poll, and the
+// refusal names the approval. A deadline past the hold's own wait changes
+// nothing, and a deadline already passed leaves one claim and no wait.
+func TestWithHoldDeadlineEndsTheWaitWithTheApprovalID(t *testing.T) {
 	for _, c := range []struct {
 		name        string
-		wait, limit time.Duration
+		wait, until time.Duration
 		want        string
 	}{
-		{"shorter limit", time.Minute, 20 * time.Millisecond, "still waiting for approval after 20ms"},
-		{"longer limit", 30 * time.Millisecond, time.Minute, "still waiting for approval after 30ms"},
+		{"sooner deadline", time.Minute, 20 * time.Millisecond, "still waiting for approval at the request's time limit"},
+		{"later deadline", 30 * time.Millisecond, time.Minute, "still waiting for approval after 30ms"},
+		{"passed deadline", time.Minute, -time.Second, "still waiting for approval at the request's time limit"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "r1", Status: "PENDING"}}
 			ev := holdingEvaluator(t, rev, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
 			analyzer.SetReviewPacing(ev, c.wait, time.Hour)
-			ec := &policy.EvalContext{ConnCtx: analyzer.WithHoldWait(context.Background(), c.limit)}
+			start := time.Now()
+			ec := &policy.EvalContext{ConnCtx: analyzer.WithHoldDeadline(context.Background(), start.Add(c.until))}
 			v := ev.EvaluateWith(mcpCall("delete_customer", `{"id":"7"}`), ec)
 			if !v.Denied || v.Review == nil || v.Review.Status != "PENDING" ||
 				!strings.Contains(v.Message, c.want) || !strings.Contains(v.Message, "(approval r1)") {
@@ -183,6 +186,9 @@ func TestWithHoldWaitEndsTheWaitWithTheApprovalID(t *testing.T) {
 			}
 			if claimed := rev.claimedIDs(); len(claimed) != 1 {
 				t.Fatalf("claimed %q, want one claim at the limit", claimed)
+			}
+			if d := time.Since(start); d > 10*time.Second {
+				t.Fatalf("the hold took %s", d)
 			}
 		})
 	}
