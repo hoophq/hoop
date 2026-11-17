@@ -77,8 +77,8 @@ change has a screen or terminal output you can see, look at it:
   through `| cat`.
 
 If you cannot run it (the build needs private module credentials, or takes
-too long), use the PR's images and the code. Say so in the report's first
-line: "Not run: reviewed from code and PR images." A GIF or video from the PR
+too long), use the PR's images and the code. Say so in the report's
+"Reviewed from" line. A GIF or video from the PR
 reads better as frames:
 
 ```bash
@@ -91,19 +91,71 @@ could not see it, list those rules under "Not checked" in the report.
 When the design file (Figma, the PR's description) and a reference disagree,
 do not pick: write it as a question for design.
 
-## 4. Report
+## 4. Show each issue
+
+Each Must fix and Should fix item gets one image: the spot marked, and the
+fix next to it when you can show it. Nits and questions get no image. Save
+the images in `~/design-review/<PR number or branch>/`, named
+`<item number>-<short-name>.png`.
+
+| Scope | You have | Do |
+| --- | --- | --- |
+| Terminal | anything | `term.sh` |
+| Web app | the screen running | `shot.mjs`, then `pair.sh` |
+| Web app | only the PR's images | `mark.sh` (the spot, no "after") |
+| Web app | an issue that shows only across steps (a state after a click) | a GIF with `../evidence/rec.mjs` |
+
+The scripts are in `scripts/`. Each one prints the file it wrote.
+
+**Terminal.** Save what the command prints, colors included, then write the
+"after" text by hand from the fix. The image is drawn from the text, so it
+needs no running hoop:
+
+```bash
+CLICOLOR_FORCE=1 hoop context list > before.txt   # or copy the PR's output
+scripts/term.sh before.txt after.txt ~/design-review/2108/02-table.png
+```
+
+**Web app, running.** `shot.mjs` opens the page, draws a red "BEFORE" box on
+the element, applies the fix in the page (not in the code), and draws a green
+"AFTER" box. `--steps` reaches a state first (open a card, a modal):
+
+```bash
+node scripts/shot.mjs http://localhost:8009 /features/ai-session-analyzer/rules/new \
+  "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Select All')" \
+  "el.textContent = 'Select all'" ~/design-review/2162 --name 03-select-all --token /tmp/hoop-dev-token
+scripts/pair.sh ~/design-review/2162/03-select-all-{before,after}.png ~/design-review/2162/03-select-all.png
+```
+
+The token file is the dev login (the `evidence` skill shows how to make one).
+A fix the page cannot show (a new empty state, an aria-label) gets the
+"before" only.
+
+**Web app, PR images only.** Read the image, find the box of the spot in its
+pixels, and mark it:
+
+```bash
+scripts/mark.sh shot.png <x> <y> <w> <h> ~/design-review/2162/02-status-dot.png [pad]
+```
+
+Look at every image before you use it: the box must sit on the issue.
+
+## 5. Report
 
 Use this format. Most severe first. Each item names its file.
 
 ```markdown
 ## Design review: <PR or branch>
 
-Scope: web app | terminal | both. Script: <n> FAIL, <n> WARN.
+- **Scope:** web app | terminal | both
+- **Checks:** script <n> FAIL, <n> WARN · color test passed | failed | not run
+- **Reviewed from:** the running screen | code and PR images (not run)
 
 ### Must fix
 1. `webapp_v2/src/pages/Foo/index.jsx:42`: two filled indigo buttons in one view.
    Rule: one primary button per view (webapp.md, Actions).
    Fix: make "Cancel" `variant="default"`.
+   ![1](~/design-review/2162/01-two-primary.png)
 
 ### Should fix
 ...
@@ -145,6 +197,10 @@ Rules for each issue:
 - If a reference and the repo disagree, the repo wins. Say so in one line
   under the report, so design can update this skill.
 - If you are not sure, write it as a question, not a rule.
+
+An image path on your machine is for the person who asked. To post the report
+on a PR, publish the images first (`../evidence/publish.sh <TICKET-ID> <files>`) and use those
+links; only post when the person asks.
 
 No issues: say "No design issues found", list what you checked, and stop.
 
