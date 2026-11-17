@@ -78,6 +78,8 @@ github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e h1:HTPuuf+8TZ4U0Jgw
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop-ica v0.11.2 h1:PW7n16UxkuCqkjMeTgxTqv41q3AC9/Wm52yjlmn4HFA=
 github.com/hoophq/libhoop-ica v0.11.2/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
+github.com/hoophq/libhoop-ica v0.11.3-0.20261117155039-9dea219c6578 h1:BxUKWuEXnFTGWf0oXz0gWZ1XkIe3eyCMRrxbftvdhEc=
+github.com/hoophq/libhoop-ica v0.11.3-0.20261117155039-9dea219c6578/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/janpfeifer/go-benchmarks v0.1.1 h1:gLLy07/JrOKSnMWeUxSnjTdhkglgmrNR2IBDnR4kRqw=
 github.com/janpfeifer/go-benchmarks v0.1.1/go.mod h1:5AagXCOUzevvmYFQalcgoa4oWPyH1IkZNckolGWfiSM=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

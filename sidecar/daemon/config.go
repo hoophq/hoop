@@ -868,12 +868,17 @@ type AdminConfig struct {
 	// ICAReadinessJSON lets an external relay require explicit live engine
 	// inspection attestation. Default keeps the existing plaintext /readyz API.
 	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty" cap:"ica_readiness_json"`
+	// Pprof serves Go profiles under /debug/pprof/. Loopback listen only.
+	Pprof bool `json:"pprof,omitempty" cap:"admin_pprof"`
 }
 
 // validate refuses an api_listen that is not host:port or that shares the
 // probe listener's address: the two are separate servers, so one would fail
 // to bind.
 func (a AdminConfig) validate() []string {
+	if a.Pprof && !loopbackListen(a.APIListen) {
+		return []string{"admin.pprof: needs admin.api_listen on a loopback address; the read routes are unauthenticated"}
+	}
 	if a.APIListen == "" {
 		return nil
 	}

@@ -1246,7 +1246,7 @@ func Run(cfg *Config, det Plugin) error {
 		}
 		runAdmin = func() error {
 			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON)
+				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON, cfg.Admin.Pprof)
 		}
 	}
 	// PUT /license is gone. An operator who still sets its secret expects a
@@ -2059,6 +2059,7 @@ func serveAdmin(
 	otel *otelExporter,
 	log *slog.Logger,
 	icaReadinessJSON bool,
+	pprof bool,
 ) error {
 	var probesLn, apiLn net.Listener
 	if addr != "" {
@@ -2116,6 +2117,9 @@ func serveAdmin(
 	}
 
 	mux := http.NewServeMux()
+	if pprof {
+		registerPprof(mux)
+	}
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {
 			Name   string `json:"name"`
@@ -2123,6 +2127,9 @@ func serveAdmin(
 			Active int64  `json:"active"`
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
+			// GPU is an ica lane's GPU gate accounting. Lanes that share
+			// one engine runtime report the same numbers.
+			GPU *ICAGPUStats `json:"gpu,omitempty"`
 		}
 		out := make([]stat, 0, len(servers)+len(endpoints))
 		for i, s := range servers {
@@ -2148,6 +2155,7 @@ func serveAdmin(
 			out = append(out, stat{
 				Name: endpointNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
+				GPU: icaGPUStats(s),
 			})
 		}
 		resp := map[string]any{

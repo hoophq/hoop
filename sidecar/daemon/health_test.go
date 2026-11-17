@@ -146,7 +146,7 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, apiAddr, nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
-		slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), false, false)
 
 	admin, api := "http://"+addr, "http://"+apiAddr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, admin+"/healthz"); return code == http.StatusOK })
@@ -190,7 +190,7 @@ func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- serveAdmin(context.Background(), addr, held.Addr().String(), nil, nil, nil, nil, view, auditChain{},
-			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false)
+			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false, false)
 	}()
 	select {
 	case err := <-done:
@@ -238,7 +238,7 @@ func TestAdminListenerAloneSaysWhereTheReadRoutesWent(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, "", nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
-		slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), false, false)
 
 	base := "http://" + addr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, base+"/healthz"); return code == http.StatusOK })
