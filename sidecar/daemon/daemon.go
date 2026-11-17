@@ -1246,7 +1246,7 @@ func Run(cfg *Config, det Plugin) error {
 		}
 		runAdmin = func() error {
 			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON)
+				view, ac, analyzerCfg, am, licState, otel, log, icaReadinessJSONFor(cfg))
 		}
 	}
 	// PUT /license is gone. An operator who still sets its secret expects a
@@ -1330,7 +1330,7 @@ func Run(cfg *Config, det Plugin) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h := healthState{endpoints, endpointNames, cfg.Admin.ICAReadinessJSON, len(servers)}
+			h := healthState{endpoints, endpointNames, icaReadinessJSONFor(cfg), len(servers)}
 			if serr := serveHealth(ctx, addr, h, log); serr != nil {
 				log.Error("health endpoint failed", "listen", addr, "error", serr)
 				errCh <- serr

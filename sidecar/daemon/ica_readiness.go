@@ -6,13 +6,14 @@ import (
 )
 
 // ICAInspectionState is a live engine snapshot for an external ICA relay.
-// Raw readiness is valid only with an explicit, live recorder attestation.
+// Uninspected readiness requires explicit, coherent engine mode metadata.
 type ICAInspectionState struct {
 	Ready                     bool
 	InspectionEnabled         bool
 	GraphicsBypassed          bool
 	ProtocolValidationEnabled bool
 	DiagnosticRecording       *ICADiagnosticRecordingStatus
+	RawTCP                    *ICARawTCPStatus
 }
 
 type ICAInspectionReporter interface{ ICAInspectionState() ICAInspectionState }
@@ -24,15 +25,17 @@ func writeICAReadiness(w http.ResponseWriter, endpoints []endpointServer, proxyC
 		GraphicsBypassed          bool                          `json:"graphics_bypassed"`
 		ProtocolValidationEnabled bool                          `json:"protocol_validation_enabled"`
 		DiagnosticRecording       *ICADiagnosticRecordingStatus `json:"diagnostic_recording,omitempty"`
+		RawTCP                    *ICARawTCPStatus              `json:"raw_tcp,omitempty"`
 	}{Status: "not_ready"}
 	ready := len(endpoints) > 0 && proxyCount == 0
 	inspection, protocol, bypass := ready, ready, false
-	allInspected, allRecording := ready, ready
-	diagnosticCount := 0
+	allInspected, allRecording, allRaw := ready, ready, ready
+	diagnosticCount, rawCount := 0, 0
 	for _, endpoint := range endpoints {
 		reporter, ok := endpoint.(ICAInspectionReporter)
 		if !ok {
 			ready, inspection, protocol, allInspected, allRecording = false, false, false, false, false
+			allRaw = false
 			continue
 		}
 		state := reporter.ICAInspectionState()
@@ -42,6 +45,21 @@ func writeICAReadiness(w http.ResponseWriter, endpoints []endpointServer, proxyC
 		bypass = bypass || state.GraphicsBypassed
 		inspected := state.InspectionEnabled && state.ProtocolValidationEnabled && !state.GraphicsBypassed
 		recording := !state.InspectionEnabled && !state.ProtocolValidationEnabled && state.GraphicsBypassed
+		raw := recording
+		if d := state.RawTCP; d != nil {
+			rawCount++
+			if status.RawTCP == nil {
+				copy := *d
+				status.RawTCP = &copy
+			} else if *status.RawTCP != *d {
+				ready = false
+			}
+			inspected = inspected && d.inspectedReady()
+			raw = raw && d.rawReady() && state.DiagnosticRecording == nil
+			recording = false
+		} else {
+			raw = false
+		}
 		if d := state.DiagnosticRecording; d != nil {
 			diagnosticCount++
 			if status.DiagnosticRecording == nil {
@@ -55,17 +73,18 @@ func writeICAReadiness(w http.ResponseWriter, endpoints []endpointServer, proxyC
 		} else {
 			recording = false
 		}
+		allRaw = allRaw && raw
 		allInspected = allInspected && inspected
 		allRecording = allRecording && recording
 	}
-	if diagnosticCount != 0 && diagnosticCount != len(endpoints) {
+	if (diagnosticCount != 0 && diagnosticCount != len(endpoints)) || (rawCount != 0 && rawCount != len(endpoints)) || (rawCount != 0 && diagnosticCount != 0) {
 		ready = false
 	}
 	status.InspectionEnabled = inspection
 	status.ProtocolValidationEnabled = protocol
 	status.GraphicsBypassed = bypass
 	w.Header().Set("Content-Type", "application/json")
-	if ready && (allInspected || allRecording) {
+	if ready && (allInspected || allRecording || allRaw) {
 		status.Status = "ready"
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)

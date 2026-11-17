@@ -6522,7 +6522,7 @@ The optional listener `ica.slots` block maps consecutive unprivileged ports to V
 
 `ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
 
-The adapter pins the published **libhoop-ica v0.11.0** cell and diagnostic recording API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
+The adapter pins the published **libhoop-ica v0.12.0** cell and diagnostic recording API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
 
 ### ICA GPU assets
 
@@ -6532,6 +6532,10 @@ the CPU `ica` target stays unchanged. GPU assets and TensorRT engines are an
 explicit versioned/checksummed build input. See [ICA GPU delivery](../deploy/ica-sidecar/GPU.md)
 for the asset contract, installer, configuration keys, and separate fixed-upstream
 and TPROXY examples. No OCR text inspector is enabled by this profile.
+
+### ICA raw TCP without recording
+
+Set `ica.raw_tcp.enable: true` and restart to forward admitted TCP streams without decoding, OCR, NER, masking or recording. Normal session limits and network admission remain in force. There is no deadline; disable the toggle and restart to restore inspection. See the [raw TCP guide](../deploy/ica-sidecar/RAW-TCP.md) and [example config](../deploy/ica-sidecar/examples/config.raw-tcp.yaml). External GPU relays require their own explicit raw-mode support.
 
 ### Temporary ICA diagnostic recording
 
