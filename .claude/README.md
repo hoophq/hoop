@@ -13,6 +13,7 @@ behaves the same way in this repo. Change it via PR like any code.
 | `skills/build-ticket/` | `/build-ticket EVL-86` — one ticket to a draft PR: code, tests, QA loop, evidence |
 | `agents/qa.md` | `qa` — independent QA; judges the branch against the ticket only, never edits |
 | `skills/evidence/` | `/evidence` — the same flow on `origin/main` and the branch, as before/after images |
+| `skills/design-review/` | `/design-review 2108` — a PR, branch or screenshot of the web app or the terminal, checked against the design decisions; returns issues with fixes |
 | `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
 | `skills/support-agent/` | `/support-agent` — one scheduled run of the support agent: one Linear support ticket per run |
 | `hooks/ai-disclosure.sh` | With `HOOP_AGENT` set: refuses a Slack post or Linear comment that does not say an AI wrote it, and Slack posts outside the agent's channel |
