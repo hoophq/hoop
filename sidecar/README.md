@@ -4255,7 +4255,12 @@ upstream, such as a GitHub or Stripe key, in that header:
 - A request without the header, with an empty value or with the header
   twice gets 403 `request refused: <reason>`, and the reason names the
   header.
-- A session does not keep the token: each request uses its own.
+- Each request uses its own token. The session keeps the latest token in
+  memory, for the replies the lane sends to the server on its own, and
+  drops it when the session ends.
+- The upstream session stays the one the first request opened. A server
+  that binds its session to a user refuses a later request with another
+  user's token. To change users, open a new session.
 - It works with `caller_token`, `identity_header` or neither. The lane
   checks `caller_token` first.
 - `transport: sse` is refused: the sse stream keeps the token of the
