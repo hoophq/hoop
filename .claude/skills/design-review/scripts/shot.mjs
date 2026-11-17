@@ -99,11 +99,12 @@ const box = (color, word) => js(`(() => {
     'font:700 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.06em;padding:4px 6px;' +
     'left:' + (r.left - 6) + 'px;top:' + (r.top - 28) + 'px'
   // The tag sits above the box: the photo keeps it.
-  return { x: r.left, y: r.top - 22, w: r.width, h: r.height + 22, vw: innerWidth, vh: innerHeight }
+  return { x: r.left, y: r.top - 22, w: r.width, h: r.height + 22, vw: innerWidth, vh: innerHeight, sx: scrollX, sy: scrollY }
 })()`)
 const shot = async (rect, file) => {
   const x = Math.max(0, rect.x - pad), y = Math.max(0, rect.y - pad)
-  const clip = { x, y, width: Math.min(rect.vw, rect.x + rect.w + pad) - x, height: Math.min(rect.vh, rect.y + rect.h + pad) - y, scale: 1 }
+  // The clip is in page coordinates: add the scroll.
+  const clip = { x: x + rect.sx, y: y + rect.sy, width: Math.min(rect.vw, rect.x + rect.w + pad) - x, height: Math.min(rect.vh, rect.y + rect.h + pad) - y, scale: 1 }
   const { data } = await send('Page.captureScreenshot', { format: 'png', clip })
   writeFileSync(file, Buffer.from(data, 'base64'))
   console.log(file)

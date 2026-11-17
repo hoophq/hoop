@@ -121,15 +121,23 @@ the element, applies the fix in the page (not in the code), and draws a green
 "AFTER" box. `--steps` reaches a state first (open a card, a modal):
 
 ```bash
-node scripts/shot.mjs http://localhost:8009 /features/ai-session-analyzer/rules/new \
+# A test hoop with a seeded admin, and its login in a file:
+scripts/dev/run-sandbox.sh start
+(source "${TMPDIR:-/tmp}/hoop-sandbox/env" && printf %s "$HOOP_TOKEN" > /tmp/hoop-dev-token)
+# The web UI: `cd webapp_v2 && npm run dev:full` (http://localhost:5173).
+
+node scripts/shot.mjs http://localhost:5173 /features/ai-session-analyzer/rules/new \
   "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Select All')" \
-  "el.textContent = 'Select all'" ~/design-review/2162 --name 03-select-all --token /tmp/hoop-dev-token
+  "el.textContent = 'Select all'" ~/design-review/2162 --name 03-select-all --pad 160 \
+  --token /tmp/hoop-dev-token \
+  --steps "document.querySelector('input[placeholder=\"Select action\"]').click(); await sleep(600);
+           [...document.querySelectorAll('[role=option]')].find(o => /approval/i.test(o.textContent)).click(); await sleep(1200)"
 scripts/pair.sh ~/design-review/2162/03-select-all-{before,after}.png ~/design-review/2162/03-select-all.png
 ```
 
-The token file is the dev login (the `evidence` skill shows how to make one).
-A fix the page cannot show (a new empty state, an aria-label) gets the
-"before" only.
+For a PR, run the stack from the PR's code (the `../pr-<N>` folder of step
+2), so the photo shows the change. A fix the page cannot show (a new empty
+state, an aria-label) gets the "before" only.
 
 **Web app, PR images only.** Read the image, find the box of the spot in its
 pixels, and mark it:
