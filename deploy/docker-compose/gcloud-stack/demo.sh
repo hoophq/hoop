@@ -187,10 +187,10 @@ fi
 
 # ------------------------------------------------------------------- audit
 h "AUDIT / the sidecar counted every refusal"
-note "Read from the client, on the compose network (:19000 internal; the"
-note "host publishes it as :19001)."
+note "Read from the client, on the compose network (:19002 internal; the"
+note "host publishes it as :19003)."
 
-stats=$($CURL -s --max-time 10 http://hoop-inspect:19000/stats)
+stats=$($CURL -s --max-time 10 http://hoop-inspect:19002/stats)
 denied=0
 for n in $(grep -o '"denied":[0-9]*' <<<"$stats" | cut -d: -f2); do
     denied=$((denied + n))
@@ -201,7 +201,7 @@ ok "denied statements across all lanes: $denied"
 
 note ""
 note "The last sessions, as an audit UI would read them:"
-$CURL -s --max-time 10 'http://hoop-inspect:19000/api/sessions?limit=5' \
+$CURL -s --max-time 10 'http://hoop-inspect:19002/api/sessions?limit=5' \
     | sed -e 's/},{/},\n   {/g' -e 's/^/  /'
 
 h "Summary"

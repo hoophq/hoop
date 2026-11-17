@@ -197,3 +197,24 @@ func TestTheApprovalAgentDecidesAHeldMCPToolCall(t *testing.T) {
 		t.Fatalf("verdict %+v", v)
 	}
 }
+
+// The rule turn runs before a hold on a tool call, as on any lane: an AI
+// guardrail that matches ends the call with nothing filed.
+func TestAnAIGuardrailDenyOnAnMCPHoldFilesNoReview(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{reply(call("apply_guardrail", `{"rule":"no-deletes","reason":"destructive"}`))}}
+	rev := &handoffReviewer{}
+	ev := rulesEvaluator(t, p, analyzer.ActionRequireReview, bothExisting(), func(c *analyzer.Config) {
+		c.Review = rev
+		c.Trigger = analyzer.Trigger{All: true}
+	})
+	v := ev.EvaluateWith(mcpSQL("query", "DELETE FROM customers WHERE id = 7", inspect.OpDelete, "customers"), withUser("ana@corp"))
+	if !v.Denied || v.Message != "deletes are not allowed here" {
+		t.Fatalf("verdict %+v", v)
+	}
+	if asks := p.asks(); len(asks) != 1 {
+		t.Errorf("rule turns = %d, want 1", len(asks))
+	}
+	if rev.filed() != 0 {
+		t.Errorf("filed %d review(s), want none", rev.filed())
+	}
+}

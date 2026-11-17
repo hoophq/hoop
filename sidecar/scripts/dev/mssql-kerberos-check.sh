@@ -124,7 +124,7 @@ fi
 
 # And the trail agrees with what the client got.
 sleep 1
-MC="$(curl -s 'http://localhost:19000/api/sessions?limit=1' 2>/dev/null \
+MC="$(curl -s 'http://localhost:19002/api/sessions?limit=1' 2>/dev/null \
       | python3 -c "import sys,json;print(json.load(sys.stdin)['sessions'][0]['masked_count'])" 2>/dev/null)"
 if [[ "${MC:-0}" -gt 0 ]]; then
     ok "audit recorded masked_count=$MC for that session"
@@ -198,7 +198,7 @@ fi
 
 # ----------------------------------------------------------- 4. audit trail
 c_step "4. The audit trail recorded the statement and the verdict"
-AUDIT="$(curl -s 'http://localhost:19000/api/sessions?limit=25' 2>/dev/null)"
+AUDIT="$(curl -s 'http://localhost:19002/api/sessions?limit=25' 2>/dev/null)"
 if grep -q 'mssqldb' <<<"$AUDIT"; then
     ok "mssqldb sessions present in the sidecar's query API"
 else

@@ -20,4 +20,7 @@ export const reviewsService = {
   // status ∈ APPROVED | REJECTED | REVOKED. REVOKED takes an APPROVED review
   // that is `jit`, or one a sidecar filed, until the sidecar uses it.
   update: (id, payload) => api.put(`/reviews/${encodeURIComponent(id)}`, payload),
+  // Admin only. → { slack: { integrated, channels: [{ id, name }] }, teams: { ... } }:
+  // the integrations an AI-routed approval can notify through (ENG-663).
+  routingIntegrations: () => api.get('/approvals/routing/integrations'),
 }

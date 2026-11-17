@@ -67,12 +67,15 @@ image:
 config: {}
   # log_level: info
   #
-  # # Health, stats and the audit query API. REQUIRED, and on 19000: the
-  # # relay disables admin when the address is empty and has no default port
-  # # of its own, while this chart declares 19000 and probes /healthz there.
-  # # A config that omits it or moves it is refused at render, not left to
-  # # fail every pod. 19000 is the number every config under
-  # # deploy/docker-compose/*/sidecar/ binds.
+  # # Probes (/healthz, /readyz) and the ICA drain. REQUIRED, and
+  # # on 19000: the relay disables admin when the address is empty and has no
+  # # default port of its own, while this chart declares 19000 and probes
+  # # /healthz there. A config that omits it or moves it is refused at render,
+  # # not left to fail every pod. It serves no audit data or rules.
+  # #
+  # # api_listen serves the read routes (/stats, /metrics, /config, /events,
+  # # /api/*) with NO authentication. Off unless set; this chart does not
+  # # publish it. Reach it with `kubectl port-forward`.
   # admin:
   #   listen: '0.0.0.0:19000'
   #
@@ -165,13 +168,7 @@ configRevision: ''
 # Changing this value rolls the pods. To rotate without a restart, mount the
 # license from a Secret with extraVolumes/extraVolumeMounts and set this to
 # the mounted path: the relay re-reads the file when the kubelet updates it.
-# Or send it to PUT /license on the admin port; see `adminSecret`.
 license: ''
-
-# -- Secret that PUT /license on the admin port (19000) asks for, as
-# `Authorization: Bearer <secret>`. Empty turns the endpoint off, which keeps
-# the admin port read-only. → HOOP_SIDECAR_ADMIN_SECRET
-adminSecret: ''
 
 # -- Take the running configuration from a Control Plane instead of the file
 # above. The handshake supplies the whole config and `config` becomes optional;

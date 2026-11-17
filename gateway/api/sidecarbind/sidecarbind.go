@@ -89,6 +89,13 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		}
 		return true
 	}
+	// AI rule options (ENG-662) are checked bound or not: the license does not
+	// depend on where the rule runs. A library name resolves against the
+	// organization's library, or the rule_library of each target.
+	if req.Kind == services.SidecarRuleAnalyzer &&
+		answerValidation(c, services.ValidateAnalyzerAIRules(models.DB, orgID, req.Name, req.EffectiveSpec(), targets)) {
+		return true
+	}
 	// A rule bound nowhere is stored and reaches nobody, which is a valid
 	// state and not one to check against a sidecar it never touches. It is
 	// also the state an admin unbinding a broken rule is trying to reach, so
@@ -103,6 +110,11 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		return true
 	}
 	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.StoredName, spec, targets)
+	return answerValidation(c, err)
+}
+
+// answerValidation answers a refused write and reports whether it did.
+func answerValidation(c *gin.Context, err error) bool {
 	switch {
 	case err == nil:
 		return false

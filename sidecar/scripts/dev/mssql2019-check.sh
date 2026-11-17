@@ -169,7 +169,7 @@ fi
 
 # --------------------------------------------------------------- 6. audit
 c_step "6. The audit trail recorded the statement and the verdict"
-AUDIT="$(curl -s 'http://localhost:19001/api/sessions?limit=25' 2>/dev/null)"
+AUDIT="$(curl -s 'http://localhost:19003/api/sessions?limit=25' 2>/dev/null)"
 # Re-read: the copy taken in section 2b predates the refused DELETE.
 TRAIL="$(dc logs hoop-inspect 2>&1)"
 if grep -q 'mssql2019' <<<"$AUDIT"; then

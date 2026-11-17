@@ -73,6 +73,13 @@ func ReviewPolicyForLevel(orgID string, level *daemon.LevelApprover) *ReviewPoli
 	if level != nil {
 		named = level.Groups
 	}
+	return ReviewPolicyForGroups(orgID, named)
+}
+
+// ReviewPolicyForGroups is ReviewPolicyForLevel for groups chosen at filing,
+// such as the groups AI routing selected: one pending row per group, the
+// admin group when there is none, and one approval releases.
+func ReviewPolicyForGroups(orgID string, named []string) *ReviewPolicy {
 	names := reviewersOrDefault(named)
 	groups := make([]models.ReviewGroups, 0, len(names))
 	for _, groupName := range names {

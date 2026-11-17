@@ -85,6 +85,10 @@ type Reframer interface {
 // connection end (libhoop codec/http FlushChecked): a close-delimited body
 // too large to mask ends only there, with its head still held. Optional; a
 // Reframer without it drops such a response silently through Flush.
+//
+// Its flush with a nil callback discards what it holds and returns nothing;
+// a non-nil callback returns it. A plain Reframer's Flush(nil) returns what
+// it holds (FlushResponseChecked relies on both).
 type checkedFlusher interface {
 	FlushChecked(mask func(column string, value []byte) []byte) ([]byte, error)
 }
@@ -227,6 +231,12 @@ type Config struct {
 
 	// Masker rewrites response payloads. Optional; nil disables masking.
 	Masker Masker
+
+	// MaskScope says how a mask an evaluator applies to one statement
+	// reaches that statement's response. Zero refuses such a statement.
+	// A byte-path scope needs a codec that re-frames responses, and turns
+	// its rewrite on even with no Masker. See MaskScope.
+	MaskScope MaskScope
 
 	// FailOnAuditError makes a failed audit write deny the statement.
 	//
@@ -557,6 +567,33 @@ type Gate struct {
 	// because comparing the two codec interfaces panics on a value type
 	// holding a slice or a map.
 	sharedCodec bool
+
+	// maskScope is cfg.MaskScope. The plan fields below are guarded by
+	// mu: the client pump installs a plan and the server pump reads it.
+	// See exchangemask.go.
+	maskScope  MaskScope
+	plan       []policy.ResponseMask
+	planActive bool
+	// planAnswered: on an HTTP lane, the plan's final response arrived.
+	planAnswered bool
+	// planSticky: the plan's end cannot be known; it lasts for the
+	// connection. planDue counts a serial lane's markers until it ends.
+	planSticky bool
+	planDue    int
+	// endScan and reqScan follow a serial lane's framing; nil for a
+	// protocol the gate does not follow. maskOutstanding counts responses the
+	// client asked for and the server has not ended; countLost says that
+	// count is no longer known (a serial lane's, or httpOpen on an HTTP lane).
+	endScan         ResponseEnd
+	reqScan         requestCounter
+	maskOutstanding int
+	countLost       bool
+	// respChecked and respBytes check a masked HTTP response before it is
+	// forwarded; see responseRefusal.
+	respChecked bool
+	respBytes   int
+	// httpOpen counts forwarded http requests with no final response.
+	httpOpen int
 }
 
 // New builds a Gate for a session.
@@ -653,13 +690,23 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	// CodecFactory can hand over anything. A masker on a codec that cannot
 	// rebuild its own frames would be forwarded around silently, which is
 	// the failure the load-time check exists to refuse.
+	if cfg.MaskScope == MaskScopeExchange {
+		return nil, errors.New("sidecar/gate: MaskScopeExchange is for a gate that serves one exchange; use NewStatementGate")
+	}
+	g.maskScope = cfg.MaskScope
+	if cfg.MaskScope == MaskScopeSerial {
+		g.endScan, g.reqScan = responseEndFor(cfg.Protocol)
+	}
 	if rf, ok := server.Codec().(Reframer); ok {
 		g.reframer = rf
-		if activator, ok := rf.(rewriteActivator); ok && cfg.Masker != nil {
+		if activator, ok := rf.(rewriteActivator); ok && (cfg.Masker != nil || cfg.MaskScope.bytePath()) {
 			activator.EnableRewrite()
 		}
 	} else if cfg.Masker != nil {
 		return nil, fmt.Errorf("sidecar/gate: a masker is configured but the %s codec (%T) cannot re-frame responses, so it could never mask them",
+			cfg.Protocol, serverCodec)
+	} else if cfg.MaskScope.bytePath() {
+		return nil, fmt.Errorf("sidecar/gate: a mask scope is configured but the %s codec (%T) cannot re-frame responses, so it could never mask one",
 			cfg.Protocol, serverCodec)
 	}
 	if cfg.RequestIdentity != nil {
@@ -807,10 +854,24 @@ func (g *Gate) FlushResponse() []byte {
 	return out
 }
 
-// FlushResponseChecked is FlushResponse, and it reports a held response the
-// codec refused (inspect.ErrStreamUnsafe) with no bytes. The codec still
-// held its head, so nothing of it reached the client: the relay answers
-// with its deny frame. The refusal is audited and counted here.
+// ErrMaskedTailDropped is FlushResponseChecked's error when the connection
+// ended while an AI mask owned the response in flight.
+var ErrMaskedTailDropped = errors.New("sidecar/gate: the connection ended inside a response an AI data masking " +
+	"rule applies to; the bytes the codec still held were dropped, not forwarded")
+
+// FlushResponseChecked is FlushResponse, and says when it dropped bytes.
+//
+// While an AI mask (a plan) owns the response in flight, nothing held is
+// released: a codec's flush forwards a partial frame as it came, unmasked,
+// whatever the masker. The held bytes are dropped, the refusal is recorded
+// on the trail, and the error is ErrMaskedTailDropped. The client gets a
+// truncated response, which an upstream that closed mid-response sends it
+// anyway.
+//
+// Otherwise it reports a held response the codec refused
+// (inspect.ErrStreamUnsafe) with no bytes. The codec still held its head, so
+// nothing of it reached the client: the relay answers with its deny frame.
+// That refusal is audited and counted here when the lane masks.
 func (g *Gate) FlushResponseChecked() ([]byte, error) {
 	if g.reframer == nil {
 		return nil, nil
@@ -821,14 +882,41 @@ func (g *Gate) FlushResponseChecked() ([]byte, error) {
 		}
 		return g.reframer.Flush(mask), nil
 	}
-	if g.masker == nil {
+	if !g.masksResponses() {
 		return flush(nil)
 	}
+	if plan := g.flushPlan(); len(plan) > 0 {
+		// What the codec held is read, never forwarded, to say whether
+		// there was any. A plain Flush(nil) returns it (postgres, mysql,
+		// oracle, mongodb, mssql); a checkedFlusher discards it there, so
+		// it is asked with a callback that changes nothing, and a refusal
+		// also says bytes were held.
+		var (
+			held []byte
+			err  error
+		)
+		if cf, ok := g.reframer.(checkedFlusher); ok {
+			held, err = cf.FlushChecked(func(_ string, value []byte) []byte { return value })
+		} else {
+			held = g.reframer.Flush(nil)
+		}
+		if len(held) == 0 && err == nil {
+			return nil, nil
+		}
+		g.writeAudit(context.Background(), audit.ErrorEvent(g.session(), ErrMaskedTailDropped))
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceMaskScope)
+		return nil, ErrMaskedTailDropped
+	}
 	// Rows masked here were held back by the codec and never passed through
-	// maskByReframing, so this is their only chance to be counted.
+	// maskByReframing, so this is their only chance to be counted. No plan
+	// owns them: only the lane's masker applies.
+	mask := g.cellMasker(nil)
 	masked := 0
 	out, err := flush(func(column string, value []byte) []byte {
-		res, _, n := g.masker.MaskCell(column, value)
+		res, _, n := mask(column, value)
 		if n == 0 {
 			return value
 		}
@@ -903,7 +991,7 @@ func (g *Gate) EndOfStream() Decision {
 				finals++
 			}
 		}
-		j := g.judge(ctx, stmt)
+		j := g.judge(ctx, stmt, 0)
 		if j.refusal != nil {
 			r := *j.refusal
 			r.Statements = stmts
@@ -997,8 +1085,22 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 
 	insp := g.client
+	var plan []policy.ResponseMask
+	var ended int
 	if dir == inspect.FromServer {
 		insp = g.server
+		plan, ended = g.serverRead(data)
+		if why := g.responseRefusal(data); why != "" {
+			// A masked response the codec could forward unmasked: refuse
+			// it before any of its bytes leave.
+			d = Decision{Allowed: false, Rule: maskScopeRule, Message: why}
+			g.writeAudit(ctx, audit.ErrorEvent(g.session(), errors.New(why)))
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceMaskScope)
+			return d
+		}
 	}
 
 	stmts, ready, err := insp.InspectReady(dir, data)
@@ -1027,6 +1129,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// unparsed stands for client bytes the codec could not decode. It is
 	// judged after the statements the codec did decode, in stream order.
 	var unparsed *inspect.Statement
+	// lostCount: forwarded client bytes the codec could not decode may hold
+	// requests the upstream answers and the gate never counted.
+	lostCount := err != nil && dir == inspect.FromClient
 	if err != nil {
 		// A malformed stream is reported, and policy decides whether its
 		// bytes proceed: the gate turns them into an `unknown` statement
@@ -1122,6 +1227,13 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			earlier++
 		}
 	}
+	// A plan is installed only once the whole read is allowed, and the
+	// server read masks with the plan it found when it started.
+	var install []policy.ResponseMask
+	requests := 0
+	if dir == inspect.FromClient {
+		requests = g.countRequests(stmts)
+	}
 	for i, stmt := range stmts {
 		if isHTTPRequest(stmt) {
 			g.requests++
@@ -1167,16 +1279,18 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				}
 			}
 		}
-		j, stop := g.joinJudgment(ctx, &d, stmt, stmts)
+		j, stop := g.joinJudgment(ctx, &d, stmt, stmts, requests)
 		if stop {
 			return d
 		}
+		install = append(install, j.masks...)
 		if isHTTPRequest(stmt) && g.queueExchange(reservedReview(j)) {
 			queued++
 		}
 	}
 	if unparsed != nil {
-		if _, stop := g.joinJudgment(ctx, &d, *unparsed, stmts); stop {
+		// maskRefusal denies a mask on it: the codec lost the stream.
+		if _, stop := g.joinJudgment(ctx, &d, *unparsed, stmts, requests); stop {
 			return d
 		}
 	}
@@ -1191,8 +1305,16 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// Substituting bytes in any of them desynchronizes the client. A codec
 	// with no Reframer masks nothing here, and MaskSupported refuses the
 	// config for it at load.
-	if dir == inspect.FromServer && g.masker != nil && g.reframer != nil && len(data) > 0 {
-		g.maskByReframing(ctx, &d, data)
+	if dir == inspect.FromServer && g.masksResponses() && len(data) > 0 {
+		g.maskByReframing(ctx, &d, data, plan)
+	}
+	if dir == inspect.FromServer {
+		g.answered(stmts, ended)
+	} else {
+		if lostCount {
+			g.loseRequestCount()
+		}
+		g.installPlan(install, g.sent(stmts, d.Payload))
 	}
 
 	return d
@@ -1200,9 +1322,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 
 // joinJudgment judges stmt and folds the result into d. stop is true when d
 // must be returned now: a refusal replaced it, or a denial emptied its
-// Payload, so nothing may be forwarded.
-func (g *Gate) joinJudgment(ctx context.Context, d *Decision, stmt inspect.Statement, stmts []inspect.Statement) (j judgment, stop bool) {
-	j = g.judge(ctx, stmt)
+// Payload, so nothing may be forwarded. requests is judge's.
+func (g *Gate) joinJudgment(ctx context.Context, d *Decision, stmt inspect.Statement, stmts []inspect.Statement, requests int) (j judgment, stop bool) {
+	j = g.judge(ctx, stmt, requests)
 	if j.refusal != nil {
 		*d = *j.refusal
 		d.Statements = stmts
@@ -1240,6 +1362,10 @@ type judgment struct {
 	// is configured to fail closed. The caller returns it as-is after
 	// filling Statements; nothing may be forwarded.
 	refusal *Decision
+
+	// masks is the response mask an allowed statement carries; see
+	// MaskScope.
+	masks []policy.ResponseMask
 }
 
 // judge evaluates one statement: policy, counters, audit. It is the shared
@@ -1247,9 +1373,33 @@ type judgment struct {
 // so the two cannot drift on the order that matters — audit BEFORE the
 // caller forwards, because a crash between the write and the forward must
 // not lose the record of the statement that ran.
-func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
+//
+// requests counts the statements of the read stmt arrived in, which decides
+// whether a response mask the verdict carries can be tied to stmt alone.
+func (g *Gate) judge(ctx context.Context, stmt inspect.Statement, requests int) judgment {
 	ctx, endStatement := g.beginStatement(ctx, stmt)
-	verdict := g.evaluate(ctx, stmt)
+	var verdict policy.Verdict
+	var masks []policy.ResponseMask
+	if busy := g.exchangeBusy(stmt); busy != "" {
+		verdict = policy.Deny(maskScopeRule, busy)
+		verdict.Source = SourceMaskScope
+	} else {
+		verdict, masks = g.evaluate(ctx, stmt)
+		if !verdict.Denied && len(masks) > 0 {
+			if why := g.maskRefusal(stmt, requests); why != "" {
+				// Nothing is forwarded, so an approval the policy
+				// reserved for this statement goes back.
+				if r := verdict.Review; r != nil && r.Reserved {
+					g.settle(ctx, []string{r.ID}, false)
+				}
+				denied := policy.Deny(maskScopeRule, why)
+				denied.Source = SourceMaskScope
+				denied.Annotations = verdict.Annotations
+				denied.Err = verdict.Err
+				verdict, masks = denied, nil
+			}
+		}
+	}
 
 	ev := audit.StatementEvent(
 		g.session(), stmt, !verdict.Denied, verdict.Rule, verdict.Message)
@@ -1307,13 +1457,17 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		}}
 	}
 
-	return judgment{
+	j := judgment{
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
 		review:  verdict.Review,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
+	if !verdict.Denied {
+		j.masks = masks
+	}
+	return j
 }
 
 // NewStatementGate builds a Gate for a caller that constructs statements
@@ -1324,8 +1478,9 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 // No codecs are built and the registry is never consulted, so this works for
 // a protocol with no codec — which is the point. Request and Response return
 // an error Decision on such a gate; EvaluateStatement is its data path.
-// Masking is the caller's job too: it holds the decoded values, and the
-// Masker it needs is the same one Config carries.
+// Masking is the caller's job too: it holds the decoded values, and masks
+// them through MaskCell, which applies the Masker Config carries and the
+// plan of this exchange.
 func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
 	if sess == nil {
 		return nil, errors.New("sidecar/gate: nil session")
@@ -1336,6 +1491,9 @@ func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
 	if cfg.Protocol == "" {
 		return nil, errors.New("sidecar/gate: no protocol configured")
 	}
+	if cfg.MaskScope.bytePath() {
+		return nil, errors.New("sidecar/gate: a statement gate serves one exchange; its mask scope is MaskScopeExchange or none")
+	}
 	sess.Protocol = cfg.Protocol
 	return &Gate{
 		cfg:         cfg,
@@ -1345,6 +1503,7 @@ func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
 		masker:      cfg.Masker,
 		polCtx:      sess.PolicyContext(),
 		oneExchange: true,
+		maskScope:   cfg.MaskScope,
 	}, nil
 }
 
@@ -1357,7 +1516,7 @@ func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
 func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) Decision {
 	stmts := []inspect.Statement{stmt}
 	g.answerStatement(ctx, stmt)
-	j := g.judge(ctx, stmt)
+	j := g.judge(ctx, stmt, 1)
 	if stmt.Direction == inspect.FromClient && (j.refusal != nil || j.denied) {
 		// On the grpc lane this refusal ends the call with the sidecar's own
 		// status, which says nothing about what the upstream did with the
@@ -1370,6 +1529,7 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 		return r
 	}
 	g.openReservation(reservedReview(j))
+	g.installPlan(j.masks, 1)
 	d := Decision{Allowed: !j.denied, Statements: stmts, Err: j.err}
 	if j.denied {
 		d.Message = j.message
@@ -1436,13 +1596,18 @@ func (g *Gate) RecordActivity(ctx context.Context, activity string, attrs map[st
 // their result set ends, because a row cannot be rebuilt once forwarded. That
 // is safe for a relay, since the held bytes arrive on a later call or on
 // Close, and it is why Gate.Close flushes.
-func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
+//
+// plan is the response mask of the exchange this read belongs to, applied
+// after the lane's masker. A read nothing must mask (mustMask) goes to the
+// codec with no callback.
+func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte, plan []policy.ResponseMask) {
 	var (
 		entities []string
 		seen     = map[string]bool{}
+		mask     = g.cellMasker(plan)
 	)
-	out, res, err := g.reframer.Rewrite(data, func(column string, value []byte) []byte {
-		masked, names, n := g.masker.MaskCell(column, value)
+	rewrite := func(column string, value []byte) []byte {
+		masked, names, n := mask(column, value)
 		if n == 0 {
 			return value
 		}
@@ -1453,7 +1618,11 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 			}
 		}
 		return masked
-	})
+	}
+	if !g.mustMask(plan) {
+		rewrite = nil
+	}
+	out, res, err := g.reframer.Rewrite(data, rewrite)
 	if err != nil {
 		d.Err = errors.Join(d.Err, err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.session(), err))
@@ -1627,13 +1796,14 @@ func closeCodec(c inspect.Codec) error {
 	return nil
 }
 
-// evaluate runs the policy, defaulting to allow when none is configured.
+// evaluate runs the policy, defaulting to allow when none is configured,
+// and returns the response masks the evaluators applied to the statement.
 //
 // ctx rides on the evaluation context so an evaluator that waits (the
 // analyzer's hold) stops when the connection ends.
-func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verdict {
+func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) (policy.Verdict, []policy.ResponseMask) {
 	if g.policy == nil {
-		return policy.Allow()
+		return policy.Allow(), nil
 	}
 	// Attach the session facts so a Rego policy can reference the actor.
 	//
@@ -1645,13 +1815,13 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	// misses, leaving input.context empty on exactly the lanes that need it.
 	ce, ok := g.policy.(policy.ContextualEvaluator)
 	if !ok {
-		return g.policy.Evaluate(stmt)
+		return g.policy.Evaluate(stmt), nil
 	}
 	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)
-	return v
+	return v, ec.ResponseMasks
 }
 
 // seedExchange turns every source that declined this exchange's responses

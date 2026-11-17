@@ -68,7 +68,8 @@ laneServices:
 config:
   log_level: info
   admin:
-    listen: 0.0.0.0:19000
+    listen: 0.0.0.0:19000          # probes; serves no audit data
+    api_listen: 127.0.0.1:19002    # /stats for the drain controller; reach with port-forward
   # Text inspector is intentionally absent. Audit contains metadata, not OCR text.
   audit:
     file: '-'

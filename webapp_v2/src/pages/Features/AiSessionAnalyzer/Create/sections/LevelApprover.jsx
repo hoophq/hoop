@@ -2,10 +2,11 @@ import { Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/
 import { Bot, FileCheck2, User } from 'lucide-react'
 import Radio from '@/components/Radio'
 import { APPROVER_AI, APPROVER_HUMAN, APPROVERS } from '@/pages/sidecarRuleVocabulary'
+import CardConnector from '../../components/CardConnector'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { APPROVER_RULE } from '../useSidecarAiAnalyzerEditor'
-import ApprovalGroups from './ApprovalGroups'
+import ApprovalRouting from './ApprovalRouting'
 
 const APPROVER_ICONS = { [APPROVER_AI]: Bot, [APPROVER_HUMAN]: User }
 
@@ -36,7 +37,8 @@ function ApproverOption({ value, label, description, selected, onSelect }) {
 }
 
 // Who approves one level's hold: an AI agent with an optional prompt, or the
-// members of some groups. A bare hold from an imported file names its rule.
+// members of some groups, static or AI-routed. A bare hold from an imported
+// file names its rule.
 function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChange }) {
   if (approval.approver === APPROVER_RULE) {
     return (
@@ -69,7 +71,7 @@ function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChang
         />
       )}
       {approval.approver === APPROVER_HUMAN && (
-        <ApprovalGroups options={groupOptions} value={approval.groups} onChange={(groups) => onChange({ groups })} />
+        <ApprovalRouting approval={approval} groupOptions={groupOptions} onChange={onChange} />
       )}
     </Stack>
   )
@@ -84,10 +86,14 @@ export function ApproverCard(props) {
   )
 }
 
-// The card stack under a level that holds for approval.
-export default function LevelApprover(props) {
+// The card stack under a level that holds for approval: the AI policy
+// settings card (`policy`) first, since its rules apply before the approval
+// (f20), then the Approver card.
+export default function LevelApprover({ policy, ...props }) {
   return (
     <Paper withBorder radius="lg" p="md">
+      {policy}
+      <CardConnector />
       <ApproverCard {...props} />
     </Paper>
   )

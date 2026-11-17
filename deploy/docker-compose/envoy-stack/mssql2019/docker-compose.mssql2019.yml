@@ -139,7 +139,8 @@ services:
       HOOP_LICENSE: ${HOOP_LICENSE:-}
     ports:
       - "11433:11433"  # the TDS lane
-      - "19001:19000"  # admin: /healthz, /stats, /config, /api/sessions
+      - "19001:19000"  # admin: /healthz, /readyz
+      - "127.0.0.1:19003:19002"  # read API: /stats, /config, /api/sessions; no auth, loopback only
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
       interval: "2s"

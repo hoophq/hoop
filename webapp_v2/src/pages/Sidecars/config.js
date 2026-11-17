@@ -128,6 +128,26 @@ export function hasConfiguration(config) {
   return !!config && (config.listeners ?? []).length > 0
 }
 
+// The admin addresses, one settings row each. admin.listen serves the probes;
+// admin.api_listen serves the unauthenticated read routes, so it has its own
+// row: "Off" on one row must not hide the other listener.
+export const ADMIN_ADDRESSES = [
+  { key: 'listen', label: 'Admin', placeholder: '127.0.0.1:19000', done: 'Admin endpoint updated.' },
+  { key: 'api_listen', label: 'Read API', placeholder: '127.0.0.1:19002', done: 'Read API endpoint updated.' },
+]
+
+// The admin block to PATCH when one of its addresses changes. The PATCH merges
+// top-level keys only, so the other admin keys (listen, api_listen,
+// ica_readiness_json) are sent back as stored, or they would be dropped. An
+// empty address removes its key: the daemon opens no listener for it.
+export function adminWith(admin, key, address) {
+  const next = { ...admin }
+  const value = address.trim()
+  if (value) next[key] = value
+  else delete next[key]
+  return next
+}
+
 // The control plane released this sidecar's configuration: it answers the
 // handshake with the license alone and the sidecar runs its own config file
 // (resolveConfigSource, sidecar/daemon/controlplane.go). The API key keeps its

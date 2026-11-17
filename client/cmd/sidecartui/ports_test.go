@@ -115,6 +115,28 @@ func TestUsePortsMovesTheDemoAPIEverywhereItIsNamed(t *testing.T) {
 	}
 }
 
+// A taken admin.api_listen is offered a free port, and accepting it moves
+// api_listen alone: admin.listen keeps its address.
+func TestUsePortsMovesATakenAdminAPIListen(t *testing.T) {
+	busy := hold(t)
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	writeFile(t, path, sampleConfig("127.0.0.1:0")+"admin:\n  listen: 127.0.0.1:0\n  api_listen: "+busy+"\n")
+	got, err := portConflicts(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].addr != busy || got[0].what != "admin API server" || got[0].free == "" {
+		t.Fatalf("conflicts = %+v", got)
+	}
+	if err := usePorts(path, got); err != nil {
+		t.Fatalf("usePorts = %v", err)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "api_listen: "+got[0].free+"\n") || !strings.Contains(string(b), "  listen: 127.0.0.1:0\n") {
+		t.Errorf("file =\n%s", b)
+	}
+}
+
 // Two places on one line, moved to an address of another length: each is
 // still found, or nothing changes.
 func TestReplaceKeyValuesOnOneLine(t *testing.T) {

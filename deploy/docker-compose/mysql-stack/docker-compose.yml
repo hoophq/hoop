@@ -127,10 +127,11 @@ services:
       - ./sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
       - mysql-certs:/etc/hoop-inspect/mysql-certs:ro
     ports:
-      # Admin only: /healthz, /stats, /config and the audit query API. The
-      # data-path listener is reached over the compose network by Envoy,
-      # never from the host.
+      # Admin: /healthz and /readyz on 19000; /stats, /config and the audit
+      # query API on 19002. The data-path listener is reached over the
+      # compose network by Envoy, never from the host.
       - "19000:19000"
+      - "127.0.0.1:19002:19002"  # no auth: loopback only
     depends_on:
       appdb: { condition: service_healthy }
     healthcheck:
