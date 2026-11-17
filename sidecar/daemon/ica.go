@@ -136,8 +136,10 @@ const (
 type ICAOptions struct {
 	// Backend selection keeps CPU defaults unchanged. TurboOCR relaxes only
 	// implicit Tesseract settings; explicit incompatible overrides are refused.
-	OCRBackend               *string  `json:"ocr_backend,omitempty" cap:"ica_gpu"`
-	OCRTurboDevice           *int     `json:"ocr_turbo_device,omitempty" cap:"ica_gpu"`
+	OCRBackend     *string `json:"ocr_backend,omitempty" cap:"ica_gpu"`
+	OCRTurboDevice *int    `json:"ocr_turbo_device,omitempty" cap:"ica_gpu"`
+	// OCRTurboEngines is the number of GPU OCR contexts sessions spread over.
+	OCRTurboEngines          *int     `json:"ocr_turbo_engines,omitempty" cap:"ica_gpu_engines"`
 	OCRTurboFramebufferBytes *uint64  `json:"ocr_turbo_framebuffer_bytes,omitempty" cap:"ica_gpu"`
 	OCRTurboFullScreen       *bool    `json:"ocr_turbo_full_screen,omitempty" cap:"ica_gpu"`
 	OCRTurboRegionalCache    *bool    `json:"ocr_turbo_regional_cache,omitempty" cap:"ica_gpu"`
@@ -260,6 +262,7 @@ func (o *ICAOptions) validate(where string) []string {
 		}
 	}
 	rng("ocr_turbo_device", o.OCRTurboDevice, 0, 65535)
+	rng("ocr_turbo_engines", o.OCRTurboEngines, 1, 8)
 	rng("ner_gpu_device", o.NERGPUDevice, 0, 65535)
 	if o.OCRBackend != nil && *o.OCRBackend != "tesseract" && *o.OCRBackend != "turboocr" {
 		problems = append(problems, where+".ocr_backend must be tesseract or turboocr")

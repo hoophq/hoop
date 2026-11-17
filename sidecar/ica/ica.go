@@ -155,6 +155,7 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 		}
 	}
 	override(&cfg.TurboDevice, o.OCRTurboDevice)
+	override(&cfg.TurboEngines, o.OCRTurboEngines)
 	override(&cfg.TurboFramebufferBytes, o.OCRTurboFramebufferBytes)
 	override(&cfg.TurboFullScreen, o.OCRTurboFullScreen)
 	override(&cfg.TurboRegionalCache, o.OCRTurboRegionalCache)
@@ -332,8 +333,8 @@ func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []s
 	out = append(out, fmt.Sprintf("ica: ner accelerator %s, device %d, entities %s",
 		cfg.NERAccelerator, cfg.NERGPUDevice, strings.Join(cfg.NEREntities, ",")))
 	if cfg.OCRBackend == "turboocr" {
-		out = append(out, fmt.Sprintf("ica: turboocr device %d, full screen %t, regional cache %t, framebuffer bytes %d, library %s, det %s, rec %s, dict %s, cls %s",
-			cfg.TurboDevice, cfg.TurboFullScreen, cfg.TurboRegionalCache, cfg.TurboFramebufferBytes,
+		out = append(out, fmt.Sprintf("ica: turboocr device %d, engines %d, full screen %t, regional cache %t, framebuffer bytes %d, library %s, det %s, rec %s, dict %s, cls %s",
+			cfg.TurboDevice, max(1, cfg.TurboEngines), cfg.TurboFullScreen, cfg.TurboRegionalCache, cfg.TurboFramebufferBytes,
 			cfg.TurboLibrary, cfg.TurboDetModel, cfg.TurboRecModel, cfg.TurboRecDict, cfg.TurboClsModel))
 	}
 	if lane.Transparent && runtime.GOOS != "linux" {
@@ -886,6 +887,35 @@ func (s *server) Stats() (active, total, denied int64) {
 	}
 	st := manager.Stats()
 	return int64(st.Active), int64(st.SessionsTotal), s.denied.Load()
+}
+
+// ICAGPUStats reports the engine's GPU gate accounting, shared by every lane
+// on the same runtime. False while loading and for CPU OCR.
+func (s *server) ICAGPUStats() (daemon.ICAGPUStats, bool) {
+	s.mu.Lock()
+	manager := s.manager
+	s.mu.Unlock()
+
+	if manager == nil {
+		return daemon.ICAGPUStats{}, false
+	}
+
+	gpu := manager.Stats().GPU
+	if gpu == nil {
+		return daemon.ICAGPUStats{}, false
+	}
+
+	op := func(o ica.GPUOpStats) daemon.ICAGPUOpStats {
+		return daemon.ICAGPUOpStats{Calls: o.Calls, WaitNanos: o.WaitNanos, HoldNanos: o.HoldNanos, Regions: o.Regions, Pixels: o.Pixels}
+	}
+
+	return daemon.ICAGPUStats{
+		Waiting:        gpu.Waiting,
+		Update:         op(gpu.Update),
+		Recognize:      op(gpu.Recognize),
+		RecognizeBatch: op(gpu.RecognizeBatch),
+		Render:         op(gpu.Render),
+	}, true
 }
 
 func (s *server) Notes() []string { return slices.Clone(s.notes) }
