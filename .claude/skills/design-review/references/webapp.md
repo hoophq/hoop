@@ -58,9 +58,11 @@ card uses `--hoop-tint-green`. Read the comments in `theme.js` and
   dimmed description line under it, then the content.
 - Forms sit on the page with `SectionRow`, one row per setting. No card
   around form fields.
-- A list is one `Table` or one bordered block. No card inside a card. A
-  repo component that nests on purpose (`SettingsCard`) is not an issue; a
-  new border around it is.
+- A list is one `Table` or one bordered block. No card inside a card, with
+  one exception: the settings card pattern from Figma. A stack of
+  `SettingsCard`s (`CardStack`), each with its open panel, is designed that
+  way: do not flag its borders. Flag a border that a page adds around or
+  inside that pattern, and say how many borders the person sees in a row.
 - Control size: 40px by default (`size="md"`), row actions 32px
   (`size="sm"`).
 

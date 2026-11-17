@@ -125,8 +125,8 @@ def check_web(path, text, wrapped):
         out.append(("FAIL", "Mantine notifications: use showSnackbar (webapp_v2/CLAUDE.md, Snackbars)"))
     if re.search(r"""\b(c|color)=["'](dark|light|blue|yellow|orange)["']""", text):
         out.append(("FAIL", "palette not in the theme (webapp.md, Color meaning)"))
-    if re.search(r"<Badge\b[^>]*\bcolor=[\"'{`]*indigo", text):
-        out.append(("WARN", "indigo Badge: fine for a label (Recommended, Next), not for a state or a count (webapp.md, Color meaning)"))
+    if re.search(r"<Badge\b[^>]*\bcolor=\{[^}]*indigo", text):
+        out.append(("WARN", "Badge color changes with the state and one of them is indigo: indigo is not a status (webapp.md, Color meaning)"))
     for m in TITLE_SLOT.finditer(text):
         label = next(g for g in m.groups() if g)
         words = label.split()
@@ -178,6 +178,23 @@ def check_cli(path, text):
     return out
 
 
+BADGE_COLOR = re.compile(r"""<Badge\b[^>]*\bcolor=["'](\w+)["']""")
+STATUS_COLORS = {"green", "amber", "red", "gray"}
+
+
+def badge_swaps(badges):
+    """An indigo Badge near a status-colored Badge in one file: the same badge
+    drawn in two colors by state (if/else). A lone indigo label is fine."""
+    out = []
+    for num, color in badges:
+        if color != "indigo":
+            continue
+        near = [c for n, c in badges if c in STATUS_COLORS and abs(n - num) <= 12]
+        if near:
+            out.append((num, f"Badge is {near[0]} in one state and indigo in another: indigo is not a status, use gray (webapp.md, Color meaning)"))
+    return out
+
+
 def main():
     diff = sys.stdin.read()
     if not diff.strip():
@@ -186,7 +203,13 @@ def main():
     wrapped = wrapped_components(repo_root())
     moved = removed_texts(diff)
     fails = warns = 0
+    badges = {}
+    report = []
     for path, num, text in added_lines(diff):
+        # Badges count even on moved lines: the pair can be one old, one new.
+        m = BADGE_COLOR.search(text)
+        if m and WEB.match(path):
+            badges.setdefault(path, []).append((num, m.group(1)))
         if text.lstrip().startswith(("//", "*", "/*")) or text.strip() in moved:
             continue
         if WEB.match(path) and ".test." not in path:
@@ -195,10 +218,13 @@ def main():
             found = check_cli(path, text)
         else:
             continue
-        for level, msg in found:
-            print(f"{level} {path}:{num}: {msg}")
-            fails += level == "FAIL"
-            warns += level == "WARN"
+        report += [(path, num, level, msg) for level, msg in found]
+    for path, items in badges.items():
+        report += [(path, num, "WARN", msg) for num, msg in badge_swaps(items)]
+    for path, num, level, msg in sorted(report, key=lambda r: (r[0], r[1])):
+        print(f"{level} {path}:{num}: {msg}")
+        fails += level == "FAIL"
+        warns += level == "WARN"
     print(f"\n{fails} FAIL, {warns} WARN")
     return 1 if fails else 0
 
