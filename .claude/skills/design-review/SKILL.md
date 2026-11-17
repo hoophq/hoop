@@ -54,8 +54,16 @@ For a web app change, also run the color test that guards the theme:
 cd webapp_v2 && npx vitest run test/themeColors.test.js
 ```
 
-No `webapp_v2/node_modules`: run `npm ci` in `webapp_v2` first. If you
-cannot, write "Color test: not run" in the report.
+The test reads the files on disk, not the diff. For a PR, put its code in a
+separate folder first and run the test there:
+
+```bash
+git fetch origin pull/<N>/head && git worktree add ../pr-<N> FETCH_HEAD
+cd ../pr-<N>/webapp_v2 && npm ci && npx vitest run test/themeColors.test.js
+```
+
+Remove the folder after (`git worktree remove ../pr-<N>`). If you cannot run
+it, write "Color test: not run" in the report.
 
 ## 3. Read and look
 
@@ -142,4 +150,6 @@ No issues: say "No design issues found", list what you checked, and stop.
 
 ## Writing style
 
-Simple English (ASD-STE100). Short sentences. No em dashes. No buzzwords.
+Write the report in English, also when the person asks in another language:
+it goes on PRs and tickets, and the repo is in English. Simple English
+(ASD-STE100). Short sentences. No em dashes. No buzzwords.

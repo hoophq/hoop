@@ -25,12 +25,14 @@ EMOJI = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u26FF\u2705\u274C]")
 GO_STRING = re.compile(r'"((?:[^"\\]|\\.)*)"|`([^`]*)`')
 # A label, title or button text: label: 'X', title="X", <Button>X</Button>.
 TITLE_SLOT = re.compile(
-    r"""\b(?:label|title|placeholder)\s*[:=]\s*["'`]([A-Za-z][^"'`{}]{2,40})["'`]"""
+    r"""\b(?:\w*[Ll]abel|\w*[Tt]itle|placeholder)\s*[:=]\s*["'`]([A-Za-z][^"'`{}]{2,40})["'`]"""
     r"""|<Button\b[^>]*>\s*([A-Za-z][^<{}]{2,40}?)\s*<"""
+    # JSX text alone on its line, as in a Button that spans lines.
+    r"""|^\s+([A-Z][a-z]+(?: [A-Z][A-Za-z]*){1,3})\s*$"""
 )
 # Product words keep their capitals, so a label built from them is fine.
 PRODUCT = re.compile(
-    r"Resource|Agent|Sidecar|Guardrail|Data Masking|AI Analyzer|AI Session Analyzer|Session|Runbook"
+    r"Resource Role|Resource|Agent|Sidecar|Guardrail|Data Masking|AI Analyzer|AI Session Analyzer|Session|Runbook"
     r"|Approval|Access Control|Access Request|Enterprise|Hoop|Slack|Teams|Jira|MCP|API|SSO|AWS|GCP"
     r"|Compliance Pack|Vault|Access Key|\bID\b|\b[A-Z]\b"
 )
@@ -124,11 +126,13 @@ def check_web(path, text, wrapped):
     if re.search(r"""\b(c|color)=["'](dark|light|blue|yellow|orange)["']""", text):
         out.append(("FAIL", "palette not in the theme (webapp.md, Color meaning)"))
     if re.search(r"<Badge\b[^>]*\bcolor=[\"'{`]*indigo", text):
-        out.append(("WARN", "indigo Badge: indigo is the action, not a status; a count is gray (webapp.md, Color meaning)"))
+        out.append(("WARN", "indigo Badge: fine for a label (Recommended, Next), not for a state or a count (webapp.md, Color meaning)"))
     for m in TITLE_SLOT.finditer(text):
         label = next(g for g in m.groups() if g)
         words = label.split()
-        if len(words) >= 2 and all(w[:1].isupper() for w in words) and not PRODUCT.search(label):
+        # Product words keep their capitals; the other words must not.
+        rest = PRODUCT.sub(" ", label).split()
+        if len(words) >= 2 and all(w[:1].isupper() for w in words) and len(rest) >= 1 and all(w[:1].isupper() for w in rest[1:] or rest) and not (len(rest) == 1 and words[0] == rest[0]):
             out.append(("WARN", f"'{label}' is in Title Case: use sentence case (webapp.md, Copy)"))
     if re.search(r"""\bclassName=["'][^"']*\b(flex|p-\d|m-\d|text-|bg-|w-\d)""", text):
         out.append(("FAIL", "Tailwind class in webapp_v2"))
