@@ -47,6 +47,14 @@ describe('the sidecar-level feature card', () => {
     expect(masking.rules).toMatchObject([{ name: 'pii-redact', source: 'sidecar' }])
   })
 
+  it("leaves the lanes' own rules out of a new listener's defaults", () => {
+    const defaults = featureList(null, config, [], { defaultsOnly: true })
+    const byKey = Object.fromEntries(defaults.map((f) => [f.key, f]))
+    expect(byKey['ai-analyzer'].summary).toBe('No rule configured')
+    expect(byKey.guardrails.summary).toBe('No rule configured')
+    expect(byKey['data-masking'].rules.map((r) => r.name)).toEqual(['pii-redact'])
+  })
+
   it('lists a distributed rule next to the inline one', () => {
     const bound = [{ kind: 'guardrail', rule_name: 'no-drop', listener_name: 'appdb' }]
     expect(card('guardrails', bound).rules.map((r) => r.name)).toEqual(['no-drop', 'no-admin-api'])

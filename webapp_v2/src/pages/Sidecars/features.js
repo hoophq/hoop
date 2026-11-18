@@ -263,10 +263,11 @@ function laneRows(key, config) {
   return rows
 }
 
-export function featureList(listener, config, boundRules) {
+// defaultsOnly leaves the lanes' own rules out: what a new listener inherits.
+export function featureList(listener, config, boundRules, { defaultsOnly = false } = {}) {
   return FEATURE_ORDER.map((key) => {
     const rules = ROWS[key](listener, config, boundRules)
-    if (listener == null) rules.push(...laneRows(key, config))
+    if (listener == null && !defaultsOnly) rules.push(...laneRows(key, config))
     return {
       ...FEATURES[key],
       rules,
