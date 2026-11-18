@@ -792,7 +792,7 @@ jobs:
         run: |
           set -euo pipefail
           files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- \
-            Dockerfile.sidecar deploy/ica-sidecar sidecar/ica sidecar/cmd \
+            Dockerfile.sidecar deploy/ica-sidecar deploy/onnxruntime sidecar/ica sidecar/cmd \
             .github/workflows/pullrequest-release.yml || true)
           if [ -z "$files" ]; then
             echo "nothing the bundle is built from changed; skipping"

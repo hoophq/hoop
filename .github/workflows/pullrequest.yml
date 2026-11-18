@@ -196,8 +196,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ALCATRAZ_MODEL_ORIGIN: https://hoopartifacts.s3.us-east-1.amazonaws.com/alcatraz/current
-      # Bump with ORT_VERSION in Dockerfile.sidecar.
-      ORT_VERSION: "1.28.0"
 
     steps:
       - name: Checkout
@@ -217,13 +215,11 @@ jobs:
             | tar -xz -C "$RUNNER_TEMP/libtokenizers"
           echo "CGO_LDFLAGS=-L$RUNNER_TEMP/libtokenizers" >> "$GITHUB_ENV"
 
+      - name: Check shared ONNX Runtime downloader
+        run: python3 -B -m unittest discover -s deploy/onnxruntime -p 'test_*.py'
+
       - name: Fetch ONNX Runtime
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/ort"
-          curl -sSfL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
-            | tar -xz -C "$RUNNER_TEMP/ort" --strip-components=1
-          test -f "$RUNNER_TEMP/ort/lib/libonnxruntime.so"
+        run: sh deploy/onnxruntime/fetch.sh "$RUNNER_TEMP/ort" amd64
 
       # The manifest first, on its own: it is the cache key, and the files
       # it names are what the cache holds.
