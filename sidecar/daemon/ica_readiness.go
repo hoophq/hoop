@@ -49,9 +49,11 @@ func writeICAReadiness(w http.ResponseWriter, endpoints []endpointServer, proxyC
 		if d := state.RawTCP; d != nil {
 			rawCount++
 			if status.RawTCP == nil {
+				// All lanes share this forwarder. Retain one sampled counter
+				// snapshot; adding lanes must not multiply its counts.
 				copy := *d
 				status.RawTCP = &copy
-			} else if *status.RawTCP != *d {
+			} else if !status.RawTCP.equalMode(*d) {
 				ready = false
 			}
 			inspected = inspected && d.inspectedReady()

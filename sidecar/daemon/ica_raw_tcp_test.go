@@ -111,15 +111,9 @@ func TestICARawTCPReadinessAndRestore(t *testing.T) {
 			}
 		})
 	}
-	a, b := rawTCPState(), rawTCPState()
-	b.RawTCP.Total++
+	a := rawTCPState()
+	b := ICAInspectionState{Ready: true, InspectionEnabled: true, ProtocolValidationEnabled: true}
 	w := httptest.NewRecorder()
-	writeICAReadiness(w, []endpointServer{&attestedICAServer{state: a}, &attestedICAServer{state: b}}, 0)
-	if w.Code != 503 {
-		t.Fatal("incoherent shared statuses accepted")
-	}
-	b = ICAInspectionState{Ready: true, InspectionEnabled: true, ProtocolValidationEnabled: true}
-	w = httptest.NewRecorder()
 	writeICAReadiness(w, []endpointServer{&attestedICAServer{state: a}, &attestedICAServer{state: b}}, 0)
 	if w.Code != 503 {
 		t.Fatal("mixed raw/normal lanes accepted")
@@ -168,5 +162,61 @@ func TestICARawTCPAuditExplicitModeWithoutContent(t *testing.T) {
 		if !row.Allowed || row.Metadata["mode"] != "raw_tcp" || row.Metadata["inspection_enabled"] != "false" || row.Metadata["protocol_validation_enabled"] != "false" || row.Metadata["capture_enabled"] != "false" || row.Metadata["graphics_bypassed"] != "true" || row.Statement != "" || row.Metadata["payload"] != "" {
 			t.Fatal("untruthful raw audit", row)
 		}
+	}
+}
+
+// Lane reads sample the same process-wide forwarder at different instants.
+// Opening/closing connections between those reads must not withdraw a healthy
+// pod, and reporting must not sum copies of that shared counter.
+func TestICARawTCPReadinessSerialSnapshots(t *testing.T) {
+	for name, counts := range map[string][2]int{
+		"opened":            {3, 6},
+		"closed":            {1, 5},
+		"opened and closed": {2, 6},
+		"all closed":        {0, 9},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, b := rawTCPState(), rawTCPState()
+			b.RawTCP.Active, b.RawTCP.Total = counts[0], counts[1]
+			for _, states := range [][2]ICAInspectionState{{a, b}, {b, a}} {
+				w := httptest.NewRecorder()
+				writeICAReadiness(w, []endpointServer{&attestedICAServer{state: states[0]}, &attestedICAServer{state: states[1]}}, 0)
+				if w.Code != 200 {
+					t.Fatalf("healthy sampled counters made pod unready: %d %s", w.Code, w.Body.String())
+				}
+				var body struct {
+					RawTCP *ICARawTCPStatus `json:"raw_tcp"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if body.RawTCP == nil || *body.RawTCP != *states[0].RawTCP {
+					t.Fatalf("response must keep one coherent shared snapshot, got %+v", body.RawTCP)
+				}
+			}
+		})
+	}
+}
+
+func TestICARawTCPReadinessRejectsUnhealthyLaterSnapshot(t *testing.T) {
+	for name, change := range map[string]func(*ICAInspectionState){
+		"mode":                 func(s *ICAInspectionState) { s.RawTCP.Mode = "restoring" },
+		"enable":               func(s *ICAInspectionState) { s.RawTCP.Enable = false },
+		"controller readiness": func(s *ICAInspectionState) { s.RawTCP.Ready = false },
+		"capture":              func(s *ICAInspectionState) { s.RawTCP.CaptureEnabled = true },
+		"negative active":      func(s *ICAInspectionState) { s.RawTCP.Active = -1 },
+		"negative total":       func(s *ICAInspectionState) { s.RawTCP.Total = -1 },
+		"total below active":   func(s *ICAInspectionState) { s.RawTCP.Total = 1 },
+		"lane capacity":        func(s *ICAInspectionState) { s.Ready = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, b := rawTCPState(), rawTCPState()
+			change(&b)
+			w := httptest.NewRecorder()
+			writeICAReadiness(w, []endpointServer{&attestedICAServer{state: a}, &attestedICAServer{state: b}}, 0)
+			if w.Code != 503 {
+				t.Fatalf("unhealthy later snapshot accepted: %d %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

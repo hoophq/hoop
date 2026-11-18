@@ -25,6 +25,12 @@ type ICARawTCPStatus struct {
 	Total          int    `json:"total"`
 }
 
+// equalMode compares the controller state, not counters sampled at different
+// instants. Each lane validates its own counters before attesting readiness.
+func (s ICARawTCPStatus) equalMode(other ICARawTCPStatus) bool {
+	return s.Mode == other.Mode && s.Enable == other.Enable && s.Ready == other.Ready && s.CaptureEnabled == other.CaptureEnabled
+}
+
 func (s ICARawTCPStatus) rawReady() bool {
 	return s.Mode == "raw_tcp" && s.Enable && s.Ready && !s.CaptureEnabled && s.Active >= 0 && s.Total >= s.Active
 }

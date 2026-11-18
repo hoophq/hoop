@@ -31,6 +31,19 @@ To restore inspection, set `enable: false` or remove `raw_tcp`, then restart and
 launch a fresh connection. Editing the file or sending SIGHUP alone does not
 switch existing streams. Stopping the sidecar ends its raw connections promptly.
 
+## Protection acceptance tests
+
+Run masking and protocol fail-closed acceptance tests only in inspected mode.
+Disable `ica.raw_tcp`, ensure diagnostic recording is inactive, restart the
+sidecar and launch a fresh connection before testing protection. Raw readiness
+confirms forwarding and capacity; it does not attest that masking is active.
+
+With `admin.ica_readiness_json: true`, verify `/readyz` reports
+`inspection_enabled: true`, `protocol_validation_enabled: true` and
+`graphics_bypassed: false` before running the masking checks. The normal
+inspection/refusal guarantees apply to inspected mode; raw forwarding is an
+explicit connectivity diagnostic exception.
+
 ## Verify the actual mode
 
 While enabled, `/readyz` automatically uses JSON (no extra admin setting needed):
@@ -53,6 +66,8 @@ While enabled, `/readyz` automatically uses JSON (no extra admin setting needed)
 ```
 
 `active` counts open raw connections and `total` is a counter, not a quota.
+For multiple lanes, the response retains one snapshot of their shared forwarder;
+counter changes between lane reads do not independently make the sidecar unready.
 Capacity readiness remains controlled by `ica.readiness_capacity` and
 `ica.readiness_headroom`; when enabled, a full sidecar returns HTTP 503.
 Session audit events identify `mode: raw_tcp`, disabled inspection and disabled
