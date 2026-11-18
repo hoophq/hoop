@@ -4015,6 +4015,7 @@ rule only to a sidecar that reports the type.
 | `tool_rate_limits` | none | Tool glob to calls per minute, per session. When several globs match a tool, the lowest limit applies. | Over the limit: `-32012`, `tool "x" rate limit exceeded (N calls/min)` |
 | `max_result_kb` | `0`: no limit | The text of a tool result is cut to this size and ends with `[truncated by gateway]`. | The cut result |
 | `sql` | none | The tools whose calls carry SQL. See "SQL tools". | |
+| `passthrough_header` | none | The header that carries the caller's own credential for the upstream. See "Auth". | Without it: 403 |
 
 `tool_rate_limits` globs work as in `mcp_tool`.
 
@@ -4236,25 +4237,57 @@ of MCP clients.
 |---|---|
 | no credential: a server on a private network, or one that holds its own credential | `upstream: https://mcp.internal.example.com/mcp` |
 | mutual TLS | `upstream_tls: {cert_file: /etc/tls/client.crt, key_file: /etc/tls/client.key, ca_file: /etc/tls/ca.pem}` |
+| the caller's own token | `mcp_gateway: {passthrough_header: x-hoop-upstream-authorization}` |
 
-The lane sends no `Authorization` header to the upstream, the caller's
-included. It refuses `headers`, because the config holds no inline secret.
+Without `passthrough_header`, the lane sends no `Authorization` header to
+the upstream, the caller's included. It refuses `headers`, because the
+config holds no inline secret.
 
-For a server that needs a bearer token or OAuth: run the MCP server
-yourself with its credential, or run a proxy on loopback that adds the
-credential, and point `upstream` at that proxy (`http://127.0.0.1:<port>/mcp`
-is accepted on loopback).
+With `passthrough_header`, each caller sends its own token for the
+upstream, such as a GitHub or Stripe key, in that header:
 
-Not supported yet: a token from a file or a secret source and the caller's
-own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
-(ENG-957).
+- The lane removes the header and sends the value to the upstream as
+  `Authorization: Bearer <value>`. A `Bearer ` prefix on the value is
+  accepted.
+- The value never reaches the audit trail, policy input, the analyzer or
+  the log. An upstream error that quotes it is logged with `[REDACTED]` in
+  its place.
+- A request without the header, with an empty value or with the header
+  twice gets 403 `request refused: <reason>`, and the reason names the
+  header.
+- Each request uses its own token. The session keeps the latest token in
+  memory, for the replies the lane sends to the server on its own, and
+  drops it when the session ends.
+- The upstream session stays the one the first request opened. A server
+  that binds its session to a user refuses a later request with another
+  user's token. To change users, open a new session.
+- It works with `caller_token`, `identity_header` or neither. The lane
+  checks `caller_token` first.
+- `transport: sse` is refused: the sse stream keeps the token of the
+  request that opened it.
+- The header can be `authorization`, so a client sends the token as it
+  would to the server. It cannot be the `caller_token` header, the
+  `identity_header`, `mcp-*`, `last-event-id`, `accept`, `content-type`,
+  `origin`, `user-agent`, or a header HTTP framing or a proxy uses.
+
+Claude Code sends it with
+`claude mcp add --transport http github http://127.0.0.1:<port>/mcp --header "X-Hoop-Upstream-Authorization: Bearer <token>"`.
+
+For a server that needs a token the caller does not hold, or OAuth: run
+the MCP server yourself with its credential, or run a proxy on loopback
+that adds the credential, and point `upstream` at that proxy
+(`http://127.0.0.1:<port>/mcp` is accepted on loopback).
+
+Not supported yet: a token from a file or a secret source (ENG-961), OAuth
+to the upstream (ENG-958), and AWS SigV4 (ENG-957).
 
 What the lane refuses at validate, and why: a `listen` off loopback
 without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
 requests, not connections); an `mcp_gateway.sql` entry without a glob, an
 argument or a known dialect (the dialect is never guessed); a rule in
-the lane's own `mask` block that names `columns` (see "Masking results"); a
+the lane's own `mask` block that names `columns` (see "Masking results");
+a `passthrough_header` on sse or on a header listed under "Auth"; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
 `unknown field`.
