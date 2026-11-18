@@ -8,7 +8,10 @@ import (
 )
 
 type ResourceChecker interface {
-	Scope() string
+	// Scope is the database and role (base) and the search path the server
+	// reports (path). An empty base caches nothing; an empty path caches
+	// only names that resolve the same under any search path.
+	Scope() (base, path string)
 
 	Skips(stmt inspect.Statement) bool
 

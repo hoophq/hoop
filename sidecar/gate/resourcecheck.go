@@ -13,7 +13,7 @@ type resourceCheck struct {
 	side  SidePath
 }
 
-func (r resourceCheck) Scope() string { return r.check.Scope() }
+func (r resourceCheck) Scope() (base, path string) { return r.check.Scope() }
 
 func (r resourceCheck) Skips(stmt inspect.Statement) bool { return r.check.Skips(stmt) }
 

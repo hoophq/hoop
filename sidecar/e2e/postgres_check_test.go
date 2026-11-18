@@ -301,9 +301,11 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 			}
 		}
 		const stmt = "SELECT * FROM orders WHERE v = 'v7'"
+		var c *pgx.Conn
 		for _, tenant := range []string{"tenant_small", "tenant_big"} {
 			ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
-			c, err := pgx.Connect(ctx, "postgres://postgres@"+s.addr+"/postgres?sslmode=disable&search_path="+tenant)
+			var err error
+			c, err = pgx.Connect(ctx, "postgres://postgres@"+s.addr+"/postgres?sslmode=disable&search_path="+tenant)
 			cancel()
 			if err != nil {
 				t.Fatal(err)
@@ -315,6 +317,20 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 		}
 		if in := model.input(t, stmt); !strings.Contains(in, "Table orders: about 200K rows") {
 			t.Fatalf("the big tenant was judged on the small tenant's check:\n%s", in)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
+		defer cancel()
+		tx, err := c.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		if _, err := tx.Exec(ctx, "DELETE FROM orders WHERE id = 3"); err != nil {
+			t.Fatal(err)
+		}
+		if in := model.input(t, "DELETE FROM orders WHERE id = 3"); strings.Contains(in, "Resource check") {
+			t.Fatalf("a busy connection got cached facts for a name two schemas share:\n%s", in)
 		}
 	})
 }

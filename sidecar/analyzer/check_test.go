@@ -24,21 +24,25 @@ type fakeChecker struct {
 	retry   bool
 	wants   []inspect.CheckWant
 
-	// scope defaults to one database and user; unknown keeps it empty.
-	scope   string
+	// The scope defaults to one database, role and reported path; unknown
+	// empties it and noPath plays a server that reports no search_path.
+	path    string
 	unknown bool
+	noPath  bool
 }
 
-func (f *fakeChecker) Scope() string {
+func (f *fakeChecker) Scope() (base, path string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
 	case f.unknown:
-		return ""
-	case f.scope != "":
-		return f.scope
+		return "", ""
+	case f.noPath:
+		return "shop\x00alice", ""
+	case f.path != "":
+		return "shop\x00alice", f.path
 	}
-	return "shop\x00alice"
+	return "shop\x00alice", `"$user", public`
 }
 
 func (f *fakeChecker) Skips(inspect.Statement) bool { return f.skip }
@@ -331,12 +335,12 @@ func TestTheCachesAreKeyedByTheSchemas(t *testing.T) {
 	ev := checkEvaluator(t, p, nil)
 	stmt := sqlStmt("SELECT * FROM orders WHERE v = 'v7'", inspect.OpSelect, "orders")
 
-	small := &fakeChecker{ready: true, scope: "shop\x00alice\x00{tenant_small}",
+	small := &fakeChecker{ready: true, path: "tenant_small",
 		tables: map[string]inspect.TableFacts{"orders": {Name: "orders", Found: true, Rows: 10, Bytes: 8192}}}
 	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: small})
 
 	big := bigOrders()
-	big.scope = "shop\x00alice\x00{tenant_big}"
+	big.path = "tenant_big"
 	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: big})
 	if len(big.checks()) != 1 || !strings.Contains(lastContent(p), "about 1.2M rows") {
 		t.Fatalf("the big tenant got the small tenant's check:\n%s", lastContent(p))
@@ -362,6 +366,44 @@ func TestAnUnknownScopeCachesNothing(t *testing.T) {
 		&policy.EvalContext{ResourceCheck: unknown})
 	if strings.Contains(lastContent(p), "Resource check") {
 		t.Fatalf("a busy connection with an unknown scope got cached facts:\n%s", lastContent(p))
+	}
+}
+
+func TestWithoutAPathOnlyResolvedNamesAreCached(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+	chk.noPath = true
+	orders := chk.tables["orders"]
+	orders.Resolved = true
+	chk.tables["orders"] = orders
+	chk.tables["items"] = inspect.TableFacts{Name: "items", Found: true, Rows: 5_000_000, Bytes: 1 << 30}
+
+	resolved := sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders")
+	ev.EvaluateWith(resolved, &policy.EvalContext{ResourceCheck: chk})
+	ev.EvaluateWith(resolved, &policy.EvalContext{ResourceCheck: chk})
+	if n := len(chk.checks()); n != 1 {
+		t.Fatalf("%d checks, want the resolved facts and plan cached", n)
+	}
+	chk.ready = false
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders ", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	if !strings.Contains(lastContent(p), "about 1.2M rows") {
+		t.Fatalf("a busy connection lost a resolved name's facts:\n%s", lastContent(p))
+	}
+
+	chk.ready = true
+	both := sqlStmt("SELECT * FROM orders JOIN items USING (id)", inspect.OpSelect, "orders", "items")
+	ev.EvaluateWith(both, &policy.EvalContext{ResourceCheck: chk})
+	ev.EvaluateWith(both, &policy.EvalContext{ResourceCheck: chk})
+	w := chk.checks()
+	if len(w) != 3 || len(w[2].Tables) != 1 || w[2].Tables[0] != "items" || !w[2].Plan {
+		t.Fatalf("checks = %+v, want items and the plan asked again", w)
+	}
+
+	chk.ready = false
+	ev.EvaluateWith(sqlStmt("SELECT * FROM items", inspect.OpSelect, "items"), &policy.EvalContext{ResourceCheck: chk})
+	if strings.Contains(lastContent(p), "Resource check") {
+		t.Fatalf("a busy connection got cached facts for an ambiguous name:\n%s", lastContent(p))
 	}
 }
 
