@@ -13,7 +13,6 @@ import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked, laneFeatureBlocked } from '@/pages/Sidecars/config'
 import {
-  NO_HOLD_ON_MCP,
   REVIEW_MODE_HOLD,
   REVIEW_MODES,
   appliesAIRules,
@@ -91,7 +90,6 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     isHTTP,
     operations,
     actions,
-    mcpBound,
     noTrigger,
   } = editor
 
@@ -233,7 +231,6 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                 renderOption={renderAction}
                 value={form[level] || null}
                 onChange={(v) => setLevelAction(level, v ?? '')}
-                error={mcpBound && isHoldAction(form[level]) ? NO_HOLD_ON_MCP : undefined}
                 clearable
               />
               {isHoldAction(form[level]) && (
@@ -257,7 +254,6 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
                   onApprover={(approver) => setApprover(level, approver)}
                   onApproval={(patch) => setApproval(level, patch)}
-                  mcpBound={mcpBound}
                 />
               )}
               {!isHoldAction(form[level]) && !isHandoffAction(form[level]) && policyCard(level)}
@@ -269,7 +265,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
       {waits && (
         <SectionRow
           title="While held for approval"
-          description="A person has up to 30 minutes to decide, unless a time limit ends it sooner. A client that times out first ends the wait; running the statement again after approval lets it through. On an SSH listener, drop the shell capability first."
+          description="A person has up to 30 minutes to decide, 4 on an MCP listener, unless a time limit ends it sooner. A client that times out first ends the wait; running the statement again after approval lets it through. On an SSH listener, drop the shell capability first."
         >
           <Stack gap="md">
             <Select

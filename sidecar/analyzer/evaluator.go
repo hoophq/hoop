@@ -723,12 +723,6 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		return e.applyHandoff(ctx, stmt, ec, notes, level, c, d)
 	}
 
-	if action == ActionRequireReview && stmt.Protocol == inspect.MCP {
-		// Before the rule turn: requestApproval refuses this hold anyway,
-		// so no model call is spent and no AI rule is recorded for it.
-		return e.deny(notes, mcpHoldRefusal)
-	}
-
 	if e.ruleLevels[level] != nil {
 		// The rule turn runs before the hold, so an AI guardrail that
 		// matches ends the statement with nothing filed, and an AI mask
@@ -768,19 +762,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	return v
 }
 
-// mcpHoldRefusal is the denial of a hold on an mcp tool call (ENG-967).
-const mcpHoldRefusal = "call refused because an mcp lane cannot hold a call for approval yet"
-
 // requestApproval holds a statement under its approver: the approval agent
 // with agentPrompt, a person who approves the level (human), or a person
 // under the lane's approval rule (""). handoff marks a hold the hand-off
 // agent selected, and pin is what its filing pins.
 func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
 	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
-	if stmt.Protocol == inspect.MCP {
-		// ENG-967: the mcp lane cannot hold a tool call yet, so no approver sees it.
-		return e.deny(notes, mcpHoldRefusal)
-	}
 	ctx := withHoldDetail(connContext(ec), HoldDetail{
 		Rule:        e.cfg.Rule,
 		RiskLevel:   level,
