@@ -39,6 +39,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - Key commands: `connect.go`, `exec.go`, `login.go`, `run.go`, `start.go`, `proxymanager.go`, etc.
 - User commands send packetized messages over a `Transport.Connect` bidirectional gRPC stream.
 - Local proxy manager (`client/cmd/proxymanager.go`) opens local ports for protocol proxying (PG, SSH, etc).
+- Output a person reads (help, errors, tables, prompts, TUI): use the `hoop-ui` skill (`.claude/skills/hoop-ui/`) first.
 
 ### Gateway (`gateway/`)
 - Entrypoint: `gateway/main.go` → `Run()`.
@@ -365,6 +366,7 @@ When merging `main` into a feature branch:
 These two files are the authoritative source of truth for frontend work. Do not skip them.
 
 Additionally, read these before the specific task:
+- **Any UI or UI text change** → use the `hoop-ui` skill (`.claude/skills/hoop-ui/`) first: the design rules the repo does not write down.
 - **Building UI or adding a component** → also read `webapp_v2/COMPONENTS.md` (catalog of existing components, hooks, stores, services — check before creating anything new).
 - **Migrating a CLJS page to React** → also read `webapp_v2/MIGRATION_CHECKLIST.md` (step-by-step process) and `webapp_v2/CLJS_PATTERNS.md` (CLJS → React pattern mapping).
 

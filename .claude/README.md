@@ -15,6 +15,7 @@ behaves the same way in this repo. Change it via PR like any code.
 | `skills/evidence/` | `/evidence` — the same flow on `origin/main` and the branch, as before/after images |
 | `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
 | `skills/support-agent/` | `/support-agent` — one scheduled run of the support agent: one Linear support ticket per run |
+| `skills/hoop-ui/` | Loads on its own before UI or CLI output changes — the design rules the repo does not write down |
 | `hooks/ai-disclosure.sh` | With `HOOP_AGENT` set: refuses a Slack post or Linear comment that does not say an AI wrote it, and Slack posts outside the agent's channel |
 | `hooks/git-signing.sh` | With `GIT_SIGNING_KEY` set: signs every commit with that GPG key, so GitHub shows the owner's commits as Verified |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
