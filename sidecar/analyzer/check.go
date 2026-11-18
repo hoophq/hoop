@@ -75,15 +75,15 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	var missing []string
 	var plan planEntry
 	havePlan := false
-	base, path := rc.Scope()
+	scope := rc.Scope()
 	for _, t := range tables {
-		if f, ok := e.facts.get(checkKey(base, path, t)); ok && base != "" {
+		if f, ok := e.facts.get(checkKey(scope, t)); ok && scope != "" {
 			facts[t] = f
 		} else {
 			missing = append(missing, t)
 		}
 	}
-	if key := planKey(base, path, stmt.Text, tables, facts); key != "" {
+	if key := planKey(scope, stmt.Text, tables, facts); key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
 
@@ -91,18 +91,18 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
 		res, err := e.runCheck(ctx, rc, stmt, want, ec)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
-			base, path := rc.Scope()
+			scope := rc.Scope()
 			if res.TablesErr == "" {
 				for _, f := range res.Tables {
 					facts[f.Name] = f
-					if base != "" && (path != "" || f.Resolved) {
-						e.facts.put(checkKey(base, path, f.Name), f)
+					if scope != "" && f.Resolved {
+						e.facts.put(checkKey(scope, f.Name), f)
 					}
 				}
 			}
 			if want.Plan {
 				plan, havePlan = planEntry{nodes: res.Plan, err: res.PlanErr}, true
-				if key := planKey(base, path, stmt.Text, tables, facts); key != "" && !res.Retry {
+				if key := planKey(scope, stmt.Text, tables, facts); key != "" && !res.Retry {
 					e.plans.put(key, plan)
 				}
 			}
@@ -130,26 +130,22 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	return block
 }
 
-// checkKey without a path holds only resolved names: those mean the same
-// table under any search path.
-func checkKey(base, path, name string) string {
-	return base + "\x00" + path + "\x00" + name
+func checkKey(scope, name string) string {
+	return scope + "\x00" + name
 }
 
-// planKey is empty when the plan must not be cached: no role, or no reported
-// path and a table whose name another schema could resolve.
-func planKey(base, path, text string, tables []string, facts map[string]inspect.TableFacts) string {
-	if base == "" {
+// planKey is empty when the plan must not be cached: no role, or a table
+// whose name the search path or the role could resolve elsewhere.
+func planKey(scope, text string, tables []string, facts map[string]inspect.TableFacts) string {
+	if scope == "" {
 		return ""
 	}
-	if path == "" {
-		for _, t := range tables {
-			if !facts[t].Resolved {
-				return ""
-			}
+	for _, t := range tables {
+		if !facts[t].Resolved {
+			return ""
 		}
 	}
-	return checkKey(base, path, text)
+	return checkKey(scope, text)
 }
 
 func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, error) {

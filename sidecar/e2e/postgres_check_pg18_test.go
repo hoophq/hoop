@@ -10,22 +10,24 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// PostgreSQL 18 reports search_path, so the check follows a switch made inside
-// a function and a connection that never goes idle still gets cached facts.
-func TestPostgresResourceCheckFollowsTheReportedSearchPath(t *testing.T) {
+func TestPostgresResourceCheckSeesAnUnreportedRoleSwitch(t *testing.T) {
 	pgAddr := startPostgresImage(t, "postgres:18-alpine")
 	direct := pgConnect(t, pgAddr)
 	seedTables(t, direct)
 	for _, stmt := range []string{
-		"CREATE SCHEMA tenant_small",
-		"CREATE SCHEMA tenant_big",
-		"CREATE TABLE tenant_small.orders (id int, v text)",
-		"INSERT INTO tenant_small.orders SELECT g, 'v' || g FROM generate_series(1, 10) g",
-		"CREATE TABLE tenant_big.orders (id int, v text)",
-		"INSERT INTO tenant_big.orders SELECT g, 'v' || g FROM generate_series(1, 200000) g",
-		"ANALYZE tenant_small.orders",
-		"ANALYZE tenant_big.orders",
-		"CREATE FUNCTION public.use_tenant(s text) RETURNS text LANGUAGE sql AS $$ SELECT pg_catalog.set_config('search_path', s || ', public', false) $$",
+		"CREATE ROLE e2e_alice LOGIN",
+		"CREATE ROLE e2e_bob",
+		"GRANT e2e_bob TO e2e_alice",
+		"CREATE SCHEMA e2e_alice AUTHORIZATION e2e_alice",
+		"CREATE SCHEMA e2e_bob AUTHORIZATION e2e_bob",
+		"CREATE TABLE e2e_alice.ledger (id int, v text)",
+		"INSERT INTO e2e_alice.ledger SELECT g, 'v' || g FROM generate_series(1, 10) g",
+		"CREATE TABLE e2e_bob.ledger (id int, v text)",
+		"INSERT INTO e2e_bob.ledger SELECT g, 'v' || g FROM generate_series(1, 200000) g",
+		"ANALYZE e2e_alice.ledger",
+		"ANALYZE e2e_bob.ledger",
+		"GRANT ALL ON ALL TABLES IN SCHEMA e2e_alice, e2e_bob TO e2e_alice, e2e_bob",
+		"CREATE FUNCTION public.act_as(r text) RETURNS text LANGUAGE sql AS $$ SELECT pg_catalog.set_config('role', r, false) $$",
 	} {
 		if err := pgExec(t, direct, stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
@@ -34,19 +36,29 @@ func TestPostgresResourceCheckFollowsTheReportedSearchPath(t *testing.T) {
 	model := startRiskModel(t, func(string) bool { return false })
 	s, _ := startCheckingSidecar(t, pgAddr, model.url)
 
-	t.Run("a function that switches the tenant", func(t *testing.T) {
-		conn := pgConnect(t, s.addr)
-		const stmt = "SELECT * FROM orders WHERE v = 'v7'"
-		for _, tenant := range []string{"tenant_small", "tenant_big"} {
-			if err := pgExec(t, conn, "SELECT public.use_tenant('"+tenant+"')", pgx.QueryExecModeSimpleProtocol); err != nil {
-				t.Fatal(err)
-			}
-			if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
-				t.Fatal(err)
-			}
+	t.Run("a function that switches the role", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
+		conn, err := pgx.Connect(ctx, "postgres://e2e_alice@"+s.addr+"/postgres?sslmode=disable")
+		cancel()
+		if err != nil {
+			t.Fatal(err)
 		}
-		if in := model.input(t, stmt); !strings.Contains(in, "Table orders: about 200K rows") {
-			t.Fatalf("the big tenant was judged on the small tenant's check:\n%s", in)
+		t.Cleanup(func() { conn.Close(context.Background()) })
+		const stmt = "SELECT * FROM ledger WHERE v = 'v7'"
+		if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatal(err)
+		}
+		if in := model.input(t, stmt); !strings.Contains(in, "Table ledger: about 10 rows") {
+			t.Fatalf("alice's ledger is not in the model input:\n%s", in)
+		}
+		if err := pgExec(t, conn, "SELECT public.act_as('e2e_bob')", pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatal(err)
+		}
+		if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatal(err)
+		}
+		if in := model.input(t, stmt); !strings.Contains(in, "Table ledger: about 200K rows") {
+			t.Fatalf("bob was judged on alice's check:\n%s", in)
 		}
 	})
 

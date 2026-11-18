@@ -24,25 +24,21 @@ type fakeChecker struct {
 	retry   bool
 	wants   []inspect.CheckWant
 
-	// The scope defaults to one database, role and reported path; unknown
-	// empties it and noPath plays a server that reports no search_path.
-	path    string
+	// scope defaults to one database and role; unknown empties it.
+	scope   string
 	unknown bool
-	noPath  bool
 }
 
-func (f *fakeChecker) Scope() (base, path string) {
+func (f *fakeChecker) Scope() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
 	case f.unknown:
-		return "", ""
-	case f.noPath:
-		return "shop\x00alice", ""
-	case f.path != "":
-		return "shop\x00alice", f.path
+		return ""
+	case f.scope != "":
+		return f.scope
 	}
-	return "shop\x00alice", `"$user", public`
+	return "shop\x00alice"
 }
 
 func (f *fakeChecker) Skips(inspect.Statement) bool { return f.skip }
@@ -81,7 +77,7 @@ func bigOrders() *fakeChecker {
 	return &fakeChecker{
 		ready: true,
 		tables: map[string]inspect.TableFacts{"orders": {
-			Name: "orders", Found: true, Rows: 1_234_567, Bytes: 180 << 20,
+			Name: "orders", Found: true, Resolved: true, Rows: 1_234_567, Bytes: 180 << 20,
 			Indexes: []inspect.IndexFacts{{Name: "orders_pkey", Primary: true, Unique: true, Definition: "btree (id)"}},
 		}},
 		plan: []inspect.PlanNode{
@@ -330,20 +326,19 @@ func TestTheBlockHasItsOwnCap(t *testing.T) {
 	}
 }
 
-func TestTheCachesAreKeyedByTheSchemas(t *testing.T) {
+func TestTheCachesAreKeyedByTheRole(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
 	ev := checkEvaluator(t, p, nil)
 	stmt := sqlStmt("SELECT * FROM orders WHERE v = 'v7'", inspect.OpSelect, "orders")
 
-	small := &fakeChecker{ready: true, path: "tenant_small",
-		tables: map[string]inspect.TableFacts{"orders": {Name: "orders", Found: true, Rows: 10, Bytes: 8192}}}
+	small := &fakeChecker{ready: true, scope: "shop\x00bob",
+		tables: map[string]inspect.TableFacts{"orders": {Name: "orders", Found: true, Resolved: true, Rows: 10, Bytes: 8192}}}
 	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: small})
 
 	big := bigOrders()
-	big.path = "tenant_big"
 	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: big})
 	if len(big.checks()) != 1 || !strings.Contains(lastContent(p), "about 1.2M rows") {
-		t.Fatalf("the big tenant got the small tenant's check:\n%s", lastContent(p))
+		t.Fatalf("alice got bob's check:\n%s", lastContent(p))
 	}
 }
 
@@ -369,14 +364,10 @@ func TestAnUnknownScopeCachesNothing(t *testing.T) {
 	}
 }
 
-func TestWithoutAPathOnlyResolvedNamesAreCached(t *testing.T) {
+func TestOnlyResolvedNamesAreCached(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
 	ev := checkEvaluator(t, p, nil)
 	chk := bigOrders()
-	chk.noPath = true
-	orders := chk.tables["orders"]
-	orders.Resolved = true
-	chk.tables["orders"] = orders
 	chk.tables["items"] = inspect.TableFacts{Name: "items", Found: true, Rows: 5_000_000, Bytes: 1 << 30}
 
 	resolved := sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders")
