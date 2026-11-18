@@ -30,3 +30,15 @@ func TestSendIsOrgScoped(t *testing.T) {
 	assert.Equal(t, "ok", string(<-got))
 	assert.False(t, systemStore.Has(sid))
 }
+
+// Send took the request, then the request timed out before the delivery.
+func TestLateResponseAfterTimeout(t *testing.T) {
+	const sid = "00000000-0000-0000-0000-0000000011a8"
+	_, done := awaitResponse("org-a", sid)
+	pending, ok := systemStore.Get(sid).(pendingResponse)
+	require.True(t, ok)
+	done()
+
+	assert.NotPanics(t, func() { assert.Error(t, pending.deliver([]byte("late"))) })
+	assert.Error(t, Send("org-a", pbsystem.BareExecResponseType, sid, []byte("late")))
+}
