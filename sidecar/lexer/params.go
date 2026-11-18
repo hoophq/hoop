@@ -12,7 +12,12 @@ func MaxParam(sql string, d Dialect) (n int, ok bool) {
 		if toks[i].Kind != Punct || toks[i].Text != "$" || toks[i+1].Kind != Number {
 			continue
 		}
-		if v, err := strconv.Atoi(toks[i+1].Text); err == nil && v > n {
+		digits := toks[i+1].Text
+		end := 0
+		for end < len(digits) && digits[end] >= '0' && digits[end] <= '9' {
+			end++
+		}
+		if v, err := strconv.Atoi(digits[:end]); err == nil && v > n {
 			n = v
 		}
 	}

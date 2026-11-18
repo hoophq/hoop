@@ -14,6 +14,8 @@ func TestMaxParam(t *testing.T) {
 		"SELECT '$5', $$ $7 $$, \"$9\" FROM t -- $8":  0,
 		"SELECT $tag$ $4 $tag$, $1 /* $6 */":          1,
 		"UPDATE t SET v = $2 WHERE id = $1 AND x > 3": 2,
+		"SELECT $1.f FROM t":                          1,
+		"SELECT ($3).f, $2.g":                         3,
 	} {
 		got, ok := lexer.MaxParam(sql, lexer.Postgres)
 		if !ok || got != want {

@@ -106,6 +106,11 @@ func (p *sidePath) Exchange(ctx context.Context, req []byte, resp inspect.CheckR
 		return context.Cause(p.connCtx)
 	case <-ctx.Done():
 	}
+	select {
+	case err := <-d.done:
+		return err
+	default:
+	}
 
 	deadline := time.Now().Add(checkDrainTimeout)
 	if len(cancel) > 0 {

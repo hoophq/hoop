@@ -137,6 +137,38 @@ func TestACheckAnswerIsNotSentToTheClient(t *testing.T) {
 	}
 }
 
+// forwards gives the client what follows a '!' up to ';', the way a codec
+// forwards an asynchronous message that arrives during a check.
+type forwards struct{ endsAt }
+
+func (r *forwards) Feed(data []byte) ([]byte, int, bool, error) {
+	var fwd []byte
+	if i, j := bytes.IndexByte(data, '!'), bytes.IndexByte(data, ';'); i >= 0 && j > i {
+		fwd = append(fwd, data[i+1:j]...)
+	}
+	_, used, done, err := r.endsAt.Feed(data)
+	return fwd, used, done, err
+}
+
+func TestOnlyWhatTheCheckForwardsReachesTheClient(t *testing.T) {
+	f := newSideFixture(t)
+	toClient := f.pump()
+
+	done := make(chan error, 1)
+	go func() { done <- f.path.Exchange(context.Background(), []byte("check"), &forwards{}, nil) }()
+	readExactly(t, f.server, 5)
+	if _, err := f.server.Write([]byte("!notify;answerZafter")); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	f.client.Close()
+	if got := <-toClient; string(got) != "notifyafter" {
+		t.Fatalf("the client got %q", got)
+	}
+}
+
 func TestATimedOutCheckIsCancelledOnANewConnectionAndDrained(t *testing.T) {
 	f := newSideFixture(t)
 	f.pump()

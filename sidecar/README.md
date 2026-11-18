@@ -1429,8 +1429,8 @@ small table and high on a large unindexed one.
 - A session with temporary tables keeps its own cache. A temporary table
   that a function creates is seen at the connection's next check.
 - A view or foreign table is named as such, without a size.
-- A statement with `$n` parameters gets a generic plan, on PostgreSQL 12 or
-  later.
+- A statement with `$n` parameters gets a generic plan, with the parameter
+  types the client sent, on PostgreSQL 12 or later.
 - The prompt block is capped at 2 KiB. A check needs room in the lane's
   `max_calls` and `rate_limit` but spends neither.
 - A failed or partial check classifies as without it and logs `resource
