@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // indicates the blob is stored in database wire protocol
@@ -958,36 +959,74 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 	if res.Error != nil {
 		return fmt.Errorf("failed creating session blob input, reason=%w", res.Error)
 	}
-	return tx.Table("private.sessions").Save(
-		Session{
-			ID:                   sess.ID,
-			OrgID:                sess.OrgID,
-			Labels:               sess.Labels,
-			Metadata:             sess.Metadata,
-			IntegrationsMetadata: sess.IntegrationsMetadata,
-			Metrics:              sess.Metrics,
-			Connection:           sess.Connection,
-			ConnectionType:       sess.ConnectionType,
-			ConnectionSubtype:    sess.ConnectionSubtype,
-			ConnectionTags:       sess.ConnectionTags,
-			Verb:                 sess.Verb,
-			RecordingFormat:      sess.RecordingFormat,
-			UserID:               sess.UserID,
-			UserName:             sess.UserName,
-			UserEmail:            sess.UserEmail,
-			BlobInputID:          blobInputID,
-			Status:               sess.Status,
-			ExitCode:             sess.ExitCode,
-			SessionBatchID:       sess.SessionBatchID,
-			MachineIdentityID:    sess.MachineIdentityID,
-			IdentityType:         sess.IdentityType,
-			CorrelationID:        sess.CorrelationID,
-			Origin:               sess.Origin,
-			CreatedAt:            sess.CreatedAt,
-			EndSession:           sess.EndSession,
-			AIAnalysis:           sess.AIAnalysis,
-			GuardRailsInfo:       sess.GuardRailsInfo,
-		}).Error
+	row := Session{
+		ID:                   sess.ID,
+		OrgID:                sess.OrgID,
+		Labels:               sess.Labels,
+		Metadata:             sess.Metadata,
+		IntegrationsMetadata: sess.IntegrationsMetadata,
+		Metrics:              sess.Metrics,
+		Connection:           sess.Connection,
+		ConnectionType:       sess.ConnectionType,
+		ConnectionSubtype:    sess.ConnectionSubtype,
+		ConnectionTags:       sess.ConnectionTags,
+		Verb:                 sess.Verb,
+		RecordingFormat:      sess.RecordingFormat,
+		UserID:               sess.UserID,
+		UserName:             sess.UserName,
+		UserEmail:            sess.UserEmail,
+		BlobInputID:          blobInputID,
+		Status:               sess.Status,
+		ExitCode:             sess.ExitCode,
+		SessionBatchID:       sess.SessionBatchID,
+		MachineIdentityID:    sess.MachineIdentityID,
+		IdentityType:         sess.IdentityType,
+		CorrelationID:        sess.CorrelationID,
+		Origin:               sess.Origin,
+		CreatedAt:            sess.CreatedAt,
+		EndSession:           sess.EndSession,
+		AIAnalysis:           sess.AIAnalysis,
+		GuardRailsInfo:       sess.GuardRailsInfo,
+	}
+	// Save would update by id alone and move another org's session to this org.
+	update := func() (int64, error) {
+		res := tx.Table("private.sessions").
+			Where("org_id = ?", sess.OrgID).
+			Select("*").
+			Updates(&row)
+		return res.RowsAffected, res.Error
+	}
+	if updated, err := update(); err != nil || updated > 0 {
+		return err
+	}
+	res = tx.Table("private.sessions").
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
+		Create(&row)
+	if res.Error != nil || res.RowsAffected > 0 {
+		return res.Error
+	}
+	// A concurrent upsert inserted the row first.
+	updated, err := update()
+	if err == nil && updated == 0 {
+		err = ErrSessionOfAnotherOrg
+	}
+	return err
+}
+
+var ErrSessionOfAnotherOrg = errors.New("the session id belongs to another org")
+
+// GetSessionOrgID returns gorm.ErrRecordNotFound when no session has this id.
+func GetSessionOrgID(db *gorm.DB, sessionID string) (string, error) {
+	var orgID string
+	err := db.Table("private.sessions").
+		Select("org_id").
+		Where("id = ?", sessionID).
+		Take(&orgID).
+		Error
+	if isInvalidUUIDText(err) {
+		return "", gorm.ErrRecordNotFound
+	}
+	return orgID, err
 }
 
 // UpdateSessionStatus updates only the status of a session

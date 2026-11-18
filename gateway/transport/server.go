@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,12 +12,14 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
@@ -33,6 +36,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 type (
@@ -182,7 +186,11 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
-	if err := refuseConnection(clientVerb, clientOrigin[0], gwctx.Connection); err != nil {
+	err = refuseConnection(clientVerb, clientOrigin[0], gwctx.Connection)
+	if err == nil {
+		err = refuseForeignSession(gwctx.UserContext.OrgID, commongrpc.MetaGet(md, "session-id"))
+	}
+	if err != nil {
 		closeRefusedSession(gwctx.UserContext.OrgID, gwctx.UserContext.UserID, gwctx.Connection.Name,
 			func(key string) string { return commongrpc.MetaGet(md, key) }, err)
 		return err
@@ -221,6 +229,33 @@ func refuseConnection(clientVerb, clientOrigin string, connInfo types.Connection
 		return err
 	}
 	return validateConnectionAccessMode(clientVerb, clientOrigin, connInfo)
+}
+
+// refuseForeignSession refuses a client session-id that is not a canonical
+// uuid, or that another org owns, live or stored.
+func refuseForeignSession(orgID, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	errForeign := status.Error(codes.InvalidArgument, "invalid session id")
+	// Postgres reads other spellings of a uuid as the same id.
+	if sid, err := uuid.Parse(sessionID); err != nil || sid.String() != sessionID {
+		return errForeign
+	}
+	if st := streamclient.GetProxyStream(sessionID); st != nil && st.PluginContext().OrgID != orgID {
+		return errForeign
+	}
+	sessionOrgID, err := models.GetSessionOrgID(models.DB, sessionID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	case err != nil:
+		log.With("sid", sessionID).Errorf("failed reading the session org: %v", err)
+		return status.Error(codes.Internal, "failed validating session id")
+	case sessionOrgID != orgID:
+		return errForeign
+	}
+	return nil
 }
 
 // closeRefusedSession closes the session an API exec wrote as open before it
