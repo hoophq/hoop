@@ -59,6 +59,10 @@ func isICA(lc ListenerConfig) bool {
 // share one profile. Options holds overrides only; the lane's Notes report
 // the resolved values.
 type ICARuntimeConfig struct {
+	// RawTCP bypasses ICA decoding, OCR and redaction without recording. A cold
+	// restart applies the toggle; normal session limits and admission still apply.
+	RawTCP *ICARawTCPConfig `json:"raw_tcp,omitempty" cap:"ica_raw_tcp"`
+
 	// DiagnosticRecording is a local, explicitly acknowledged raw TCP test window.
 	// It is off when absent. All ICA lanes share one bounded recorder. Changing
 	// this block requires a cold restart, never a live inspection fallback.
@@ -218,6 +222,20 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 		}
 	}
 	problems = append(problems, r.Options.validate(where+".options")...)
+	if rawTCPEnabled(r.RawTCP) {
+		if r.DiagnosticRecording != nil {
+			problems = append(problems, "ica.raw_tcp and ica.diagnostic_recording are mutually exclusive")
+		}
+		if len(listeners) == 0 {
+			problems = append(problems, "ica.raw_tcp requires an ICA listener")
+		}
+		for _, l := range listeners {
+			if !isICA(l) || (l.ICA != nil && l.ICA.EDT) {
+				problems = append(problems, "ica.raw_tcp requires an ICA-only TCP process (no EDT or other protocols)")
+				break
+			}
+		}
+	}
 	if r.DiagnosticRecording != nil {
 		problems = append(problems, r.DiagnosticRecording.validate()...)
 		if len(listeners) == 0 {
@@ -535,6 +553,7 @@ type ICALane struct {
 // ICARuntime is the resolved top-level block: paths and bounds as the
 // operator wrote them (empty = engine default) plus the overrides.
 type ICARuntime struct {
+	RawTCP                                                                                 *ICARawTCPConfig
 	DiagnosticRecording                                                                    *ICADiagnosticRecordingConfig
 	OCRTurboLibrary, OCRTurboDetModel, OCRTurboRecModel, OCRTurboRecDict, OCRTurboClsModel string
 	OCRWorker, Tessdata, NERModel, NERORTLibrary                                           string
@@ -662,6 +681,10 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 		OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
 		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec,
 		ReadinessCapacity: r.ReadinessCapacity, ReadinessHeadroom: r.ReadinessHeadroom, DrainTimeoutSec: r.DrainTimeoutSec}
+	if r.RawTCP != nil {
+		copy := *r.RawTCP
+		out.RawTCP = &copy
+	}
 	if r.DiagnosticRecording != nil {
 		copy := *r.DiagnosticRecording
 		out.DiagnosticRecording = &copy
@@ -906,7 +929,7 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	// suppressed and dropped ride on EDT refusals: how many datagrams the
 	// engine folded into this row, and how many refusal rows it could not
 	// queue.
-	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped"} {
+	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped", "mode", "inspection_enabled", "protocol_validation_enabled", "graphics_bypassed", "capture_enabled", "redact_video"} {
 		if v, ok := e.Data[key]; ok {
 			out.Metadata[key] = fmt.Sprint(v)
 		}

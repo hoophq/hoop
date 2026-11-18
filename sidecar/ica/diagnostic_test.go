@@ -58,11 +58,11 @@ func TestDiagnosticRecorderSharedAcrossLanesAndClosedAtLastRelease(t *testing.T)
 	defer func() { newRuntime = saved }()
 	c := diagnosticFixture(t)
 	cfg := resolveRuntimeConfig(daemon.ICARuntime{})
-	a, err := acquireRuntime(context.Background(), cfg, "", 32, c)
+	a, err := acquireRuntime(context.Background(), cfg, "", 32, c, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := acquireRuntime(context.Background(), cfg, "", 32, c)
+	b, err := acquireRuntime(context.Background(), cfg, "", 32, c, false)
 	if err != nil {
 		releaseRuntime(a)
 		t.Fatal(err)
@@ -72,12 +72,12 @@ func TestDiagnosticRecorderSharedAcrossLanesAndClosedAtLastRelease(t *testing.T)
 	}
 	recorder := a.recorder
 	// No simultaneous normal/raw or differing raw runtime can be introduced.
-	if _, err = acquireRuntime(context.Background(), cfg, "", 32, nil); err == nil {
+	if _, err = acquireRuntime(context.Background(), cfg, "", 32, nil, false); err == nil {
 		t.Fatal("live recording disable accepted")
 	}
 	other := *c
 	other.Until = time.Now().Add(2 * time.Minute).UTC().Format(time.RFC3339)
-	if _, err = acquireRuntime(context.Background(), cfg, "", 32, &other); err == nil {
+	if _, err = acquireRuntime(context.Background(), cfg, "", 32, &other, false); err == nil {
 		t.Fatal("live recording extension accepted")
 	}
 	if err = releaseRuntime(a); err != nil {
@@ -93,12 +93,12 @@ func TestDiagnosticRecorderSharedAcrossLanesAndClosedAtLastRelease(t *testing.T)
 		t.Fatal("last release left recorder active")
 	}
 	// Fresh inspected runtime remains available once recording lanes close.
-	normal, err := acquireRuntime(context.Background(), cfg, "", 32, nil)
+	normal, err := acquireRuntime(context.Background(), cfg, "", 32, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer releaseRuntime(normal)
-	if _, err = acquireRuntime(context.Background(), cfg, "", 32, c); err == nil {
+	if _, err = acquireRuntime(context.Background(), cfg, "", 32, c, false); err == nil {
 		t.Fatal("live raw enable over inspecting runtime accepted")
 	}
 }
@@ -108,7 +108,7 @@ func TestExpiredDiagnosticStartupDoesNotCreateFiles(t *testing.T) {
 	defer func() { newRuntime = saved }()
 	c := diagnosticFixture(t)
 	c.Until = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
-	shared, err := acquireRuntime(context.Background(), resolveRuntimeConfig(daemon.ICARuntime{}), "", 32, c)
+	shared, err := acquireRuntime(context.Background(), resolveRuntimeConfig(daemon.ICARuntime{}), "", 32, c, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestDiagnosticShutdownCancelsRawSessionBeforeNormalDrainGrace(t *testing.T)
 	newRuntime = func(context.Context, engine.RuntimeConfig) (*engine.Runtime, error) { return nil, nil }
 	defer func() { newRuntime = saved }()
 	c := diagnosticFixture(t)
-	shared, err := acquireRuntime(context.Background(), resolveRuntimeConfig(daemon.ICARuntime{}), "", 32, c)
+	shared, err := acquireRuntime(context.Background(), resolveRuntimeConfig(daemon.ICARuntime{}), "", 32, c, false)
 	if err != nil {
 		t.Fatal(err)
 	}

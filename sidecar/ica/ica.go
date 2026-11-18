@@ -86,6 +86,13 @@ const defaultMaxSessions = 32
 
 // Build implements daemon.ICABuilder.
 func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) {
+	if rt.RawTCP != nil {
+		copy := *rt.RawTCP
+		rt.RawTCP = &copy
+	}
+	if rawTCPEnabled(rt.RawTCP) && (lane.EDT || rt.DiagnosticRecording != nil) {
+		return nil, errors.New("ica.raw_tcp requires TCP-only lanes without diagnostic_recording")
+	}
 	if rt.DiagnosticRecording != nil {
 		copy := *rt.DiagnosticRecording
 		rt.DiagnosticRecording = &copy
@@ -345,6 +352,9 @@ func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []s
 	if err := HostCheck(); err != nil {
 		out = append(out, err.Error()+"; -validate passes, Serve will not")
 	}
+	if rawTCPEnabled(rt.RawTCP) {
+		out = append(out, "ica: raw TCP enabled; NO decoding, OCR, redaction or recording; normal session limits apply; restart to disable")
+	}
 	if rt.DiagnosticRecording != nil {
 		out = append(out, fmt.Sprintf("ica: explicit diagnostic recording configured until %s; NO decoding, OCR or redaction during the bounded raw window", rt.DiagnosticRecording.Until))
 	}
@@ -381,6 +391,8 @@ type sharedRuntime struct {
 	diagnostics     *ica.FailureDiagnostics
 	recordingConfig *ica.DiagnosticRecordingConfig
 	recorder        *ica.DiagnosticRecorder
+	rawTCPEnabled   bool
+	rawTCP          *ica.RawTCPForwarder
 	err             error
 
 	// refs and loaded are guarded by runtimesMu.
@@ -406,7 +418,10 @@ func fingerprint(cfg ica.RuntimeConfig, diagnosticDir string, maxSessions int) s
 
 // acquireRuntime returns the runtime for cfg, loading it on first use. The
 // first caller loads; the others wait for that load or for their own ctx.
-func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir string, maxSessions int, recording *daemon.ICADiagnosticRecordingConfig) (*sharedRuntime, error) {
+func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir string, maxSessions int, recording *daemon.ICADiagnosticRecordingConfig, rawEnabled bool) (*sharedRuntime, error) {
+	if rawEnabled && recording != nil {
+		return nil, errors.New("ica.raw_tcp and ica.diagnostic_recording are mutually exclusive")
+	}
 	rc, err := diagnosticConfig(recording)
 	if err != nil {
 		return nil, err
@@ -415,15 +430,18 @@ func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir st
 	if rc != nil {
 		key += fmt.Sprintf("|recording=%+v", *rc)
 	}
+	if rawEnabled {
+		key += "|raw_tcp=true"
+	}
 	runtimesMu.Lock()
 	entry, loading := runtimes[key]
 	if !loading {
-		// Diagnostic enable/disable or runtime changes need a full restart. This
-		// prevents overlapping recordings or leaving an old uninspected lane alive.
+		// Raw-mode enable/disable or runtime changes need a full restart. This
+		// prevents overlapping bypass modes or leaving an old uninspected lane alive.
 		for _, other := range runtimes {
-			if rc != nil || other.recordingConfig != nil {
+			if rc != nil || other.recordingConfig != nil || rawEnabled || other.rawTCPEnabled {
 				runtimesMu.Unlock()
-				return nil, errors.New("ica diagnostic recording requires one shared runtime and a cold restart for configuration changes")
+				return nil, errors.New("ica raw TCP or diagnostic recording requires one shared runtime and a cold restart for configuration changes")
 			}
 		}
 		limit, err := ica.NewSessionLimit(maxSessions)
@@ -431,7 +449,7 @@ func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir st
 			runtimesMu.Unlock()
 			return nil, err
 		}
-		entry = &sharedRuntime{key: key, done: make(chan struct{}), limit: limit, recordingConfig: rc}
+		entry = &sharedRuntime{key: key, done: make(chan struct{}), limit: limit, recordingConfig: rc, rawTCPEnabled: rawEnabled}
 		runtimes[key] = entry
 	}
 	entry.refs++
@@ -473,6 +491,13 @@ func (e *sharedRuntime) load(ctx context.Context, cfg ica.RuntimeConfig, diagnos
 			}
 		}
 	}
+	if e.err == nil && e.rawTCPEnabled {
+		if ctx.Err() != nil {
+			e.err = ctx.Err()
+		} else {
+			e.rawTCP = ica.NewRawTCPForwarder(ica.RawTCPConfig{Enable: true})
+		}
+	}
 	runtimesMu.Lock()
 	defer runtimesMu.Unlock()
 	e.loaded = true
@@ -502,6 +527,10 @@ func releaseRuntime(e *sharedRuntime) error {
 // capture before closing the runtime, and close the metadata writer last.
 func (e *sharedRuntime) closeResources() error {
 	var err error
+	if e.rawTCP != nil {
+		err = errors.Join(err, e.rawTCP.Close())
+		e.rawTCP = nil
+	}
 	if e.recorder != nil {
 		err = errors.Join(err, e.recorder.Close())
 		e.recorder = nil
@@ -555,7 +584,7 @@ func (s *server) Serve(ctx context.Context) error {
 	if s.isClosed() {
 		return nil
 	}
-	shared, err := acquireRuntime(ctx, s.cfg, s.rt.FailureDiagnosticDir, s.maxSessions(), s.rt.DiagnosticRecording)
+	shared, err := acquireRuntime(ctx, s.cfg, s.rt.FailureDiagnosticDir, s.maxSessions(), s.rt.DiagnosticRecording, rawTCPEnabled(s.rt.RawTCP))
 	if err != nil {
 		if ctx.Err() != nil {
 			s.logReleaseError(err)
@@ -587,6 +616,7 @@ func (s *server) Serve(ctx context.Context) error {
 	// Keep a stable recorder reference for startup logging: Close may release
 	// the last shared runtime immediately after the server is published.
 	recorder := shared.recorder
+	rawTCP := shared.rawTCP
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -599,6 +629,9 @@ func (s *server) Serve(ctx context.Context) error {
 	s.mu.Unlock()
 
 	if s.lane.Log != nil {
+		if rawTCP != nil && rawTCP.Status().Enable {
+			s.lane.Log.Warn("ICA RAW TCP: NO DECODING, OCR, REDACTION OR RECORDING", "max_sessions", s.maxSessions())
+		}
 		if recorder != nil {
 			state := recorder.Status()
 			if state.Mode == "diagnostic_recording" {
@@ -734,7 +767,7 @@ func (s *server) start(startCtx, sessionCtx context.Context, shared *sharedRunti
 	}
 
 	manager, err := ica.NewManager(sessionCtx, ica.ManagerConfig{
-		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(), SessionLimit: shared.limit, DiagnosticRecorder: shared.recorder,
+		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(), SessionLimit: shared.limit, DiagnosticRecorder: shared.recorder, RawTCPForwarder: shared.rawTCP,
 		ConnectTimeout:        time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
 		EnableExperimentalEDT: s.lane.EDT, EDTRetention: time.Duration(s.rt.EDTRetentionSec) * time.Second,
 		EDTReplayBudgetBytes: s.rt.EDTReplayBudgetBytes,
@@ -846,10 +879,10 @@ func (s *server) Close() (result error) {
 	}
 	manager.BeginDrain()
 	result = errors.Join(closeListener(tcp), closeListener(edt))
-	// A diagnostic stop must not keep an unredacted test alive through the normal
+	// A raw-mode stop must not keep an uninspected connection alive through the normal
 	// desktop drain grace. Cancel only this lane; other lanes retain their shared
-	// recorder until they close too. Inspected sessions keep the normal drain.
-	if s.rt.DiagnosticRecording != nil && !manager.ProtocolValidationEnabled() && cancel != nil {
+	// raw controller until they close too. Inspected sessions keep the normal drain.
+	if (s.rt.DiagnosticRecording != nil || rawTCPEnabled(s.rt.RawTCP)) && !manager.ProtocolValidationEnabled() && cancel != nil {
 		cancel()
 	}
 	timeout := drainTimeout
@@ -925,6 +958,10 @@ func (s *server) ICAInspectionState() daemon.ICAInspectionState {
 		InspectionEnabled:         s.manager.InspectionEnabled(),
 		GraphicsBypassed:          s.manager.GraphicsBypassed(),
 		ProtocolValidationEnabled: s.manager.ProtocolValidationEnabled(),
+	}
+	if rawTCPEnabled(s.rt.RawTCP) {
+		d := s.manager.RawTCPForwarding()
+		state.RawTCP = &daemon.ICARawTCPStatus{Mode: d.Mode, Enable: d.Enable, Ready: d.Ready, CaptureEnabled: d.CaptureEnabled, Active: d.Active, Total: d.Total}
 	}
 	if s.rt.DiagnosticRecording != nil {
 		d := s.manager.DiagnosticRecording()
