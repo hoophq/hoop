@@ -93,6 +93,8 @@ github.com/hoophq/libhoop-ica v0.11.2 h1:PW7n16UxkuCqkjMeTgxTqv41q3AC9/Wm52yjlmn
 github.com/hoophq/libhoop-ica v0.11.2/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/libhoop-ica v0.12.0 h1:GeNL+ugm0Cg0S0FzNzbdKiVIfhiPm+kfVEQRQ8WH2nc=
 github.com/hoophq/libhoop-ica v0.12.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
+github.com/hoophq/libhoop-ica v0.13.0 h1:VoxrOdwpq/EVZQXo9uuSCbqXYR19JIxrPGuCuz2eUBw=
+github.com/hoophq/libhoop-ica v0.13.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/mcpproxy v0.2.0 h1:q+mYWb24o1FNSLWEOSQqfPB4WMecD5j65JMI41y3c84=
 github.com/hoophq/mcpproxy v0.2.0/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/janpfeifer/go-benchmarks v0.1.1 h1:gLLy07/JrOKSnMWeUxSnjTdhkglgmrNR2IBDnR4kRqw=
