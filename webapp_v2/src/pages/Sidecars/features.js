@@ -250,8 +250,8 @@ function summary(key, rules) {
 }
 
 // The rules each listener writes for itself, as rows of the sidecar-level
-// card, "On <listener>". For a config file the sidecar runs: a document Hoop
-// owns keeps its rules as bound rule items, which distributedRules lists.
+// card, "On <listener>". A document Hoop owns keeps them too: POST and PUT
+// store it as sent, and only an adopted file is split into rule items.
 function laneRows(key, config) {
   const rows = []
   for (const lane of config?.listeners ?? []) {
@@ -263,12 +263,10 @@ function laneRows(key, config) {
   return rows
 }
 
-// includeLanes adds each listener's own rules to the sidecar-level card
-// (listener null), for a config file that keeps them per listener.
-export function featureList(listener, config, boundRules, { includeLanes = false } = {}) {
+export function featureList(listener, config, boundRules) {
   return FEATURE_ORDER.map((key) => {
     const rules = ROWS[key](listener, config, boundRules)
-    if (includeLanes && listener == null) rules.push(...laneRows(key, config))
+    if (listener == null) rules.push(...laneRows(key, config))
     return {
       ...FEATURES[key],
       rules,
