@@ -610,6 +610,9 @@ type LaneAnalyzerConfig struct {
 	RateLimit     *AnalyzerRateLimitConfig `json:"rate_limit,omitempty" cap:"analyzer_rate_limit"`
 	Cache         *AnalyzerCacheConfig     `json:"cache,omitempty"`
 
+	// A lane whose codec has no check accepts it and does nothing.
+	ResourceCheck bool `json:"resource_check,omitempty" cap:"analyzer_resource_check"`
+
 	// ai is the block's AI rule options resolved against rule_library,
 	// set by buildLanes on its own copy of the block. Not a config key.
 	ai *laneAIRules
@@ -1004,6 +1007,26 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 	}
 }
 
+func (ac *analyzerDeps) resourceCheckLog(name string) func(analyzer.ResourceCheckEvent) {
+	if ac.log == nil {
+		return nil
+	}
+	log := ac.log.With("analyzer", name)
+	return func(ev analyzer.ResourceCheckEvent) {
+		attrs := []any{"duration", ev.Duration.Round(time.Millisecond).String(), "tables", ev.Tables, "plan", ev.Plan}
+		switch {
+		case errors.Is(ev.Err, policy.ErrCheckNotReady):
+			log.Debug("resource check skipped; cached facts only", append(attrs, "reason", ev.Err.Error())...)
+		case ev.Err != nil:
+			log.Info("resource check failed; classified without it", append(attrs, "error", ev.Err.Error())...)
+		case ev.TablesErr != "" || ev.PlanErr != "":
+			log.Info("resource check incomplete", append(attrs, "tables_error", ev.TablesErr, "plan_error", ev.PlanErr)...)
+		default:
+			log.Debug("resource check", attrs...)
+		}
+	}
+}
+
 // reviewerFor returns the backend this lane holds statements against for human
 // approval, or nil when nothing should be filed. The approval agent decides
 // in the sidecar and files nothing.
@@ -1239,6 +1262,9 @@ func buildAnalyzerEvaluator(
 		ReviewMode:    la.ReviewMode,
 		MatchIgnore:   la.MatchIgnore,
 		ReturnNext:    returnNext(ac.mcp),
+
+		ResourceCheck:   la.ResourceCheck,
+		OnResourceCheck: ac.resourceCheckLog(name),
 	}
 	switch {
 	case la.ai != nil:

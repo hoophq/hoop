@@ -1400,6 +1400,34 @@ count when it grants again. The usage event counts throttled statements as
 A sidecar older than 1.198.0 cannot decode `rate_limit`, so the control plane
 refuses to serve a document that carries it to one.
 
+**`resource_check: true` gives the model the database's own estimates.** On
+a postgres lane, before a select, insert, update or delete that the trigger
+selects, the sidecar reads the size and indexes of each table the statement
+names and its `EXPLAIN` plan (never `ANALYZE`), on the client's own
+connection. The prompt then carries lines such as `Table orders: about 12M
+rows, 3.1 GB, indexes: ...` and the plan, so one SELECT can rate low on a
+small table and high on a large unindexed one.
+
+- The check is one write, read-only and local to its own transaction:
+  `transaction_read_only`, `lock_timeout` and `statement_timeout` bound it to
+  500 ms. Past that the sidecar sends a CancelRequest on a new connection; an
+  upstream that does not finish within 2 s more has the client connection
+  closed.
+- It runs only on an idle connection: no open transaction, nothing in
+  flight. Otherwise the model gets the cached size and indexes, without a
+  plan.
+- Size and indexes are cached 30 s per database, user and table; a plan per
+  user and full statement text. The verdict cache key includes the check.
+- A statement with `$n` parameters gets a generic plan, on PostgreSQL 12 or
+  later.
+- The prompt block is capped at 2 KiB. A check needs room in the lane's
+  `max_calls` and `rate_limit` but spends neither.
+- A failed or partial check classifies as without it and logs `resource
+  check failed` or `resource check incomplete` with the SQLSTATE. Every
+  statement it sends starts with `/* hoop sidecar resource check */`.
+- Other protocols accept the field and do nothing. A control plane serves it
+  only to a sidecar that reports `analyzer_resource_check`.
+
 **A request with no body is still classified.** On a REST API the path is
 the operation: `GET /api/v1/namespaces/prod/secrets/db-root` says what a
 kubectl user is about to read without a byte of body. The headers the lane

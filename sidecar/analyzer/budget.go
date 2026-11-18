@@ -164,6 +164,27 @@ func (b *Budget) take(maxCalls int, r RateLimit) (status string, edge rateEdge, 
 }
 
 // endEpisode closes a running rate-limited episode. Called with b.mu held.
+// available reports whether take would grant a call now, without taking it.
+func (b *Budget) available(maxCalls int, r RateLimit) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if maxCalls > 0 && b.calls.Load() >= int64(maxCalls) {
+		return false
+	}
+	if !r.Enabled() || b.last.IsZero() {
+		return true
+	}
+	now := time.Now()
+	if b.now != nil {
+		now = b.now()
+	}
+	tokens := b.tokens
+	if now.After(b.last) {
+		tokens += float64(now.Sub(b.last)) * float64(r.Calls) / float64(r.Per)
+	}
+	return min(tokens, float64(r.Capacity())) >= 1
+}
+
 func (b *Budget) endEpisode() (rateEdge, int64) {
 	if !b.limited {
 		return edgeNone, 0

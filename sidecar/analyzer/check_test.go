@@ -1,0 +1,310 @@
+package analyzer_test
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
+)
+
+type fakeChecker struct {
+	mu     sync.Mutex
+	ready  bool
+	skip   bool
+	err    error
+	tables map[string]inspect.TableFacts
+	plan   []inspect.PlanNode
+	wants  []inspect.CheckWant
+}
+
+func (f *fakeChecker) Scope() string                { return "shop\x00alice" }
+func (f *fakeChecker) Skips(inspect.Statement) bool { return f.skip }
+
+func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect.CheckWant) (inspect.CheckResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.ready {
+		return inspect.CheckResult{}, policy.ErrCheckNotReady
+	}
+	f.wants = append(f.wants, want)
+	if f.err != nil {
+		return inspect.CheckResult{}, f.err
+	}
+	var res inspect.CheckResult
+	for _, t := range want.Tables {
+		if facts, ok := f.tables[t]; ok {
+			res.Tables = append(res.Tables, facts)
+		} else {
+			res.Tables = append(res.Tables, inspect.TableFacts{Name: t})
+		}
+	}
+	if want.Plan {
+		res.Plan = f.plan
+	}
+	return res, nil
+}
+
+func (f *fakeChecker) checks() []inspect.CheckWant {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]inspect.CheckWant(nil), f.wants...)
+}
+
+func bigOrders() *fakeChecker {
+	return &fakeChecker{
+		ready: true,
+		tables: map[string]inspect.TableFacts{"orders": {
+			Name: "orders", Found: true, Rows: 1_234_567, Bytes: 180 << 20,
+			Indexes: []inspect.IndexFacts{{Name: "orders_pkey", Primary: true, Unique: true, Definition: "btree (id)"}},
+		}},
+		plan: []inspect.PlanNode{
+			{Node: "Delete", Relation: "orders", Cost: 25432},
+			{Depth: 1, Node: "Seq Scan", Relation: "orders", Rows: 1_234_567, Cost: 25432},
+		},
+	}
+}
+
+func checkEvaluator(t *testing.T, p analyzer.Provider, events *[]analyzer.ResourceCheckEvent) *analyzer.Evaluator {
+	t.Helper()
+	return mustNew(t, analyzer.Config{
+		Provider:      p,
+		Trigger:       analyzer.Trigger{All: true},
+		CacheSize:     100,
+		CacheTTL:      time.Minute,
+		ResourceCheck: true,
+		OnResourceCheck: func(ev analyzer.ResourceCheckEvent) {
+			if events != nil {
+				*events = append(*events, ev)
+			}
+		},
+	})
+}
+
+func lastContent(p *stubProvider) string {
+	s, _ := p.seen.Load().(string)
+	return s
+}
+
+func TestThePromptCarriesTheCheckResult(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE note = 'x'", inspect.OpDelete, "orders"),
+		&policy.EvalContext{ResourceCheck: chk})
+
+	got := lastContent(p)
+	for _, want := range []string{
+		"DELETE FROM orders WHERE note = 'x'\n\nResource check (database estimates",
+		"Table orders: about 1.2M rows, 180 MB, indexes: orders_pkey (primary key btree (id))",
+		"  Delete on orders (rows 0, cost 25K)",
+		"    Seq Scan on orders (rows 1.2M, cost 25K)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("model input lacks %q:\n%s", want, got)
+		}
+	}
+	prompt, _ := p.seenPrompt.Load().(string)
+	if !strings.Contains(prompt, `"Resource check" block`) {
+		t.Error("the system prompt does not explain the block")
+	}
+	if w := chk.checks(); len(w) != 1 || len(w[0].Tables) != 1 || !w[0].Plan || w[0].Timeout != analyzer.CheckTimeout {
+		t.Errorf("checks = %+v", w)
+	}
+}
+
+func TestTheCheckIsOffByDefault(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}})
+	chk := bigOrders()
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders", inspect.OpDelete, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	if len(chk.checks()) != 0 || strings.Contains(lastContent(p), "Resource check") {
+		t.Fatal("a lane without resource_check checked")
+	}
+	if prompt, _ := p.seenPrompt.Load().(string); prompt != analyzer.BuildSystemPrompt("") {
+		t.Fatal("the system prompt changed with the flag off")
+	}
+	if ev.UsesResourceCheck() || policy.UsesResourceCheck(ev) {
+		t.Fatal("a lane without resource_check asks the gate to track the connection")
+	}
+	if !policy.UsesResourceCheck(policy.Observe{Evaluator: policy.Chain{ev, checkEvaluator(t, p, nil)}}) {
+		t.Fatal("a wrapped evaluator with resource_check was not found")
+	}
+}
+
+func TestFactsAndPlanAreCachedSeparately(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+	ec := func() *policy.EvalContext { return &policy.EvalContext{ResourceCheck: chk} }
+
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 1", inspect.OpSelect, "orders"), ec())
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 1", inspect.OpSelect, "orders"), ec())
+	if n := len(chk.checks()); n != 1 {
+		t.Fatalf("the same statement checked %d times", n)
+	}
+
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 2", inspect.OpSelect, "orders"), ec())
+	w := chk.checks()
+	if len(w) != 2 || len(w[1].Tables) != 0 || !w[1].Plan {
+		t.Fatalf("another literal should run only the plan: %+v", w)
+	}
+
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders o JOIN users u ON u.id = o.uid", inspect.OpSelect, "orders", "users"), ec())
+	w = chk.checks()
+	if len(w) != 3 || len(w[2].Tables) != 1 || w[2].Tables[0] != "users" {
+		t.Fatalf("only the uncached table should be asked for: %+v", w)
+	}
+	if !strings.Contains(lastContent(p), "Table users: not found") {
+		t.Error("a missing table is not reported")
+	}
+}
+
+func TestANotReadyConnectionGetsCachedFactsOnly(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	var events []analyzer.ResourceCheckEvent
+	ev := checkEvaluator(t, p, &events)
+	chk := bigOrders()
+
+	ev.EvaluateWith(sqlStmt("SELECT count(*) FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	chk.ready = false
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 3", inspect.OpDelete, "orders"), &policy.EvalContext{ResourceCheck: chk})
+
+	got := lastContent(p)
+	if !strings.Contains(got, "Table orders: about 1.2M rows") {
+		t.Errorf("the cached facts are not in the prompt:\n%s", got)
+	}
+	if strings.Contains(got, "Plan:") {
+		t.Errorf("a plan for another statement reached the prompt:\n%s", got)
+	}
+	if len(events) != 2 || !errors.Is(events[1].Err, policy.ErrCheckNotReady) {
+		t.Errorf("events = %+v", events)
+	}
+}
+
+func TestTheVerdictCacheKeyIncludesTheCheck(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	big, small := bigOrders(), bigOrders()
+	f := small.tables["orders"]
+	f.Rows, f.Bytes = 12, 8192
+	small.tables["orders"] = f
+
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: big})
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: big})
+	if n := p.calls.Load(); n != 1 {
+		t.Fatalf("calls = %d, want the second one cached", n)
+	}
+
+	other := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, CacheSize: 100,
+		CacheTTL: time.Minute, ResourceCheck: true})
+	analyzer.ShareCache(other, ev)
+	other.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: small})
+	if n := p.calls.Load(); n != 2 {
+		t.Fatalf("calls = %d: a small table reused the large table's verdict", n)
+	}
+}
+
+func TestAFailedCheckClassifiesAsToday(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	var events []analyzer.ResourceCheckEvent
+	ev := checkEvaluator(t, p, &events)
+	chk := bigOrders()
+	chk.err = errors.New("upstream gone")
+
+	v := ev.EvaluateWith(sqlStmt("DELETE FROM orders", inspect.OpDelete, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	if v.Denied || p.calls.Load() != 1 || strings.Contains(lastContent(p), "Resource check") {
+		t.Fatalf("verdict %+v, content %q", v, lastContent(p))
+	}
+	if len(events) != 1 || events[0].Err == nil {
+		t.Fatalf("the failure was not reported: %+v", events)
+	}
+}
+
+func TestTheCheckRunsOnlyWhereItCan(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		stmt inspect.Statement
+		chk  func(*fakeChecker)
+		cfg  func(*analyzer.Config)
+	}{
+		{"ddl", sqlStmt("DROP TABLE orders", inspect.OpDrop, "orders"), nil, nil},
+		{"no table", sqlStmt("SELECT 1", inspect.OpSelect), nil, nil},
+		{"skip hook", sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), func(f *fakeChecker) { f.skip = true }, nil},
+		{"trigger", sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), nil,
+			func(c *analyzer.Config) { c.Trigger = deleteTrigger() }},
+		{"budget spent", sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), nil,
+			func(c *analyzer.Config) { c.MaxCalls = 1; c.Budget = spentBudget(t) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &stubProvider{level: analyzer.RiskLow}
+			cfg := analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, ResourceCheck: true}
+			if tc.cfg != nil {
+				tc.cfg(&cfg)
+			}
+			chk := bigOrders()
+			if tc.chk != nil {
+				tc.chk(chk)
+			}
+			mustNew(t, cfg).EvaluateWith(tc.stmt, &policy.EvalContext{ResourceCheck: chk})
+			if n := len(chk.checks()); n != 0 {
+				t.Fatalf("checked %d times", n)
+			}
+		})
+	}
+}
+
+func spentBudget(t *testing.T) *analyzer.Budget {
+	t.Helper()
+	b := analyzer.NewBudget(nil)
+	p := &stubProvider{level: analyzer.RiskLow}
+	mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, MaxCalls: 1, Budget: b}).
+		Evaluate(sqlStmt("SELECT 2", inspect.OpSelect))
+	return b
+}
+
+func TestAParameterizedStatementAsksForAGenericPlan(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = $1 AND note <> '$9'", inspect.OpSelect, "orders"),
+		&policy.EvalContext{ResourceCheck: chk})
+	if w := chk.checks(); len(w) != 1 || w[0].Params != 1 {
+		t.Fatalf("checks = %+v", w)
+	}
+}
+
+func TestARefusedBlockIsDropped(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, ResourceCheck: true,
+		Redact: func(s string) string {
+			if strings.Contains(s, "Resource check") {
+				return analyzer.RefuseSentinel
+			}
+			return s
+		}})
+	v := ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: bigOrders()})
+	if v.Denied || p.calls.Load() != 1 || strings.Contains(lastContent(p), "Resource check") {
+		t.Fatalf("verdict %+v, content %q", v, lastContent(p))
+	}
+}
+
+func TestTheBlockHasItsOwnCap(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+	for range 200 {
+		chk.plan = append(chk.plan, inspect.PlanNode{Depth: 2, Node: "Index Scan", Relation: strings.Repeat("r", 40), Rows: 1})
+	}
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	got := lastContent(p)
+	block := got[strings.Index(got, "Resource check"):]
+	if len(block) > analyzer.MaxCheckBlockBytes || !strings.HasSuffix(block, "(truncated)") {
+		t.Fatalf("block is %d bytes:\n%s", len(block), block)
+	}
+}

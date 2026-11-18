@@ -400,6 +400,11 @@ type Config struct {
 	// the error as the record keeps it (RecordRedact), never the raw one,
 	// which quotes the agent's arguments. Nil reports nothing.
 	OnRuleInvalid func(level RiskLevel, kind string, err error)
+
+	// Only lanes whose codec implements a check run one.
+	ResourceCheck bool
+
+	OnResourceCheck func(ResourceCheckEvent)
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -465,6 +470,9 @@ type Evaluator struct {
 	// rather than on every statement after the limit.
 	budgetLogged sync.Once
 	onBudget     func()
+
+	facts *ttlCache[inspect.TableFacts]
+	plans *ttlCache[planEntry]
 }
 
 // New builds an Evaluator.
@@ -557,7 +565,7 @@ func New(cfg Config) (*Evaluator, error) {
 	if err != nil {
 		return nil, err
 	}
-	prompt := BuildSystemPrompt(cfg.Guidance)
+	prompt := buildSystemPrompt(cfg.Guidance, cfg.ResourceCheck)
 	budget := cfg.Budget
 	if budget == nil {
 		budget = new(Budget)
@@ -577,6 +585,8 @@ func New(cfg Config) (*Evaluator, error) {
 		reviewPoll:   reviewPoll,
 		retryBase:    retryBase,
 		retryCap:     retryCap,
+		facts:        newTTLCache[inspect.TableFacts](checkCacheSize, checkTTL),
+		plans:        newTTLCache[planEntry](checkCacheSize, checkTTL),
 	}, nil
 }
 
@@ -977,6 +987,10 @@ func (e *Evaluator) classify(
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
+	if block := e.resourceBlock(ctx, stmt, ec); block != "" {
+		text += "\n\n" + block
+		cacheKey += ":" + fingerprint(block)
+	}
 	if cached, hit := e.cache.get(cacheKey); hit {
 		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
 	}

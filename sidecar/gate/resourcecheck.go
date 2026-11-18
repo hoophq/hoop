@@ -1,0 +1,31 @@
+package gate
+
+import (
+	"context"
+
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
+)
+
+type resourceCheck struct {
+	check inspect.ResourceCheck
+	side  SidePath
+}
+
+func (r resourceCheck) Scope() string { return r.check.Scope() }
+
+func (r resourceCheck) Skips(stmt inspect.Statement) bool { return r.check.Skips(stmt) }
+
+func (r resourceCheck) Check(ctx context.Context, stmt inspect.Statement, want inspect.CheckWant) (inspect.CheckResult, error) {
+	if !r.check.Ready() {
+		return inspect.CheckResult{}, policy.ErrCheckNotReady
+	}
+	req, resp, err := r.check.Request(stmt, want)
+	if err != nil {
+		return inspect.CheckResult{}, err
+	}
+	if err := r.side.Exchange(ctx, req, resp, r.check.CancelRequest()); err != nil {
+		return inspect.CheckResult{}, err
+	}
+	return resp.Result(), nil
+}
