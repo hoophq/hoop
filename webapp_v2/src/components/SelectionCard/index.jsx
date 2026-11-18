@@ -32,10 +32,8 @@ function SelectionCard({
           {(image || Icon) && (
             <ThemeIcon
               size="lg"
-              radius="md"
               variant="light"
-              color="gray"
-              className={classes.icon}
+              color={selected ? undefined : 'gray'}
             >
               {image ? (
                 <Image
@@ -44,7 +42,6 @@ function SelectionCard({
                   w={20}
                   h={20}
                   fit="contain"
-                  className={classes.logo}
                 />
               ) : (
                 <Icon size={20} aria-hidden="true" />
@@ -52,11 +49,11 @@ function SelectionCard({
             </ThemeIcon>
           )}
           <Stack gap={2} align="flex-start">
-            <Text size="sm" fw={500} c={selected ? 'white' : undefined}>
+            <Text size="sm" fw={500}>
               {title}
             </Text>
             {description && (
-              <Text size="xs" ta="left" c={selected ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
+              <Text size="xs" ta="left" c="dimmed">
                 {description}
               </Text>
             )}

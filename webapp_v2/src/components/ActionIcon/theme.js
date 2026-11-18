@@ -1,4 +1,5 @@
 import { ActionIcon } from '@mantine/core'
+import classes from './ActionIcon.module.css'
 
 // ActionIcon shares the app-wide control height scale (xs=24px, sm=32px,
 // md=40px default, lg=48px) via the global --hoop-control-height-*
@@ -8,6 +9,7 @@ import { ActionIcon } from '@mantine/core'
 const SIZES = new Set(['xs', 'sm', 'md', 'lg'])
 
 export const ActionIconTheme = ActionIcon.extend({
+  classNames: { root: classes.root },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
     if (!SIZES.has(props.size)) return { root: {} }

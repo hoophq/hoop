@@ -12,8 +12,8 @@
   color: var(--mantine-color-text);
   border: 1px solid var(--mantine-color-gray-2);
   border-right: 0;
-  border-top-left-radius: var(--mantine-radius-md);
-  border-bottom-left-radius: var(--mantine-radius-md);
+  border-top-left-radius: var(--hoop-field-radius);
+  border-bottom-left-radius: var(--hoop-field-radius);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;

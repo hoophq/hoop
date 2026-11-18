@@ -1,11 +1,22 @@
 .card {
   border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   cursor: pointer;
   background-color: transparent;
-  transition: background-color 120ms ease;
+  transition:
+    background-color var(--hoop-motion-out) var(--hoop-ease),
+    border-color var(--hoop-motion-out) var(--hoop-ease);
 }
 
-.card[data-selected] {
-  background-color: var(--brand-navy);
+.card:hover {
+  background-color: var(--hoop-surface-muted);
+  transition-duration: var(--hoop-motion-in);
+}
+
+/* The selected method: indigo is the selection (the action color), on a
+   light tint, as in SelectionCard. */
+.card[data-selected],
+.card[data-selected]:hover {
+  background-color: var(--mantine-primary-color-light);
+  border-color: var(--mantine-primary-color-filled);
 }

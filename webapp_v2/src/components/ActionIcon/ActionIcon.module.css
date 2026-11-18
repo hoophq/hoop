@@ -1,0 +1,9 @@
+/* Touch: an icon button under the touch target grows an invisible hit
+   area, so its look and the layout stay the same. */
+@media (pointer: coarse) {
+  .root::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((var(--ai-size) - var(--hoop-touch-target)) / 2));
+  }
+}

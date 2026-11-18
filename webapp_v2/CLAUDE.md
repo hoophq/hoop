@@ -496,6 +496,8 @@ Debug checklist:
 
 ## Required reading — do this before every task
 
+Before any UI or UI text change, use the `hoop-ui` skill (`../.claude/skills/hoop-ui/`): it holds the design decisions this file does not.
+
 **Read these files at the start of every session, before writing any code:**
 
 1. `CONTEXT_MIGRATION.md` — architecture, shell/bridge contracts, routing split, migration status. Required for any work in this repo.

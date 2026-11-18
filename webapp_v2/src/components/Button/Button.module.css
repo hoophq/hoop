@@ -23,3 +23,45 @@
 .root[data-variant='field'] .section:where([data-position='left']) {
   color: var(--mantine-color-dimmed);
 }
+
+/* Feedback: a button steps up 1px on hover and sinks on press, so every
+   click shows. Quiet variants (subtle, transparent) and the field trigger
+   read as text and do not step; they still change color. */
+.root {
+  transition:
+    background-color var(--hoop-motion-out) var(--hoop-ease),
+    border-color var(--hoop-motion-out) var(--hoop-ease),
+    color var(--hoop-motion-out) var(--hoop-ease),
+    transform var(--hoop-motion-out) var(--hoop-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root:where(:not([data-variant='subtle'], [data-variant='transparent'], [data-variant='field'], :disabled, [data-disabled], [data-loading])):hover {
+    transform: translateY(-1px);
+    transition-duration: var(--hoop-motion-in);
+  }
+}
+
+.root:where(:not([data-variant='subtle'], [data-variant='transparent'], [data-variant='field'], :disabled, [data-disabled], [data-loading])):active {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: var(--hoop-motion-press);
+}
+
+/* Touch: a button under the touch target grows an invisible hit area, so
+   its look and the layout stay the same. */
+@media (pointer: coarse) {
+  .root::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((var(--button-height) - var(--hoop-touch-target)) / 2)) 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root,
+  .root:hover,
+  .root:active {
+    transform: none;
+    transition: none;
+  }
+}

@@ -28,6 +28,11 @@ Rules:
   Button, ActionIcon, or input-family components (`compact-*` on Button is allowed —
   it's a separate inline-button axis, not a height override).
 - **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
+  Button is a pill (`components/Button/theme.js`), except `variant="field"`.
+  Paper and Card are square: their corners come from
+  `--hoop-card-radius` and a `radius` prop is ignored (`test/shape.test.js`).
+  ThemeIcon too, from `--hoop-icon-radius`. A callout has soft round corners (lg):
+  `Alert`, and a `Paper` with `data-callout`, use `--hoop-callout-radius`.
 - Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
   and align automatically.
 - A filter trigger next to a `Select` takes `<Button variant="field">`: input
@@ -93,6 +98,23 @@ import CodeSnippet from '@/components/CodeSnippet'
 
 <CodeSnippet code="docker run ..." />
 <CodeSnippet code={mcpConfigJson} variant="gray" />
+```
+
+### `List`
+The one shape for a block of rows (rules, agents, groups, templates). It draws
+the outer border, the corners and the line between rows from
+`--hoop-list-radius` and `--hoop-list-border` (`theme.js`). A row draws none
+of them and takes no first/last flag. `test/shape.test.js` fails on a
+page that does. Many columns: use `Table` instead.
+
+```jsx
+import List from '@/components/List'
+
+<List>
+  {rules.map((rule) => <RuleListItem key={rule.id} rule={rule} />)}
+</List>
+
+<List component="ul">{items.map((i) => <li key={i.id}>…</li>)}</List>
 ```
 
 ### `Table`
@@ -177,7 +199,7 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
-The icon sits in a rounded square on every page. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon` (flattened to white while selected, since the selected surface is dark), and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
+The icon sits in a square tile. Selected, the card takes a light indigo tint and an indigo border, and the icon tile turns indigo. Two optional props cover richer cards: `image` renders a logo `src` in the icon slot instead of `icon`, and `badge` renders a node next to the title. Both are used by the AI Session Analyzer, whose provider cards carry vendor logos and whose risk-action cards carry a "Recommended" pill.
 ```jsx
 <SelectionCard
   image="/images/anthropic-logo.svg"

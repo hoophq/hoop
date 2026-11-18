@@ -45,7 +45,7 @@ const FONT_SIZES = {
 const SIZE_DEFAULT = { size: 'md' }
 
 export const InputTheme = Input.extend({
-  classNames: { wrapper: classes.wrapper },
+  classNames: { wrapper: classes.wrapper, input: classes.input },
   defaultProps: SIZE_DEFAULT,
   vars: (_theme, props) => {
     const fz = FONT_SIZES[props.size]

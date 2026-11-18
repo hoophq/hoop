@@ -18,3 +18,26 @@
 .wrapper[data-variant='default'] {
   --input-bg: var(--hoop-surface-raised);
 }
+
+/* Every field takes its corners from the theme, whatever `radius` a call
+   site passes: one token changes every input, select and textarea. */
+.wrapper {
+  --input-radius: var(--hoop-field-radius);
+}
+
+/* Focus: the border takes the action color (Mantine) and a soft 3px ring
+   grows around the field, so the field you type in is plain to see. */
+.input {
+  transition: box-shadow var(--hoop-motion-field) var(--hoop-ease);
+}
+
+.input:focus,
+.input:focus-within {
+  box-shadow: 0 0 0 3px var(--mantine-primary-color-light);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
+}
