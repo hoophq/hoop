@@ -26,10 +26,15 @@ const postgresImage = "postgres:17-alpine"
 
 func startPostgres(t *testing.T) string {
 	t.Helper()
+	return startPostgresImage(t, postgresImage)
+}
+
+func startPostgresImage(t *testing.T, image string) string {
+	t.Helper()
 	ctx := context.Background()
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        postgresImage,
+			Image:        image,
 			ExposedPorts: []string{"5432/tcp"},
 			Env:          map[string]string{"POSTGRES_HOST_AUTH_METHOD": "trust"},
 			WaitingFor: wait.ForAll(

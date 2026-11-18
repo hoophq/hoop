@@ -1416,12 +1416,16 @@ small table and high on a large unindexed one.
 - It runs only on an idle connection: no open transaction, nothing in
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
-- Size and indexes are cached 30 s per database, user, schemas the session
-  resolves names in (`current_schemas`) and table; a plan per the same scope
-  and full statement text. A statement that may change name resolution
-  (`search_path`, `ROLE`, `RESET`, `DISCARD`) stops cache use on that
-  connection until the next check. A lock or timeout error is not cached.
-  The verdict cache key includes the check.
+- Size and indexes are cached 30 s per database, current role, search path
+  and table; a plan per the same scope and full statement text. A lock or
+  timeout error is not cached. The verdict cache key includes the check.
+- PostgreSQL 18 reports every search path change, so the scope stays exact
+  and a connection that never goes idle still gets cached facts. On older
+  servers the scope comes from the connection's last check, and a statement
+  that names `search_path`, `schema`, `set_config`, `role`, `reset` or
+  `discard` stops cache use until the next check. A function that changes
+  the search path on those servers is not seen.
+- A session with temporary tables keeps its own cache.
 - A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, on PostgreSQL 12 or
   later.

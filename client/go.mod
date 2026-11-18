@@ -34,7 +34,7 @@ require (
 	github.com/hoophq/hoop/sidecar/mcpgateway v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261118165945-eaf023895551
+	github.com/hoophq/libhoop v0.0.0-20261118171347-06b4325caa9a
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
