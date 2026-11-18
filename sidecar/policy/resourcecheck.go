@@ -19,6 +19,10 @@ type ResourceChecker interface {
 
 var ErrCheckNotReady = errors.New("the connection cannot take a resource check now")
 
+// ErrCheckCancelled comes with a usable result: the check passed its
+// deadline, was cancelled and drained.
+var ErrCheckCancelled = errors.New("the resource check passed its deadline; it was cancelled and drained")
+
 // UsesResourceCheck also looks inside Chain and Observe.
 func UsesResourceCheck(e Evaluator) bool {
 	switch v := e.(type) {

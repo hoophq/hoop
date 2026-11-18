@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -24,8 +25,9 @@ func (r resourceCheck) Check(ctx context.Context, stmt inspect.Statement, want i
 	if err != nil {
 		return inspect.CheckResult{}, err
 	}
-	if err := r.side.Exchange(ctx, req, resp, r.check.CancelRequest()); err != nil {
+	err = r.side.Exchange(ctx, req, resp, r.check.CancelRequest())
+	if err != nil && !errors.Is(err, policy.ErrCheckCancelled) {
 		return inspect.CheckResult{}, err
 	}
-	return resp.Result(), nil
+	return resp.Result(), err
 }

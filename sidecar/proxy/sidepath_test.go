@@ -166,8 +166,8 @@ func TestATimedOutCheckIsCancelledOnANewConnectionAndDrained(t *testing.T) {
 	if _, err := f.server.Write([]byte("canceledZ")); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-done; err != nil {
-		t.Fatalf("a drained check failed: %v", err)
+	if err := <-done; !errors.Is(err, policy.ErrCheckCancelled) {
+		t.Fatalf("a drained check returned %v, want ErrCheckCancelled", err)
 	}
 	select {
 	case err := <-f.ended:

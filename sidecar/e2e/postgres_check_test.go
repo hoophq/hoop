@@ -279,4 +279,37 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 			t.Fatalf("the session broke after the check: %d, %v", n, err)
 		}
 	})
+
+	t.Run("two search paths do not share a check", func(t *testing.T) {
+		for _, stmt := range []string{
+			"CREATE SCHEMA tenant_small",
+			"CREATE SCHEMA tenant_big",
+			"CREATE TABLE tenant_small.orders (id int, v text)",
+			"INSERT INTO tenant_small.orders SELECT g, 'v' || g FROM generate_series(1, 10) g",
+			"CREATE TABLE tenant_big.orders (id int, v text)",
+			"INSERT INTO tenant_big.orders SELECT g, 'v' || g FROM generate_series(1, 200000) g",
+			"ANALYZE tenant_small.orders",
+			"ANALYZE tenant_big.orders",
+		} {
+			if err := pgExec(t, direct, stmt); err != nil {
+				t.Fatalf("%s: %v", stmt, err)
+			}
+		}
+		const stmt = "SELECT * FROM orders WHERE v = 'v7'"
+		for _, tenant := range []string{"tenant_small", "tenant_big"} {
+			ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
+			c, err := pgx.Connect(ctx, "postgres://postgres@"+s.addr+"/postgres?sslmode=disable&search_path="+tenant)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close(context.Background()) })
+			if err := pgExec(t, c, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+				t.Fatalf("%s: %v", tenant, err)
+			}
+		}
+		if in := model.input(t, stmt); !strings.Contains(in, "Table orders: about 200K rows") {
+			t.Fatalf("the big tenant was judged on the small tenant's check:\n%s", in)
+		}
+	})
 }

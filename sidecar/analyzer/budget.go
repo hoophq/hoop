@@ -163,7 +163,6 @@ func (b *Budget) take(maxCalls int, r RateLimit) (status string, edge rateEdge, 
 	return "", edge, refused
 }
 
-// endEpisode closes a running rate-limited episode. Called with b.mu held.
 // available reports whether take would grant a call now, without taking it.
 func (b *Budget) available(maxCalls int, r RateLimit) bool {
 	b.mu.Lock()
@@ -185,6 +184,7 @@ func (b *Budget) available(maxCalls int, r RateLimit) bool {
 	return min(tokens, float64(r.Capacity())) >= 1
 }
 
+// endEpisode closes a running rate-limited episode. Called with b.mu held.
 func (b *Budget) endEpisode() (rateEdge, int64) {
 	if !b.limited {
 		return edgeNone, 0

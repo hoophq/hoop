@@ -29,8 +29,8 @@ github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRn
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e h1:HTPuuf+8TZ4U0JgwdB13v7HRT9V0yPlKMTUogvYS1Sc=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
-github.com/hoophq/libhoop v0.0.0-20261118153425-28ec846b092d h1:Fbd3v8KKf1qLgxrVN8GxGIWuCG5leZ8MjU+fgThech4=
-github.com/hoophq/libhoop v0.0.0-20261118153425-28ec846b092d/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261118165945-eaf023895551 h1:cxrrsKCuhb4an++l2Dhh7Ysvbxye0I141zt34spH+uk=
+github.com/hoophq/libhoop v0.0.0-20261118165945-eaf023895551/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/pierrec/lz4/v4 v4.1.30 h1:cchX8N2DVP668WkElI9QMwVyoNabLkq1LofDHFeIrdg=

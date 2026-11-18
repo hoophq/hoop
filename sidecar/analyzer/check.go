@@ -71,32 +71,41 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	if len(tables) == 0 || rc.Skips(stmt) {
 		return ""
 	}
-	scope := rc.Scope()
 	facts := make(map[string]inspect.TableFacts, len(tables))
 	var missing []string
-	for _, t := range tables {
-		if f, ok := e.facts.get(scope + "\x00" + t); ok {
-			facts[t] = f
-		} else {
-			missing = append(missing, t)
+	var plan planEntry
+	havePlan := false
+	if scope := rc.Scope(); scope != "" {
+		for _, t := range tables {
+			if f, ok := e.facts.get(scope + "\x00" + t); ok {
+				facts[t] = f
+			} else {
+				missing = append(missing, t)
+			}
 		}
+		plan, havePlan = e.plans.get(scope + "\x00" + stmt.Text)
+	} else {
+		missing = tables
 	}
-	planKey := scope + "\x00" + stmt.Text
-	plan, havePlan := e.plans.get(planKey)
 
 	if (len(missing) > 0 || !havePlan) && e.budget.available(e.cfg.MaxCalls, e.cfg.RateLimit) {
 		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
 		res, err := e.runCheck(ctx, rc, stmt, want, ec)
-		if err == nil {
+		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
+			scope := rc.Scope()
 			if res.TablesErr == "" {
 				for _, f := range res.Tables {
-					e.facts.put(scope+"\x00"+f.Name, f)
 					facts[f.Name] = f
+					if scope != "" {
+						e.facts.put(scope+"\x00"+f.Name, f)
+					}
 				}
 			}
 			if want.Plan {
 				plan, havePlan = planEntry{nodes: res.Plan, err: res.PlanErr}, true
-				e.plans.put(planKey, plan)
+				if scope != "" && !res.Retry {
+					e.plans.put(scope+"\x00"+stmt.Text, plan)
+				}
 			}
 		}
 	}
@@ -137,6 +146,7 @@ func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stm
 	}
 	switch {
 	case errors.Is(err, policy.ErrCheckNotReady):
+		end(telemetry.OutcomeSkipped, nil)
 	case err != nil:
 		end(telemetry.OutcomeError, err)
 	default:
@@ -208,11 +218,18 @@ func tableLine(t inspect.TableFacts) string {
 	if !t.Found {
 		return "Table " + t.Name + ": not found"
 	}
+	label := "Table"
+	switch t.Kind {
+	case "view", "foreign table":
+		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + t.Name + ": no size of its own; see the plan"
+	case "partitioned table", "materialized view":
+		label = strings.ToUpper(t.Kind[:1]) + t.Kind[1:]
+	}
 	rows := "rows unknown (never analyzed)"
 	if t.Rows >= 0 {
 		rows = "about " + approx(float64(t.Rows)) + " rows"
 	}
-	line := fmt.Sprintf("Table %s: %s, %s", t.Name, rows, approxBytes(t.Bytes))
+	line := fmt.Sprintf("%s %s: %s, %s", label, t.Name, rows, approxBytes(t.Bytes))
 	if len(t.Indexes) == 0 {
 		return line + ", no indexes"
 	}

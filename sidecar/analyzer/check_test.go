@@ -14,16 +14,33 @@ import (
 )
 
 type fakeChecker struct {
-	mu     sync.Mutex
-	ready  bool
-	skip   bool
-	err    error
-	tables map[string]inspect.TableFacts
-	plan   []inspect.PlanNode
-	wants  []inspect.CheckWant
+	mu      sync.Mutex
+	ready   bool
+	skip    bool
+	err     error
+	tables  map[string]inspect.TableFacts
+	plan    []inspect.PlanNode
+	planErr string
+	retry   bool
+	wants   []inspect.CheckWant
+
+	// scope defaults to one database and user; unknown keeps it empty.
+	scope   string
+	unknown bool
 }
 
-func (f *fakeChecker) Scope() string                { return "shop\x00alice" }
+func (f *fakeChecker) Scope() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case f.unknown:
+		return ""
+	case f.scope != "":
+		return f.scope
+	}
+	return "shop\x00alice"
+}
+
 func (f *fakeChecker) Skips(inspect.Statement) bool { return f.skip }
 
 func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect.CheckWant) (inspect.CheckResult, error) {
@@ -33,10 +50,10 @@ func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect
 		return inspect.CheckResult{}, policy.ErrCheckNotReady
 	}
 	f.wants = append(f.wants, want)
-	if f.err != nil {
+	if f.err != nil && !errors.Is(f.err, policy.ErrCheckCancelled) {
 		return inspect.CheckResult{}, f.err
 	}
-	var res inspect.CheckResult
+	res := inspect.CheckResult{Retry: f.retry}
 	for _, t := range want.Tables {
 		if facts, ok := f.tables[t]; ok {
 			res.Tables = append(res.Tables, facts)
@@ -45,9 +62,9 @@ func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect
 		}
 	}
 	if want.Plan {
-		res.Plan = f.plan
+		res.Plan, res.PlanErr = f.plan, f.planErr
 	}
-	return res, nil
+	return res, f.err
 }
 
 func (f *fakeChecker) checks() []inspect.CheckWant {
@@ -306,5 +323,84 @@ func TestTheBlockHasItsOwnCap(t *testing.T) {
 	block := got[strings.Index(got, "Resource check"):]
 	if len(block) > analyzer.MaxCheckBlockBytes || !strings.HasSuffix(block, "(truncated)") {
 		t.Fatalf("block is %d bytes:\n%s", len(block), block)
+	}
+}
+
+func TestTheCachesAreKeyedByTheSchemas(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	stmt := sqlStmt("SELECT * FROM orders WHERE v = 'v7'", inspect.OpSelect, "orders")
+
+	small := &fakeChecker{ready: true, scope: "shop\x00alice\x00{tenant_small}",
+		tables: map[string]inspect.TableFacts{"orders": {Name: "orders", Found: true, Rows: 10, Bytes: 8192}}}
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: small})
+
+	big := bigOrders()
+	big.scope = "shop\x00alice\x00{tenant_big}"
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: big})
+	if len(big.checks()) != 1 || !strings.Contains(lastContent(p), "about 1.2M rows") {
+		t.Fatalf("the big tenant got the small tenant's check:\n%s", lastContent(p))
+	}
+}
+
+func TestAnUnknownScopeCachesNothing(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	stmt := sqlStmt("DELETE FROM orders WHERE id = 1", inspect.OpDelete, "orders")
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: bigOrders()})
+
+	unknown := bigOrders()
+	unknown.unknown = true
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: unknown})
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: unknown})
+	if n := len(unknown.checks()); n != 2 {
+		t.Fatalf("an unknown scope used a cache: %d checks, want 2", n)
+	}
+
+	unknown.ready = false
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 2", inspect.OpDelete, "orders"),
+		&policy.EvalContext{ResourceCheck: unknown})
+	if strings.Contains(lastContent(p), "Resource check") {
+		t.Fatalf("a busy connection with an unknown scope got cached facts:\n%s", lastContent(p))
+	}
+}
+
+func TestARetryablePlanErrorIsNotCached(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+	chk.plan, chk.planErr, chk.retry = nil, "SQLSTATE 55P03 (lock_not_available)", true
+	stmt := sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders")
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: chk})
+	ev.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: chk})
+	w := chk.checks()
+	if len(w) != 2 || len(w[1].Tables) != 0 || !w[1].Plan {
+		t.Fatalf("checks = %+v, want the plan asked again and the facts cached", w)
+	}
+}
+
+func TestACancelledCheckStillInformsTheModel(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	var events []analyzer.ResourceCheckEvent
+	ev := checkEvaluator(t, p, &events)
+	chk := bigOrders()
+	chk.err = policy.ErrCheckCancelled
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: chk})
+	if !strings.Contains(lastContent(p), "about 1.2M rows") {
+		t.Fatalf("a cancelled check's facts are missing:\n%s", lastContent(p))
+	}
+	if len(events) != 1 || !errors.Is(events[0].Err, policy.ErrCheckCancelled) {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
+func TestAViewHasNoSizeInThePrompt(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := &fakeChecker{ready: true, tables: map[string]inspect.TableFacts{"big_v": {Name: "big_v", Found: true, Kind: "view"}}}
+	ev.EvaluateWith(sqlStmt("SELECT * FROM big_v", inspect.OpSelect, "big_v"), &policy.EvalContext{ResourceCheck: chk})
+	got := lastContent(p)
+	if !strings.Contains(got, "View big_v: no size of its own; see the plan") || strings.Contains(got, "0 rows") {
+		t.Fatalf("model input:\n%s", got)
 	}
 }

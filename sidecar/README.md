@@ -1416,14 +1416,20 @@ small table and high on a large unindexed one.
 - It runs only on an idle connection: no open transaction, nothing in
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
-- Size and indexes are cached 30 s per database, user and table; a plan per
-  user and full statement text. The verdict cache key includes the check.
+- Size and indexes are cached 30 s per database, user, schemas the session
+  resolves names in (`current_schemas`) and table; a plan per the same scope
+  and full statement text. A statement that may change name resolution
+  (`search_path`, `ROLE`, `RESET`, `DISCARD`) stops cache use on that
+  connection until the next check. A lock or timeout error is not cached.
+  The verdict cache key includes the check.
+- A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, on PostgreSQL 12 or
   later.
 - The prompt block is capped at 2 KiB. A check needs room in the lane's
   `max_calls` and `rate_limit` but spends neither.
 - A failed or partial check classifies as without it and logs `resource
-  check failed` or `resource check incomplete` with the SQLSTATE. Every
+  check failed`, `resource check incomplete` or `resource check cancelled`
+  with the SQLSTATE. Every
   statement it sends starts with `/* hoop sidecar resource check */`.
 - Other protocols accept the field and do nothing. A control plane serves it
   only to a sidecar that reports `analyzer_resource_check`.

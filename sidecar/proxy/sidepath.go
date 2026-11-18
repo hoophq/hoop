@@ -117,6 +117,9 @@ func (p *sidePath) Exchange(ctx context.Context, req []byte, resp inspect.CheckR
 	defer timer.Stop()
 	select {
 	case err := <-d.done:
+		if err == nil {
+			err = policy.ErrCheckCancelled
+		}
 		return err
 	case <-p.connCtx.Done():
 		return context.Cause(p.connCtx)

@@ -97,10 +97,11 @@ const (
 
 // Stage outcomes for every stage but review.
 const (
-	OutcomeAllow = "allow"
-	OutcomeDeny  = "deny"
-	OutcomeError = "error"
-	OutcomeOK    = "ok"
+	OutcomeAllow   = "allow"
+	OutcomeDeny    = "deny"
+	OutcomeError   = "error"
+	OutcomeOK      = "ok"
+	OutcomeSkipped = "skipped"
 )
 
 // ExchangeKind names the span that encloses a client's exchange.

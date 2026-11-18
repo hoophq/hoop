@@ -1017,6 +1017,8 @@ func (ac *analyzerDeps) resourceCheckLog(name string) func(analyzer.ResourceChec
 		switch {
 		case errors.Is(ev.Err, policy.ErrCheckNotReady):
 			log.Debug("resource check skipped; cached facts only", append(attrs, "reason", ev.Err.Error())...)
+		case errors.Is(ev.Err, policy.ErrCheckCancelled):
+			log.Info("resource check cancelled", append(attrs, "tables_error", ev.TablesErr, "plan_error", ev.PlanErr)...)
 		case ev.Err != nil:
 			log.Info("resource check failed; classified without it", append(attrs, "error", ev.Err.Error())...)
 		case ev.TablesErr != "" || ev.PlanErr != "":
