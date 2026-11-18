@@ -19,7 +19,7 @@ require (
 )
 
 require (
-	github.com/hoophq/libhoop v0.0.0-20261118141649-807554915577 // indirect
+	github.com/hoophq/libhoop v0.0.0-20261118143029-188f89cd51ec // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
 
