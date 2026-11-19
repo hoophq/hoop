@@ -7,10 +7,29 @@ import Checkbox from '@/components/Checkbox'
 import TextInput from '@/components/TextInput'
 import classes from '../Create.module.css'
 
-// The groups whose members approve a level's hold. `options` holds every
-// group of the org plus the level's stored ones; an empty `value` means the
-// administrators approve.
-export default function ApprovalGroups({ options, value, onChange }) {
+// The two uses of the card. Static: the groups whose members approve, an
+// empty list leaving it to the administrators. Candidates: the groups the AI
+// picks from, every box checked meaning every group (ApprovalRouting maps
+// that to the backend's empty list).
+const VARIANTS = {
+  static: {
+    title: 'Approval group',
+    subtitle: 'Select the groups whose members approve the request.',
+    helper: 'With no group selected, the administrators approve.',
+    count: false,
+  },
+  candidates: {
+    title: 'Candidate Groups',
+    subtitle: 'AI selects approvers from these groups.',
+    helper: 'With no group selected, the AI selects from every group.',
+    count: true,
+  },
+}
+
+// `options` holds every group of the org plus the level's stored ones;
+// `value` is the checked ones.
+export default function ApprovalGroups({ options, value, onChange, variant = 'static' }) {
+  const copy = VARIANTS[variant]
   const [open, setOpen] = useState(true)
   const [query, setQuery] = useState('')
   const selected = new Set(value)
@@ -25,6 +44,22 @@ export default function ApprovalGroups({ options, value, onChange }) {
     onChange(options.filter((g) => next.has(g)))
   }
 
+  // Candidates: every box checked, or none, both mean every group.
+  let badge = null
+  if (all || (copy.count && value.length === 0)) {
+    badge = (
+      <Badge variant="light" color="green" tag chip>
+        All groups
+      </Badge>
+    )
+  } else if (copy.count) {
+    badge = (
+      <Badge variant="light" color="indigo" tag chip>
+        {`${value.length} of ${options.length} groups`}
+      </Badge>
+    )
+  }
+
   return (
     <Stack gap={6}>
       <Paper withBorder radius="lg" className={classes.clipped}>
@@ -32,18 +67,14 @@ export default function ApprovalGroups({ options, value, onChange }) {
           <Group justify="space-between" wrap="nowrap" gap="md">
             <Stack gap={2}>
               <Text size="sm" fw={600}>
-                Approval group
+                {copy.title}
               </Text>
               <Text size="xs" c="dimmed">
-                Select the groups whose members approve the request.
+                {copy.subtitle}
               </Text>
             </Stack>
             <Group gap="sm" wrap="nowrap">
-              {all && (
-                <Badge variant="light" color="green" tag chip>
-                  All groups
-                </Badge>
-              )}
+              {badge}
               {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
             </Group>
           </Group>
@@ -96,9 +127,11 @@ export default function ApprovalGroups({ options, value, onChange }) {
           </Stack>
         </Collapse>
       </Paper>
-      <Text size="xs" c="dimmed">
-        With no group selected, the administrators approve.
-      </Text>
+      {(variant === 'static' || value.length === 0) && (
+        <Text size="xs" c="dimmed">
+          {copy.helper}
+        </Text>
+      )}
     </Stack>
   )
 }

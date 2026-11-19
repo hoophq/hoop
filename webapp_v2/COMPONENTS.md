@@ -259,6 +259,9 @@ right (span 5), on a `Grid columns={7}`.
 </Stack>
 ```
 
+`titleFw` sets the heading weight (default 500); the sidecar AI Analyzer form uses 600,
+as its design does.
+
 **This is the app's form layout.** Sixteen form pages put their fields straight on the
 page background — none wraps inputs in a bordered container, `Paper withBorder` is for
 lists and tables — and ten lay them out on this grid. Moving the explanation into the

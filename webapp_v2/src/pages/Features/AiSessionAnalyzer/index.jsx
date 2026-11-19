@@ -88,7 +88,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
-          <Title order={1}>AI Session Analyzer</Title>
+          <Title order={1}>AI Analyzer</Title>
           <Text size="md" c="dimmed">
             Monitor terminal sessions and resource usage in real time.
           </Text>

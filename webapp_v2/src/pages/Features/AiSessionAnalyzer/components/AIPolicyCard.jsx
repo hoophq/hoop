@@ -17,8 +17,9 @@ const EMPTY_LIBRARY = {
 }
 
 // The library rules of one feature the AI may apply. `rules` null selects
-// every one (designer comment #94: all selected by default).
-function RuleList({ featureKey, options, rules, create, status, onToggle, onSelectAll, disabled }) {
+// every one (designer comment #94: all selected by default); an empty list
+// selects none.
+function RuleList({ featureKey, options, rules, create, status, onToggle, onSelectAll, onClear, disabled }) {
   const [query, setQuery] = useState('')
   const selected = new Set(rules ?? options.map((r) => r.name))
   const count = options.filter((r) => selected.has(r.name)).length
@@ -51,11 +52,16 @@ function RuleList({ featureKey, options, rules, create, status, onToggle, onSele
           <Text size="xs" c="dimmed">
             {`${count} of ${options.length} selected`}
           </Text>
-          {/* Hidden when nothing can be selected; clicking it with all selected changes nothing. */}
+          {/* Hidden when nothing can be selected; "Select All" with all selected changes nothing. */}
           {!disabled && options.length > 0 && (
-            <Button variant="transparent" size="xs" px={0} onClick={onSelectAll}>
-              Select all
-            </Button>
+            <Group gap="md" wrap="nowrap">
+              <Button variant="transparent" color="gray" size="xs" px={0} onClick={onSelectAll}>
+                Select All
+              </Button>
+              <Button variant="transparent" size="xs" px={0} onClick={onClear}>
+                Clear selection
+              </Button>
+            </Group>
           )}
         </Group>
         <ScrollArea.Autosize mah={170} type="auto" offsetScrollbars>
@@ -131,6 +137,7 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
               disabled={locked}
               onToggle={onToggleRule}
               onSelectAll={() => onChange({ rules: null })}
+              onClear={() => onChange({ rules: [] })}
             />
             <Paper variant="strong" radius="md" p="md">
               <Checkbox
@@ -154,13 +161,13 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
 
 // The "AI policy settings" card of one risk level (ENG-662): which guardrail
 // and data masking rules the AI may apply to a statement of this level, saved
-// as `ai_rules.<level>`. `helper` says when the rules apply.
-export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onToggleRule, helper }) {
+// as `ai_rules.<level>`. `helper` says when the rules apply. `card` carries
+// the SettingsCard's open state from the level's CardStack.
+export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onToggleRule, helper, card }) {
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // Subscribed so a license change re-renders; the check itself is the store's.
   useUserStore((s) => s.licenseFeatures)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const configured = AI_RULE_FEATURES.some(({ key }) => ai[key].on)
 
   return (
     <SettingsCard
@@ -175,7 +182,7 @@ export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onTogg
           </Badge>
         ) : null
       }
-      done={configured}
+      {...card}
     >
       <Stack gap="sm">
         {isFreeLicense && <FreeLicenseCallout message="Letting the AI apply rules is an Enterprise feature." />}
