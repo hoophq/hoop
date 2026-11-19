@@ -4,7 +4,7 @@ import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
-import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
+import { MODE_ENFORCE, MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
@@ -37,6 +37,16 @@ function RuleRow({ rule, onEdit }) {
       {rule.flag && (
         <Badge tag variant="warning">
           {rule.flag}
+        </Badge>
+      )}
+      {rule.mode === MODE_OBSERVE && (
+        <Badge tag variant="warning">
+          Observe
+        </Badge>
+      )}
+      {rule.mode === MODE_ENFORCE && (
+        <Badge tag variant="light" color="gray">
+          Enforce
         </Badge>
       )}
       <SourceBadge source={rule.source} />
@@ -98,13 +108,21 @@ function EmptyFeatureRow({ feature, observing, onAdd, blocked }) {
 
 /**
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
- * every lane inherits; with one, what that lane resolves to. Both include the
- * rules the control plane distributes, which are never in the stored document.
- * `actions` adds Add per feature and Edit on distributed rules; rules embedded
- * in the document have no form here.
+ * every lane inherits, plus each lane's own rules unless `defaultsOnly`; with
+ * one, what that lane resolves to. Both include the rules the control plane
+ * distributes, which are never in the stored document. `actions` adds Add per
+ * feature and Edit on distributed rules; rules embedded in the document have no
+ * form here.
  */
-export default function FeatureAccordions({ listener = null, config, boundRules, includeLanes = false, flush = false, actions }) {
-  const features = featureList(listener, config, boundRules, { includeLanes })
+export default function FeatureAccordions({
+  listener = null,
+  config,
+  boundRules,
+  defaultsOnly = false,
+  flush = false,
+  actions,
+}) {
+  const features = featureList(listener, config, boundRules, { defaultsOnly })
   // The sidecar's endpoint is a Global settings row; a lane speaks only on override.
   const ownOPA = overridesOPA(listener)
   const opa = ownOPA ? resolveOPA(listener, config) : null
