@@ -192,3 +192,35 @@ func boundNames(t *testing.T, sidecarID string) []string {
 	}
 	return names
 }
+
+// A listener analyzer with no override of its own moves whole to its rule
+// item. The lane keeps no empty block, which the sidecar would refuse.
+func TestMovingAFileWithALaneAnalyzerAdoptsIt(t *testing.T) {
+	startSwitchDB(t)
+	sc := newSidecar(t, "lane-analyzer")
+	file := `{
+		"analyzer": {"provider": "gemini", "model": "m"},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": "0.0.0.0:15432", "upstream": "db:5432",
+			"analyzer": {"trigger": {"operations": ["update", "delete"]}, "high": "block", "medium": "warn"}
+		}]
+	}`
+	require.Equal(t, http.StatusOK, reportHandshake(t, sc, reportBody(t, file)).Code)
+
+	w, resp := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": false}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	require.Len(t, resp.Configuration.Listeners, 1)
+	assert.Nil(t, resp.Configuration.Listeners[0].Analyzer, "the lane keeps no empty block")
+	assert.ElementsMatch(t, []string{"lane-analyzer-appdb-analyzer"}, boundNames(t, sc.ID))
+
+	w = reportHandshake(t, sc, reportBody(t, file))
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	var served struct {
+		Listeners []struct {
+			Analyzer map[string]any `json:"analyzer"`
+		} `json:"listeners"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &served))
+	require.Len(t, served.Listeners, 1)
+	assert.Equal(t, "block", served.Listeners[0].Analyzer["high"], "the sidecar gets the analyzer back")
+}

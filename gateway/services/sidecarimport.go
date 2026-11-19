@@ -302,6 +302,15 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
 		base.MatchIgnore = nil
 		l.Analyzer = &base
+		// The sidecar refuses a block that names no action, and the fold adds
+		// the rule to a lane with no block as well.
+		left, err := json.Marshal(base)
+		if err != nil {
+			return nil, fmt.Errorf("listener %q: analyzer: %w", l.Name, err)
+		}
+		if string(left) == "{}" {
+			l.Analyzer = nil
+		}
 	}
 	return out, nil
 }
