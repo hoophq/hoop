@@ -113,9 +113,9 @@ func EnsureCA() (string, error) {
 }
 
 // PGSteps is the guided Postgres demo, the SQL twin of Steps: see masking,
-// hit a guardrail, run a query that passes, compare without the sidecar. The
-// role is read-only, so the third beat is a read the sidecar lets through
-// rather than a write.
+// hit a guardrail, let the analyzer judge an UPDATE, run a query that passes,
+// compare without the sidecar. The role is read-only, so the passing beat is a
+// read the sidecar lets through rather than a write.
 var PGSteps = []Step{
 	{
 		Title: "See masking", SQL: "SELECT customerid, firstname, lastname, email FROM customers LIMIT 5;",
@@ -126,8 +126,18 @@ var PGSteps = []Step{
 	{
 		Title: "See a guardrail", SQL: "DROP TABLE customers;",
 		Expect:   "Refused: the statement never reaches the database.",
-		Why:      "The guardrail \"no-destructive-statements\" matched the DROP and the sidecar answered for the database.",
+		Why:      "The guardrail matched the DROP operation and the sidecar answered for the database.",
 		SeenKind: "violation", SeenOp: "drop",
+	},
+	{
+		// No guardrail names UPDATE (the demo's names DELETE, so a DELETE
+		// would never reach the model): the model is what refuses it. The
+		// role is read-only, so a model that let it pass changes nothing.
+		Title: "See the AI analyzer", SQL: "UPDATE customers SET email = NULL;",
+		Expect:   "Refused: the model rates an UPDATE with no WHERE clause high risk, and high risk blocks.",
+		Why:      "No guardrail names UPDATE. The analyzer sent the statement to the model, and the listener maps high risk to block. Had it passed, the read-only role would refuse it anyway.",
+		SeenOp:   "update",
+		Analyzer: true,
 	},
 	{
 		Title: "Run a safe query", SQL: "SELECT title, price FROM products ORDER BY price DESC LIMIT 5;",

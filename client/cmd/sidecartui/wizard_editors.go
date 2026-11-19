@@ -24,14 +24,14 @@ import (
 // daemon.Config only to validate or save, so the file is always the
 // struct, marshalled, and never text this package assembled.
 type draft struct {
-	// demoKind is "" for a normal config, or which demo this is (HTTP or
-	// Postgres) when the person picked one. isDemo reports which.
-	demoKind sidecardemo.Kind
+	// demo is set when the person picked the demo: every built-in demo at
+	// once, one listener each, with protocol demoProtocol.
+	demo     bool
 	protocol string
-	listener *listenerForm // nil for the demo, whose listener is fixed
-	// demoPorts are the demo's listener and upstream, moved off the preferred
-	// ones when another program holds them.
-	demoPorts sidecardemo.Ports
+	listener *listenerForm // nil for the demo, whose listeners are fixed
+	// demoHTTP and demoPG are the demo listeners and their upstreams, moved
+	// off the preferred ports when another program holds them.
+	demoHTTP, demoPG sidecardemo.Ports
 	// license is the license file the config names under its license key,
 	// "" for the free tier.
 	license string
@@ -65,11 +65,42 @@ type analyzerDraft struct {
 // starterModels is the model each provider's block names: a cheap, fast
 // default for a classification call. Any model the account serves works.
 var starterModels = map[string]string{
-	"anthropic": "claude-haiku-4-5",
-	"openai":    "gpt-5-mini",
-	"gemini":    "gemini-2.5-flash",
-	"vertex":    "claude-sonnet-4-5@20250929",
+	hostedProvider: analyzer.HostedModel,
+	"anthropic":    "claude-haiku-4-5",
+	"openai":       "gpt-5-mini",
+	"gemini":       "gemini-2.5-flash",
+	"vertex":       "claude-sonnet-4-5@20250929",
 }
+
+// hostedProvider is the model Hoop hosts (DEP-161). The config selects it
+// with use_hoop_llm_provider, never by provider name, so the wizard shows it
+// as a provider and writes the flag. It needs no key, which is why it is the
+// default for a person who has no LLM key of their own.
+const hostedProvider = "hoop"
+
+// hostedPIINote says what choosing the hosted model sends where.
+const hostedPIINote = "Statement text, which can contain PII, is sent to Hoop to be rated."
+
+var providerLabel = map[string]string{hostedProvider: "Hoop-hosted (" + analyzer.HostedModel + ", no key)"}
+
+// analyzerProviders is the provider list the form offers: the hosted model
+// first when the binary links it, then the rest.
+func analyzerProviders() []string {
+	var out []string
+	rest := analyzer.RegisteredProviders()
+	if slices.Contains(rest, hostedProvider) {
+		out = append(out, hostedProvider)
+	}
+	for _, p := range rest {
+		if p != hostedProvider {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// needsKey reports whether provider reads a key file.
+func needsKey(provider string) bool { return provider != hostedProvider && provider != "vertex" }
 
 var keyEnv = map[string]string{"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
@@ -96,6 +127,11 @@ func opsFor(protocol string) []string {
 		}
 		ssh = op == inspect.OpExecLine || op == inspect.OpEnvSet || strings.HasPrefix(s, "sftp_")
 		switch protocol {
+		case demoProtocol:
+			// The demo runs HTTP and SQL listeners, and a rule applies to both.
+			if !ssh && op != inspect.OpUnknown {
+				out = append(out, s)
+			}
 		case "http":
 			if http || op == inspect.OpDelete {
 				out = append(out, s)
@@ -145,7 +181,7 @@ func ruleTypesFor(protocol string, captures bool) []string {
 				continue
 			}
 		case policy.MatchTable, policy.MatchProcedure:
-			if protocol == "http" || protocol == "ssh" || (rpc && !captures) {
+			if protocol == "http" || protocol == "ssh" || protocol == demoProtocol || (rpc && !captures) {
 				continue
 			}
 		case policy.MatchHTTPResource, policy.MatchHTTPStatus, policy.MatchHTTPHeader:
@@ -185,34 +221,48 @@ func opStrings(o []inspect.Operation) []string {
 // ---- defaults -----------------------------------------------------------------
 
 // isDemo reports whether this draft is one of the built-in demos.
-func (d *draft) isDemo() bool { return d.demoKind != "" }
+func (d *draft) isDemo() bool { return d.demo }
+
+// The demo's listeners, by name. The tour matches audit events to a demo by
+// the listener that recorded them.
+const (
+	demoHTTPListener = "demo-api"
+	demoPGListener   = "demo-postgres"
+)
+
+// demoProtocol is the draft protocol of the demo, which runs several. The
+// editors read it as "what every demo listener accepts".
+const demoProtocol = "demo"
+
+// demoTriggers are the operations each demo listener sends to the analyzer:
+// the writes of its protocol. The demo fixes them, as it fixes the listeners.
+var demoTriggers = map[string][]string{
+	"http":     {"post", "put", "patch", "delete"},
+	"postgres": {"delete", "update"},
+}
 
 // newDraft is the config the setup screens start from: one listener, the
-// guardrail and the masking rule the free tier allows, and the analyzer
-// switched on only when its key file already exists, since a config that
-// names a missing key does not start.
+// guardrail and the masking rule the free tier allows, and the analyzer.
+// The analyzer uses the person's own provider when one is detected, on only
+// when its key file already exists, since a config that names a missing key
+// does not start. With none detected it uses the model Hoop hosts, on.
 //
-// id is a menu choice: a protocol name, or a demo id (demoHTTPID /
-// demoPGID). A demo fixes its own protocol and ports.
+// id is a menu choice: a protocol name, or demoID. The demo fixes its own
+// listeners and ports.
 func newDraft(id string, m machine) (*draft, error) {
-	kind := demoKindFor(id)
-	d := &draft{demoKind: kind, protocol: id, file: configyaml.StarterFile}
-	if kind != "" {
+	d := &draft{demo: id == demoID, protocol: id, file: configyaml.StarterFile}
+	if d.demo {
 		// Free ports, chosen now: a demo that cannot bind fails at boot,
-		// after the person was told it was ready.
+		// after the person was told it was ready. The database is hoop's,
+		// across the network: only its listener binds here.
+		d.protocol = demoProtocol
 		taken := map[string]bool{}
-		if kind == sidecardemo.KindPostgres {
-			// The database is hoop's, across the network: only the listener
-			// binds here.
-			d.protocol = "postgres"
-			d.demoPorts.Listen = freeFrom(sidecardemo.PGListenAddr, taken)
-			d.demoPorts.API = sidecardemo.PGAddr
-		} else {
-			d.protocol = "http"
-			d.demoPorts.Listen = freeFrom(sidecardemo.ListenAddr, taken)
-			taken[d.demoPorts.Listen] = true
-			d.demoPorts.API = freeFrom(sidecardemo.Addr, taken)
-		}
+		d.demoHTTP.Listen = freeFrom(sidecardemo.ListenAddr, taken)
+		taken[d.demoHTTP.Listen] = true
+		d.demoHTTP.API = freeFrom(sidecardemo.Addr, taken)
+		taken[d.demoHTTP.API] = true
+		d.demoPG.Listen = freeFrom(sidecardemo.PGListenAddr, taken)
+		d.demoPG.API = sidecardemo.PGAddr
 	} else {
 		protocol := id
 		upstream := defaultUpstream[protocol]
@@ -249,6 +299,11 @@ func newDraft(id string, m machine) (*draft, error) {
 		d.listener = lf
 	}
 	switch d.protocol {
+	case demoProtocol:
+		// One rule for every demo listener: the free tier enforces one per
+		// process. It leaves UPDATE and POST to the analyzer.
+		d.rules = []policy.Rule{{Name: "no-destructive", Type: policy.MatchOperation, Operations: ops("delete", "drop", "truncate"),
+			Message: "DELETE, DROP and TRUNCATE are not allowed through the sidecar"}}
 	case "http":
 		d.rules = []policy.Rule{{Name: "no-deletes", Type: policy.MatchOperation, Operations: ops("delete"),
 			Message: "DELETE is not allowed through the sidecar"}}
@@ -283,16 +338,33 @@ func newDraft(id string, m machine) (*draft, error) {
 		d.masks = []alcatraz.Rule{{Name: "emails", Entities: []string{"EMAIL_ADDRESS"}, Strategy: alcatraz.StrategyRedact}}
 	}
 
-	provider := m.provider
-	if provider == "" || !slices.Contains(analyzer.RegisteredProviders(), provider) {
-		provider = "anthropic"
-	}
 	keyDir := m.keyDir
 	if keyDir == "" {
 		keyDir = "/path/to/keys"
 	}
+	registered := analyzer.RegisteredProviders()
+	provider := m.provider
+	if provider == "" {
+		// A key file left from an earlier setup is the person's own LLM.
+		for _, p := range []string{"anthropic", "openai", "gemini"} {
+			if slices.Contains(registered, p) && keyFileStatus(filepath.Join(keyDir, p+".key")) == nil {
+				provider = p
+				break
+			}
+		}
+	}
+	if provider == "" || !slices.Contains(registered, provider) {
+		provider = hostedProvider
+		if !slices.Contains(registered, provider) {
+			provider = "anthropic"
+		}
+	}
+	keyProvider := provider
+	if !needsKey(provider) {
+		keyProvider = "anthropic"
+	}
 	d.an = analyzerDraft{provider: provider, model: starterModels[provider], keyDir: keyDir,
-		keyFile: filepath.Join(keyDir, provider+".key"), region: "global",
+		keyFile: filepath.Join(keyDir, keyProvider+".key"), region: "global",
 		high: "block", medium: "warn", low: "allow"}
 	switch d.protocol {
 	case "http":
@@ -304,8 +376,11 @@ func newDraft(id string, m machine) (*draft, error) {
 	default:
 		d.an.trigger = []string{"delete", "update"}
 	}
-	// An mcp lane refuses an analyzer.
-	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	// An mcp lane refuses an analyzer; a grpc or spanner lane takes one
+	// only with grpc.capture_payload and descriptors, which no default can
+	// name, so the person turns it on once those are set.
+	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol) && provider != "vertex" &&
+		(provider == hostedProvider || keyFileStatus(d.an.keyFile) == nil)
 	return d, nil
 }
 
@@ -323,44 +398,59 @@ func keyFileStatus(path string) error {
 
 // ---- the config -------------------------------------------------------------
 
-func (d *draft) listenerValue() (daemon.ListenerConfig, error) {
-	if d.isDemo() {
-		l := daemon.ListenerConfig{Name: "demo", Protocol: d.protocol,
-			Listen: d.demoPorts.Listen, Upstream: d.demoPorts.API}
-		if d.demoKind == sidecardemo.KindPostgres {
-			// The demo database is on RDS, whose certificates chain to
-			// Amazon's own roots and to nothing in a host trust store. The
-			// relay verifies it against the bundle the CLI ships and writes
-			// there before boot (sidecardemo.EnsureCA), never by skipping
-			// verification.
-			ca, err := sidecardemo.CAPath()
-			if err != nil {
-				return daemon.ListenerConfig{}, err
-			}
-			l.UpstreamTLS = &daemon.TLSConfig{CAFile: ca}
-		}
-		return l, nil
+// listenerValues are the listeners the config runs: the person's one, or one
+// per demo.
+func (d *draft) listenerValues() ([]daemon.ListenerConfig, error) {
+	if !d.isDemo() {
+		l, err := d.listener.value()
+		return []daemon.ListenerConfig{l}, err
 	}
-	return d.listener.value()
+	// The demo database is on RDS, whose certificates chain to Amazon's
+	// own roots and to nothing in a host trust store. The relay verifies
+	// it against the bundle the CLI ships and writes there before boot
+	// (sidecardemo.EnsureCA), never by skipping verification.
+	ca, err := sidecardemo.CAPath()
+	if err != nil {
+		return nil, err
+	}
+	return []daemon.ListenerConfig{
+		{Name: demoHTTPListener, Protocol: "http", Listen: d.demoHTTP.Listen, Upstream: d.demoHTTP.API},
+		{Name: demoPGListener, Protocol: "postgres", Listen: d.demoPG.Listen, Upstream: d.demoPG.API,
+			UpstreamTLS: &daemon.TLSConfig{CAFile: ca}},
+	}, nil
 }
 
 // config builds the daemon.Config and the comments Render writes around it.
 func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
-	l, err := d.listenerValue()
+	ls, err := d.listenerValues()
 	if err != nil {
 		return nil, configyaml.RenderOptions{}, err
 	}
 	cfg := &daemon.Config{License: d.license}
 	if d.an.on {
-		cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model}
-		if d.an.provider == "vertex" {
-			cfg.Analyzer.Extra = daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}
-		} else {
-			cfg.Analyzer.CredentialsFile = d.an.keyFile
+		switch d.an.provider {
+		case hostedProvider:
+			// Explicit, not the license default: an Enterprise license
+			// refuses the default, and the file then says where statements go.
+			on := true
+			cfg.Analyzer = &daemon.AnalyzerConfig{UseHoopLLMProvider: &on}
+		case "vertex":
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				Extra: daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}}
+		default:
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				CredentialsFile: d.an.keyFile}
 		}
-		l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: d.an.high, MediumRisk: d.an.medium, LowRisk: d.an.low}
-		if len(d.an.trigger) > 0 {
-			l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(d.an.trigger...)}
+		for i := range ls {
+			l := &ls[i]
+			trigger := d.an.trigger
+			if d.isDemo() {
+				trigger = demoTriggers[l.Protocol]
+			}
+			l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: d.an.high, MediumRisk: d.an.medium, LowRisk: d.an.low}
+			if len(trigger) > 0 {
+				l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(trigger...)}
+			}
 		}
 	}
 	// An http_header rule may only name a header the listener captures.
@@ -369,6 +459,7 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 	// one decision.
 	for _, r := range d.rules {
 		for _, h := range r.HeaderNames() {
+			l := &ls[0]
 			if l.HTTP == nil {
 				l.HTTP = &daemon.HTTPCodecConfig{}
 			}
@@ -377,7 +468,7 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 			}
 		}
 	}
-	cfg.Listeners = []daemon.ListenerConfig{l}
+	cfg.Listeners = ls
 	if len(d.rules) > 0 || d.guardMode != "" {
 		cfg.Guardrails = &daemon.GuardrailsConfig{Mode: d.guardMode, Rules: d.rules}
 	}
@@ -415,16 +506,21 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 		}
 		cfg.PII = b
 	}
-	return cfg, d.renderOptions(l), nil
+	return cfg, d.renderOptions(ls), nil
 }
 
-func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions {
+func (d *draft) renderOptions(ls []daemon.ListenerConfig) configyaml.RenderOptions {
+	l := ls[0]
+	backend := "the " + daemon.ProtocolLabel(l.Protocol) + " backend"
+	if d.isDemo() {
+		backend = "each demo backend"
+	}
 	file := d.file
 	o := configyaml.RenderOptions{
 		Header: []string{
 			"hoop sidecar config, written by the `hoop start sidecar` setup screen.",
 			"",
-			"The sidecar sits between a client and the " + daemon.ProtocolLabel(l.Protocol) + " backend. It reads every",
+			"The sidecar sits between a client and " + backend + ". It reads every",
 			"statement, applies the guardrails, masks sensitive values on the way back,",
 			"and records an audit trail.",
 			"",
@@ -441,46 +537,77 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		},
 	}
 	if d.isDemo() {
-		key := configyaml.DemoAPIKey
-		if d.demoKind == sidecardemo.KindPostgres {
-			key = configyaml.DemoPostgresKey
-			o.Header = append(o.Header, "", "This is the demo: the sidecar fronts hoop's public demo database at "+d.demoPorts.API+",",
-				"a read-only copy of the dellstore sample shop. The "+key+" key below turns",
-				"the guided tour on, and the CLI keeps the Amazon RDS CA that verifies the",
-				"database where upstream_tls.ca_file points. Try:", "")
-		} else {
-			o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves an invented API at "+d.demoPorts.API,
-				"while the sidecar runs, because of the "+key+" key below. Try:", "")
-		}
-		for _, c := range sidecardemo.TryCommands(d.demoKind, d.demoPorts) {
+		o.Header = append(o.Header, "",
+			"This is the demo, every one at once. Listener "+demoHTTPListener+" fronts an invented API the",
+			"hoop CLI serves at "+d.demoHTTP.API+" while the sidecar runs, because of the "+configyaml.DemoAPIKey+" key.",
+			"Listener "+demoPGListener+" fronts hoop's public demo database at "+d.demoPG.API+", a read-only",
+			"copy of the dellstore sample shop; the "+configyaml.DemoPostgresKey+" key turns its tour on, and the",
+			"CLI keeps the Amazon RDS CA that verifies it where upstream_tls.ca_file points.",
+			"The guardrail and the mask rule below apply to both. Try:", "")
+		for _, c := range sidecardemo.TryCommands(sidecardemo.KindHTTP, d.demoHTTP, d.an.on) {
 			o.Header = append(o.Header, "  "+c)
 		}
-		o.Extensions = []configyaml.Extension{{Key: key, Value: d.demoPorts.API}}
+		for _, c := range sidecardemo.TryCommands(sidecardemo.KindPostgres, d.demoPG, d.an.on) {
+			o.Header = append(o.Header, "  "+c)
+		}
+		o.Extensions = []configyaml.Extension{
+			{Key: configyaml.DemoAPIKey, Value: d.demoHTTP.API},
+			{Key: configyaml.DemoPostgresKey, Value: d.demoPG.API},
+		}
 	}
 	// An mcp lane refuses an analyzer, so the hint would lead to an invalid config.
 	if !d.an.on && d.protocol != "mcp" {
-		o.Footer = analyzerHint(d.an, l.Name)
+		var lanes []laneHint
+		for _, l := range ls {
+			trigger := d.an.trigger
+			if d.isDemo() {
+				trigger = demoTriggers[l.Protocol]
+			}
+			lanes = append(lanes, laneHint{l.Name, trigger})
+		}
+		o.Footer = analyzerHint(d.an, lanes)
 	}
 	return o
 }
 
+// laneHint is one listener's analyzer block in analyzerHint.
+type laneHint struct {
+	name    string
+	trigger []string
+}
+
 // analyzerHint is the analyzer, commented out, for a config written with it
 // off: one uncomment away once its key exists.
-func analyzerHint(a analyzerDraft, listener string) []string {
+func analyzerHint(a analyzerDraft, lanes []laneHint) []string {
 	out := []string{"AI analyzer, off. A model rates each statement's risk and catches what no",
 		"rule can express, like a DELETE with no WHERE clause. To turn it on:", ""}
 	if env, ok := keyEnv[a.provider]; ok {
 		out = append(out, fmt.Sprintf("  mkdir -p %s && (umask 077; printf %%s \"$%s\" > %s)", a.keyDir, env, a.keyFile), "")
 	}
-	out = append(out, "then add this block, and the lane block to listener "+listener+":", "",
-		"analyzer:", "  provider: "+a.provider, "  model: "+a.model)
-	if a.provider == "vertex" {
-		out = append(out, "  extra: {project: my-gcp-project, region: global}")
-	} else {
+	names := make([]string, len(lanes))
+	for i, l := range lanes {
+		names[i] = l.name
+	}
+	out = append(out, "then add this block, and the lane block to listener "+strings.Join(names, " and ")+":", "", "analyzer:")
+	switch a.provider {
+	case hostedProvider:
+		out = append(out, "  use_hoop_llm_provider: true  # "+hostedPIINote)
+	case "vertex":
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model,
+			"  extra: {project: my-gcp-project, region: global}")
+	default:
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model)
 		out = append(out, "  credentials_file: "+a.keyFile)
 	}
-	out = append(out, "", "    analyzer:", "      trigger: {operations: ["+strings.Join(a.trigger, ", ")+"]}",
-		"      high: "+a.high, "      medium: "+a.medium, "      low: "+a.low)
+	for _, l := range lanes {
+		if len(lanes) > 1 {
+			out = append(out, "", "    # "+l.name)
+		} else {
+			out = append(out, "")
+		}
+		out = append(out, "    analyzer:", "      trigger: {operations: ["+strings.Join(l.trigger, ", ")+"]}",
+			"      high: "+a.high, "      medium: "+a.medium, "      low: "+a.low)
+	}
 	return out
 }
 
@@ -518,10 +645,14 @@ func (d *draft) analyzerSummary() string {
 		if d.protocol == "mcp" {
 			return "off · an mcp listener does not take one yet"
 		}
-		if d.an.provider != "vertex" && keyFileStatus(d.an.keyFile) != nil {
+		if needsKey(d.an.provider) && keyFileStatus(d.an.keyFile) != nil {
 			return "off · needs a key file for " + d.an.provider
 		}
 		return "off"
+	}
+	if d.an.provider == hostedProvider {
+		return fmt.Sprintf("Hoop-hosted %s · sent to Hoop · high→%s, medium→%s, low→%s",
+			analyzer.HostedModel, d.an.high, d.an.medium, d.an.low)
 	}
 	return fmt.Sprintf("%s %s · high→%s, medium→%s, low→%s", d.an.provider, d.an.model, d.an.high, d.an.medium, d.an.low)
 }
@@ -864,22 +995,28 @@ var riskActionLabel = map[string]string{
 }
 
 func analyzerForm(a analyzerDraft, protocol string) *form {
-	providers := analyzer.RegisteredProviders()
-	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider}
+	providers := analyzerProviders()
+	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, optLabel: providerLabel, text: a.provider}
 	if !slices.Contains(providers, prov.text) && len(providers) > 0 {
 		prov.text = providers[0]
 	}
 	// Every field shows while the analyzer is off too: what turning it on
 	// takes (a key file, a model) is the thing the person is deciding on.
-	hideForVertex := func() bool { return prov.text == "vertex" }
+	hideForVertex := func() bool { return !needsKey(prov.text) }
 	hideUnlessVertex := func() bool { return prov.text != "vertex" }
+	hideForHosted := func() bool { return prov.text == hostedProvider }
+	hideUnlessHosted := func() bool { return prov.text != hostedProvider }
 	key := &field{id: "key", label: "Key file", kind: fText, text: a.keyFile, hidden: hideForVertex,
 		help: "Read as written: no ~. Must be mode 0600 or stricter."}
 	fields := []*field{
 		{id: "on", label: "Enabled", kind: fBool, on: a.on,
 			help: "Off writes the analyzer into the file commented out, one uncomment away."},
 		prov,
-		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
+		{id: "hostednote", kind: fNote, hidden: hideUnlessHosted, note: func() string {
+			return stPrimary.Render("✓ no key needed · runs "+analyzer.HostedModel+", hosted by Hoop") +
+				"\n" + stFaint.Render("  "+hostedPIINote)
+		}},
+		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text], hidden: hideForHosted,
 			help: "Any model the provider serves to your account."},
 		key,
 		{id: "keynote", kind: fNote, hidden: hideForVertex, note: func() string {
@@ -897,7 +1034,12 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 			help: "Vertex uses Google Application Default Credentials."},
 		{id: "region", label: "Region", kind: fText, text: a.region, placeholder: "global", hidden: hideUnlessVertex},
 		{id: "trigger", label: "Look at", kind: fMulti, multi: a.trigger, options: opsFor(protocol), placeholder: "every statement",
-			help: "Which operations are sent to the model. Empty sends everything."},
+			hidden: func() bool { return protocol == demoProtocol },
+			help:   "Which operations are sent to the model. Empty sends everything."},
+		{id: "demotrigger", kind: fNote, hidden: func() bool { return protocol != demoProtocol }, note: func() string {
+			return stFaint.Render("Each demo listener sends its writes: " + demoHTTPListener + " " +
+				strings.Join(demoTriggers["http"], ", ") + "; " + demoPGListener + " " + strings.Join(demoTriggers["postgres"], ", ") + ".")
+		}},
 		{id: "high", label: "High risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.high},
 		{id: "medium", label: "Medium risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.medium},
 		{id: "low", label: "Low risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.low},
@@ -916,13 +1058,18 @@ func analyzerFromForm(f *form, a analyzerDraft) (analyzerDraft, error) {
 		a.model = starterModels[a.provider]
 	}
 	a.keyFile = strings.TrimSpace(g("key").text)
-	if a.provider != prev && a.keyFile == filepath.Join(a.keyDir, prev+".key") {
+	// A suggested path follows the provider; a path the person typed stays.
+	if a.provider != prev && needsKey(a.provider) && filepath.Dir(a.keyFile) == a.keyDir &&
+		strings.HasSuffix(a.keyFile, ".key") && starterModels[strings.TrimSuffix(filepath.Base(a.keyFile), ".key")] != "" {
 		a.keyFile = filepath.Join(a.keyDir, a.provider+".key")
 	}
 	a.project, a.region = strings.TrimSpace(g("project").text), strings.TrimSpace(g("region").text)
 	a.trigger = g("trigger").multi
 	a.high, a.medium, a.low = g("high").text, g("medium").text, g("low").text
 	if !a.on {
+		return a, nil
+	}
+	if a.provider == hostedProvider {
 		return a, nil
 	}
 	if a.model == "" {
