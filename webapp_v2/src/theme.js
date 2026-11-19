@@ -76,6 +76,8 @@ export function cssVariablesResolver(theme) {
       '--hoop-icon-radius': '0',
       // The corners of a tab (Tabs): the hover fill and the focus ring. Square.
       '--hoop-tab-radius': '0',
+      // The corners of a button and an icon button (Button, ActionIcon). Pill.
+      '--hoop-button-radius': '9999px',
       // The corners of a badge: a status, a tag or a chip (Badge, Pill). Pill.
       '--hoop-badge-radius': '9999px',
       // The corners of a callout: a note on the page (Alert, Callout). A soft

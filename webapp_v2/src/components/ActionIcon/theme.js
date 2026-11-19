@@ -6,15 +6,21 @@ import classes from './ActionIcon.module.css'
 // variables from src/theme.js, so icon buttons line up with adjacent
 // buttons and inputs. Sizes outside the scale (numeric, input-*) keep
 // Mantine presets.
+//
+// An icon button is round, like the pill Button: its corners come from
+// --hoop-button-radius. Theme vars run after Mantine's own, so a `radius`
+// prop on a call site does nothing.
 const SIZES = new Set(['xs', 'sm', 'md', 'lg'])
+const ROUND = { '--ai-radius': 'var(--hoop-button-radius)' }
 
 export const ActionIconTheme = ActionIcon.extend({
   classNames: { root: classes.root },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
-    if (!SIZES.has(props.size)) return { root: {} }
+    if (!SIZES.has(props.size)) return { root: ROUND }
     return {
       root: {
+        ...ROUND,
         '--ai-size': `var(--hoop-control-height-${props.size})`,
       },
     }

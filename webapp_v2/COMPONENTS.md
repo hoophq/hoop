@@ -28,7 +28,7 @@ Rules:
   Button, ActionIcon, or input-family components (`compact-*` on Button is allowed —
   it's a separate inline-button axis, not a height override).
 - **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
-  Button is a pill (`components/Button/theme.js`), except `variant="field"`.
+  Button is a pill (`components/Button/theme.js`), except `variant="field"`. ActionIcon is round. Both read `--hoop-button-radius`.
   Paper and Card are square: their corners come from
   `--hoop-card-radius` and a `radius` prop is ignored (`test/shape.test.js`).
   Their fill is white, from `--hoop-card-bg`; a `variant` sets its own.

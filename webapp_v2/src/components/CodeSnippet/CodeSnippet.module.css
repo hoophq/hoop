@@ -37,3 +37,8 @@
 .root[data-variant='black'] .copyBtn:not([data-copied]) {
   color: var(--mantine-color-gray-2);
 }
+
+/* On the gray ground, the copy button reads like secondary text. */
+.root[data-variant='gray'] .copyBtn:not([data-copied]) {
+  color: var(--mantine-color-dimmed);
+}
