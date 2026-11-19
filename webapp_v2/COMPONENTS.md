@@ -372,7 +372,7 @@ overrides it.
 Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. The managed protection-profile pill is `variant="managed"` (indigo), set in the same theme: its styles are inline, so a page class cannot override them.
 
 ### `Badge`
-Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
+Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise. Every badge is a pill (`--hoop-badge-radius`, set in `components/Badge/theme.js`); a `radius` prop does nothing.
 ```jsx
 import Badge from '@/components/Badge'
 

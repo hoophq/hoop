@@ -84,7 +84,6 @@ export default function Badge({
       color={resolvedColor}
       c={dot ? 'var(--mantine-color-text)' : semantic?.c}
       size={chip || dot ? 'chip' : size}
-      radius="sm"
       leftSection={leftSection}
       classNames={merged}
       {...(tag || dot ? TAG_PROPS : null)}

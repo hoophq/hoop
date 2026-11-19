@@ -85,8 +85,9 @@ Cards are square. Every surface (`Paper`, `Card`, `MethodCard`,
 `SelectionCard`, `EnterpriseBanner`, `CodeSnippet`, a panel or a viewer)
 takes its corners from `--hoop-card-radius` (0). `Paper`, `Alert` and `ThemeIcon` ignore
 a `radius` prop, so a page never passes one. Icon tiles (`ThemeIcon`) are
-square too, from `--hoop-icon-radius` (0). Small things keep their own:
-avatars, badges, pills, menu items, modals and toasts.
+square too, from `--hoop-icon-radius` (0). Badges are pills, from
+`--hoop-badge-radius`; a `radius` prop on a Badge does nothing. Small things
+keep their own: avatars, menu items, modals and toasts.
 
 `test/shape.test.js` fails on a page that sets a list or card shape by
 hand.

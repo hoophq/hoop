@@ -69,6 +69,8 @@ export function cssVariablesResolver(theme) {
       '--hoop-card-radius': '0',
       // The corners of an icon tile (ThemeIcon). Square (brand).
       '--hoop-icon-radius': '0',
+      // The corners of a badge: a status, a tag or a chip (Badge, Pill). Pill.
+      '--hoop-badge-radius': '9999px',
       // The corners of a callout: a note on the page (Alert, Callout). A soft
       // round corner, the same on one line or many.
       '--hoop-callout-radius': 'var(--mantine-radius-lg)',

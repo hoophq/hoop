@@ -1,4 +1,5 @@
 import { Badge, rem } from '@mantine/core'
+import classes from './Badge.module.css'
 
 /**
  * `size="chip"` is the content chip, as opposed to a status badge.
@@ -21,5 +22,7 @@ const CHIP = {
 }
 
 export const BadgeTheme = Badge.extend({
+  // Every badge is a pill, from --hoop-badge-radius (Badge.module.css).
+  classNames: { root: classes.root },
   vars: (_theme, props) => ({ root: props.size === 'chip' ? CHIP : {} }),
 })
