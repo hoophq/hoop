@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // A curl from another terminal ticks its step from the audit trail, so the
@@ -29,13 +30,31 @@ func TestTourTicksStepsFromTheAuditTrail(t *testing.T) {
 	}
 	tr.see(audit.Event{Kind: "masked", SessionID: "s2"})
 	tr.see(audit.Event{Kind: "violation", Operation: "delete", SessionID: "s3"})
-	for i := 0; i < 3; i++ {
+	// The AI step is a GET too: only the analyzer's high verdict ticks it.
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "get", SessionID: "s4", Metadata: map[string]string{"risk_level": "low"}})
+	if tr.done[2] {
+		t.Fatal("a low-risk GET ticked Ask for approval")
+	}
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "get", SessionID: "s5", Metadata: map[string]string{"risk_level": "high"}})
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "post", SessionID: "s6"})
+	for i := 0; i < 4; i++ {
 		if !tr.done[i] {
 			t.Errorf("step %d (%s) not ticked", i+1, tr.steps[i].Title)
 		}
 	}
-	if tr.done[3] {
+	if tr.done[4] {
 		t.Error("the direct request was ticked: the sidecar never sees it")
+	}
+
+	// The approved export comes back masked, the way the lane records it:
+	// the GET, the server's answer, then the masked reply. That is the AI
+	// step, not See masking.
+	ex := newTour(&DemoOptions{})
+	ex.see(audit.Event{Kind: audit.KindStatement, Operation: "get", SessionID: "e1", Metadata: map[string]string{"risk_level": "high"}})
+	ex.see(audit.Event{Kind: audit.KindStatement, Operation: "unknown", SessionID: "e1", Direction: inspect.FromServer})
+	ex.see(audit.Event{Kind: "masked", SessionID: "e1", Direction: inspect.FromServer})
+	if !ex.done[2] || ex.done[0] {
+		t.Errorf("after the approved export: done = %v, want Ask for approval only", ex.done)
 	}
 }
 
@@ -44,7 +63,7 @@ func TestTourShowsTheAnswerAndWhatTheSidecarDid(t *testing.T) {
 	tr.apply(tourResult{step: 0, status: 200, dur: 3 * time.Millisecond,
 		body: "[\n  {\"email\": \"[REDACTED:EMAIL_ADDRESS]\"}\n]"})
 	out := ansi.Strip(tr.view(90, 40, time.Now()))
-	for _, want := range []string{"200 OK", tr.steps[0].Why, "[REDACTED:EMAIL_ADDRESS]", "1 of 4 done", tr.steps[0].Curl(sidecardemo.DefaultPorts)} {
+	for _, want := range []string{"200 OK", tr.steps[0].Why, "[REDACTED:EMAIL_ADDRESS]", "1 of 5 done", tr.steps[0].Curl(sidecardemo.DefaultPorts)} {
 		if !strings.Contains(strings.Join(strings.Fields(out), " "), strings.Join(strings.Fields(want), " ")) {
 			t.Errorf("the view lacks %q:\n%s", want, out)
 		}

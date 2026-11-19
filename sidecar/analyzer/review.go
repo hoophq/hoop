@@ -654,6 +654,10 @@ func operatorMessage(operator string) string {
 	return operator
 }
 
+// RejectedReason starts the denial of a statement a person rejected, so a
+// client (the CLI demo's tour) can tell a rejection from an expiry.
+const RejectedReason = "the approval request was rejected"
+
 // reviewReason turns a review's status into the clause a developer reads.
 //
 // The distinction that matters to them is whether waiting will help. Pending
@@ -666,7 +670,7 @@ func (e *Evaluator) reviewReason(res ReviewResult) string {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
-		const rejected = "the approval request was rejected"
+		const rejected = RejectedReason
 		// The reason takes only the room the operator's message and the
 		// approval id leave, so it never pushes the id out of the error.
 		room := maxDenialBytes - len(holdMessage(e.cfg.Message, res.ID, rejected+": "))

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -342,6 +343,7 @@ needs a restart.`,
 			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
 		}
 		var reviewer *sidecartui.Reviewer
+		var demoLanes []string
 		if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
 			reviewer = sidecartui.NewReviewer()
 			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
@@ -349,7 +351,17 @@ needs a restart.`,
 		var cfg *daemon.Config
 		var det daemon.Plugin
 		setup := func() (err error) {
-			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
+			opts := slices.Clip(setupOpts)
+			// The demo's AI step holds a statement for the person at this
+			// terminal, also when the free plan runs logged in. Read on
+			// every setup: the logged-in first run names the file late.
+			demoLanes = nil
+			if reviewer != nil {
+				if demoLanes = sidecarDemoListeners(sidecarConfigFlag); len(demoLanes) > 0 {
+					opts = append(opts, daemon.WithLocalReviewerFirst(demoLanes...))
+				}
+			}
+			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, opts...)
 			return err
 		}
 		err = setup()
@@ -428,7 +440,8 @@ needs a restart.`,
 			defer running.stop()
 			notes = running.notes
 			if running.ports != nil {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports, Kind: running.kind}
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports, Kind: running.kind,
+					Listeners: demoLanes}
 			}
 		}
 
@@ -447,7 +460,12 @@ needs a restart.`,
 			Notes:        notes,
 			Demo:         demo,
 			ControlPlane: plane,
-			OpenURL:      openBrowser,
+			// A demo files its holds here while its lanes come from the
+			// file (daemon filesLocally); PlaneOwnsConfig is who owns them
+			// at boot, and the ownership logs move it.
+			LocalApprovals:  demo != nil && len(demoLanes) > 0,
+			PlaneOwnsConfig: !cfg.LanesFromFile(),
+			OpenURL:         openBrowser,
 		}, func() error { return errors.Join(daemon.Run(cfg, det), running.err()) })
 	},
 }
@@ -554,6 +572,50 @@ func prepareSidecarDemo(path string) error {
 	}
 	_, err = sidecardemo.EnsureCA()
 	return err
+}
+
+// sidecarDemoListeners names the listeners of a demo config that forward to
+// the demo's own upstream: hoop's demo database, or the loopback API the CLI
+// serves. The terminal approves their holds (daemon.WithLocalReviewerFirst),
+// also logged in. Any other config names none, and so does a demo config
+// with a listener that forwards elsewhere or has no name: its approvals
+// stay where the rest of the config's go.
+func sidecarDemoListeners(path string) []string {
+	if path == "" || !configyaml.IsYAML(path) {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
+	switch {
+	case err != nil:
+		return nil
+	case ok:
+		if _, err := loopbackBind(addr); err != nil {
+			return nil
+		}
+	default:
+		// The key may name another database; only hoop's public demo
+		// database, whose rows are invented, is approved at the terminal.
+		addr, ok, err = configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
+		if err != nil || !ok || addr != sidecardemo.PGAddr {
+			return nil
+		}
+	}
+	cfg, err := configyaml.Load(path)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	var out []string
+	for _, l := range cfg.Listeners {
+		if l.Upstream != addr || l.Name == "" {
+			return nil
+		}
+		out = append(out, l.Name)
+	}
+	return out
 }
 
 // sidecarDemo is the demo a config names, and the upstream the CLI runs for
