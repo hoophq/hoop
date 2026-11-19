@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
@@ -113,16 +114,27 @@ func TestAResourceReadIsMasked(t *testing.T) {
 	if got := ln.session(0).maskedRecords(); !slices.Equal(got, []string{"EMAIL_ADDRESS,PERSON,US_SSN:3"}) {
 		t.Fatalf("masked records %v, want one with 3 values", got)
 	}
+	if calls, acts, _ := ln.session(0).snapshot(); len(calls) != 0 || strings.Contains(strings.Join(acts, "\n"), "tools/list") {
+		t.Fatalf("resources/read left statements: calls=%v acts=%v", calls, acts)
+	}
 }
 
 // The blob of a resource passes unmasked.
 func TestAResourceBlobIsNotMasked(t *testing.T) {
-	ln := &testLane{mask: stubMask}
+	var masked atomic.Int32
+	ln := &testLane{mask: func(string) (string, []string, int, error) {
+		masked.Add(1)
+		return "<MASKED>", []string{"ANY"}, 1, nil
+	}}
 	c := startMaskLane(t, ln, true)
+	before := masked.Load()
 	_, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":%q}}`, testupstream.CustomerScanURI))
 	r := decodeReply(t, body)
 	if r.Error != nil || len(r.Result.Contents) != 1 || string(r.Result.Contents[0].Blob) != testupstream.CustomerText {
 		t.Fatalf("resources/read of a blob: %s", body)
+	}
+	if n := masked.Load() - before; n != 0 {
+		t.Fatalf("the masker got %d strings of a blob result, want none", n)
 	}
 	if got := ln.session(0).maskedRecords(); len(got) != 0 {
 		t.Fatalf("masked records %v, want none", got)

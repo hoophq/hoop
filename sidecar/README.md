@@ -4321,17 +4321,28 @@ pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 #### Feature coverage
 
 Which part of MCP each feature reads. A part marked no passes through
-unread. Tool descriptions are the `tools/list` result, after `overrides`.
+unread.
 
-| Feature | Call arguments | Tool descriptions | `content[].text` | `structuredContent` | Resources | Prompts |
+| Feature | Arguments | Descriptions | `content[].text` | `structuredContent` | Resources | Prompts |
 |---|---|---|---|---|---|---|
-| Guardrails | judged | judged; a hit ends the session | no | no | no | no |
-| OPA | judged | judged, unless `responses: false`; a deny ends the session | no | no | no | no |
-| Masking | no | no | masked | masked | `resources/read` text masked, `blob` not | no |
-| SQL rules | the SQL in an `mcp_gateway.sql` argument | no | no | no | no | no |
+| Guardrails | judged | judged | no | no | no | no |
+| OPA | judged | judged | no | no | no | no |
+| Masking | no | no | masked | masked | masked | no |
+| SQL rules | judged | no | no | no | no | no |
 | Analyzer | rated | no | no | no | no | no |
 | Approvals | held | no | no | no | no | no |
-| Audit | one statement per call | one statement per list | the masked count, not the text | the masked count, not the text | the masked count; no statement | no |
+| Audit | recorded | recorded | counted | counted | counted | no |
+
+- Arguments are the arguments of a `tools/call`. SQL rules read the SQL in
+  an `mcp_gateway.sql` argument.
+- Descriptions are the `tools/list` result, after `overrides`. A guardrail
+  hit or an OPA deny there ends the session. `opa: {responses: false}`
+  keeps them from OPA.
+- Resources are `resources/read` results: the text is masked, a `blob` is
+  not.
+- Recorded: one statement per call and one per list. Counted: a `masked`
+  row with the count of masked values, never the text. A `resources/read`
+  leaves no statement.
 
 The tests that pin each cell:
 
