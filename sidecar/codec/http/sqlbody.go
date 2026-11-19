@@ -70,6 +70,14 @@ type SQLOptions struct {
 	// matches them.
 	Fields map[string]string
 
+	// Params maps a resource pattern to the URL parameter holding the SQL
+	// of a request to it. A body is read as the rest of the SQL, after a
+	// line feed, as ClickHouse joins them. See sqltext.go.
+	Params map[string]string
+
+	// Text lists resource patterns whose plain-text body is the SQL.
+	Text []string
+
 	// Tools, Refuse and RefuseMessage configure the JSON reading; see
 	// jsonsql.Options.
 	Tools         []string
@@ -85,26 +93,69 @@ type SQLOptions struct {
 // RefuseValue is one Refuse entry; see jsonsql.RefuseValue.
 type RefuseValue = jsonsql.RefuseValue
 
+// readsText reports whether any route reads a URL parameter or a text body.
+func (o *SQLOptions) readsText() bool {
+	return o != nil && (len(o.Params) > 0 || len(o.Text) > 0)
+}
+
+// sqlSource is where a route's SQL is: a JSON path in the body (fields), a
+// URL parameter followed by the body (params), or the body alone (text).
+type sqlSource struct {
+	field string
+	param string
+	text  bool
+}
+
+// String is what MetadataSQLField records.
+func (s sqlSource) String() string {
+	switch {
+	case s.field != "":
+		return s.field
+	case s.param != "":
+		return "?" + s.param
+	}
+	return "body"
+}
+
 // sqlReader is the per-codec form of SQLOptions: the patterns in a fixed
-// order, so the field a request resolves to does not depend on map order.
+// order, so the source a request resolves to does not depend on map order.
 type sqlReader struct {
 	opts     SQLOptions
 	patterns []string
-	json     *jsonsql.Reader
+	sources  map[string]sqlSource
+	// twice holds patterns given two different sources. daemon refuses
+	// such a config; a request to one is refused rather than guessed.
+	twice map[string]bool
+	json  *jsonsql.Reader
 }
 
 func newSQLReader(o *SQLOptions) *sqlReader {
 	if o == nil {
 		return nil
 	}
-	r := &sqlReader{opts: *o, json: jsonsql.New(jsonsql.Options{
-		Dialect:       o.Dialect,
-		Tools:         o.Tools,
-		Refuse:        o.Refuse,
-		RefuseMessage: o.RefuseMessage,
-	})}
-	for p := range o.Fields {
+	r := &sqlReader{opts: *o, sources: map[string]sqlSource{}, twice: map[string]bool{},
+		json: jsonsql.New(jsonsql.Options{
+			Dialect:       o.Dialect,
+			Tools:         o.Tools,
+			Refuse:        o.Refuse,
+			RefuseMessage: o.RefuseMessage,
+		})}
+	add := func(p string, s sqlSource) {
+		if prev, ok := r.sources[p]; ok {
+			r.twice[p] = r.twice[p] || prev != s
+			return
+		}
+		r.sources[p] = s
 		r.patterns = append(r.patterns, p)
+	}
+	for p, f := range o.Fields {
+		add(p, sqlSource{field: f})
+	}
+	for p, name := range o.Params {
+		add(p, sqlSource{param: name, text: true})
+	}
+	for _, p := range o.Text {
+		add(p, sqlSource{text: true})
 	}
 	// The longest pattern first, so a specific route wins over a "/**"
 	// that also covers it; then lexically, for a stable order. fieldFor
@@ -118,8 +169,8 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 	return r
 }
 
-// route returns the JSON path of the SQL in a request to one of the lane's
-// routes. Databricks reads a backslash as a slash and resolves `.` and `..`
+// route returns where the SQL of a request to one of the lane's routes is.
+// Databricks reads a backslash as a slash and resolves `.` and `..`
 // segments and doubled or trailing slashes before it routes, so
 // `/api/2.0/./sql/statements` and `/api/2.0\sql\statements` run a statement
 // like the canonical path and must be read like it, or an operation rule
@@ -129,25 +180,27 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 func (r *sqlReader) route(d *inspect.HTTPDetail) (sqlRoute, bool) {
 	rt := sqlRoute{resource: path.Clean(d.Resource)}
 	var ok bool
-	rt.field, rt.conflict, ok = r.fieldFor(rt.resource)
+	rt.source, rt.conflict, rt.conflictURL, ok = r.sourceFor(rt.resource)
 	return rt, ok
 }
 
 // sqlRoute is where a request's SQL is read: the cleaned resource it went
-// to, and the JSON path of the SQL in its body. conflict is set when a
-// pattern as long as the one that matched also matches and names another
-// path. method is the request's operation, for MetadataSQLMethod.
+// to, and the source of the SQL. conflict is set when a pattern as long as
+// the one that matched also matches and names another source; conflictURL
+// when either of them reads a URL parameter. method is the request's
+// operation, for MetadataSQLMethod.
 type sqlRoute struct {
-	resource string
-	field    string
-	conflict string
-	method   inspect.Operation
+	resource    string
+	source      sqlSource
+	conflict    string
+	conflictURL bool
+	method      inspect.Operation
 }
 
 // extract returns the SQL statements a request to rt carries, to be placed
 // after it. A refusal comes back as an error and no statements.
 func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.Statement, error) {
-	if d.Body == "" && !d.BodyTruncated {
+	if d.Body == "" && !d.BodyTruncated && rt.source.param == "" && !rt.conflictURL {
 		// Nothing to run: an MCP client opens its event stream with a GET
 		// on the same route, and the server answers it without SQL.
 		return nil, nil
@@ -156,6 +209,9 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 		return nil, fmt.Errorf("this listener cannot tell where this request's SQL is: %s: %w",
 			rt.conflict, inspect.ErrStreamUnsafe)
 	}
+	if rt.source.field == "" {
+		return r.readText(d, rt)
+	}
 	var (
 		found []jsonsql.SQL
 		err   error
@@ -163,7 +219,7 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 	if d.BodyTruncated {
 		found, err = r.json.Unparseable(d.Body, "the body is larger than http.max_body_bytes; raise it")
 	} else {
-		found, err = r.json.Read(d.Body, rt.field)
+		found, err = r.json.Read(d.Body, rt.source.field)
 	}
 	if err != nil {
 		return nil, err
@@ -175,29 +231,33 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 	return out, nil
 }
 
-// fieldFor returns the JSON path of the SQL in a request to resource: the
-// longest matching pattern's. Between two of the same length the tie-break
+// sourceFor returns where the SQL of a request to resource is: the longest
+// matching pattern's source. Between two of the same length the tie-break
 // is their spelling, which says nothing about where the SQL is, so when
-// both match and name different paths, conflict names them: reading one
+// both match and name different sources, conflict names them: reading one
 // would let SQL at the other pass unread.
-func (r *sqlReader) fieldFor(resource string) (field, conflict string, ok bool) {
+func (r *sqlReader) sourceFor(resource string) (src sqlSource, conflict string, conflictURL, ok bool) {
 	for i, p := range r.patterns {
 		if !r.opts.MatchResource(p, resource) {
 			continue
 		}
-		field = r.opts.Fields[p]
+		src = r.sources[p]
+		if r.twice[p] {
+			return src, fmt.Sprintf("http.sql names %q in more than one of fields, params and text", p), true, true
+		}
 		for _, q := range r.patterns[i+1:] {
 			if len(q) != len(p) {
 				break
 			}
-			if r.opts.Fields[q] != field && r.opts.MatchResource(q, resource) {
-				conflict = fmt.Sprintf("http.sql.fields %q and %q both match it and name different paths", p, q)
+			if other := r.sources[q]; other != src && r.opts.MatchResource(q, resource) {
+				conflict = fmt.Sprintf("http.sql patterns %q and %q both match it and name different sources", p, q)
+				conflictURL = src.param != "" || other.param != ""
 				break
 			}
 		}
-		return field, conflict, true
+		return src, conflict, conflictURL, true
 	}
-	return "", "", false
+	return sqlSource{}, "", false, false
 }
 
 // statement is one SQL string as a statement of this lane. It carries fresh
@@ -217,7 +277,7 @@ func (r *sqlReader) statement(s jsonsql.SQL, rt sqlRoute, index int) inspect.Sta
 		Operation: inspect.OpUnknown,
 		Metadata: map[string]string{
 			MetadataSQLIndex:    strconv.Itoa(index),
-			MetadataSQLField:    rt.field,
+			MetadataSQLField:    rt.source.String(),
 			MetadataSQLDialect:  r.opts.DialectName,
 			MetadataSQLResource: rt.resource,
 			MetadataSQLMethod:   string(rt.method),

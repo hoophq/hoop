@@ -54,7 +54,7 @@ func TestHTTPSQLConfigValidation(t *testing.T) {
 	}{
 		{"no dialect", func(s *HTTPSQLConfig) { s.Dialect = "" }, "http", "http.sql.dialect"},
 		{"unknown dialect", func(s *HTTPSQLConfig) { s.Dialect = "hive" }, "http", `http.sql.dialect "hive"`},
-		{"no fields", func(s *HTTPSQLConfig) { s.Fields = nil }, "http", "http.sql.fields is empty"},
+		{"no fields", func(s *HTTPSQLConfig) { s.Fields = nil }, "http", "http.sql.fields, http.sql.params and http.sql.text are empty"},
 		{"pattern without a slash", func(s *HTTPSQLConfig) { s.Fields = map[string]string{"api/x": "statement"} }, "http", `key "api/x"`},
 		{"deep wildcard not at the end", func(s *HTTPSQLConfig) { s.Fields = map[string]string{"/api/**/": "statement"} }, "http", `key "/api/**/" matches no request`},
 		{"empty path segment", func(s *HTTPSQLConfig) {

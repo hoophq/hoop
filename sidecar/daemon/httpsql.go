@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -11,11 +13,12 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-// HTTPSQLConfig makes an http lane read the SQL a JSON API carries in its
-// request body, so operation and table rules judge the SQL instead of the
+// HTTPSQLConfig makes an http lane read the SQL an API carries in its
+// request, so operation and table rules judge the SQL instead of the
 // request line. Databricks is the case it was written for (ENG-817): the
 // Statement Execution API carries its SQL in `statement`, and the workspace
-// SQL MCP server in the arguments of a tools/call.
+// SQL MCP server in the arguments of a tools/call. ClickHouse's HTTP
+// interface carries it in the query parameter and the body (ENG-1036).
 //
 // It is flat on purpose. The control plane renders the listener form from
 // daemon/schema.json, which has a string map and a string list but no list
@@ -30,6 +33,14 @@ type HTTPSQLConfig struct {
 	// that resource. When two patterns match a request, the longer wins;
 	// two of the same length that name different paths refuse it.
 	Fields map[string]string `json:"fields,omitempty" label:"Fields" placeholder:"/api/2.0/sql/statements" help:"A resource pattern, as an http_resource rule writes it, and the JSON path of the SQL in a request to it, such as statement or params.arguments.query."`
+
+	// Params maps a resource pattern to the URL parameter holding the SQL.
+	// A body is read as the rest of the SQL, after a line feed: that is
+	// how ClickHouse joins its query parameter and its POST body.
+	Params map[string]string `json:"params,omitempty" cap:"http_sql_text" label:"URL parameters" placeholder:"/" help:"A resource pattern and the URL parameter holding the SQL of a request to it, such as query for ClickHouse. A request body is read as the rest of the SQL."`
+
+	// Text lists resource patterns whose plain-text body is the SQL.
+	Text []string `json:"text,omitempty" cap:"http_sql_text" label:"Plain-text bodies" placeholder:"/v1/statement" help:"Resource patterns whose request body is the SQL as plain text."`
 
 	// Tools names the JSON-RPC tools whose tools/call carries SQL, for an
 	// MCP server. A path under params.arguments is read only from a call to
@@ -56,7 +67,9 @@ var httpSQLDialects = map[string]lexer.Dialect{
 	"oracle":     lexer.Oracle,
 }
 
-func (s *HTTPSQLConfig) validate(lane string) []string {
+// validate checks the block. sensitive is the lane's
+// sensitive_query_params: a parameter the codec redacts cannot carry SQL.
+func (s *HTTPSQLConfig) validate(lane string, sensitive []string) []string {
 	if s == nil {
 		return nil
 	}
@@ -64,26 +77,32 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 	if p := sqlDialectProblem("http.sql.dialect", s.Dialect); p != "" {
 		problems = append(problems, fmt.Sprintf("listener %q: %s", lane, p))
 	}
-	if len(s.Fields) == 0 {
+	if len(s.Fields) == 0 && len(s.Params) == 0 && len(s.Text) == 0 {
 		problems = append(problems, fmt.Sprintf(
-			"listener %q: http.sql.fields is empty; name a resource and the JSON path of the SQL in a request to it",
+			"listener %q: http.sql.fields, http.sql.params and http.sql.text are empty; name a resource and where the SQL of a request to it is",
 			lane))
 	}
-	patterns := make([]string, 0, len(s.Fields))
-	for p := range s.Fields {
-		patterns = append(patterns, p)
-	}
-	sort.Strings(patterns)
-	for _, p := range patterns {
+	// A pattern in two of them would leave the source of its SQL to the
+	// tie-break; the codec refuses such a request, so refuse the config.
+	owner := map[string]string{}
+	pattern := func(key, p string) {
 		if !strings.HasPrefix(p, "/") {
 			problems = append(problems, fmt.Sprintf(
-				"listener %q: http.sql.fields key %q is not a resource pattern; it starts with /", lane, p))
+				"listener %q: http.sql.%s key %q is not a resource pattern; it starts with /", lane, key, p))
 		} else if err := policy.ValidResourcePattern(p); err != nil {
 			// It would match no request, and its SQL would reach the
 			// upstream unread.
 			problems = append(problems, fmt.Sprintf(
-				"listener %q: http.sql.fields key %q matches no request as written: %v", lane, p, err))
+				"listener %q: http.sql.%s key %q matches no request as written: %v", lane, key, p, err))
 		}
+		if prev, ok := owner[p]; ok && prev != key {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: %q is in both http.sql.%s and http.sql.%s; a route has one source for its SQL", lane, p, prev, key))
+		}
+		owner[p] = key
+	}
+	for _, p := range slices.Sorted(maps.Keys(s.Fields)) {
+		pattern("fields", p)
 		if !jsonsql.ValidPath(s.Fields[p]) {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.fields[%q] = %q is not a dotted JSON path such as statement or params.arguments.query",
@@ -96,6 +115,20 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 				"listener %q: http.sql.fields[%q] = %q is a tools/call argument and http.sql.tools is empty; name the tools whose calls run SQL",
 				lane, p, s.Fields[p]))
 		}
+	}
+	for _, p := range slices.Sorted(maps.Keys(s.Params)) {
+		pattern("params", p)
+		name := s.Params[p]
+		if name == "" || name != strings.TrimSpace(name) || strings.ContainsAny(name, "&=?# ") {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: http.sql.params[%q] = %q is not a URL parameter name such as query", lane, p, name))
+		} else if codechttp.Redacts(name, sensitive) {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: http.sql.params[%q] = %q is a parameter this listener redacts, so its SQL cannot be read", lane, p, name))
+		}
+	}
+	for _, p := range s.Text {
+		pattern("text", p)
 	}
 	for _, t := range s.Tools {
 		if strings.TrimSpace(t) == "" {
@@ -113,6 +146,11 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 	if len(s.Refuse) > 0 && strings.TrimSpace(s.RefuseMessage) == "" {
 		problems = append(problems, fmt.Sprintf(
 			"listener %q: http.sql.refuse_message is empty; tell a refused client what to ask for instead", lane))
+	}
+	// tools and refuse read JSON bodies, which only fields routes parse.
+	if len(s.Fields) == 0 && (len(s.Tools) > 0 || len(s.Refuse) > 0) {
+		problems = append(problems, fmt.Sprintf(
+			"listener %q: http.sql.tools and http.sql.refuse read JSON bodies and need http.sql.fields; they would apply to no request", lane))
 	}
 	return problems
 }
@@ -148,6 +186,8 @@ func (s *HTTPSQLConfig) codecOptions() *codechttp.SQLOptions {
 		Dialect:       httpSQLDialects[s.Dialect],
 		DialectName:   s.Dialect,
 		Fields:        s.Fields,
+		Params:        s.Params,
+		Text:          s.Text,
 		Tools:         s.Tools,
 		RefuseMessage: s.RefuseMessage,
 		MatchResource: policy.MatchResource,

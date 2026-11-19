@@ -108,8 +108,8 @@ mysql`), its PostgreSQL emulation on `:9005` (`protocol: postgres`), and its
 HTTP interface on `:8446` (TLS, the same OPA fat gate, `protocol: http`).
 All four inherit the process's guardrail and mask rule. The three database
 lanes enforce both; the HTTP lane masks the result set, re-chunking what
-ClickHouse streams, and enforces nothing on the SQL, because guardrails
-read the request line and ClickHouse puts the SQL in the body. The overlay
+ClickHouse streams, and judges the SQL it reads from ClickHouse's `query`
+parameter and body (`http.sql`). The overlay
 also documents a `mysql` codec gap the MySQL 8 CLI exposes against any
 server without `CLIENT_QUERY_ATTRIBUTES`.
 

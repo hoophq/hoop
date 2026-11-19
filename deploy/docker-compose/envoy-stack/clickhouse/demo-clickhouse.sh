@@ -12,7 +12,7 @@
 #   docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml up -d --wait
 #
 # Every lane inherits the process's one guardrail rule and one mask rule.
-# The HTTP lane enforces nothing on the SQL and masks the result set.
+# The HTTP lane reads the SQL in ClickHouse's query parameter and body.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -78,13 +78,25 @@ note "bob has no grant on \"clickhouse\" (../opa/authz.rego keys the service"
 note "on Envoy's listener port, 8446). hoop-inspect never saw the request."
 $CURL -H 'X-Hoop-User: bob' -w ' [%{http_code}]\n' --data-binary 'SELECT 1' 2>&1 | sed 's/^/  /'
 
-h "HTTP :8446 / tier 2 -- audited SQL, masked result"
-note "alice is granted. The SQL rides in the POST body; capture_body puts it"
-note "in the audit record below. It does NOT put it in front of the guardrail:"
-note "guardrails scan the request line. The result set IS masked: ClickHouse"
-note "chunks every response and the codec re-chunks what it rewrote, one"
-note "JSONEachRow row at a time, each value under its column name."
+h "HTTP :8446 / tier 2 -- SQL judged, result masked"
+note "alice is granted. The SQL rides in the POST body; http.sql reads it into"
+note "a statement of its own, so the guardrail and the trail see the SQL. The"
+note "result set is masked: ClickHouse chunks every response and the codec"
+note "re-chunks what it rewrote, one JSONEachRow row at a time, each value"
+note "under its column name."
 $CURL -H 'X-Hoop-User: alice' --data-binary 'SELECT id, name, email FROM appdb.customers FORMAT JSONEachRow' 2>&1 | sed 's/^/  /'
+note ""
+note "The rule that refused the pgwire DELETE reads that SQL too. A SELECT"
+note "carrying the taxpayer id in the body is refused by the relay; without"
+note "http.sql the lane saw only POST / and returned the row:"
+$CURL -H 'X-Hoop-User: alice' -w ' [%{http_code}]\n' \
+    --data-binary "SELECT name FROM appdb.customers WHERE cpf = '111.444.777-35'" 2>&1 | sed 's/^/  /'
+note ""
+note "ClickHouse joins the query parameter and the body with a line feed, and"
+note "the relay reads them the same way. The id split across both is refused:"
+$COMPOSE exec -T client curl -sk 'https://envoy:8446/?query=SELECT%20name%20FROM%20appdb.customers%20WHERE' \
+    -H X-ClickHouse-User:appuser -H X-ClickHouse-Key:apppass -H 'X-Hoop-User: alice' \
+    -w ' [%{http_code}]\n' --data-binary "cpf = '111.444.777-35'" 2>&1 | sed 's/^/  /'
 note ""
 note "A client that negotiates a compression the codec cannot undo would be"
 note "the one unmasked response, so the relay refuses it instead:"
@@ -92,11 +104,9 @@ $COMPOSE exec -T client curl -sk 'https://envoy:8446/?enable_http_compression=1'
     -H X-ClickHouse-User:appuser -H X-ClickHouse-Key:apppass -H 'X-Hoop-User: alice' -H 'Accept-Encoding: zstd' \
     -w ' [%{http_code}]\n' --data-binary 'SELECT email FROM appdb.customers FORMAT TSV' 2>&1 | sed 's/^/  /'
 note ""
-note "The request LINE is scanned. ClickHouse binds ?param_x= into {x:Type}"
-note "in the SQL, so a taxpayer id passed that way sits on the line, and the"
-note "rule that refused the pgwire DELETE refuses it here. (ClickHouse makes"
-note "GET read-only, so this is the one shape a rule can reach and the one"
-note "that could not have written.) The 403 is the relay's:"
+note "The request line is scanned too. ClickHouse binds ?param_x= into"
+note "{x:Type} in the SQL, so a taxpayer id passed that way sits on the line,"
+note "not in the SQL, and the same rule refuses it there. The 403 is the relay's:"
 $COMPOSE exec -T client curl -sk -G https://envoy:8446/ \
     -H X-ClickHouse-User:appuser -H X-ClickHouse-Key:apppass -H 'X-Hoop-User: alice' \
     -w ' [%{http_code}]\n' --data-urlencode 'param_cpf=111.444.777-35' \
@@ -138,21 +148,17 @@ note "MySQL before 8.0.23 -- is enforced only for clients that do not set it."
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"
 sleep 1
-note "The LEAK line below is expected on this overlay: capture_body records"
-note "request AND response bodies as the SERVER sent them, so the trail holds"
-note "the original result set even though the client received it masked. The"
-note "relay has no request-only capture; until it does, an http lane in front"
-note "of a database API copies every result into its audit log. The mysql and"
-note "pg lanes leak nothing: their audit rows carry columns and counts, not"
-note "values."
+note "The HTTP lane captures request bodies on its SQL routes and no response"
+note "body, so the trail holds the SQL and none of the result set. The mysql"
+note "and pg lanes leak nothing either: their audit rows carry columns and"
+note "counts, not values."
 $COMPOSE logs hoop-inspect --since "$DEMO_START" 2>/dev/null | ./sidecar/read-audit.py
 
 h "Summary"
 cat <<'EOF'
   One ClickHouse, four front doors, one process. All four lanes masked the
   same email column; the native lane did so over bounded, block-at-a-time
-  LZ4 decoding, the HTTP lane by re-chunking JSONEachRow. Only the three
-  database lanes enforced the SQL rule: HTTP carries the SQL in a body the
-  guardrail does not read. The MySQL 8 CLI beat still names the emulation
-  codec gap.
+  LZ4 decoding, the HTTP lane by re-chunking JSONEachRow. All four enforced
+  the SQL rule: the HTTP lane reads the SQL in ClickHouse's query parameter
+  and body. The MySQL 8 CLI beat still names the emulation codec gap.
 EOF
