@@ -11,12 +11,14 @@
   --paper-border-color: var(--mantine-color-gray-2);
 }
 
-/* Every Paper and Card takes its corners from the theme, whatever `radius`
-   a call site passes: one token changes every surface. */
+/* Every Paper and Card takes its corners and its white fill from the theme,
+   whatever `radius` a call site passes: one token changes every surface. A
+   variant below sets its own fill. */
 .root {
   --paper-radius: var(--hoop-card-radius);
   --card-radius: var(--hoop-card-radius);
   border-radius: var(--hoop-card-radius);
+  background-color: var(--hoop-card-bg);
 }
 
 /* A Paper that is a callout (a note on the page, `data-callout`) takes the

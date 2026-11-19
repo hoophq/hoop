@@ -17,6 +17,8 @@ import {
 import { PaperTheme } from '@/components/Paper/theme'
 import { AlertTheme } from '@/components/Alert/theme'
 import { ThemeIconTheme } from '@/components/ThemeIcon/theme'
+import { AccordionTheme } from '@/components/Accordion/theme'
+import { TabsTheme } from '@/components/Tabs/theme'
 import { ModalTheme } from '@/components/Modal/theme'
 import { DividerTheme } from '@/components/Divider/theme'
 import { CodeTheme } from '@/components/Code/theme'
@@ -67,8 +69,13 @@ export function cssVariablesResolver(theme) {
       // block or a viewer (Paper, Card and the card components).
       // Square (brand). Controls keep theirs: buttons are pills, fields md.
       '--hoop-card-radius': '0',
+      // The fill of a card (Paper, Card and the card components): white, so a
+      // card stands off the page whatever the page background is.
+      '--hoop-card-bg': '#ffffff',
       // The corners of an icon tile (ThemeIcon). Square (brand).
       '--hoop-icon-radius': '0',
+      // The corners of a tab (Tabs): the hover fill and the focus ring. Square.
+      '--hoop-tab-radius': '0',
       // The corners of a badge: a status, a tag or a chip (Badge, Pill). Pill.
       '--hoop-badge-radius': '9999px',
       // The corners of a callout: a note on the page (Alert, Callout). A soft
@@ -396,6 +403,8 @@ export const theme = createTheme({
     Paper: PaperTheme,
     Alert: AlertTheme,
     ThemeIcon: ThemeIconTheme,
+    Accordion: AccordionTheme,
+    Tabs: TabsTheme,
     Modal: ModalTheme,
     Divider: DividerTheme,
     Code: CodeTheme,

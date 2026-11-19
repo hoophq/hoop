@@ -2,7 +2,7 @@
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
   border-radius: var(--hoop-card-radius);
-  background-color: var(--hoop-surface-raised);
+  background-color: var(--hoop-card-bg);
   cursor: pointer;
   transition:
     background-color var(--hoop-motion-out) var(--hoop-ease),
@@ -30,7 +30,7 @@
 }
 
 .card:disabled:hover {
-  background-color: var(--hoop-surface-raised);
+  background-color: var(--hoop-card-bg);
 }
 
 .card[data-selected]:disabled:hover {

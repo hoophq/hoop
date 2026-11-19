@@ -13,7 +13,7 @@ import { Accordion as MantineAccordion } from '@mantine/core'
  */
 function Accordion({ children, ...props }) {
   return (
-    <MantineAccordion variant="contained" radius="sm" {...props}>
+    <MantineAccordion variant="contained" {...props}>
       {children}
     </MantineAccordion>
   )

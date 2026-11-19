@@ -82,11 +82,13 @@ Callouts have soft round corners (lg), not a pill. A note on the page
 `--hoop-callout-radius`, the same on one line or many.
 
 Cards are square. Every surface (`Paper`, `Card`, `MethodCard`,
-`SelectionCard`, `EnterpriseBanner`, `CodeSnippet`, a panel or a viewer)
-takes its corners from `--hoop-card-radius` (0). `Paper`, `Alert` and `ThemeIcon` ignore
+`SelectionCard`, `EnterpriseBanner`, `CodeSnippet`, `Accordion`, a panel or a viewer)
+takes its corners from `--hoop-card-radius` (0) and its white fill from
+`--hoop-card-bg`, so a card stands off the page. `Paper`, `Accordion`, `Alert` and `ThemeIcon` ignore
 a `radius` prop, so a page never passes one. Icon tiles (`ThemeIcon`) are
 square too, from `--hoop-icon-radius` (0). Badges are pills, from
-`--hoop-badge-radius`; a `radius` prop on a Badge does nothing. Small things
+`--hoop-badge-radius`; a `radius` prop on a Badge does nothing. Tabs are square, from
+`--hoop-tab-radius`: the hover fill and the focus ring. Small things
 keep their own: avatars, menu items, modals and toasts.
 
 `test/shape.test.js` fails on a page that sets a list or card shape by

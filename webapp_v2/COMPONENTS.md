@@ -31,6 +31,8 @@ Rules:
   Button is a pill (`components/Button/theme.js`), except `variant="field"`.
   Paper and Card are square: their corners come from
   `--hoop-card-radius` and a `radius` prop is ignored (`test/shape.test.js`).
+  Their fill is white, from `--hoop-card-bg`; a `variant` sets its own.
+  Tabs are square (`--hoop-tab-radius`, `components/Tabs/theme.js`).
   ThemeIcon too, from `--hoop-icon-radius`. A callout has soft round corners (lg):
   `Alert`, and a `Paper` with `data-callout`, use `--hoop-callout-radius`.
 - Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
@@ -566,7 +568,7 @@ import Pagination from '@/components/Pagination'
 ```
 
 ### `Accordion`
-Expandable accordion. Re-exports sub-components so call sites never import from Mantine.
+Expandable accordion. Re-exports sub-components so call sites never import from Mantine. Its corners come from `--hoop-card-radius` (`components/Accordion/theme.js`); a `radius` prop does nothing.
 ```jsx
 import Accordion from '@/components/Accordion'
 

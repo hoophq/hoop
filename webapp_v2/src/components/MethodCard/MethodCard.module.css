@@ -2,7 +2,7 @@
   border: 1px solid var(--mantine-color-default-border);
   border-radius: var(--hoop-card-radius);
   cursor: pointer;
-  background-color: transparent;
+  background-color: var(--hoop-card-bg);
   transition:
     background-color var(--hoop-motion-out) var(--hoop-ease),
     border-color var(--hoop-motion-out) var(--hoop-ease);
