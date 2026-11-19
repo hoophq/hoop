@@ -1,3 +1,9 @@
+/* Code is square, like a field. Mantine pins it to --mantine-radius-sm,
+   outside the theme's default radius, so the corner is set here. */
+.root {
+  border-radius: var(--hoop-field-radius);
+}
+
 /* An identifier that stands out from the text around it, such as an event
    name. */
 .root[data-variant='accent'],

@@ -4,7 +4,7 @@
    here automatically. */
 .root {
   background-color: var(--brand-navy);
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--hoop-card-radius);
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
 }
 

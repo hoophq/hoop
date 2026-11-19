@@ -1,0 +1,18 @@
+/* Touch: an icon button under the touch target grows an invisible hit
+   area, so its look and the layout stay the same. */
+@media (pointer: coarse) {
+  .root::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((var(--ai-size) - var(--hoop-touch-target)) / 2));
+  }
+}
+
+/* An icon button next to an input (`variant="field"`): the field's
+   square corners, fill and border, so the two read as one control. */
+.root[data-variant='field'] {
+  --ai-bg: var(--hoop-surface-raised);
+  --ai-hover: var(--hoop-surface-raised);
+  --ai-color: var(--mantine-color-dimmed);
+  --ai-bd: 1px solid var(--mantine-color-gray-2);
+}

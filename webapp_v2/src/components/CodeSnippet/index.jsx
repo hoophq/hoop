@@ -1,50 +1,33 @@
-import { useState } from 'react'
-import { Box, ActionIcon, CopyButton } from '@mantine/core'
+import { Box, CopyButton } from '@mantine/core'
 import { Copy, Check } from 'lucide-react'
-import Tooltip from '@/components/Tooltip'
+import Button from '@/components/Button'
 import { useUserStore } from '@/stores/useUserStore'
 import classes from './CodeSnippet.module.css'
 
 function CodeSnippet({ code, variant = 'black' }) {
-  const [hovered, setHovered] = useState(false)
   const disableClipboard = useUserStore(s => s.disableClipboard)
 
   return (
-    <Box
-      pos="relative"
-      className={classes.root}
-      data-variant={variant}
-      p="sm"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <Box pos="relative" className={classes.root} data-variant={variant} p="sm">
       <div className={classes.scroll}>
         <pre className={classes.pre}>{code}</pre>
       </div>
 
       {!disableClipboard && (
-        <Box
-          pos="absolute"
-          top={6}
-          right={6}
-          className={classes.copyBtn}
-          data-visible={hovered || undefined}
-        >
+        <Box pos="absolute" top={6} right={6}>
           <CopyButton value={code} timeout={2000}>
             {({ copied, copy }) => (
-              <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                <ActionIcon
-                  variant="subtle"
-                  color={copied ? 'teal' : 'gray'}
-                  size="sm"
-                  onClick={copy}
-                  aria-label={copied ? 'Copied' : 'Copy'}
-                  className={classes.copyIcon}
-                  data-copied={copied || undefined}
-                >
-                  {copied ? <Check size={13} /> : <Copy size={13} />}
-                </ActionIcon>
-              </Tooltip>
+              <Button
+                variant="subtle"
+                color={copied ? 'teal' : 'gray'}
+                size="compact-xs"
+                onClick={copy}
+                leftSection={copied ? <Check size={12} /> : <Copy size={12} />}
+                className={classes.copyBtn}
+                data-copied={copied || undefined}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
             )}
           </CopyButton>
         </Box>

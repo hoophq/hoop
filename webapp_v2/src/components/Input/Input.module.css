@@ -18,3 +18,21 @@
 .wrapper[data-variant='default'] {
   --input-bg: var(--hoop-surface-raised);
 }
+
+/* Focus: the border takes the action color (Mantine) and a soft ring
+   (--hoop-focus-ring) grows around the field, so the field you type in is
+   plain to see. Corners: components/Input/theme.js. */
+.input {
+  transition: box-shadow var(--hoop-motion-field) var(--hoop-ease);
+}
+
+.input:focus,
+.input:focus-within {
+  box-shadow: 0 0 0 var(--hoop-focus-ring) var(--mantine-primary-color-light);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
+}
