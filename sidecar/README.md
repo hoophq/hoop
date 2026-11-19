@@ -3904,7 +3904,7 @@ listeners:
 | `listen` | required | `host:port`. An address other than loopback (`127.0.0.1`, `::1`, `localhost`) needs `caller_token`. MCP clients connect to `http://<listen>/mcp`, or `https://` with `downstream_tls`. |
 | `upstream` | required | The MCP endpoint, with its path. `https`, or `http` on loopback. No user, password, query or fragment. A redirect is followed only within its origin. |
 | `upstream_tls` | the host trust store | The CA, the client certificate and the server name for the hop to the upstream. |
-| `idle_timeout_sec` | `1800` | An MCP session with no message for this long ends, with its sidecar session. |
+| `idle_timeout_sec` | `1800` | An MCP session with no message for this long ends, with its sidecar session. The lane checks once a minute. |
 | `caller_token` | none | Admits only callers with a token from a file. See Auth. |
 | `identity_header` | none | The header whose value names the caller. See Auth. |
 | `downstream_tls` | none | `cert_file` and `key_file`: the lane serves MCP clients over TLS. |
@@ -4024,7 +4024,8 @@ is refused too: `-32010`, `tool "x" was not advertised by the server`.
 
 A call these keys refuse, a truncated result and a rug pull reach the sidecar
 session as activities: `mcp.tool_denied`, `mcp.budget_exceeded`,
-`mcp.tools_changed`.
+`mcp.tools_changed`. A refused `sampling/createMessage` or
+`elicitation/create` is `mcp.server_request_denied`.
 
 Each `tools/call` is one statement: `operation: call`, `tables: [<tool>]`,
 the text `<tool>` and its arguments JSON on the next line, and the metadata
@@ -4046,7 +4047,8 @@ Each `tools/list` is one catalog statement: `direction: server`,
 `operation: show`, no tables, one `<name>: <description>` line per tool.
 Rules and OPA judge it too, and a hit ends the session: a
 `deny_words_list` word in a tool description ends it. A `table` rule never
-matches the catalog, `require_table_match` included.
+matches the catalog, `require_table_match` included. They read the catalog
+after `overrides`: a replaced description is what they see.
 
 With `opa`, the lane consults OPA on every call and on the catalog. The
 input for a call, beside the `context` every lane sends:
@@ -4066,8 +4068,11 @@ One sidecar session per MCP session: it opens on the first message,
 records `initialize` as an activity (client name, version, protocol
 version), one statement per `tools/call` (allowed or denied, with the
 rule) and one `tools/list` catalog statement, and closes on the client
-DELETE or the idle timeout. mcpproxy refusals (a budget, a rug pull) reach
-the session as activities. A rule reload ends the open MCP
+DELETE or the idle timeout. A `resources/read` or a `prompts/get` leaves no
+statement. mcpproxy refusals (a budget, a rug pull) reach the session as
+activities. A session the lane ends records `mcp_session_killed` with the
+reason: a rug pull with `on_rug_pull: kill`, a catalog it cannot read, or a
+catalog a rule or OPA denies. A rule reload ends the open MCP
 sessions: a session read its rules when it opened, so the next message on
 it is refused and the client initializes again under the new rules. A
 change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
@@ -4249,8 +4254,8 @@ pod that authenticates the caller and sets the header.
 Without `caller_token` or `identity_header`, every caller is `anonymous`, so
 any caller that holds a session id can use that session.
 
-Not supported yet: a verified identity per user (ENG-961), and OAuth login
-of MCP clients.
+Not supported yet: a verified identity per user, and OAuth login of MCP
+clients.
 
 **Lane to upstream.**
 
@@ -4299,7 +4304,7 @@ the MCP server yourself with its credential, or run a proxy on loopback
 that adds the credential, and point `upstream` at that proxy
 (`http://127.0.0.1:<port>/mcp` is accepted on loopback).
 
-Not supported yet: a token from a file or a secret source (ENG-961), OAuth
+Not supported yet: a token from a file or a secret source (ENG-1228), OAuth
 to the upstream (ENG-958), and AWS SigV4 (ENG-957).
 
 What the lane refuses at validate, and why: a `listen` off loopback
@@ -4312,7 +4317,67 @@ a `passthrough_header` on sse or on a header listed under "Auth"; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
 `unknown field`.
-Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
+
+#### Feature coverage
+
+Which part of MCP each feature reads. A part marked no passes through
+unread.
+
+| Feature | Arguments | Descriptions | `content[].text` | `structuredContent` | Resources | Prompts |
+|---|---|---|---|---|---|---|
+| Guardrails | judged | judged | no | no | no | no |
+| OPA | judged | judged | no | no | no | no |
+| Masking | no | no | masked | masked | masked | no |
+| SQL rules | judged | no | no | no | no | no |
+| Analyzer | rated | no | no | no | no | no |
+| Approvals | held | no | no | no | no | no |
+| Audit | recorded | recorded | counted | counted | counted | no |
+
+- Arguments are the arguments of a `tools/call`. SQL rules read the SQL in
+  an `mcp_gateway.sql` argument.
+- Descriptions are the `tools/list` result, after `overrides`. A guardrail
+  hit or an OPA deny there ends the session. `opa: {responses: false}`
+  keeps them from OPA.
+- Resources are `resources/read` results: the text is masked, a `blob` is
+  not.
+- Recorded: one statement per call and one per list. Counted: a `masked`
+  row with the count of masked values, never the text. A `resources/read`
+  leaves no statement.
+
+The tests that pin each cell:
+
+| Cell | Tests |
+|---|---|
+| Guardrails, arguments | `daemon` TestMCPLaneRuleTypes; `mcpgateway` TestARuleDenialIsAToolError; `policy` TestMCPToolRule |
+| Guardrails, descriptions | `daemon` TestMCPLaneRuleTypes; `mcpgateway` TestADeniedCatalogEndsTheSession, TestAHiddenToolIsAbsentFromTheCatalogAndRefused |
+| OPA, arguments and descriptions | `daemon` TestMCPLaneConsultsOPA; `mcpgateway` TestADeniedCatalogEndsTheSession |
+| Masking, `content[].text` | `mcpgateway` TestAToolResultTextIsMasked |
+| Masking, `structuredContent` | `mcpgateway` TestEveryStructuredContentStringIsMasked |
+| Masking, resources | `mcpgateway` TestAResourceReadIsMasked, TestANestedResourceTextIsMasked, TestAResourceBlobIsNotMasked |
+| SQL rules, arguments | `daemon` TestAnMCPSQLToolCallIsJudgedPerStatement, TestAnMCPSQLArgumentTheLaneCannotReadIsRefused; `e2e` TestMCPSQLArgumentIsJudged |
+| Analyzer, arguments | `daemon` TestMCPLaneAnalyzerRefusesOneCall, TestMCPLaneAnalyzerReadsTheCallAndTheSQLOfASQLTool; `analyzer` TestMCPBuilderSendsTheToolNameAndArguments |
+| Approvals, arguments | `daemon` TestMCPLaneHoldReleasesAnApprovedCall, TestMCPLaneHoldRefusesARejectedCall, TestMCPLaneHoldAnswersAPendingCallWithTheApproval; `mcpgateway` TestAHeldCallAnswersWithinTheRequestTimeout |
+| Audit, arguments | `daemon` TestMCPLaneSessionRecordsOneStatementPerCall |
+| Audit, descriptions | `daemon` TestMCPLaneRecordsHiddenTools |
+| Audit, results and resources | `mcpgateway` TestAToolResultTextIsMasked, TestEveryStructuredContentStringIsMasked, TestAResourceReadIsMasked; `daemon` TestMCPLaneSessionMasksAndRecordsTheCount |
+
+#### Limits
+
+- Remote servers only: `upstream` is `https`, or `http` on loopback, over
+  `streamable-http` or `sse`. A stdio server needs a wrapper that serves it
+  over HTTP.
+- To the upstream the lane sends at most the caller's own token, as
+  `Authorization: Bearer`. Not supported: a key in another header (such as
+  `X-Goog-Api-Key`), a token the caller does not hold, OAuth, AWS SigV4.
+- An `sse` upstream gets no token: `passthrough_header` is refused on it.
+- A held call waits 4 minutes at most.
+- Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
+- Sessions reach the control plane only with the feature flag
+  `experimental.sidecar_session_events` on. The audit file records them
+  either way.
+- A client that never sends `DELETE` keeps its session open until
+  `idle_timeout_sec`.
+- `resources/read` and `prompts/get` are not judged and leave no statement.
 
 ### Postgres: trace ids from the startup packet
 

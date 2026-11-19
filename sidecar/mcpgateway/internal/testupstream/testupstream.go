@@ -40,6 +40,12 @@ type profile struct {
 // CustomerURI is a resource whose text carries PII.
 const CustomerURI = "customer://42"
 
+// CustomerScanURI is a resource whose blob carries the same PII.
+const CustomerScanURI = "customer://42/scan"
+
+// CustomerText is the PII both customer resources carry.
+const CustomerText = customerText
+
 const customerText = "Jane Doe, email jane.doe@example.com, SSN 123-45-6789"
 
 type queryIn struct {
@@ -89,6 +95,10 @@ func NewServer(echoDesc string) *mcp.Server {
 	s.AddResource(&mcp.Resource{URI: CustomerURI, Name: "customer", MIMEType: "text/plain"},
 		func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "text/plain", Text: customerText}}}, nil
+		})
+	s.AddResource(&mcp.Resource{URI: CustomerScanURI, Name: "customer scan", MIMEType: "application/octet-stream"},
+		func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "application/octet-stream", Blob: []byte(customerText)}}}, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_customer", Description: "Delete a customer by id."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, any, error) {
