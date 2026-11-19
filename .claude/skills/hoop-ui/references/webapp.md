@@ -20,7 +20,7 @@ Reference pages to copy from:
 
 | You build | Open |
 | --- | --- |
-| A list page | `pages/Guardrails/index.jsx`, `pages/Agents/index.jsx` |
+| A list page | `pages/Guardrails/index.jsx`, `pages/Agents/index.jsx` for the page; rows from `List` or `Table` (section 4), not their row code |
 | A create or edit form | `pages/Guardrails/Create/GuardrailForm.jsx`, `pages/Agents/Create/index.jsx` |
 | A details page | `pages/Sidecars/Details/index.jsx` |
 
@@ -107,8 +107,6 @@ Never pass a lighter `c` on a badge. Tabs and `SegmentedControl` are square, fro
 Page numbers (`Pagination`) are circles, from `--hoop-button-radius`. Modals, menus and
 toasts are square like the rest.
 
-`test/shape.test.js` fails on a page that sets a list or card shape by
-hand.
 
 **Change a shape in the theme, never on a page.** A radius, a border, a
 motion or a size is a token in `theme.js` or a default in a component's
@@ -133,7 +131,7 @@ it.
 - **Lists:** one `Table`, or one `List` (`@/components/List`). Use `List`
   when each item has a name, a description and one action. Use `Table` when
   items have many columns. A row draws no border, corner or first/last flag:
-  `List` does (`test/shape.test.js` fails otherwise). Row actions: `ActionMenu` (right), or `size="sm"` buttons.
+  `List` does. Row actions: `ActionMenu` (right), or `size="sm"` buttons.
   Filters (`ValueFilter`, `AsyncValueFilter`) in a `Group gap="sm"` above the
   list.
 - **No card inside a card.** One exception: `SettingsCard` in

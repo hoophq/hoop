@@ -30,7 +30,7 @@ Rules:
 - **Never pass `radius`** on these components — `defaultRadius` is 0: what has no shape rule is square.
   Button is a pill (`components/Button/theme.js`), except `variant="field"`. ActionIcon is round. Both read `--hoop-button-radius`.
   Paper and Card are square: their corners come from
-  `--hoop-card-radius` and a `radius` prop is ignored (`test/shape.test.js`).
+  `--hoop-card-radius` and a `radius` prop is ignored.
   Their fill is white, from `--hoop-card-bg`; a `variant` sets its own.
   Tabs are square (`--hoop-tab-radius`, `components/Tabs/theme.js`).
   ThemeIcon too, from `--hoop-icon-radius`. A callout is square:
@@ -109,8 +109,7 @@ import CodeSnippet from '@/components/CodeSnippet'
 The one shape for a block of rows (rules, agents, groups, templates). It draws
 the outer border, the corners and the line between rows from
 `--hoop-list-radius` and `--hoop-list-border` (`theme.js`). A row draws none
-of them and takes no first/last flag. `test/shape.test.js` fails on a
-page that does. Many columns: use `Table` instead.
+of them and takes no first/last flag. Many columns: use `Table` instead.
 
 ```jsx
 import List from '@/components/List'

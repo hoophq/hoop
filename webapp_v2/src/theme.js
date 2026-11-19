@@ -70,7 +70,7 @@ export function cssVariablesResolver(theme) {
       '--hoop-list-border': 'var(--mantine-color-default-border)',
       // The corners of a surface: a card, a panel, a banner, a note, a code
       // block or a viewer (Paper, Card and the card components).
-      // Square (brand). Controls keep theirs: buttons are pills, fields md.
+      // Square (brand). Buttons are pills; fields are square (--hoop-field-radius).
       '--hoop-card-radius': '0',
       // The fill of a card (Paper, Card and the card components): white, so a
       // card stands off the page whatever the page background is.
@@ -151,6 +151,8 @@ export function cssVariablesResolver(theme) {
       // The smallest area a finger can hit on a touch screen. A smaller
       // control keeps its size and grows an invisible hit area to this.
       '--hoop-touch-target': rem(44),
+      // The width of the ring around a focused field.
+      '--hoop-focus-ring': rem(3),
 
       // Motion: one ease-out, no bounce. Hover in, hover out, press, and a
       // field's focus ring. Only transform, opacity and colors move.

@@ -55,6 +55,13 @@
     position: absolute;
     inset: min(0px, calc((var(--button-height) - var(--hoop-touch-target)) / 2)) 0;
   }
+
+  /* A section can hold its own control (the clear X of a filter): it sits
+     above the hit area, so a tap on it reaches it. */
+  .section {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

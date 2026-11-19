@@ -47,11 +47,15 @@ const SIZE_DEFAULT = { size: 'md' }
 export const InputTheme = Input.extend({
   classNames: { wrapper: classes.wrapper, input: classes.input },
   defaultProps: SIZE_DEFAULT,
+  // Every field takes its corners from the theme, whatever `radius` a call
+  // site passes: Mantine writes that prop inline, and these vars run after it.
   vars: (_theme, props) => {
+    const radius = { '--input-radius': 'var(--hoop-field-radius)' }
     const fz = FONT_SIZES[props.size]
-    if (!fz) return { wrapper: {} }
+    if (!fz) return { wrapper: radius }
     return {
       wrapper: {
+        ...radius,
         '--input-height': `var(--hoop-control-height-${props.size})`,
         '--input-fz': fz,
         // Multiline inputs (MultiSelect, TagsInput, PillsInput, Textarea)

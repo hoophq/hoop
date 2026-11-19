@@ -29,8 +29,9 @@ Find the nearest command in `client/cmd/` and match its shape.
 - **Colors are defined once,** in the package style file (`styles/`,
   `sidecartui/styles.go`). A command file uses a named style, never a hex or a
   256-color number.
-- **Plain when not a person at a terminal.** Pipe, NO_COLOR or TERM=dumb: no
-  escape codes, no TUI. lipgloss and termenv do this. A raw `\x1b[` or
+- **Plain when not a person at a terminal.** When the format is picked
+  automatically (pipe, NO_COLOR or TERM=dumb): no escape codes, no TUI. A
+  format the user asks for (`--log-format tui`) wins. lipgloss and termenv do this. A raw `\x1b[` or
   `\033[` code does not: never write one.
 - **Old helpers.** `styles.ClientError` (amber fill), `Keyword` (pink) and the
   amber table header predate this palette. Use the helpers so every error
@@ -66,7 +67,8 @@ Find the nearest command in `client/cmd/` and match its shape.
   `→` `←` open and close, `*` the active item in a list.
 - **Secrets:** never print a token, password or key. Print `OMITTED`, as
   `hoop config view` does. A long value (a certificate) prints as `yes` or
-  `no`.
+  `no`. Exception: a flag that exists to print it (`hoop sidecar status
+  --token`).
 
 ## 4. Layout
 
