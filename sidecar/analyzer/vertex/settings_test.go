@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	"github.com/hoophq/hoop/sidecar/analyzer/gemini"
 )
 
@@ -58,6 +59,33 @@ func TestGooglePublisherSendsThinkingSamplingAndLabels(t *testing.T) {
 	}
 }
 
+// The anthropic publisher carries effort as output_config, the larger Claude
+// default max_tokens and an unforced tool choice on rawPredict.
+func TestAnthropicPublisherSendsEffort(t *testing.T) {
+	var body map[string]json.RawMessage
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"stop_reason":"tool_use","content":[
+		  {"type":"tool_use","name":"report_low_risk","input":{"title":"t","explanation":"e"}}]}`)
+	}))
+	defer srv.Close()
+
+	p := build(t, analyzer.Options{Endpoint: srv.URL, Extra: map[string]string{anthropic.KeyEffort: "low"}})
+	withToken(p, "tok")
+	if _, err := p.Classify(context.Background(), "s", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(body["output_config"]); got != `{"effort":"low"}` {
+		t.Errorf("output_config = %s", got)
+	}
+	if got := string(body["max_tokens"]); got != "4096" {
+		t.Errorf("max_tokens = %s, want 4096", got)
+	}
+	if got := string(body["tool_choice"]); got != `{"type":"auto"}` {
+		t.Errorf("tool_choice = %s", got)
+	}
+}
+
 // What only one publisher's API carries is refused on the others, where it
 // would do nothing while reading as set.
 func TestPublisherSpecificSettingsAreRefusedElsewhere(t *testing.T) {
@@ -73,6 +101,9 @@ func TestPublisherSpecificSettingsAreRefusedElsewhere(t *testing.T) {
 		"labels on claude":     {PublisherAnthropic, map[string]string{gemini.KeyLabels: "a=b"}, analyzer.Sampling{}, "labels applies to publisher"},
 		"seed on claude":       {PublisherAnthropic, nil, analyzer.Sampling{Seed: &seed}, "no [seed] parameter"},
 		"top_k on open model":  {PublisherOpenAPI, nil, analyzer.Sampling{TopK: &topK}, "no [top_k] parameter"},
+		"effort on gemini":     {PublisherGoogle, map[string]string{anthropic.KeyEffort: "low"}, analyzer.Sampling{}, "effort applies to publisher"},
+		"effort on open model": {PublisherOpenAPI, map[string]string{anthropic.KeyEffort: "low"}, analyzer.Sampling{}, "effort applies to publisher"},
+		"unknown effort":       {PublisherAnthropic, map[string]string{anthropic.KeyEffort: "extreme"}, analyzer.Sampling{}, `unknown effort "extreme"`},
 	} {
 		extra := map[string]string{KeyProject: "p", KeyRegion: "r", KeyPublisher: tc.publisher}
 		for k, v := range tc.extra {
