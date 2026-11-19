@@ -166,7 +166,7 @@ func getRunbookHookFilesV2(ctx Context) ([]*runbookWrapperFiles, error) {
 
 func executeOpenSessionRunbookHook(ctx Context, pkt *proto.Packet, hook *runbookWrapperFiles) {
 	requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-open/%s", ctx.SID)).String()
-	resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
+	resp := transportsystem.RunRunbookHook(ctx.OrgID, ctx.AgentID, &pbsystem.RunbookHookRequest{
 		ID:        requestID,
 		SID:       ctx.SID,
 		Command:   []string{hookDefaultCommand},
@@ -221,7 +221,7 @@ func processEventOpenSessionHook(ctx Context, pkt *proto.Packet) {
 
 func executeCloseSessionRunbookHook(ctx Context, hook *runbookWrapperFiles, exitCode int, outputErr *string) {
 	requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-close/%s", ctx.SID)).String()
-	resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
+	resp := transportsystem.RunRunbookHook(ctx.OrgID, ctx.AgentID, &pbsystem.RunbookHookRequest{
 		ID:        requestID,
 		SID:       ctx.SID,
 		Command:   []string{hookDefaultCommand},

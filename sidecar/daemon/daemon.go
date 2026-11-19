@@ -1246,7 +1246,7 @@ func Run(cfg *Config, det Plugin) error {
 		}
 		runAdmin = func() error {
 			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, servers, relayNames, endpoints, endpointNames,
-				view, ac, analyzerCfg, am, licState, otel, log, cfg.Admin.ICAReadinessJSON)
+				view, ac, analyzerCfg, am, licState, otel, log, icaReadinessJSONFor(cfg))
 		}
 	}
 	// PUT /license is gone. An operator who still sets its secret expects a
@@ -1330,7 +1330,7 @@ func Run(cfg *Config, det Plugin) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h := healthState{endpoints, endpointNames, cfg.Admin.ICAReadinessJSON, len(servers)}
+			h := healthState{endpoints, endpointNames, icaReadinessJSONFor(cfg), len(servers)}
 			if serr := serveHealth(ctx, addr, h, log); serr != nil {
 				log.Error("health endpoint failed", "listen", addr, "error", serr)
 				errCh <- serr
@@ -1663,11 +1663,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
+		holdWait := analyzer.ReviewWait
+		if isMCPGateway(lc) {
+			holdWait = mcpHoldWait
+		}
 		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
-			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
+			time.Duration(lc.IdleTimeoutSec)*time.Second < holdWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
-					"approval wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+					"approval wait does", lc.IdleTimeoutSec, holdWait))
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,

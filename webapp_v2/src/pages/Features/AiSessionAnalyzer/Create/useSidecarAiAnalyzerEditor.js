@@ -283,12 +283,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const fresh = holds(action) && !holds(f[level])
       const keep = f.approval[level].approver !== APPROVER_RULE
       const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
-      let handoff = f.handoff
-      if (mcpBound && isHandoffAction(action) && !isHandoffAction(f[level])) {
-        const allowed = f.handoff[level].allowed.filter((v) => v !== HANDOFF_HOLD)
-        if (allowed.length > 0) handoff = { ...f.handoff, [level]: { ...f.handoff[level], allowed } }
-      }
-      return { ...f, [level]: action, approval, handoff }
+      return { ...f, [level]: action, approval }
     })
   // A level set to "By groups" before the groups loaded gets every group once
   // the list arrives (routingModePatch seeds from an empty option list),
@@ -436,18 +431,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     fetchRoutingIntegrations()
   }, [fetchRoutingIntegrations])
 
-  const protocols = useMemo(() => {
-    const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    return targets.map((t) => {
-      const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-      return lane?.protocol ?? ''
-    })
-  }, [targets, sidecars])
-  const mcpBound = protocols.some((p) => p.toLowerCase() === 'mcp')
-  const actions = useMemo(() => analyzerActionsFor(mcpBound), [mcpBound])
+  const actions = useMemo(() => analyzerActionsFor(), [])
 
-  const holdOnMcp = mcpBound && LEVEL_KEYS.some((level) => canHold(form, level))
-  const canSubmit = name.trim() !== '' && !submitting && !holdOnMcp
+  const canSubmit = name.trim() !== '' && !submitting
   // Plus the level's stored ones, so a removed group can still be unselected.
   const groupOptionsFor = (level) => {
     const { groups, routing } = form.approval[level]
@@ -538,7 +524,6 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     waits,
     humanHold,
     actions,
-    mcpBound,
     canSubmit,
     submitting,
     save,

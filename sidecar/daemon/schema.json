@@ -718,6 +718,13 @@
           "type": "integer",
           "label": "Max result size (KiB)",
           "help": "Cuts the text of a tool result to this size. 0 is unlimited."
+        },
+        {
+          "key": "passthrough_header",
+          "type": "string",
+          "label": "Passthrough header",
+          "help": "Each caller sends its own credential for the MCP server in this header. The sidecar removes it, sends the value as Authorization: Bearer, and records it nowhere. A request without it is refused. streamable-http only.",
+          "placeholder": "x-hoop-upstream-authorization"
         }
       ]
     }

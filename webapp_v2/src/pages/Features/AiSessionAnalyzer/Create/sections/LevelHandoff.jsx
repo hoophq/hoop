@@ -1,7 +1,7 @@
 import { Group, Stack, Text } from '@mantine/core'
 import { Bot } from 'lucide-react'
 import Checkbox from '@/components/Checkbox'
-import { HANDOFF_CHOICES, HANDOFF_HOLD, NO_HOLD_ON_MCP } from '@/pages/sidecarRuleVocabulary'
+import { HANDOFF_CHOICES, HANDOFF_HOLD } from '@/pages/sidecarRuleVocabulary'
 import CardStack from '../../components/CardStack'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
@@ -10,7 +10,7 @@ import { ApproverCard } from './LevelApprover'
 
 // The actions the agent may pick, each with what it does beside it. The last
 // checked one cannot be unchecked: an empty list blocks.
-function AllowedActions({ allowed, onAllowed, mcpBound }) {
+function AllowedActions({ allowed, onAllowed }) {
   const last = allowed.length === 1
   return (
     <Stack gap="sm">
@@ -19,7 +19,6 @@ function AllowedActions({ allowed, onAllowed, mcpBound }) {
       </Text>
       {HANDOFF_CHOICES.map(({ value, label, description }) => {
         const checked = allowed.includes(value)
-        const noHold = mcpBound && value === HANDOFF_HOLD
         return (
           <Checkbox
             key={value}
@@ -33,10 +32,8 @@ function AllowedActions({ allowed, onAllowed, mcpBound }) {
                 </Text>
               </Group>
             }
-            description={noHold && !checked ? NO_HOLD_ON_MCP : undefined}
-            error={noHold && checked ? NO_HOLD_ON_MCP : undefined}
             checked={checked}
-            disabled={(checked && last) || (noHold && !checked)}
+            disabled={checked && last}
             onChange={(e) => onAllowed(value, e.currentTarget.checked)}
           />
         )
@@ -59,7 +56,6 @@ export default function LevelHandoff({
   onAllowed,
   onApprover,
   onApproval,
-  mcpBound,
 }) {
   const holds = handoff.allowed.includes(HANDOFF_HOLD)
   const handoffCard = {
@@ -80,7 +76,7 @@ export default function LevelHandoff({
             placeholder="e.g. Block any write that has no WHERE clause."
             helper="The agent selects an action with these instructions. Empty uses the default prompt."
           />
-          <AllowedActions allowed={handoff.allowed} onAllowed={onAllowed} mcpBound={mcpBound} />
+          <AllowedActions allowed={handoff.allowed} onAllowed={onAllowed} />
         </Stack>
       </SettingsCard>
     ),

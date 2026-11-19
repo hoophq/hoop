@@ -207,7 +207,7 @@ func (p *provisioner) Run(jobID string) error {
 			}
 		}
 
-		resp := transportsystem.RunDBProvisioner(p.apiRequest.AgentID, &request)
+		resp := transportsystem.RunDBProvisioner(p.orgID, p.apiRequest.AgentID, &request)
 		if resp.Status == pbsystem.StatusCompletedType && p.hasStep(openapi.DBRoleJobStepCreateConnections) {
 			if err := p.handleConnectionProvision(request, resp); err != nil {
 				log.With("sid", jobID).Errorf("failed provisioning connections: %v", err)

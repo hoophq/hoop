@@ -4015,6 +4015,7 @@ rule only to a sidecar that reports the type.
 | `tool_rate_limits` | none | Tool glob to calls per minute, per session. When several globs match a tool, the lowest limit applies. | Over the limit: `-32012`, `tool "x" rate limit exceeded (N calls/min)` |
 | `max_result_kb` | `0`: no limit | The text of a tool result is cut to this size and ends with `[truncated by gateway]`. | The cut result |
 | `sql` | none | The tools whose calls carry SQL. See "SQL tools". | |
+| `passthrough_header` | none | The header that carries the caller's own credential for the upstream. See "Auth". | Without it: 403 |
 
 `tool_rate_limits` globs work as in `mcp_tool`.
 
@@ -4057,7 +4058,8 @@ input for a call, beside the `context` every lane sends:
 ```
 
 `opa: {responses: false}` keeps the catalog from OPA. mcpproxy's
-`approval_tools` is refused (ENG-967). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+`approval_tools` is refused: a hold comes from the analyzer (see
+[Analyzer](#analyzer)). [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
 runs one session through a lane.
 
 One sidecar session per MCP session: it opens on the first message,
@@ -4087,11 +4089,31 @@ The model reads the tool name and the arguments JSON, cut to
 - `block` refuses the one call as a tool error,
   `denied by the hoop sidecar (rule <listener>): <message>`. The session
   stays open.
-- A hold (`require_approval`) refuses the call before any approver, the AI
-  agent included, and files no approval request: the lane cannot hold a
-  tool call yet (ENG-967). A hold that a person approves still needs a
-  control plane and an `approval_rule`, or a person running
-  `hoop start sidecar` in a terminal, to start, as on the other lanes.
+- A hold (`require_approval`) files the call as on the other lanes: the tool
+  name and the arguments, byte for byte. Approved, the call runs once.
+  Rejected or expired, it is a tool error with the reason, and the session
+  stays open.
+- In `review_mode: hold` (the default) the call waits at most 4 minutes:
+  mcpproxy ends a request at 5, and an approved call keeps the last minute
+  to run. Still pending then, the answer is
+  `held for approval by the hoop sidecar (rule <listener>): ... (approval <id>)`,
+  and the same call after the approval runs it. A shorter
+  `pending_ttl_sec` ends the wait first. A client that drops the call
+  sooner ends the wait without spending the approval. So does the end of
+  the MCP session: a `DELETE`, `idle_timeout_sec`, a rules reload or a
+  shutdown.
+- The 4 minutes count from the start of the call and cover all its holds.
+  A SQL tool call with two held statements spends the first approval when
+  its statement is released. If the second is still pending at the limit,
+  the call does not run, and the retry files the first statement again.
+- `review_mode: return` answers a pending call at once with the approval
+  id, and names `approval_wait` when the sidecar has the `mcp:` block. The
+  agent waits there, then sends the same call again. Use it when reviews
+  take longer than the client waits for a tool call. Check that limit in
+  the client's own settings.
+- A hold that a person approves needs a control plane and an
+  `approval_rule`, or a person running `hoop start sidecar` in a terminal,
+  to start, as on the other lanes.
 - A provider failure follows `fail_open`, as on the other lanes.
 - The call's statement row carries `risk_level`, `risk_action`, `ai_rule`
   and `ai_status`.
@@ -4236,25 +4258,57 @@ of MCP clients.
 |---|---|
 | no credential: a server on a private network, or one that holds its own credential | `upstream: https://mcp.internal.example.com/mcp` |
 | mutual TLS | `upstream_tls: {cert_file: /etc/tls/client.crt, key_file: /etc/tls/client.key, ca_file: /etc/tls/ca.pem}` |
+| the caller's own token | `mcp_gateway: {passthrough_header: x-hoop-upstream-authorization}` |
 
-The lane sends no `Authorization` header to the upstream, the caller's
-included. It refuses `headers`, because the config holds no inline secret.
+Without `passthrough_header`, the lane sends no `Authorization` header to
+the upstream, the caller's included. It refuses `headers`, because the
+config holds no inline secret.
 
-For a server that needs a bearer token or OAuth: run the MCP server
-yourself with its credential, or run a proxy on loopback that adds the
-credential, and point `upstream` at that proxy (`http://127.0.0.1:<port>/mcp`
-is accepted on loopback).
+With `passthrough_header`, each caller sends its own token for the
+upstream, such as a GitHub or Stripe key, in that header:
 
-Not supported yet: a token from a file or a secret source and the caller's
-own token (ENG-961), OAuth to the upstream (ENG-958), and AWS SigV4
-(ENG-957).
+- The lane removes the header and sends the value to the upstream as
+  `Authorization: Bearer <value>`. A `Bearer ` prefix on the value is
+  accepted.
+- The value never reaches the audit trail, policy input, the analyzer or
+  the log. An upstream error that quotes it is logged with `[REDACTED]` in
+  its place.
+- A request without the header, with an empty value or with the header
+  twice gets 403 `request refused: <reason>`, and the reason names the
+  header.
+- Each request uses its own token. The session keeps the latest token in
+  memory, for the replies the lane sends to the server on its own, and
+  drops it when the session ends.
+- The upstream session stays the one the first request opened. A server
+  that binds its session to a user refuses a later request with another
+  user's token. To change users, open a new session.
+- It works with `caller_token`, `identity_header` or neither. The lane
+  checks `caller_token` first.
+- `transport: sse` is refused: the sse stream keeps the token of the
+  request that opened it.
+- The header can be `authorization`, so a client sends the token as it
+  would to the server. It cannot be the `caller_token` header, the
+  `identity_header`, `mcp-*`, `last-event-id`, `accept`, `content-type`,
+  `origin`, `user-agent`, or a header HTTP framing or a proxy uses.
+
+Claude Code sends it with
+`claude mcp add --transport http github http://127.0.0.1:<port>/mcp --header "X-Hoop-Upstream-Authorization: Bearer <token>"`.
+
+For a server that needs a token the caller does not hold, or OAuth: run
+the MCP server yourself with its credential, or run a proxy on loopback
+that adds the credential, and point `upstream` at that proxy
+(`http://127.0.0.1:<port>/mcp` is accepted on loopback).
+
+Not supported yet: a token from a file or a secret source (ENG-961), OAuth
+to the upstream (ENG-958), and AWS SigV4 (ENG-957).
 
 What the lane refuses at validate, and why: a `listen` off loopback
 without `caller_token`, or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
 requests, not connections); an `mcp_gateway.sql` entry without a glob, an
 argument or a known dialect (the dialect is never guessed); a rule in
-the lane's own `mask` block that names `columns` (see "Masking results"); a
+the lane's own `mask` block that names `columns` (see "Masking results");
+a `passthrough_header` on sse or on a header listed under "Auth"; a
 pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 `mcp_tool` rule instead), `approval_tools`, `command` or `headers`, as
 `unknown field`.
@@ -6504,7 +6558,15 @@ End to end, against real servers: `make test-sidecar-e2e` at the repo root
 boots MySQL, MongoDB and Oracle Free containers and runs the `hoop-inspect`
 binary as a subprocess. Oracle coverage uses a thin Go client and SQL*Plus
 (OCI) for filtered reads, multi-batch masking, writes, policy denial and
-normal disconnect. It needs Docker, is behind the `integration` build tag,
+normal disconnect. The default Oracle database and bundled SQL*Plus client use
+`gvenzl/oracle-free:23.26.3-slim-faststart@sha256:31aa4d1623c302e495e90a35b5ef809c8e51ba800e5a64dd4c2dd6e346ec6831`.
+The digest fixes the test baseline: the floating `23-slim-faststart` tag moved
+to 23.26.4 and the OCI tests began rejecting row headers. To evaluate a newer
+version, set `SIDECAR_E2E_ORACLE_IMAGE` to its explicit image reference and run
+both `TestOracleThickSQLPlus` and `TestOracleThinClientE2E` on Linux amd64 before
+updating the default. Keep the masking, commit, denial and clean-exit assertions;
+a successful thin-client test alone does not validate OCI compatibility.
+It needs Docker, is behind the `integration` build tag,
 and is not part of `make test-oss`. Running it by hand needs `GOWORK=off`,
 because `e2e/` is deliberately not a `go.work` member:
 
@@ -6522,7 +6584,7 @@ The optional listener `ica.slots` block maps consecutive unprivileged ports to V
 
 `ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
 
-The adapter pins the published **libhoop-ica v0.11.0** cell and diagnostic recording API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
+The adapter pins the published **libhoop-ica v0.13.0** cell, diagnostic recording and raw TCP enable-toggle APIs; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
 
 ### ICA GPU assets
 
@@ -6532,6 +6594,10 @@ the CPU `ica` target stays unchanged. GPU assets and TensorRT engines are an
 explicit versioned/checksummed build input. See [ICA GPU delivery](../deploy/ica-sidecar/GPU.md)
 for the asset contract, installer, configuration keys, and separate fixed-upstream
 and TPROXY examples. No OCR text inspector is enabled by this profile.
+
+### ICA raw TCP without recording
+
+Set `ica.raw_tcp.enable: true` and restart to forward admitted TCP streams without decoding, OCR, NER, masking or recording. Normal session limits and network admission remain in force. There is no deadline; disable the toggle and restart to restore inspection. See the [raw TCP guide](../deploy/ica-sidecar/RAW-TCP.md) and [example config](../deploy/ica-sidecar/examples/config.raw-tcp.yaml). External GPU relays require their own explicit raw-mode support.
 
 ### Temporary ICA diagnostic recording
 

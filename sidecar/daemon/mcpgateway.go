@@ -11,10 +11,12 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -50,6 +52,15 @@ type MCPGatewayConfig struct {
 	ToolRateLimits     map[string]int             `json:"tool_rate_limits,omitempty" ui:"-"`
 	Overrides          map[string]MCPToolOverride `json:"overrides,omitempty" ui:"-"`
 	SQL                map[string]MCPSQLTool      `json:"sql,omitempty" cap:"mcp_sql" ui:"-"`
+	PassthroughHeader  string                     `json:"passthrough_header,omitempty" cap:"mcp_passthrough" label:"Passthrough header" placeholder:"x-hoop-upstream-authorization" help:"Each caller sends its own credential for the MCP server in this header. The sidecar removes it, sends the value as Authorization: Bearer, and records it nowhere. A request without it is refused. streamable-http only."`
+}
+
+// passthroughHeader is the lowercased passthrough header, or "" when off.
+func (m *MCPGatewayConfig) passthroughHeader() string {
+	if m == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(m.PassthroughHeader))
 }
 
 type MCPToolOverride struct {
@@ -179,7 +190,42 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 			problems = append(problems, fmt.Sprintf("%s: mcp_gateway.tool_rate_limits[%q] must be positive", name, glob))
 		}
 	}
+	if m.PassthroughHeader != "" {
+		problems = append(problems, validateMCPPassthrough(lc, name)...)
+	}
 	return append(problems, validateMCPSQL(name, m.SQL)...)
+}
+
+// reservedPassthroughHeaders are the headers an MCP client or a proxy sends
+// for its own use. The lane removes the passthrough header, so one of them
+// would break every request or forward a value that is not a credential.
+var reservedPassthroughHeaders = []string{
+	"accept", "content-type", "origin", "user-agent", "forwarded", "x-forwarded-for",
+}
+
+func validateMCPPassthrough(lc ListenerConfig, name string) []string {
+	var problems []string
+	raw := lc.MCPGateway.PassthroughHeader
+	h := lc.MCPGateway.passthroughHeader()
+	switch {
+	case !isHeaderName(h):
+		problems = append(problems, fmt.Sprintf("%s: mcp_gateway.passthrough_header %q is not a header name", name, raw))
+	case h != "authorization" && slices.Contains(reservedCallerTokenHeaders, h),
+		slices.Contains(reservedPassthroughHeaders, h),
+		strings.HasPrefix(h, "mcp-"), h == "last-event-id", analyzer.IsClientModeHeader(h):
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is a header HTTP framing, MCP or the sidecar already uses; pick another", name, raw))
+	case lc.CallerToken != nil && h == lc.CallerToken.header():
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is the caller_token header; the two carry different credentials", name, raw))
+	case strings.EqualFold(h, strings.TrimSpace(lc.IdentityHeader)):
+		problems = append(problems, fmt.Sprintf(
+			"%s: mcp_gateway.passthrough_header %q is the identity_header; pick another", name, raw))
+	}
+	if lc.MCPGateway.transport() == MCPTransportSSE {
+		problems = append(problems, name+": mcp_gateway.passthrough_header needs transport streamable-http: an sse stream keeps the credential of the request that opened it")
+	}
+	return problems
 }
 
 func loopbackHost(host string) bool {
@@ -202,7 +248,17 @@ type MCPVerdict struct {
 	Allowed bool
 	Message string
 	Rule    string
+	// Held is a refusal that waits on an approval Message names: the same
+	// call runs once it is approved.
+	Held bool
 }
+
+// MCPRequestTimeout ends one MCP request on a lane: a held call, and its
+// upstream call after the approval.
+const MCPRequestTimeout = 5 * time.Minute
+
+// mcpHoldWait leaves an approved call a minute of MCPRequestTimeout to run.
+const mcpHoldWait = MCPRequestTimeout - time.Minute
 
 // MCPToolInfo is one tool of a tools/list answer.
 type MCPToolInfo struct {
@@ -257,6 +313,8 @@ type MCPGatewayLane struct {
 	Caller *MCPCallerCheck
 	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
 	SessionIdleTimeout time.Duration
+	// RequestTimeout is MCPRequestTimeout.
+	RequestTimeout time.Duration
 	// MaskResults is set when the lane has mask rules: tool and resource
 	// results then pass MCPLaneSession.Mask. Fixed when the lane is built.
 	MaskResults bool
@@ -353,6 +411,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 		DownstreamTLS:      downstream,
 		Caller:             caller,
 		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		RequestTimeout:     MCPRequestTimeout,
 		MaskResults:        ln.masker != nil,
 		Telemetry:          ln.telemetry,
 		Log:                laneLog,
@@ -387,16 +446,20 @@ func (r mcpLaneRules) swapLane(ln lane, drained func()) {
 }
 
 type mcpLaneSession struct {
-	mu      sync.Mutex
-	calls   sync.WaitGroup
-	g       *gate.Gate
-	release func()
-	mcpSID  string
-	hide    *policy.Rules
-	sql     map[string]MCPSQLTool
-	log     *slog.Logger
-	closed  bool
-	done    chan struct{}
+	mu       sync.Mutex
+	calls    sync.WaitGroup
+	g        *gate.Gate
+	release  func()
+	mcpSID   string
+	hide     *policy.Rules
+	sql      map[string]MCPSQLTool
+	log      *slog.Logger
+	closed   bool
+	done     chan struct{}
+	holdWait time.Duration
+	// ended is cancelled by Close, so a held call ends with its session.
+	ended context.Context
+	end   context.CancelFunc
 }
 
 func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
@@ -425,7 +488,9 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		}
 		log.Warn("mcp session start not recorded", "error", err)
 	}
-	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log, done: make(chan struct{})}
+	ended, end := context.WithCancel(context.Background())
+	ls := &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, hide: live.mcpHide, log: log,
+		done: make(chan struct{}), holdWait: mcpHoldWait, ended: ended, end: end}
 	if ln.cfg.MCPGateway != nil {
 		ls.sql = ln.cfg.MCPGateway.SQL
 	}
@@ -519,13 +584,18 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 		return MCPVerdict{Message: "session closed"}
 	}
 	defer s.calls.Done()
+	ctx, cancel := context.WithCancel(analyzer.WithHoldDeadline(ctx, time.Now().Add(s.holdWait)))
+	defer cancel()
+	defer context.AfterFunc(s.ended, cancel)()
 	var v MCPVerdict
 	for _, stmt := range stmts {
 		d := s.g.EvaluateStatement(ctx, stmt)
 		if d.Err != nil {
 			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
 		}
-		if v = (MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule}); !v.Allowed {
+		v = MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule,
+			Held: d.Review != nil && ReviewNext(d.Review.Status) == ReviewNextWait}
+		if !v.Allowed {
 			break
 		}
 	}
@@ -579,6 +649,7 @@ func (s *mcpLaneSession) Close(ctx context.Context) {
 	s.closed = true
 	s.mu.Unlock()
 	defer close(s.done)
+	s.end()
 	s.calls.Wait()
 	if err := s.g.Close(ctx); err != nil {
 		s.log.Warn("mcp session close reported an error", "error", err)

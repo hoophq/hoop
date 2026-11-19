@@ -26,6 +26,7 @@ import (
 	sidecarinspect "github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/telemetry"
 	"github.com/hoophq/mcpproxy/audit"
+	"github.com/hoophq/mcpproxy/auth/outbound"
 	"github.com/hoophq/mcpproxy/backend"
 	"github.com/hoophq/mcpproxy/checks"
 	"github.com/hoophq/mcpproxy/config"
@@ -93,6 +94,14 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	if lane.Transport == daemon.MCPTransportSSE {
 		transport = backend.TransportSSE
 	}
+	s.passthroughHeader = strings.TrimSpace(lane.Policy.PassthroughHeader)
+	var tokens func(context.Context) (string, error)
+	if s.passthroughHeader != "" {
+		if transport != backend.TransportStreamableHTTP {
+			return nil, errors.New("mcp: mcp_gateway.passthrough_header needs transport streamable-http")
+		}
+		tokens = outbound.NewPassthrough()
+	}
 	bcfg := config.Backend{Transport: transport, URL: lane.Upstream}
 	origin, err := url.Parse(lane.Upstream)
 	if err != nil {
@@ -125,7 +134,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		default:
 			b := backend.NewRemote(lane.Name, bcfg, s.log)
 			b.Client = client
-			return b, nil
+			if tokens == nil {
+				return b, nil
+			}
+			b.TokenSource = tokens
+			return redactingBackend{b}, nil
 		}
 	}
 
@@ -155,6 +168,7 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		Observer:           s,
 		Logger:             s.log,
 		SessionIdleTimeout: lane.SessionIdleTimeout,
+		RequestTimeout:     lane.RequestTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
 			id := inspect.Identity{Claims: map[string]any{"peer": r.RemoteAddr}}
 			switch {
@@ -199,6 +213,8 @@ type server struct {
 	lane daemon.MCPGatewayLane
 	log  *slog.Logger
 	gw   *mcpgw.Gateway
+	// passthroughHeader carries the caller's own upstream credential; "" is off.
+	passthroughHeader string
 	// renamed maps an overrides name to the real tool name. A hidden tool
 	// never reaches overrides, so its session holds no rename for it.
 	renamed map[string]string
@@ -233,7 +249,7 @@ func (s *server) Serve(ctx context.Context) error {
 		ln = tls.NewListener(ln, s.lane.DownstreamTLS)
 	}
 	srv := &http.Server{
-		Handler:           s.checkCaller(s.gw.Handler()),
+		Handler:           s.checkCaller(s.passthrough(s.gw.Handler())),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       connIdleTimeout,
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
@@ -281,6 +297,56 @@ func (s *server) checkCaller(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller{subject, key})))
 	})
+}
+
+// passthrough moves the caller's own upstream credential from its header to
+// the request context, where the backend's token source reads it.
+func (s *server) passthrough(next http.Handler) http.Handler {
+	h := s.passthroughHeader
+	if h == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		values := r.Header.Values(h)
+		r.Header.Del(h)
+		var credential, reason string
+		switch len(values) {
+		case 0:
+		case 1:
+			// A bare "Bearer" carries no credential; TrimBearer keeps it.
+			if credential = outbound.TrimBearer(values[0]); strings.EqualFold(credential, "bearer") {
+				credential = ""
+			}
+		default:
+			reason = "the request carried more than one " + h + " header"
+		}
+		if credential == "" && reason == "" {
+			reason = "the request carried no " + h + " header, the caller's own credential for the MCP server"
+		}
+		if reason != "" {
+			s.log.Info("mcp request refused", "peer", r.RemoteAddr, "reason", reason)
+			w.Header().Set("Connection", "close")
+			http.Error(w, "request refused: "+reason, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(outbound.WithClientToken(r.Context(), credential)))
+	})
+}
+
+// redactingBackend removes the caller's upstream credential from the errors
+// Send returns. An upstream error body can quote it, and mcpproxy logs them.
+type redactingBackend struct{ backend.Backend }
+
+func (b redactingBackend) Send(ctx context.Context, msg []byte) error {
+	err := b.Backend.Send(ctx, msg)
+	if err == nil {
+		return nil
+	}
+	credential, ok := outbound.ClientTokenFrom(ctx)
+	if !ok || !strings.Contains(err.Error(), credential) {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), credential, "[REDACTED]"))
 }
 
 func (s *server) Close() error {
@@ -812,6 +878,9 @@ func unreadableCatalog(ctx context.Context, ls daemon.MCPLaneSession, err error)
 // isError set: MCP reports a failed call as a result, so the model sees it.
 func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decision {
 	msg := "denied by the hoop sidecar"
+	if v.Held {
+		msg = "held for approval by the hoop sidecar"
+	}
 	if v.Rule != "" {
 		msg += " (rule " + v.Rule + ")"
 	}

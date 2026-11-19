@@ -59,7 +59,7 @@ function SettingsProtectionRules() {
     <Stack gap={0}>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
         <Stack gap="xs">
-          <Title order={1}>Protection rules</Title>
+          <Title order={1}>Compliance packs</Title>
           <Text size="lg" c="dimmed">
             Pick how Hoop should guard everything you connect.
           </Text>

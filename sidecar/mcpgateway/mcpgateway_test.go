@@ -33,6 +33,7 @@ type recSession struct {
 	id        string
 	deny      map[string]string
 	hide      map[string]bool
+	held      map[string]bool
 	mask      func(string) (string, []string, int, error)
 	recordErr error
 	calls     []string
@@ -44,12 +45,20 @@ type recSession struct {
 
 func (s *recSession) ID() string { return s.id }
 
-func (s *recSession) ToolCall(_ context.Context, tool string, args []byte) daemon.MCPVerdict {
+// ToolCall denies a tool in deny. A tool in held waits until the request
+// ends, as a hold does, then answers that it still waits.
+func (s *recSession) ToolCall(ctx context.Context, tool string, args []byte) daemon.MCPVerdict {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.calls = append(s.calls, tool)
 	s.seen = append(s.seen, tool, string(args))
-	if rule, ok := s.deny[tool]; ok {
+	rule, denied := s.deny[tool]
+	held := s.held[tool]
+	s.mu.Unlock()
+	switch {
+	case held:
+		<-ctx.Done()
+		return daemon.MCPVerdict{Message: "still waiting (approval 9f97)", Rule: rule, Held: true}
+	case denied:
 		return daemon.MCPVerdict{Message: "not allowed", Rule: rule}
 	}
 	return daemon.MCPVerdict{Allowed: true}
@@ -126,6 +135,7 @@ type testLane struct {
 	mu        sync.Mutex
 	deny      map[string]string
 	hide      map[string]bool
+	held      map[string]bool
 	mask      func(string) (string, []string, int, error)
 	recordErr error
 	sessions  []*recSession
@@ -136,7 +146,7 @@ func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSe
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callers = append(l.callers, c)
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, mask: l.mask, recordErr: l.recordErr}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, held: l.held, mask: l.mask, recordErr: l.recordErr}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -499,6 +509,26 @@ func TestARuleDenialIsAToolError(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(acts, "\n"), "mcp_initialize") {
 		t.Fatalf("initialize not recorded: %v", acts)
+	}
+}
+
+// A held call answers as a tool error that says it is held, and the lane's
+// RequestTimeout ends the wait.
+func TestAHeldCallAnswersWithinTheRequestTimeout(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "tools"}, held: map[string]bool{"delete_customer": true}}
+	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
+	t.Cleanup(up.Close)
+	_, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
+		Transport: daemon.MCPTransportStreamableHTTP, Open: ln.open, RequestTimeout: 200 * time.Millisecond})
+	c := &client{url: url, hc: &http.Client{Timeout: 30 * time.Second}}
+	c.init(t)
+	start := time.Now()
+	body := c.call(t, 3, "delete_customer", `{"id":"7"}`)
+	if !strings.Contains(body, `"isError":true`) || !strings.Contains(body, "held for approval by the hoop sidecar (rule tools): still waiting (approval 9f97)") {
+		t.Fatalf("held call: %s", body)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("the held call answered after %s, past the lane's request timeout", d)
 	}
 }
 

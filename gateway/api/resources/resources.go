@@ -70,6 +70,13 @@ func CreateResource(c *gin.Context) {
 	if req.SubType == "" {
 		req.SubType = req.Type
 	}
+	agentIDs := []string{req.AgentID}
+	for _, role := range req.Roles {
+		agentIDs = append(agentIDs, role.AgentID)
+	}
+	if abortOnInvalidAgents(c, ctx.OrgID, agentIDs...) {
+		return
+	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, req.Name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -123,7 +130,7 @@ func CreateResource(c *gin.Context) {
 			}
 
 			connectionStatus := models.ConnectionStatusOffline
-			if streamclient.IsAgentOnline(streamtypes.NewStreamID(agentId, "")) {
+			if streamclient.IsAgentOnline(ctx.OrgID, streamtypes.NewStreamID(agentId, "")) {
 				connectionStatus = models.ConnectionStatusOnline
 			}
 
@@ -369,6 +376,9 @@ func UpdateResource(c *gin.Context) {
 	if req.SubType == "" {
 		req.SubType = req.Type
 	}
+	if abortOnInvalidAgents(c, ctx.OrgID, req.AgentID) {
+		return
+	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -463,6 +473,15 @@ func DeleteResource(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func abortOnInvalidAgents(c *gin.Context, orgID string, agentIDs ...string) bool {
+	for _, id := range agentIDs {
+		if id != "" && apiconnections.AbortOnInvalidAgent(c, http.StatusBadRequest, orgID, id) {
+			return true
+		}
+	}
+	return false
 }
 
 func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
