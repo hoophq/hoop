@@ -433,6 +433,32 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 	return nil
 }
 
+// CheckStoredSidecarConfiguration is CheckSidecarConfiguration for a stored
+// document. A lane analyzer block is the base its bound analyzer rule merges
+// over, so it may name no action of its own; it is checked with that rule
+// folded in. A binding to a missing lane is left to the binding check.
+func CheckStoredSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
+	cfg := daemon.Config(sc.Configuration)
+	orgID, err := uuid.Parse(sc.OrgID)
+	if err != nil {
+		return fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+	}
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
+	if err != nil {
+		return fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+	}
+	var analyzers []models.BoundRule
+	for _, b := range bound.Analyzers {
+		if slices.ContainsFunc(cfg.Listeners, func(l daemon.ListenerConfig) bool { return l.Name == b.ListenerName }) {
+			analyzers = append(analyzers, b)
+		}
+	}
+	if cfg, err = foldSidecarRules(cfg, nil, nil, analyzers); err != nil {
+		return ErrSidecarBindingBroken{Reason: err.Error()}
+	}
+	return CheckSidecarConfiguration(cfg)
+}
+
 // CheckComposedSidecarConfiguration refuses a configuration write whose served
 // document a sidecar could not run: an analyzer block the sidecar refuses, or
 // a feature its last handshake did not report. It composes, because a rule
