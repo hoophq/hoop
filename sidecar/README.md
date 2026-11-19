@@ -4326,24 +4326,29 @@ unread. Tool descriptions are the `tools/list` result, after `overrides`.
 | Feature | Call arguments | Tool descriptions | `content[].text` | `structuredContent` | Resources | Prompts |
 |---|---|---|---|---|---|---|
 | Guardrails | judged | judged; a hit ends the session | no | no | no | no |
-| OPA | judged | judged; a deny ends the session | no | no | no | no |
+| OPA | judged | judged, unless `responses: false`; a deny ends the session | no | no | no | no |
 | Masking | no | no | masked | masked | `resources/read` text masked, `blob` not | no |
 | SQL rules | the SQL in an `mcp_gateway.sql` argument | no | no | no | no | no |
 | Analyzer | rated | no | no | no | no | no |
 | Approvals | held | no | no | no | no | no |
-| Audit | one statement per call | one statement per list | the masked count, not the text | the masked count, not the text | no | no |
+| Audit | one statement per call | one statement per list | the masked count, not the text | the masked count, not the text | the masked count; no statement | no |
 
-The tests that pin each row:
+The tests that pin each cell:
 
-| Feature | Tests |
+| Cell | Tests |
 |---|---|
-| Guardrails | `daemon` TestMCPLaneRuleTypes; `mcpgateway` TestARuleDenialIsAToolError, TestAHiddenToolIsAbsentFromTheCatalogAndRefused; `policy` TestMCPToolRule |
-| OPA | `daemon` TestMCPLaneConsultsOPA |
-| Masking | `mcpgateway` TestAToolResultTextIsMasked, TestANestedResourceTextIsMasked, TestEveryStructuredContentStringIsMasked, TestAResourceReadIsMasked |
-| SQL rules | `daemon` TestAnMCPSQLToolCallIsJudgedPerStatement, TestAnMCPSQLArgumentTheLaneCannotReadIsRefused; `e2e` TestMCPSQLArgumentIsJudged |
-| Analyzer | `daemon` TestMCPLaneAnalyzerRefusesOneCall, TestMCPLaneAnalyzerReadsTheCallAndTheSQLOfASQLTool; `analyzer` TestMCPBuilderSendsTheToolNameAndArguments |
-| Approvals | `daemon` TestMCPLaneHoldReleasesAnApprovedCall, TestMCPLaneHoldRefusesARejectedCall, TestMCPLaneHoldAnswersAPendingCallWithTheApproval; `mcpgateway` TestAHeldCallAnswersWithinTheRequestTimeout |
-| Audit | `daemon` TestMCPLaneSessionRecordsOneStatementPerCall, TestMCPLaneRecordsHiddenTools, TestMCPLaneSessionMasksAndRecordsTheCount |
+| Guardrails, arguments | `daemon` TestMCPLaneRuleTypes; `mcpgateway` TestARuleDenialIsAToolError; `policy` TestMCPToolRule |
+| Guardrails, descriptions | `daemon` TestMCPLaneRuleTypes; `mcpgateway` TestADeniedCatalogEndsTheSession, TestAHiddenToolIsAbsentFromTheCatalogAndRefused |
+| OPA, arguments and descriptions | `daemon` TestMCPLaneConsultsOPA; `mcpgateway` TestADeniedCatalogEndsTheSession |
+| Masking, `content[].text` | `mcpgateway` TestAToolResultTextIsMasked |
+| Masking, `structuredContent` | `mcpgateway` TestEveryStructuredContentStringIsMasked |
+| Masking, resources | `mcpgateway` TestAResourceReadIsMasked, TestANestedResourceTextIsMasked, TestAResourceBlobIsNotMasked |
+| SQL rules, arguments | `daemon` TestAnMCPSQLToolCallIsJudgedPerStatement, TestAnMCPSQLArgumentTheLaneCannotReadIsRefused; `e2e` TestMCPSQLArgumentIsJudged |
+| Analyzer, arguments | `daemon` TestMCPLaneAnalyzerRefusesOneCall, TestMCPLaneAnalyzerReadsTheCallAndTheSQLOfASQLTool; `analyzer` TestMCPBuilderSendsTheToolNameAndArguments |
+| Approvals, arguments | `daemon` TestMCPLaneHoldReleasesAnApprovedCall, TestMCPLaneHoldRefusesARejectedCall, TestMCPLaneHoldAnswersAPendingCallWithTheApproval; `mcpgateway` TestAHeldCallAnswersWithinTheRequestTimeout |
+| Audit, arguments | `daemon` TestMCPLaneSessionRecordsOneStatementPerCall |
+| Audit, descriptions | `daemon` TestMCPLaneRecordsHiddenTools |
+| Audit, results and resources | `mcpgateway` TestAToolResultTextIsMasked, TestEveryStructuredContentStringIsMasked, TestAResourceReadIsMasked; `daemon` TestMCPLaneSessionMasksAndRecordsTheCount |
 
 #### Limits
 
