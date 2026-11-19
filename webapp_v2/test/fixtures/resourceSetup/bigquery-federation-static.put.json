@@ -1,0 +1,13 @@
+{
+  "admin_credentials_json": "{\"type\":\"service_account\",\"client_email\":\"fed@p.iam.gserviceaccount.com\",\"private_key\":\"k2\"}",
+  "extra_config": {
+    "project_id": "p-fed"
+  },
+  "builtin_provider": "gcp_iam",
+  "token_ttl_seconds": 3600,
+  "identity_source_attribute": "$.user.email",
+  "identity_target_template": "{user.email}",
+  "enabled": true,
+  "hook_source": "builtin",
+  "fallback_policy": "static"
+}
