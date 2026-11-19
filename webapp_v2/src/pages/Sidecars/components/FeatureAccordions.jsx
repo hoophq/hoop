@@ -4,7 +4,7 @@ import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
-import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
+import { MODE_ENFORCE, MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
@@ -37,6 +37,16 @@ function RuleRow({ rule, onEdit }) {
       {rule.flag && (
         <Badge tag variant="warning">
           {rule.flag}
+        </Badge>
+      )}
+      {rule.mode === MODE_OBSERVE && (
+        <Badge tag variant="warning">
+          Observe
+        </Badge>
+      )}
+      {rule.mode === MODE_ENFORCE && (
+        <Badge tag variant="light" color="gray">
+          Enforce
         </Badge>
       )}
       <SourceBadge source={rule.source} />

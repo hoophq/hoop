@@ -255,9 +255,12 @@ function summary(key, rules) {
 function laneRows(key, config) {
   const rows = []
   for (const lane of config?.listeners ?? []) {
+    // A lane's guardrails.mode overrides the card's mode for its rules, so a row says so.
+    const laneMode = key === 'guardrails' ? guardrailMode(lane, config) : null
+    const mode = laneMode !== guardrailMode(null, config) ? laneMode : null
     for (const row of ROWS[key](lane, config, [])) {
       if (row.source !== SOURCE_LISTENER) continue
-      rows.push({ ...row, id: `${lane.name}-${row.id}`, detail: `On ${lane.name}` })
+      rows.push({ ...row, id: `${lane.name}-${row.id}`, detail: `On ${lane.name}`, mode })
     }
   }
   return rows

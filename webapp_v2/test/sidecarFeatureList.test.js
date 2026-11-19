@@ -55,6 +55,27 @@ describe('the sidecar-level feature card', () => {
     expect(byKey['data-masking'].rules.map((r) => r.name)).toEqual(['pii-redact'])
   })
 
+  it("marks a lane rule whose lane overrides the card's guardrail mode", () => {
+    const withModes = (top, lane) => ({
+      ...config,
+      guardrails: { mode: top },
+      listeners: config.listeners.map((l) =>
+        l.guardrails ? { ...l, guardrails: { ...l.guardrails, mode: lane } } : l,
+      ),
+    })
+    const guardrails = (cfg) => featureList(null, cfg, []).find((f) => f.key === 'guardrails')
+
+    const enforcingLane = guardrails(withModes('observe', 'enforce'))
+    expect(enforcingLane.mode).toBe('observe')
+    expect(enforcingLane.rules[0].mode).toBe('enforce')
+
+    const observingLane = guardrails(withModes('enforce', 'observe'))
+    expect(observingLane.mode).toBe('enforce')
+    expect(observingLane.rules[0].mode).toBe('observe')
+
+    expect(guardrails(withModes('observe', 'observe')).rules[0].mode).toBeNull()
+  })
+
   it('lists a distributed rule next to the inline one', () => {
     const bound = [{ kind: 'guardrail', rule_name: 'no-drop', listener_name: 'appdb' }]
     expect(card('guardrails', bound).rules.map((r) => r.name)).toEqual(['no-drop', 'no-admin-api'])
