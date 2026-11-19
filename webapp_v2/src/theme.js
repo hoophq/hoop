@@ -19,6 +19,9 @@ import { AlertTheme } from '@/components/Alert/theme'
 import { ThemeIconTheme } from '@/components/ThemeIcon/theme'
 import { AccordionTheme } from '@/components/Accordion/theme'
 import { TabsTheme } from '@/components/Tabs/theme'
+import { PaginationTheme } from '@/components/Pagination/theme'
+import { SegmentedControlTheme } from '@/components/SegmentedControl/theme'
+import { CheckboxTheme, CheckboxIndicatorTheme } from '@/components/Checkbox/theme'
 import { ModalTheme } from '@/components/Modal/theme'
 import { DividerTheme } from '@/components/Divider/theme'
 import { CodeTheme } from '@/components/Code/theme'
@@ -80,9 +83,9 @@ export function cssVariablesResolver(theme) {
       '--hoop-button-radius': '9999px',
       // The corners of a badge: a status, a tag or a chip (Badge, Pill). Pill.
       '--hoop-badge-radius': '9999px',
-      // The corners of a callout: a note on the page (Alert, Callout). A soft
-      // round corner, the same on one line or many.
-      '--hoop-callout-radius': 'var(--mantine-radius-lg)',
+      // The corners of a callout: a note on the page (Alert, Callout). Square
+      // (brand), like fields and cards.
+      '--hoop-callout-radius': '0',
       // The corners of a field: every input, select and the controls that sit
       // beside one (SourcedInput, the field Button). Square (brand).
       '--hoop-field-radius': '0',
@@ -207,7 +210,12 @@ export const theme = createTheme({
   respectReducedMotion: true,
   primaryColor: 'indigo',
   primaryShade: 5, // → Radix shade 9, the solid/saturated action color
-  defaultRadius: 'md',
+  // Square by default (brand): a component with no shape rule of its own
+  // (dropdowns, menus, tooltips, inline code, skeletons) is born square.
+  // Round things say so in their own theme: Button and ActionIcon
+  // (--hoop-button-radius), Badge (--hoop-badge-radius), Pill. Avatar, Radio,
+  // Switch and Stepper icons are round by Mantine's own default.
+  defaultRadius: 0,
 
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
   fontFamilyMonospace: "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
@@ -407,6 +415,10 @@ export const theme = createTheme({
     ThemeIcon: ThemeIconTheme,
     Accordion: AccordionTheme,
     Tabs: TabsTheme,
+    Pagination: PaginationTheme,
+    SegmentedControl: SegmentedControlTheme,
+    Checkbox: CheckboxTheme,
+    CheckboxIndicator: CheckboxIndicatorTheme,
     Modal: ModalTheme,
     Divider: DividerTheme,
     Code: CodeTheme,

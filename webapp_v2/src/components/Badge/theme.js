@@ -21,8 +21,34 @@ const CHIP = {
   '--badge-padding-x': 'var(--mantine-spacing-xs)',
 }
 
+/**
+ * The status badge (`sm`, the default): 11px instead of Mantine's 10px, on a
+ * 20px pill, so an upper-case status word stays readable.
+ */
+const STATUS = {
+  '--badge-height': rem(20),
+  '--badge-fz': rem(11),
+}
+
+/**
+ * A light badge (a tinted fill) writes its text in the darkest step of its
+ * color. Mantine's light-color is the primary shade, which on the light tint
+ * reads at 3.5:1 for gray; step 9 clears 4.5:1 (WCAG AA) for every palette.
+ * A call site that passes `c` keeps its own color.
+ */
+function lightText(props) {
+  if (props.variant !== 'light' || props.c || typeof props.color !== 'string') return {}
+  const name = props.color.split('.')[0]
+  return { '--badge-color': `var(--mantine-color-${name}-9)` }
+}
+
 export const BadgeTheme = Badge.extend({
   // Every badge is a pill, from --hoop-badge-radius (Badge.module.css).
   classNames: { root: classes.root },
-  vars: (_theme, props) => ({ root: props.size === 'chip' ? CHIP : {} }),
+  vars: (_theme, props) => ({
+    root: {
+      ...(props.size === 'chip' ? CHIP : props.size === 'sm' || props.size == null ? STATUS : {}),
+      ...lightText(props),
+    },
+  }),
 })

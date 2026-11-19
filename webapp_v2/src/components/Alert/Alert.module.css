@@ -1,7 +1,5 @@
-/* A callout (a note on the page) has soft round corners from the theme. */
+/* A callout (a note on the page) is square: its corners come from the theme. */
 .root {
   --alert-radius: var(--hoop-callout-radius);
   border-radius: var(--hoop-callout-radius);
-  /* Room for the curve: text never reaches the rounded ends. */
-  padding-inline: var(--mantine-spacing-lg);
 }

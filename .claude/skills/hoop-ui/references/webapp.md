@@ -59,15 +59,27 @@ What each color means. These rules are not in the repo:
 
 Use the radius the theme gives. Never pass `radius` on a control.
 
+Square is the default: `defaultRadius` is 0, so a component with no shape
+rule of its own (a dropdown, a menu, a tooltip, inline `Code`, a skeleton)
+is square. Only what a theme makes round is round: `Button`, `ActionIcon`,
+`Pagination` numbers (`--hoop-button-radius`), `Badge` and `Pill`
+(`--hoop-badge-radius`), and Mantine's own round parts (`Avatar`, `Radio`,
+`Switch`, `Stepper` icons).
+
 Buttons are pills. The theme does it (`components/Button/theme.js`), so a
-call site sets nothing. Exception: `variant="field"` keeps the input's
-corners. Do not draw a pill by hand on another component.
+call site sets nothing. Do not draw a pill by hand on another component.
+
+A button next to a field is square. In a filter bar, a search or any row
+where a button sits beside an input, use `Button variant="field"`, or
+`ActionIcon variant="field"` for an icon alone: it takes the field corners
+(`--hoop-field-radius`, 0), fill, border and height.
 
 Lists are square. `List` and `Table` take their corners and lines from
 `--hoop-list-radius` (0) and `--hoop-list-border`. A page never sets them.
 
-Fields are square. Every input, select and textarea takes its corners from
-`--hoop-field-radius` (0), and so do `SourcedInput` and the `field` Button.
+Fields are always square. Every input, select and textarea takes its corners
+from `--hoop-field-radius` (0), and so do `SourcedInput` and the `field`
+Button. Never round a field. Checkboxes are square too, from the same token.
 With square cards and fields, buttons are the only round thing: the action
 stands out.
 
@@ -77,9 +89,8 @@ A link to the docs is `DocsBtnCallOut`: a `size="sm"` button with an arrow
 A selected option (`SelectionCard`) is indigo: a light tint and an indigo
 border. Never navy, which is for login and upsell visuals only.
 
-Callouts have soft round corners (lg), not a pill. A note on the page
-(`Alert`, or a `Paper` with `data-callout`) takes its corners from
-`--hoop-callout-radius`, the same on one line or many.
+Callouts are square. A note on the page (`Alert`, or a `Paper` with
+`data-callout`) takes its corners from `--hoop-callout-radius` (0).
 
 Cards are square. Every surface (`Paper`, `Card`, `MethodCard`,
 `SelectionCard`, `EnterpriseBanner`, `CodeSnippet`, `Accordion`, a panel or a viewer)
@@ -88,9 +99,13 @@ takes its corners from `--hoop-card-radius` (0) and its white fill from
 a `radius` prop, so a page never passes one. Icon tiles (`ThemeIcon`) are
 square too, from `--hoop-icon-radius` (0). Icon buttons (`ActionIcon`) are round, from `--hoop-button-radius`, like
 `Button`. Badges are pills, from
-`--hoop-badge-radius`; a `radius` prop on a Badge does nothing. Tabs are square, from
-`--hoop-tab-radius`: the hover fill and the focus ring. Small things
-keep their own: avatars, menu items, modals and toasts.
+`--hoop-badge-radius`; a `radius` prop on a Badge does nothing. A status badge is 11px
+and its text reads at 4.5:1 or more: filled and outline badges use step 7 of
+their color, a light badge writes its text in step 9 (`components/Badge`).
+Never pass a lighter `c` on a badge. Tabs and `SegmentedControl` are square, from
+`--hoop-tab-radius`: the hover fill, the focus ring and the moving indicator.
+Page numbers (`Pagination`) are circles, from `--hoop-button-radius`. Modals, menus and
+toasts are square like the rest.
 
 `test/shape.test.js` fails on a page that sets a list or card shape by
 hand.

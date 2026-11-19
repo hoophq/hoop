@@ -12,15 +12,18 @@ import classes from './ActionIcon.module.css'
 // prop on a call site does nothing.
 const SIZES = new Set(['xs', 'sm', 'md', 'lg'])
 const ROUND = { '--ai-radius': 'var(--hoop-button-radius)' }
+// `variant="field"` sits next to an input: square, with the field's look.
+const FIELD = { '--ai-radius': 'var(--hoop-field-radius)' }
 
 export const ActionIconTheme = ActionIcon.extend({
   classNames: { root: classes.root },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
-    if (!SIZES.has(props.size)) return { root: ROUND }
+    const shape = props.variant === 'field' ? FIELD : ROUND
+    if (!SIZES.has(props.size)) return { root: shape }
     return {
       root: {
-        ...ROUND,
+        ...shape,
         '--ai-size': `var(--hoop-control-height-${props.size})`,
       },
     }

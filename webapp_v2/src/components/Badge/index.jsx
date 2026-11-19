@@ -10,16 +10,19 @@ import classes from './Badge.module.css'
  * Falls back to standard Mantine props when `variant` is a Mantine variant name.
  * `fullLabel` keeps a short label from being ellipsized (see Badge.module.css).
  */
+// Filled and outline badges take step 7 of their color: white on green.5 or
+// red.5 read at 3.5:1 and 4:1, and the gray.5 outline at 3.9:1; step 7 clears
+// 4.5:1 (WCAG AA) for all three.
 const SEMANTIC_MAP = {
-  active: { color: 'green', variant: 'filled' },
-  inactive: { color: 'gray', variant: 'outline' },
+  active: { color: 'green.7', variant: 'filled' },
+  inactive: { color: 'gray.7', variant: 'outline' },
   // Amber, and light rather than filled. `yellow` is not a palette this theme
   // defines, so it fell through to stock Mantine #fcc419 and painted white on
   // it: 1.57:1, which is not readable at any size. Amber's own light variant
   // is barely better (2.05:1) because its light-color is the primary shade, so
   // the text is pinned two steps darker — 5.92:1, AA at 12px.
   warning: { color: 'amber', variant: 'light', c: 'amber.9' },
-  danger: { color: 'red', variant: 'filled' },
+  danger: { color: 'red.7', variant: 'filled' },
 }
 
 const DOT_COLORS = {

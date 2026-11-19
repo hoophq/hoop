@@ -14,7 +14,7 @@ function MethodCard({ method, selected, onSelect }) {
           size="md"
           variant="soft"
           color={selected ? 'indigo' : 'gray'}
-          radius="sm"
+          radius="var(--hoop-icon-radius)"
           src={method.iconDark}
           alt={method.label}
         />
