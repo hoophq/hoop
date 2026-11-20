@@ -10,6 +10,8 @@ import (
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
+	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 // secretFieldNames are keys that must never appear anywhere in the
@@ -38,6 +40,62 @@ func mintPersistentCredential(t *testing.T, token, connName string) map[string]a
 	var out map[string]any
 	testutil.DecodeJSON(t, resp, &out)
 	return out
+}
+
+func TestAIAgentCredentialIsAServiceIdentityCredential(t *testing.T) {
+	admin := adminToken(t)
+	agentID := createAgentReturningID(t, admin, "ai-agent-credential-owner")
+	defer deleteAgent(t, admin, "ai-agent-credential-owner")
+
+	const connName = "ai-agent-credential-owner"
+	created := testServer.Post(t, "/connections", admin, openapi.Connection{
+		Name:               connName,
+		Type:               "database",
+		SubType:            "postgres",
+		AgentId:            agentID,
+		Command:            []string{"psql"},
+		AccessModeRunbooks: "enabled",
+		AccessModeExec:     "enabled",
+		AccessModeConnect:  "enabled",
+		AccessSchema:       "enabled",
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		resp := testServer.Delete(t, "/connections/"+connName, admin)
+		resp.Body.Close()
+	}()
+
+	const identityName = "postgres-credential-owner"
+	identityResp := testServer.Post(t, "/ai-agents", admin, openapi.AIAgentCreateRequest{
+		Name:   identityName,
+		Groups: []string{"admin"},
+	})
+	defer identityResp.Body.Close()
+	testutil.RequireStatus(t, identityResp, http.StatusCreated)
+	var identity openapi.AIAgentCreateResponse
+	testutil.DecodeJSON(t, identityResp, &identity)
+	defer func() {
+		resp := testServer.Delete(t, "/ai-agents/"+identityName, admin)
+		resp.Body.Close()
+	}()
+
+	credential := mintPersistentCredential(t, identity.Key, connName)
+	credentialID, _ := credential["id"].(string)
+	isService, err := models.IsServiceIdentityCredential(models.DB, identity.OrgID, credentialID, identity.ID)
+	if err != nil {
+		t.Fatalf("classify AI-agent credential: %v", err)
+	}
+	if !isService {
+		t.Fatal("AI-agent credential classified as a human user credential")
+	}
+	ctx, err := services.GetServiceIdentityContextByID(models.DB, identity.OrgID, identity.ID)
+	if err != nil {
+		t.Fatalf("load AI-agent context: %v", err)
+	}
+	if ctx == nil || ctx.UserSubject != identity.ID {
+		t.Fatalf("AI-agent context subject = %v, want %v", ctx, identity.ID)
+	}
 }
 
 func listActiveCredentials(t *testing.T, token string) (map[string]any, string) {
