@@ -40,9 +40,24 @@ export const APPROVER_RULE = 'approval_rule'
 // Who approves one level's hold. A new hold uses the AI agent. A hand-off
 // level keeps here the approver of its "Hold for approval" choice. `routing`
 // is a human level's "How approval is done" (ENG-663): a new hold lets the
-// AI decide.
-const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '', routing: emptyRouting() })
+// AI decide. `groupsChosen` marks `groups` as a By groups selection, stored or
+// made, so an empty one means the administrators and is not seeded again.
+const emptyApproval = () => ({
+  approver: APPROVER_AI,
+  groups: [],
+  groupsChosen: false,
+  prompt: '',
+  routing: emptyRouting(),
+})
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
+
+// A person on By groups with no selection made yet: the one level the form
+// fills with every group once they are known.
+const unseededStatic = (approval) =>
+  approval.approver === APPROVER_HUMAN &&
+  approval.routing.mode === ROUTING_STATIC &&
+  approval.groups.length === 0 &&
+  !approval.groupsChosen
 
 // An approver is configured once it is chosen and, for a person, once "How
 // approval is done" is too. An imported rule's hold is decided by that rule.
@@ -139,7 +154,11 @@ export function specToForm(spec, ruleName, reviewers) {
     if (!canHold(form, level)) continue
     const read = readLevelApprover(spec, level)
     if (read) {
-      form.approval[level] = { ...read, routing: readRouting(read.routing) }
+      // Only a person's entry has a way to approve; an AI agent's one turns
+      // into a person with no mode yet, like a new hold.
+      const human = read.approver === APPROVER_HUMAN
+      const routing = human ? readRouting(read.routing) : emptyRouting()
+      form.approval[level] = { ...emptyApproval(), ...read, routing, groupsChosen: human && routing.mode === ROUTING_STATIC }
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
@@ -147,6 +166,7 @@ export function specToForm(spec, ruleName, reviewers) {
         ...emptyApproval(),
         approver: APPROVER_HUMAN,
         groups: reviewers,
+        groupsChosen: true,
         routing: emptyRouting(ROUTING_STATIC),
       }
     }
@@ -287,7 +307,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     })
   // A level set to "By groups" before the groups loaded gets every group once
   // the list arrives (routingModePatch seeds from an empty option list),
-  // unless the editor picks groups first.
+  // unless the editor picks groups first. A level that is no longer a person
+  // on By groups when the list arrives is not seeded; routingModePatch and
+  // setApprover seed it when it returns.
   const groupsLoaded = useRef(false)
   const awaitingGroups = useRef(new Set())
   const setApproval = (level, patch) => {
@@ -311,11 +333,18 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
     })
   // Picking the approver a level already has changes nothing. A person's
-  // groups are seeded when "How approval is done" is set (routingModePatch).
+  // groups are seeded when "How approval is done" is set (routingModePatch),
+  // or here when a person on By groups returns with no selection made.
   const setApprover = (level, approver) => {
     if (form.approval[level].approver === approver) return
-    awaitingGroups.current.delete(level)
-    setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], approver } } }))
+    setForm((f) => {
+      const current = { ...f.approval[level], approver }
+      if (unseededStatic(current) && groupsLoaded.current && groupOptions.length > 0) {
+        current.groups = [...groupOptions].sort()
+        current.groupsChosen = true
+      }
+      return { ...f, approval: { ...f.approval, [level]: current } }
+    })
   }
   // The rules a level's feature may name: the library's and the target
   // sidecars' own (targetLibraryEntries).
@@ -396,8 +425,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
         const approval = { ...f.approval }
         for (const level of waiting) {
           const current = approval[level]
-          if (current.approver === APPROVER_HUMAN && current.groups.length === 0) {
-            approval[level] = { ...current, groups: [...options].sort() }
+          if (unseededStatic(current)) {
+            approval[level] = { ...current, groups: [...options].sort(), groupsChosen: true }
           }
         }
         return { ...f, approval }

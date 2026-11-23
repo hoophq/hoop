@@ -74,13 +74,18 @@ export function selectCandidates(selection, options, loaded) {
 }
 
 // The approval patch for a change of "How approval is done". The selection
-// carries over: By groups starts from the candidates when it has no groups
-// yet, and AI Decides from the groups when it has no candidates.
+// carries over in its meaning. By groups with no selection made yet starts
+// from the candidates, where none (null or empty) means every group; a By
+// groups selection already made stays, an empty one included, since it means
+// the administrators. AI Decides starts from the groups when it has no
+// candidates. Before the groups load, `options` may be empty: the editor
+// seeds the level once they arrive.
 export function routingModePatch(approval, mode, options, loaded) {
   const { routing, groups } = approval
   const patch = { routing: { ...routing, mode } }
-  if (mode === ROUTING_STATIC && groups.length === 0) {
-    patch.groups = [...candidateSelection(routing.candidates, options)]
+  if (mode === ROUTING_STATIC && groups.length === 0 && !approval.groupsChosen) {
+    patch.groups = routing.candidates?.length > 0 ? [...routing.candidates] : [...options]
+    patch.groupsChosen = patch.groups.length > 0
   } else if (mode === ROUTING_AI && !routing.candidates?.length && groups.length > 0) {
     patch.routing.candidates = selectCandidates(groups, options, loaded)
   }

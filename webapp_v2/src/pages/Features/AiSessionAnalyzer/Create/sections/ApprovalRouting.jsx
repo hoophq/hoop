@@ -227,7 +227,7 @@ function Notify({ routing, onRoute }) {
       <Stack gap={6}>
         <Paper withBorder radius="lg" className={classes.clipped}>
           {body}
-          {loaded && <KeptEntries entries={kept} />}
+          {(loaded || status === 'error') && <KeptEntries entries={kept} />}
         </Paper>
         {loaded && !anyOn && helper("Notifications follow today's behavior.")}
       </Stack>
@@ -285,7 +285,11 @@ export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, 
         </>
       ) : (
         routing.mode === ROUTING_STATIC && (
-          <ApprovalGroups options={groupOptions} value={approval.groups} onChange={(groups) => onChange({ groups })} />
+          <ApprovalGroups
+            options={groupOptions}
+            value={approval.groups}
+            onChange={(groups) => onChange({ groups, groupsChosen: true })}
+          />
         )
       )}
     </Stack>

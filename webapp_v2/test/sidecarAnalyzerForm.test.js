@@ -134,6 +134,37 @@ describe('the candidate groups of an AI-routed level', () => {
     const kept = { ...stat, routing: { ...emptyRouting(ROUTING_STATIC), candidates: ['security-analysts'] } }
     expect(routingModePatch(kept, ROUTING_AI, GROUPS, true).routing.candidates).toEqual(['security-analysts'])
   })
+
+  it('keeps what an empty selection means over a change of "How approval is done"', () => {
+    // By groups with no group means the administrators, and stays so after AI Decides.
+    const spec = { high: 'require_approval', approvers: { high: { type: 'human' } } }
+    const stored = specToForm(spec, 'r', []).approval.high
+    expect(stored.routing.mode).toBe(ROUTING_STATIC)
+    const toAI = { ...stored, ...routingModePatch(stored, ROUTING_AI, GROUPS, true) }
+    expect(toAI.routing.candidates).toBeNull()
+    expect(routingModePatch(toAI, ROUTING_STATIC, GROUPS, true).groups).toBeUndefined()
+
+    // AI Decides with the candidates cleared means every group, and so does By groups.
+    const cleared = { approver: 'human', groups: [], groupsChosen: false, routing: emptyRouting(ROUTING_AI) }
+    cleared.routing.candidates = selectCandidates([], GROUPS, true)
+    const toStatic = routingModePatch(cleared, ROUTING_STATIC, GROUPS, true)
+    expect(toStatic.groups).toEqual(GROUPS)
+    expect(toStatic.groupsChosen).toBe(true)
+
+    // Before the groups load there is nothing to seed: the editor seeds later.
+    const pending = routingModePatch(cleared, ROUTING_STATIC, [], false)
+    expect(pending.groups).toEqual([])
+    expect(pending.groupsChosen).toBe(false)
+  })
+
+  it('turns a stored AI agent into a person with no selection made', () => {
+    const spec = { high: 'require_approval', approvers: { high: { type: 'ai_agent' } } }
+    const stored = specToForm(spec, 'r', []).approval.high
+    expect(stored.groupsChosen).toBe(false)
+    const human = { ...stored, approver: 'human' }
+    expect(human.routing.mode).toBeNull()
+    expect(routingModePatch(human, ROUTING_STATIC, GROUPS, true).groups).toEqual(GROUPS)
+  })
 })
 
 describe('a level card', () => {
