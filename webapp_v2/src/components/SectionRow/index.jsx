@@ -14,7 +14,7 @@ import { Grid, Group, Stack, Text, Title } from '@mantine/core'
  * should collapse onto; `pages/Features/AiSessionAnalyzer/components/SectionRow`
  * already re-exports it, and the rest is a mechanical change of its own.
  */
-export default function SectionRow({ title, badge, description, callout, children }) {
+export default function SectionRow({ title, titleFw = 500, badge, description, callout, children }) {
   return (
     <Grid columns={7} gutter="xl">
       {/* Stacks below the sm breakpoint. At phone width a fixed 2/7 column is
@@ -23,7 +23,7 @@ export default function SectionRow({ title, badge, description, callout, childre
       <Grid.Col span={{ base: 7, sm: 2 }}>
         <Stack gap="xs">
           <Group gap="xs" align="center">
-            <Title order={4} fw={500}>
+            <Title order={4} fw={titleFw}>
               {title}
             </Title>
             {badge}
