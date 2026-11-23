@@ -7,6 +7,7 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
+	commonconfig "github.com/hoophq/hoop/common/clientconfig"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/spf13/cobra"
 )
@@ -27,12 +28,19 @@ func init() {
 	viewCmd.Flags().BoolVar(&viewRawFlag, "raw", false, "Display sensitive credentials information")
 
 	_ = createCmd.MarkFlagRequired("api-url")
-	MainCmd.AddCommand(createCmd, viewCmd, clearCmd)
+	MainCmd.AddCommand(
+		createCmd, viewCmd, clearCmd,
+		getContextsCmd, currentContextCmd, useContextCmd, setContextCmd, deleteContextCmd,
+	)
 }
 
 var MainCmd = &cobra.Command{
-	Use:          "config",
-	Short:        "Manage the hoop configuration file",
+	Use:   "config",
+	Short: "Manage the hoop configuration file",
+	Long: `Manage the hoop configuration file.
+
+Switch profiles with "hoop config use-context <name>".
+Profiles are [profile <name>] sections in the same config.toml.`,
 	Hidden:       false,
 	SilenceUsage: false,
 }
@@ -92,8 +100,20 @@ var viewCmd = &cobra.Command{
 				value = c.Token
 			case "tls_ca":
 				value = c.TlsCAB64Enc
+			case "config_file":
+				value = c.Path()
+			case "context":
+				path, _, err := commonconfig.NewPath(commonconfig.ClientFile)
+				if err != nil {
+					styles.PrintErrorAndExit("%s", err.Error())
+				}
+				name, err := commonconfig.CurrentProfile(path)
+				if err != nil {
+					styles.PrintErrorAndExit("%s", err.Error())
+				}
+				value = name
 			default:
-				styles.PrintErrorAndExit("attribute not supported, accept only: api_url, grpc_url, token, tls_ca")
+				styles.PrintErrorAndExit("attribute not supported, accept only: api_url, grpc_url, token, tls_ca, config_file, context")
 			}
 			fmt.Println(value)
 			return
@@ -108,6 +128,14 @@ var viewCmd = &cobra.Command{
 		}
 		if tlsCA := c.TlsCAB64Enc; tlsCA != "" {
 			fmt.Printf("tls_ca=%s\n", tlsCA)
+		}
+		if path := c.Path(); path != "" {
+			fmt.Printf("config_file=%s\n", path)
+		}
+		if path, _, err := commonconfig.NewPath(commonconfig.ClientFile); err == nil {
+			if name, err := commonconfig.CurrentProfile(path); err == nil {
+				fmt.Printf("context=%s\n", name)
+			}
 		}
 	},
 }
