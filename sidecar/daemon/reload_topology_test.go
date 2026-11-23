@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/analytics"
 )
 
 // testRunningReloader is testReloader with the lanes served: every lane is
@@ -495,4 +497,170 @@ func TestAStandaloneFileEditAddsAListener(t *testing.T) {
 		t.Fatalf("the added listener does not accept: %v", err)
 	}
 	c.Close()
+}
+
+// Validate accepts two listeners under one name, and the registry keys a
+// lane by its name. Dropping one of them must not read as "nothing
+// changed" and leave its socket open: it stays restart-bound.
+func TestTwoListenersUnderOneNameKeepTheRestartPath(t *testing.T) {
+	twins := editJSON(t, reloadBase, `"listeners": [{`,
+		fmt.Sprintf(`"listeners": [{"name": "appdb", "protocol": "postgres", "listen": %q, "upstream": "h2:5432"}, {`, freeTCPAddr(t)))
+	rl, buf, rt := testRunningReloader(t, twins)
+
+	if got := handleWith(rl, buf, reloadBase); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(rl.lastReason, `changed listener "appdb"`) {
+		t.Errorf("reason = %q", rl.lastReason)
+	}
+	if names := laneNames(rt); len(names) != 2 {
+		t.Errorf("running lanes = %v, want both", names)
+	}
+}
+
+func TestTwoAddedListenersUnderOneNameKeepTheRestartPath(t *testing.T) {
+	rl, buf, rt := testRunningReloader(t, reloadBase)
+	twin := func() string {
+		return fmt.Sprintf(`{"name": "twin", "protocol": "postgres", "listen": %q, "upstream": "h2:5432"}, `, freeTCPAddr(t))
+	}
+	drifted := editJSON(t, reloadBase, `"listeners": [{`, `"listeners": [`+twin()+twin()+`{`)
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(rl.lastReason, `added two listeners named "twin"`) {
+		t.Errorf("reason = %q", rl.lastReason)
+	}
+	if names := laneNames(rt); len(names) != 1 {
+		t.Errorf("running lanes = %v, want only appdb", names)
+	}
+}
+
+// An omitted network is tcp. A rename that also spells it out is still a
+// rename, not an added lane that fails its bind on the address it holds.
+func TestARenameThatSpellsOutTheNetworkIsStillARename(t *testing.T) {
+	pinned := editJSON(t, reloadBase, `"listen": "127.0.0.1:0"`, fmt.Sprintf(`"listen": %q`, freeTCPAddr(t)))
+	rl, buf, _ := testRunningReloader(t, pinned)
+
+	drifted := editJSON(t, pinned, `"name": "appdb"`, `"name": "appdb2", "network": "tcp"`)
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(rl.lastReason, `renamed listener "appdb" to "appdb2"`) {
+		t.Errorf("reason = %q", rl.lastReason)
+	}
+}
+
+// An ica engine loads its runtime for minutes before it binds. A reload
+// does not wait that long, so an added ica listener is restart-bound.
+func TestAnAddedICAListenerKeepsTheRestartPath(t *testing.T) {
+	rl, buf, rt := testRunningReloader(t, reloadBase)
+	drifted := editJSON(t, reloadBase, `"listeners": [{`, `"listeners": [`+icaSingle+`, {`)
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(rl.lastReason, `added ica listener "vdi"`) {
+		t.Errorf("reason = %q", rl.lastReason)
+	}
+	if names := laneNames(rt); len(names) != 1 {
+		t.Errorf("running lanes = %v, want only appdb", names)
+	}
+}
+
+// A lane that could not bind is not running, so the token watcher must not
+// keep re-reading its caller_token file.
+func TestARefusedListenerLeavesNoTokenFileWatched(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	tokens := filepath.Join(t.TempDir(), "tokens")
+	if err := os.WriteFile(tokens, []byte(goodToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rl, buf, rt := testRunningReloader(t, reloadBase)
+
+	drifted := editJSON(t, reloadBase, `"listeners": [{`,
+		fmt.Sprintf(`"listeners": [{"name": "agents", "protocol": "http", "listen": %q, "upstream": "h:1",
+		  "caller_token": {"file": %q, "name": "agents"}}, {`, held.Addr().String(), tokens))
+	if got := handleWith(rl, buf, drifted); got != reloadRefused {
+		t.Fatalf("outcome = %v, want refused; log:\n%s", got, buf)
+	}
+	if n := len(rt.tokens.all()); n != 0 {
+		t.Errorf("the watcher holds %d token file(s) of a lane that never started", n)
+	}
+}
+
+// A startup endpoint lane binds inside Serve, and an ica lane loads its
+// runtime for minutes first: start must not wait for the bind. stop ends
+// the lane's own context, so a Serve that only watches its context returns.
+func TestAStartupEndpointLaneDoesNotWaitForItsBind(t *testing.T) {
+	var wg sync.WaitGroup
+	rt := &laneRuntime{log: slog.New(slog.DiscardHandler), set: &laneSet{}, tokens: &tokenWatch{},
+		ctx: context.Background(), wg: &wg, fail: func(err error) { t.Errorf("listener failed: %v", err) }}
+	// fakeICAServer never publishes an address and serves until its
+	// context ends.
+	rl := runningLane{name: "vdi", protocol: "ica", endpoint: &fakeICAServer{}, stopped: new(atomic.Bool)}
+
+	started := make(chan error, 1)
+	go func() { started <- rt.start(rl) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("start: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("start waited for the lane to bind")
+	}
+	if names := laneNames(rt); len(names) != 1 {
+		t.Fatalf("running lanes = %v, want [vdi]", names)
+	}
+
+	if !rt.stop("vdi") {
+		t.Fatal("stop found no lane")
+	}
+	joined := make(chan struct{})
+	go func() { wg.Wait(); close(joined) }()
+	select {
+	case <-joined:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stop left the lane's Serve running")
+	}
+}
+
+// A removed lane takes its lifetime totals out of the per-protocol sum.
+// The next usage window must count that lane's last connections and must
+// not go negative for the lanes that stay, the protocol's last lane included.
+func TestUsageCountsARemovedLanesLastWindow(t *testing.T) {
+	tel := &telemetry{client: &analytics.Client{}, counters: analytics.NewCounters(), conns: map[string]connSnapshot{}}
+	a, b := &fakeMCPServer{total: 100, denied: 10}, &fakeMCPServer{total: 50}
+	set := &laneSet{lanes: []runningLane{
+		{name: "a", protocol: "postgres", endpoint: a},
+		{name: "b", protocol: "postgres", endpoint: b},
+	}}
+	window := func() (protoUsage, bool) {
+		byProto, _ := tel.usageProperties(set.statSources(), nil)["by-protocol"].(map[string]protoUsage)
+		row, ok := byProto["postgres"]
+		return row, ok
+	}
+	if row, _ := window(); row.Connections != 150 {
+		t.Fatalf("first window connections = %d, want 150", row.Connections)
+	}
+
+	a.total, a.denied, b.total = 107, 12, 51
+	if _, ok := tel.retireLane(set, "a"); !ok {
+		t.Fatal("retireLane found no lane")
+	}
+	if row, _ := window(); row.Connections != 8 || row.ConnectionsDenied != 2 {
+		t.Fatalf("after a removal: %+v, want 8 connections (7 from the removed lane) and 2 denied", row)
+	}
+
+	b.total = 54
+	tel.retireLane(set, "b")
+	if row, _ := window(); row.Connections != 3 {
+		t.Fatalf("after the last lane's removal: %+v, want 3 connections", row)
+	}
+	if row, ok := window(); ok {
+		t.Fatalf("a protocol with no lane left still reports %+v", row)
+	}
 }

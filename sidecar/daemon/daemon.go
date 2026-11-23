@@ -1131,6 +1131,37 @@ func Run(cfg *Config, det Plugin) error {
 	rl.tel = tel
 	rl.rt = rt
 
+	// The serve side is set and the startup lanes are in the registry
+	// before a reload source starts below: a document that adds a listener
+	// uses wg and fail, and one that removes a listener must find it.
+	//
+	// errCh carries the first failure. fail drops later ones, which the
+	// lane that hit them has logged; a reload can grow the lane count, so
+	// the channel cannot be sized to it.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
+	fail := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
+	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
+	for i, b := range built {
+		if serr := rt.start(b); serr != nil {
+			// fail reports it through the channel a Serve failure uses, so
+			// the select below runs the one shutdown path. start closed
+			// this lane; the lanes not started yet hold no socket, and
+			// close releases an engine among them.
+			log.Error("listener failed", "listener", b.name, "error", serr)
+			fail(serr)
+			for _, rest := range built[i+1:] {
+				_ = rest.close()
+			}
+			break
+		}
+	}
+
 	switch {
 	case cfg.cp != nil:
 		log.Info("control plane connected",
@@ -1197,7 +1228,7 @@ func Run(cfg *Config, det Plugin) error {
 	// the series closes on the last window. usage reads both inputs per
 	// window: the registry for the lanes a reload added since, the view
 	// for the analyzer instances it swapped in.
-	usage := func() { tel.trackUsage(rt.set.statSources(), view.Load().lanes) }
+	usage := func() { tel.trackUsage(rt.set.statSources, view.Load().lanes) }
 	go func() {
 		t := time.NewTicker(usageEvery)
 		defer t.Stop()
@@ -1210,32 +1241,6 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}
 	}()
-
-	// errCh carries the first failure. fail drops later ones, which the
-	// lane that hit them has logged; a reload can grow the lane count, so
-	// the channel cannot be sized to it.
-	var wg sync.WaitGroup
-	errCh := make(chan error, 1)
-	fail := func(err error) {
-		select {
-		case errCh <- err:
-		default:
-		}
-	}
-	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
-	for i, b := range built {
-		if serr := rt.start(b); serr != nil {
-			// fail reports it through the channel a Serve failure uses, so
-			// the select below runs the one shutdown path. The lanes not
-			// started yet hold no socket; close releases an engine among them.
-			log.Error("listener failed", "listener", b.name, "error", serr)
-			fail(serr)
-			for _, rest := range built[i:] {
-				_ = rest.close()
-			}
-			break
-		}
-	}
 	if cfg.MCP != nil {
 		// checkMCP proved a server is linked, and the check above that
 		// cfg.cp is set.

@@ -152,6 +152,10 @@ if $PG_LIVE -c 'SELECT 1' >/dev/null 2>&1; then
 else
     ok ":15434 refuses connections"
 fi
+# The check below proves nothing if the session ended before the last edit.
+kill -0 "$SESSION" 2>/dev/null \
+    && ok "the session is still open after the last edit" \
+    || fail "the session ended before the last edit"
 
 # ------------------------------------------------------------- the session
 h "SESSION / the appdb session from the start finishes normally"

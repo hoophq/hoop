@@ -240,19 +240,22 @@ The sidecar starts a listener added to the file in place: the socket binds,
 the log says `listener started`, and `/stats` lists it. It stops a listener
 whose name is gone: the socket closes and every connection on it with it,
 and the log says `listener stopped`. The other lanes keep their sockets and
-connections. Every lane kind starts and stops this way, unix sockets
-included (the sidecar binds the path on add and unlinks it on remove).
+connections. Every lane kind but `ica` starts this way and every lane kind
+stops this way, unix sockets included (the sidecar binds the path on add
+and unlinks it on remove).
 Added lanes bind before anything else in the document moves, so a listener
 that cannot bind (a port another process holds, a socket path the process
 cannot write) refuses the whole document: no lane starts, no rule swaps,
 the running lanes keep serving, and the log names the listener and the
-error. Fix it and save the file again. Three edits to the listener set stay
+error. Fix it and save the file again. Five edits to the listener set stay
 restart-bound, and the log names the listener: editing a running
 listener's own fields (address, upstream, protocol, TLS, a grpc lane's
 `descriptors`); renaming one, which is a remove and an add on one address;
-and adding or removing a listener while any listener has no `name`, because
-unnamed lanes are keyed by position and an insert would rename the ones
-after it.
+adding an `ica` listener, because its engine loads the runtime for minutes
+before it binds; adding or changing listeners that share one `name`,
+because a lane is started and stopped by its name; and adding or removing a
+listener while any listener has no `name`, because unnamed lanes are keyed
+by position and an insert would rename the ones after it.
 
 An edit beyond that (audit, admin, log_level, the top-level analyzer
 section, adding `control_plane_url`) logs `restart to apply it` once and

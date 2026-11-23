@@ -948,7 +948,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 		}
 		rl, serr := r.rt.build(&lanes[i])
 		if serr == nil {
-			serr = r.rt.start(rl)
+			serr = r.rt.startBound(rl)
 		}
 		if serr != nil {
 			for name := range started {
@@ -1144,7 +1144,9 @@ func globalDoc(c *Config) ([]byte, error) {
 }
 
 // listenerDocs renders every listener's non-rule document, keyed by the
-// name the lane runs under.
+// name the lane runs under. Validate accepts two listeners under one name;
+// their documents are joined under it, so the diff reads a change to
+// either as a change to that name and keeps it on the restart path.
 func listenerDocs(c *Config) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(c.Listeners))
 	for i, lc := range c.Listeners {
@@ -1152,7 +1154,8 @@ func listenerDocs(c *Config) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		out[lc.displayName(i)] = doc
+		name := lc.displayName(i)
+		out[name] = append(out[name], doc...)
 	}
 	return out, nil
 }
@@ -1189,11 +1192,15 @@ type topology struct {
 
 // diffTopology compares a document's listeners against the running ones and
 // returns what to start and stop, or the reason the document is
-// restart-bound instead. Three things keep it on the restart path:
+// restart-bound instead. Five things keep it on the restart path:
 //
 //   - a running listener whose address, upstream, protocol, TLS or any
 //     other non-rule field moved: ADR-0014 rejected rebinding under live
 //     traffic (option 2), and this amendment leaves that in place;
+//   - two added listeners under one name: the registry keys a lane by its
+//     name, so it could stop only one of them;
+//   - an added ica listener: its engine loads the runtime for minutes
+//     before it binds, and a reload does not wait that long for a bind;
 //   - a listener without a name while the set changed: unnamed lanes are
 //     keyed listener[i], so an insert renames every lane after it, and the
 //     diff would close live lanes to reopen them;
@@ -1206,6 +1213,10 @@ func (r *reloader) diffTopology(newCfg *Config, listeners map[string][]byte) (to
 		name := lc.displayName(i)
 		old, running := r.listeners[name]
 		switch {
+		case !running && t.added[name]:
+			return topology{}, fmt.Sprintf("added two listeners named %q; give each its own name, or restart to apply it", name)
+		case !running && isICA(lc):
+			return topology{}, fmt.Sprintf("added ica listener %q; restart to apply it", name)
 		case !running:
 			t.added[name] = true
 		case !bytes.Equal(old, listeners[name]):
@@ -1233,7 +1244,7 @@ func (r *reloader) diffTopology(newCfg *Config, listeners map[string][]byte) (to
 	for i, lc := range r.running.Listeners {
 		name := lc.displayName(i)
 		if slices.Contains(t.removed, name) {
-			removedAddr[lc.Network+"|"+lc.listenAddress()] = name
+			removedAddr[bindKey(lc)] = name
 		}
 	}
 	for i, lc := range newCfg.Listeners {
@@ -1241,11 +1252,21 @@ func (r *reloader) diffTopology(newCfg *Config, listeners map[string][]byte) (to
 		if !t.added[name] {
 			continue
 		}
-		if was, ok := removedAddr[lc.Network+"|"+lc.listenAddress()]; ok {
+		if was, ok := removedAddr[bindKey(lc)]; ok {
 			return topology{}, fmt.Sprintf("renamed listener %q to %q; restart to apply it", was, name)
 		}
 	}
 	return t, ""
+}
+
+// bindKey names the socket a listener binds. An omitted network is tcp, the
+// same default the relay applies.
+func bindKey(lc ListenerConfig) string {
+	network := lc.Network
+	if network == "" {
+		network = "tcp"
+	}
+	return network + "|" + lc.listenAddress()
 }
 
 // laneRuleDoc renders one listener's RESOLVED rule stack: the skip decision

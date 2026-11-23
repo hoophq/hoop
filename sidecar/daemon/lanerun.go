@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,9 +25,10 @@ import (
 // reload starts is the lane startup would have built from the same
 // document.
 
-// bindWait bounds how long start waits for an endpoint lane to publish its
-// bound address. A bind is local and immediate; the wait only catches an
-// engine that hangs before binding, so the reload does not hang with it.
+// bindWait bounds how long startBound waits for an endpoint lane a reload
+// added to publish its bound address. The engines a reload may add (grpc,
+// ssh, mcp) bind at once; the wait only catches one that hangs before
+// binding, so the reload does not hang with it.
 const bindWait = 10 * time.Second
 
 // runningLane is one lane as the process runs it: the server, how a reload
@@ -46,6 +48,10 @@ type runningLane struct {
 	// stop sets stopped before Close, so the serve goroutine does not
 	// report the Close as a listener failure.
 	stopped *atomic.Bool
+	// cancel ends the context the lane serves under. launch sets it and
+	// stop calls it, so what Serve started for the lane ends with the
+	// lane and not with the process.
+	cancel context.CancelFunc
 }
 
 func (l runningLane) addr() net.Addr {
@@ -77,9 +83,9 @@ func (l runningLane) serve(ctx context.Context) error {
 }
 
 // laneSet is the registry of running lanes, in config order. Readers take
-// a snapshot; laneRuntime.start and stop are the reloader's, closeAll is
-// Run's shutdown, after which start refuses: a lane the reloader starts
-// during shutdown would outlive the WaitGroup that joins the others.
+// a snapshot; laneRuntime.startBound and stop are the reloader's, closeAll
+// is Run's shutdown, after which a start refuses: a lane the reloader
+// starts during shutdown would outlive the WaitGroup that joins the others.
 type laneSet struct {
 	mu     sync.Mutex
 	lanes  []runningLane
@@ -147,12 +153,12 @@ func (l runningLane) Stats() (active, total, denied int64) { return l.stats() }
 // closeAll closes every lane, together, and refuses later starts: an ica
 // lane's Close drains its sessions for up to 30s, and closing lanes one
 // after another would add those windows up past the pod's termination
-// grace period.
+// grace period. The lanes stay in the registry: the last usage window is
+// cut after this and reads their totals.
 func (s *laneSet) closeAll(log *slog.Logger) {
 	s.mu.Lock()
 	s.closed = true
-	lanes := s.lanes
-	s.lanes = nil
+	lanes := slices.Clone(s.lanes)
 	s.mu.Unlock()
 	var closing sync.WaitGroup
 	for _, l := range lanes {
@@ -219,7 +225,7 @@ type laneRuntime struct {
 	log  *slog.Logger
 	set  *laneSet
 	// tokens is the caller_token watcher's list; a lane's file joins it in
-	// build and leaves it in stop.
+	// launch and leaves it in stop.
 	tokens *tokenWatch
 
 	// ctx, wg and fail are the serve side. Run sets them before the first
@@ -235,6 +241,8 @@ type laneRuntime struct {
 // place; the reloader publishes it to /config afterwards.
 func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 	ln.metrics = rt.tel.laneMetrics(ln.cfg.Protocol)
+	// One recorder per lane for the process's life: a reload swaps rules
+	// into the server built here, which keeps its recorder.
 	ln.telemetry = rt.otel.lane(ln.name, ln.cfg.Protocol)
 	if err := openCallerToken(ln, rt.log); err != nil {
 		return runningLane{}, err
@@ -274,53 +282,86 @@ func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 	if err != nil {
 		return runningLane{}, err
 	}
-	rt.tokens.add(rl.tokens)
 	return rl, nil
 }
 
-// start binds the lane and serves it. It returns once the socket is bound,
-// or with the bind error and nothing running: the reload path commits a
-// document only after each added lane has returned from start. A failure
-// after the bind (the accept loop, an engine) stops the process through
-// fail, the same as a startup lane's; a Serve that returns because stop
-// closed the lane is not a failure.
-func (rt *laneRuntime) start(rl runningLane) error {
+// launch registers the lane and runs its Serve. A relay lane binds here, so
+// its bind error returns; an endpoint lane binds inside Serve. On an error
+// nothing runs: the lane is closed and its token file is not watched. The
+// lane serves under a context of its own, which stop cancels.
+func (rt *laneRuntime) launch(rl runningLane) (<-chan error, error) {
+	ctx, cancel := context.WithCancel(rt.ctx)
+	rl.cancel = cancel
 	rt.set.mu.Lock()
-	if rt.set.closed {
-		rt.set.mu.Unlock()
-		return errors.New("the process is shutting down")
+	var err error
+	switch {
+	case rt.set.closed:
+		err = errors.New("the process is shutting down")
+	case rl.relay != nil:
+		err = rl.relay.Listen()
 	}
-	if rl.relay != nil {
-		if err := rl.relay.Listen(); err != nil {
-			rt.set.mu.Unlock()
-			return err
-		}
+	if err != nil {
+		rt.set.mu.Unlock()
+		cancel()
+		_ = rl.close()
+		return nil, err
 	}
 	rt.set.lanes = append(rt.set.lanes, rl)
 	rt.wg.Add(1)
 	rt.set.mu.Unlock()
+	rt.tokens.add(rl.tokens)
 
-	// served has one reader at a time: this function until the bind is
-	// decided, then watch. A bind failure on a reload-added lane therefore
-	// returns to the reloader instead of reaching fail.
+	// served is buffered: a Serve that returns after its reader gave up
+	// blocks nothing.
 	served := make(chan error, 1)
 	go func() {
 		defer rt.wg.Done()
-		served <- rl.serve(rt.ctx)
+		served <- rl.serve(ctx)
 	}()
-	watch := func() {
-		if err := <-served; err != nil && !rl.stopped.Load() {
-			rt.log.Error("listener failed", "listener", rl.name, "error", err)
-			rt.fail(err)
-		}
+	return served, nil
+}
+
+// watch stops the process through fail when a lane's Serve fails. A Serve
+// that returns because stop closed the lane is not a failure.
+func (rt *laneRuntime) watch(rl runningLane, served <-chan error) {
+	if err := <-served; err != nil && !rl.stopped.Load() {
+		rt.log.Error("listener failed", "listener", rl.name, "error", err)
+		rt.fail(err)
+	}
+}
+
+// start serves a startup lane. A relay lane's bind error returns. An
+// endpoint lane binds inside Serve, and an ica lane loads its runtime for
+// minutes before it does, so start does not wait for that bind: /readyz
+// reports the lane until it is ready, and a Serve error stops the process
+// through fail.
+func (rt *laneRuntime) start(rl runningLane) error {
+	served, err := rt.launch(rl)
+	if err != nil {
+		return err
+	}
+	go rt.watch(rl, served)
+	return nil
+}
+
+// startBound serves a lane a reload added. It returns once the socket is
+// bound, or with the bind error and nothing running: the reload path
+// commits a document only after each added lane has returned from it. A
+// failure after the bind (the accept loop, an engine) stops the process
+// through fail, the same as a startup lane's.
+func (rt *laneRuntime) startBound(rl runningLane) error {
+	served, err := rt.launch(rl)
+	if err != nil {
+		return err
 	}
 	if rl.relay != nil {
-		go watch()
+		go rt.watch(rl, served)
 		return nil
 	}
-	// An endpoint lane binds inside Serve and publishes the address once
-	// bound, so start polls for the address. The deadline catches an
-	// engine that hangs before binding.
+	// An endpoint lane publishes the address once bound, so startBound
+	// polls for it. served has one reader at a time: this function until
+	// the bind is decided, then watch. A bind failure therefore returns
+	// to the reloader instead of reaching fail.
 	deadline := time.NewTimer(bindWait)
 	defer deadline.Stop()
 	tick := time.NewTicker(time.Millisecond)
@@ -335,12 +376,13 @@ func (rt *laneRuntime) start(rl runningLane) error {
 			return err
 		case <-tick.C:
 		case <-deadline.C:
+			// stop closes the lane and cancels its context. The
+			// reload does not wait for a Serve that ignores both.
 			rt.stop(rl.name)
-			<-served
 			return fmt.Errorf("%s: did not bind within %s", rl.name, bindWait)
 		}
 	}
-	go watch()
+	go rt.watch(rl, served)
 	return nil
 }
 
@@ -348,7 +390,7 @@ func (rt *laneRuntime) start(rl runningLane) error {
 // closes, its connections close, and the next /stats does not list it.
 // False when no lane of that name runs.
 func (rt *laneRuntime) stop(name string) bool {
-	rl, ok := rt.set.remove(name)
+	rl, ok := rt.tel.retireLane(rt.set, name)
 	if !ok {
 		return false
 	}
@@ -357,5 +399,6 @@ func (rt *laneRuntime) stop(name string) bool {
 	if err := rl.close(); err != nil {
 		rt.log.Warn("listener close failed", "listener", rl.name, "error", err)
 	}
+	rl.cancel()
 	return true
 }
