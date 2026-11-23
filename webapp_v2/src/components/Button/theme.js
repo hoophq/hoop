@@ -23,10 +23,14 @@ export const ButtonTheme = Button.extend({
   classNames: { root: classes.root, section: classes.section },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
+    // Buttons are pills (brand). The `field` variant is not: it sits next to a
+    // Select and must keep the input's corners to read as one control.
+    const radius = { '--button-radius': props.variant === 'field' ? 'var(--hoop-field-radius)' : 'var(--hoop-button-radius)' }
     const s = SIZES[props.size]
-    if (!s) return { root: {} }
+    if (!s) return { root: radius }
     return {
       root: {
+        ...radius,
         '--button-height': `var(--hoop-control-height-${props.size})`,
         '--button-padding-x': s.paddingX,
         '--button-fz': s.fz,

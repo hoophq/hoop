@@ -6,7 +6,7 @@ function StepTrigger({ icon, title, subtitle, done }) {
   const StepIcon = icon;
   return (
     <Flex align="center" gap="md" className={classes.trigger}>
-      <Avatar size={64} variant="soft" color="gray" radius="md">
+      <Avatar size={64} variant="soft" color="gray" radius="var(--hoop-icon-radius)">
         <StepIcon size={16} />
       </Avatar>
       <Box className={classes.triggerBody}>

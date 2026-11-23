@@ -7,5 +7,5 @@ import { Pagination as MantinePagination } from '@mantine/core'
  *   <Pagination total={totalPages} value={page} onChange={setPage} />
  */
 export default function Pagination(props) {
-  return <MantinePagination radius="sm" {...props} />
+  return <MantinePagination {...props} />
 }

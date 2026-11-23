@@ -1,0 +1,6 @@
+/* Every icon tile takes its corners from the theme, whatever `radius` a call
+   site passes: one token changes every tile. */
+.root {
+  --ti-radius: var(--hoop-icon-radius);
+  border-radius: var(--hoop-icon-radius);
+}

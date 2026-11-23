@@ -17,7 +17,7 @@ export default function CopyButton({ value, label, ...props }) {
   return (
     <MantineCopyButton value={value} timeout={2000}>
       {({ copied, copy }) => (
-        <Tooltip label={copied ? 'Copied!' : (label ?? 'Copy')} withArrow>
+        <Tooltip label={copied ? 'Copied' : (label ?? 'Copy')} withArrow>
           <ActionIcon
             color={copied ? 'green' : 'gray'}
             variant="subtle"

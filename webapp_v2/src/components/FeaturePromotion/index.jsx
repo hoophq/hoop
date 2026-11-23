@@ -51,7 +51,7 @@ export default function FeaturePromotion({
           <Stack gap="xlAlt">
             {featureItems.map((item) => (
               <Flex key={item.title} align="flex-start" gap="lgAlt">
-                <ThemeIcon size={52} radius="md" variant="light" color="indigo">
+                <ThemeIcon size={52} variant="light" color="indigo">
                   {item.icon}
                 </ThemeIcon>
                 <Stack gap={2}>

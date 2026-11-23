@@ -15,6 +15,13 @@ import {
   ComboboxTheme,
 } from '@/components/Input/theme';
 import { PaperTheme } from '@/components/Paper/theme'
+import { AlertTheme } from '@/components/Alert/theme'
+import { ThemeIconTheme } from '@/components/ThemeIcon/theme'
+import { AccordionTheme } from '@/components/Accordion/theme'
+import { TabsTheme } from '@/components/Tabs/theme'
+import { PaginationTheme } from '@/components/Pagination/theme'
+import { SegmentedControlTheme } from '@/components/SegmentedControl/theme'
+import { CheckboxTheme, CheckboxIndicatorTheme } from '@/components/Checkbox/theme'
 import { ModalTheme } from '@/components/Modal/theme'
 import { DividerTheme } from '@/components/Divider/theme'
 import { CodeTheme } from '@/components/Code/theme'
@@ -38,9 +45,10 @@ import { ActionIconTheme } from '@/components/ActionIcon/theme';
 export function cssVariablesResolver(theme) {
   return {
     variables: {
-      // Brand navy — dark surface color for auth/upsell visuals (MethodCard,
-      // SelectionCard, EnterpriseBanner, AuthPageLoader) and the CLJS
-      // enterprise banner. Not tied to the sidebar, which uses the gray scale.
+      // Brand navy — dark surface color for login and upsell visuals only
+      // (EnterpriseBanner, AuthPageLoader) and the CLJS enterprise banner.
+      // Never a selected state: that is indigo. Not tied to the sidebar,
+      // which uses the gray scale.
       '--brand-navy': '#1F2D5C',
 
       // Pure white. theme.white is #FCFCFD — same as --mantine-color-body,
@@ -56,6 +64,31 @@ export function cssVariablesResolver(theme) {
       '--hoop-surface-muted': 'var(--mantine-color-gray-0)',
       // A chip or a notice that sits on a subtle surface.
       '--hoop-surface-strong': 'var(--mantine-color-gray-1)',
+      // A list: a block of rows (components/List) or a Table. Its corners
+      // are square (brand) and one border color draws its edge and rows.
+      '--hoop-list-radius': '0',
+      '--hoop-list-border': 'var(--mantine-color-default-border)',
+      // The corners of a surface: a card, a panel, a banner, a note, a code
+      // block or a viewer (Paper, Card and the card components).
+      // Square (brand). Buttons are pills; fields are square (--hoop-field-radius).
+      '--hoop-card-radius': '0',
+      // The fill of a card (Paper, Card and the card components): white, so a
+      // card stands off the page whatever the page background is.
+      '--hoop-card-bg': '#ffffff',
+      // The corners of an icon tile (ThemeIcon). Square (brand).
+      '--hoop-icon-radius': '0',
+      // The corners of a tab (Tabs): the hover fill and the focus ring. Square.
+      '--hoop-tab-radius': '0',
+      // The corners of a button and an icon button (Button, ActionIcon). Pill.
+      '--hoop-button-radius': '9999px',
+      // The corners of a badge: a status, a tag or a chip (Badge, Pill). Pill.
+      '--hoop-badge-radius': '9999px',
+      // The corners of a callout: a note on the page (Alert, Callout). Square
+      // (brand), like fields and cards.
+      '--hoop-callout-radius': '0',
+      // The corners of a field: every input, select and the controls that sit
+      // beside one (SourcedInput, the field Button). Square (brand).
+      '--hoop-field-radius': '0',
       // The outline of a card, a viewer or a bar.
       '--hoop-border-subtle': 'var(--mantine-color-gray-1)',
       // A line between rows of a list.
@@ -115,6 +148,19 @@ export function cssVariablesResolver(theme) {
       '--hoop-control-height-sm': rem(32),
       '--hoop-control-height-md': rem(40),
       '--hoop-control-height-lg': rem(48),
+      // The smallest area a finger can hit on a touch screen. A smaller
+      // control keeps its size and grows an invisible hit area to this.
+      '--hoop-touch-target': rem(44),
+      // The width of the ring around a focused field.
+      '--hoop-focus-ring': rem(3),
+
+      // Motion: one ease-out, no bounce. Hover in, hover out, press, and a
+      // field's focus ring. Only transform, opacity and colors move.
+      '--hoop-ease': 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      '--hoop-motion-in': '150ms',
+      '--hoop-motion-out': '120ms',
+      '--hoop-motion-press': '90ms',
+      '--hoop-motion-field': '140ms',
     },
     // Scheme-dependent semantic tokens. Mantine emits its own defaults for
     // these under :root[data-mantine-color-scheme="light"], which outranks a
@@ -166,7 +212,12 @@ export const theme = createTheme({
   respectReducedMotion: true,
   primaryColor: 'indigo',
   primaryShade: 5, // → Radix shade 9, the solid/saturated action color
-  defaultRadius: 'md',
+  // Square by default (brand): a component with no shape rule of its own
+  // (dropdowns, menus, tooltips, inline code, skeletons) is born square.
+  // Round things say so in their own theme: Button and ActionIcon
+  // (--hoop-button-radius), Badge (--hoop-badge-radius), Pill. Avatar, Radio,
+  // Switch and Stepper icons are round by Mantine's own default.
+  defaultRadius: 0,
 
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
   fontFamilyMonospace: "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
@@ -362,6 +413,14 @@ export const theme = createTheme({
     // so a plain theme entry stands in for Component.extend().
     PickerInputBase: { defaultProps: { size: 'md' } },
     Paper: PaperTheme,
+    Alert: AlertTheme,
+    ThemeIcon: ThemeIconTheme,
+    Accordion: AccordionTheme,
+    Tabs: TabsTheme,
+    Pagination: PaginationTheme,
+    SegmentedControl: SegmentedControlTheme,
+    Checkbox: CheckboxTheme,
+    CheckboxIndicator: CheckboxIndicatorTheme,
     Modal: ModalTheme,
     Divider: DividerTheme,
     Code: CodeTheme,
