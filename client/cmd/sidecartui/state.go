@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 // Bounds on what the dashboard keeps. A sidecar runs for months; the screen
@@ -119,13 +121,16 @@ type System struct {
 	Detection    bool
 	Analyzer     string
 	ControlPlane string
-	Admin        string
-	AdminAPI     string
-	QueryAPI     bool
-	Watching     string
-	Analytics    bool
-	SessionsSink bool
-	Stopping     string
+	// PlaneOwnsConfig: the control plane took the configuration from the
+	// file after boot, so its approvers decide every hold.
+	PlaneOwnsConfig bool
+	Admin           string
+	AdminAPI        string
+	QueryAPI        bool
+	Watching        string
+	Analytics       bool
+	SessionsSink    bool
+	Stopping        string
 }
 
 // State is everything the dashboard draws, built only from what the daemon
@@ -214,6 +219,10 @@ func (s *State) ApplyLog(r LogRecord) {
 	}
 
 	switch {
+	case r.Msg == daemon.LogPlaneOwnsConfig:
+		s.System.PlaneOwnsConfig = true
+	case r.Msg == daemon.LogFileOwnsConfig:
+		s.System.PlaneOwnsConfig = false
 	case strings.HasPrefix(r.Msg, "license: "):
 		s.System.License = strings.TrimPrefix(r.Msg, "license: ")
 		s.System.LicenseWarn = r.Level != "INFO"
@@ -227,6 +236,10 @@ func (s *State) ApplyLog(r LogRecord) {
 		s.System.Detection = true
 	case "risk analyzer attached":
 		s.System.Analyzer = strings.TrimSpace(r.Get("provider") + " " + r.Get("model"))
+		if r.Get("provider") == hoop.Name {
+			// No provider configured: the sidecar uses the model Hoop hosts.
+			s.System.Analyzer = hostedLabel + " · " + r.Get("model")
+		}
 		if send := r.Get("send"); send != "" {
 			s.System.Analyzer += " · send " + send
 		}

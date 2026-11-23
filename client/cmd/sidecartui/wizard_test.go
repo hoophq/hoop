@@ -2,6 +2,7 @@ package sidecartui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -23,14 +24,16 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 )
 
-// validateFile is the validator the CLI injects, minus the license and the
-// reviewer: the free tier, which is what a first config must fit.
+// validateFile is the validator the CLI injects, minus the license: the free
+// tier, which is what a first config must fit. Like the CLI's, it attaches a
+// terminal reviewer, so the demo's require_approval validates.
 func validateFile(path string) (string, error) {
-	cfg, err := configyaml.Load(path)
-	if err != nil {
-		return "", err
-	}
-	det, err := alcatraz.PluginFromConfig(cfg.PII)
+	t := os.Getenv("HOOP_LICENSE")
+	os.Unsetenv("HOOP_LICENSE")
+	defer os.Setenv("HOOP_LICENSE", t)
+	cfg, det, err := daemon.SetupWith(path, configyaml.Load,
+		func(raw json.RawMessage) (daemon.Plugin, error) { return alcatraz.PluginFromConfig(raw) },
+		daemon.WithLocalReviewer(NewReviewer().For))
 	if err != nil {
 		return "", err
 	}
@@ -82,18 +85,23 @@ func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
 
 // The analyzer is on by default only when its key file is there, and the
 // config it then writes must validate with that key.
+// The analyzer is on by default, on the model Hoop hosts: no key file, no
+// URL. A provider whose key file is on this machine is kept instead.
 func TestAnalyzerDefaultsFollowTheKeyFile(t *testing.T) {
 	dir := t.TempDir()
-	d, _ := newDraft("postgres", machine{keyDir: dir})
-	if d.an.on {
-		t.Fatal("analyzer on with no key file")
+	d, _ := newDraft("postgres", machine{keyDir: dir, provider: "anthropic"})
+	if !d.an.on || !d.an.hosted() {
+		t.Fatalf("with no key file: on %v, provider %q, want on with the hosted model", d.an.on, d.an.provider)
+	}
+	if err := validateDraft(t, d); err != nil {
+		t.Errorf("hosted defaults do not validate: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "anthropic.key"), []byte("sk-test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	d, _ = newDraft("postgres", machine{keyDir: dir})
-	if !d.an.on {
-		t.Fatal("analyzer off although its key file exists")
+	if !d.an.on || d.an.provider != "anthropic" {
+		t.Fatalf("with a key file: on %v, provider %q, want on with anthropic", d.an.on, d.an.provider)
 	}
 	if err := validateDraft(t, d); err != nil {
 		t.Errorf("analyzer config does not validate: %v", err)
@@ -267,7 +275,7 @@ func drive(t *testing.T, w *wizard, cmd tea.Cmd) wizEvent {
 func TestWizardDemoSaveAndBoot(t *testing.T) {
 	dir := t.TempDir()
 	w := newWizard(noMachine(), validateFile, dir, time.Now)
-	cmd, _ := w.update(wkey("enter")) // Demo is the first row
+	cmd, _ := w.update(wkey("enter")) // the Postgres demo is the first row
 	if w.page != pgOverview {
 		t.Fatalf("page = %v after choosing the demo, want the overview", w.page)
 	}
@@ -290,8 +298,9 @@ func TestWizardDemoSaveAndBoot(t *testing.T) {
 		t.Errorf("the saved demo config does not validate: %v", err)
 	}
 	data, _ := os.ReadFile(path)
-	if v, ok, _ := configyaml.ExtensionValue(data, configyaml.DemoAPIKey); !ok || v == "" {
-		t.Errorf("the demo config does not name the demo API:\n%s", data)
+	// The Postgres demo is the first row.
+	if v, ok, _ := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey); !ok || v == "" {
+		t.Errorf("the demo config does not name the demo database:\n%s", data)
 	}
 
 	cmd, _ = w.update(wkey("enter"))
