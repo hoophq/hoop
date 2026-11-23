@@ -206,6 +206,10 @@ tolerations: []
 # -- Affinity settings for pod assignment
 affinity: {}
 
+## Set additional pod labels
+##
+podLabels: {}
+
 ## Set pod annotations
 ##
 podAnnotations: {}
