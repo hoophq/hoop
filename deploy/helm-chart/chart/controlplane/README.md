@@ -302,6 +302,12 @@ are rendered by the gateway chart and not by this one; naming one under
 | `config.HOOP_LICENSE` | `''` | The signed license JSON or the path of a file that holds it, stored on the default organization at every boot after the signature, window and `API_URL` host are verified |
 | `config.ANALYTICS_TRACKING` | `''` | Without an enterprise license the default organization is always `identified`. With one: `enabled` forces `identified`, `disabled` forces `disabled`, unset keeps the mode set in Settings (a new organization starts `disabled`) |
 | `config.ORG_ID` | `''` | UUID the default organization is created with on a fresh database, so `API_KEY` can be written before the first boot. An existing organization with another id stops startup |
+| `config.OTEL_EXPORTER_OTLP_ENDPOINT` | `''` | Turns on the OTLP push of the control plane's own signals: sidecar handshakes, session event ingest, the database pool, API latency per route. A URL, or `host:port` for `grpc`; `http://` sends in the clear. Nothing scrapes the pod |
+| `config.OTEL_EXPORTER_OTLP_PROTOCOL` / `_HEADERS` / `_INSECURE` / `_CERTIFICATE` / `_TIMEOUT` | `grpc` / `''` / `false` / host trust store / `10000` | The standard OTLP exporter variables: `grpc` or `http/protobuf`; `key=value,...` headers, values URL-encoded; the CA as a PEM file; milliseconds per export. A malformed value stops startup |
+| `config.OTEL_METRIC_EXPORT_INTERVAL` | `60000` | Milliseconds between metric exports |
+| `config.OTEL_TRACES_SAMPLER` / `_ARG` | `''` / `1` | Empty sends no spans. Else a standard sampler, such as `parentbased_traceidratio` with a ratio |
+| `config.OTEL_SERVICE_NAME` | `hoop-control-plane` | `service.name` on every signal. The gateway chart leaves the binary's default, `hoop-gateway` |
+| `config.OTEL_RESOURCE_ATTRIBUTES` | `''` | `key=value,...` added to every signal, such as `deployment.environment=prod` |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |
 | `replicas` | `1` | See Replicas |

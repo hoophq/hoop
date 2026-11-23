@@ -952,8 +952,10 @@ func Run(cfg *Config, det Plugin) error {
 	auditSink := ac.sink
 	if cfg.cp != nil {
 		// Set before the heartbeat starts, which is what lets the heartbeat
-		// read it without a lock.
+		// read them without a lock.
 		cfg.cp.events = ac.events
+		cfg.cp.otel = otel
+		otel.bootHandshake()
 	}
 	defer func() {
 		// Close flushes buffered events, so shutdown does not drop the tail of

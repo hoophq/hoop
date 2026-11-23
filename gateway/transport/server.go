@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/telemetry"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -324,6 +325,12 @@ func handleGracefulShutdown() {
 		case <-streamclient.DisconnectAllProxies(fmt.Errorf("gateway shutdown")):
 		}
 		log.Warnf("gateway shutdown (%v)", signalNo)
+		// The last interval's metrics and spans go out before the exit.
+		flushCtx, cancelFlush := context.WithTimeout(context.Background(), telemetry.ShutdownTimeout)
+		if err := telemetry.Shutdown(flushCtx); err != nil {
+			log.Warnf("telemetry shutdown reported an error: %v", err)
+		}
+		cancelFlush()
 		os.Exit(143)
 	}()
 }

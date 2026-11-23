@@ -3,6 +3,7 @@ package otlp
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,6 +156,68 @@ func TestMCPMessagesCountByToolAndDecision(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%q = %v, want %v (all: %v)", k, got[k], v, got)
 		}
+	}
+}
+
+// Handshakes count by kind and outcome. A failure is a log record with the
+// error when events are on, and only the count when they are off.
+func TestControlPlaneHandshakesCountByKindAndOutcome(t *testing.T) {
+	down := errors.New("the control plane at http://plane answered 503 Service Unavailable: down")
+	send := func(exp telemetry.Exporter) {
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeBoot, Outcome: telemetry.HandshakeOK})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeOK})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError, Err: down})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError, Err: down})
+	}
+
+	rcv := newReceiver(t)
+	cfg := httpConfig(rcv.srv.URL)
+	cfg.Events = &telemetry.EventsConfig{Enabled: true}
+	exp := mustNew(t, cfg)
+	send(exp)
+	shutdown(t, exp)
+
+	got := map[string]float64{}
+	for _, p := range rcv.metric("hoop.sidecar.control_plane.handshakes") {
+		got[p.attrs["hoop.handshake.kind"]+" "+p.attrs["hoop.outcome"]] = p.value
+	}
+	want := map[string]float64{"boot ok": 1, "heartbeat ok": 1, "heartbeat error": 2}
+	if len(got) != len(want) {
+		t.Fatalf("points %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%q = %v, want %v", k, got[k], v)
+		}
+	}
+
+	recs := rcv.logRecords()
+	if len(recs) != 2 {
+		t.Fatalf("got %d log records, want one per failure", len(recs))
+	}
+	if body := anyString(recs[0].Body); body != "control_plane_handshake" {
+		t.Errorf("body = %q, want control_plane_handshake", body)
+	}
+	if recs[0].SeverityNumber != logspb.SeverityNumber_SEVERITY_NUMBER_WARN {
+		t.Errorf("severity = %v, want WARN", recs[0].SeverityNumber)
+	}
+	attrs := logAttrs(recs[0])
+	if attrs["hoop.handshake.kind"] != "heartbeat" || attrs["hoop.outcome"] != "error" || attrs["hoop.error"] != down.Error() {
+		t.Errorf("attributes = %v", attrs)
+	}
+	if s := exp.Stats(); s.EventsSent != 0 {
+		t.Errorf("EventsSent = %d: a handshake record is not an audit event", s.EventsSent)
+	}
+
+	rcv = newReceiver(t)
+	exp = mustNew(t, httpConfig(rcv.srv.URL))
+	send(exp)
+	shutdown(t, exp)
+	if ps := rcv.metric("hoop.sidecar.control_plane.handshakes"); len(ps) != 3 {
+		t.Errorf("with events off: points %v, want 3", ps)
+	}
+	if recs := rcv.logRecords(); len(recs) != 0 {
+		t.Errorf("with events off: %d log records, want none", len(recs))
 	}
 }
 
