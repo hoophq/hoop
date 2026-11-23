@@ -103,6 +103,14 @@ func (s *laneSet) snapshot() []runningLane {
 	return out
 }
 
+// isClosed reports that closeAll ran: the process is stopping, and /readyz
+// says so before the first lane closes.
+func (s *laneSet) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
 func (s *laneSet) remove(name string) (runningLane, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -345,6 +353,26 @@ func (rt *laneRuntime) start(rl runningLane) error {
 	}
 	go rt.watch(rl, served)
 	return nil
+}
+
+// startAll starts the startup lanes in config order, then calls started.
+// On the first lane that cannot start it reports the error through fail, so
+// Run's one shutdown path runs, closes the lanes not started yet (they hold
+// no socket; close releases an engine among them) and never calls started:
+// the lanes that did start are not the config, and /readyz must not read
+// them as ready.
+func (rt *laneRuntime) startAll(built []runningLane, started func()) {
+	for i, b := range built {
+		if err := rt.start(b); err != nil {
+			rt.log.Error("listener failed", "listener", b.name, "error", err)
+			rt.fail(err)
+			for _, rest := range built[i+1:] {
+				_ = rest.close()
+			}
+			return
+		}
+	}
+	started()
 }
 
 // startBound serves a lane a reload added. It returns once the socket is

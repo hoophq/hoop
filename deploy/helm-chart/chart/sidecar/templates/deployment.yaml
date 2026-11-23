@@ -60,6 +60,11 @@ spec:
       - image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
         name: sidecar
         imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+        # The kubelet never shows a probe's body. When the relay exits with an
+        # error, the tail of its log becomes the termination message, so
+        # `kubectl describe pod` says why (a refused token, a config this
+        # build cannot load, a control plane that never answered).
+        terminationMessagePolicy: FallbackToLogsOnError
         {{- with .Values.containerSecurityContext }}
         securityContext:
           {{- toYaml . | nindent 10 }}

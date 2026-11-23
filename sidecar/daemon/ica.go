@@ -937,19 +937,6 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	return out
 }
 
-// notReadyEndpoints returns the names of endpoint lanes whose engine has
-// not loaded yet. It checks only servers that implement Ready; the other
-// endpoint kinds are ready once bound. names[i] belongs to endpoints[i].
-func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
-	var out []string
-	for i, srv := range endpoints {
-		if r, ok := srv.(interface{ Ready() bool }); ok && !r.Ready() {
-			out = append(out, names[i])
-		}
-	}
-	return out
-}
-
 // ServableProtocols returns the protocols this process can serve here:
 // Protocols without ica when the build did not link the engine or the host
 // lacks its assets (icaServable). The capabilities header lists these, so a

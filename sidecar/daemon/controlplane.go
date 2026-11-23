@@ -205,11 +205,13 @@ type bootRetrier struct {
 	log      *slog.Logger
 	// failures counts the failed attempts of the whole boot.
 	failures int
+	// health hears each failed attempt, for /readyz during the boot.
+	health *healthStatus
 }
 
 // newBootRetrier starts the boot's clock. The caller defers the cancel. out
 // receives the attempt lines; nil falls back to the policy's, then stderr.
-func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, out io.Writer, planeURL, logLevel string) (*bootRetrier, context.CancelFunc) {
+func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, out io.Writer, planeURL, logLevel string, health *healthStatus) (*bootRetrier, context.CancelFunc) {
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if retry {
@@ -224,7 +226,7 @@ func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, 
 		out = os.Stderr
 	}
 	return &bootRetrier{ctx: ctx, parent: parent, retry: retry, policy: policy,
-		planeURL: planeURL, log: jsonLogger(out, logLevel)}, cancel
+		planeURL: planeURL, log: jsonLogger(out, logLevel), health: health}, cancel
 }
 
 // do runs op until it succeeds, fails with anything but
@@ -244,6 +246,7 @@ func (r *bootRetrier) do(what string, op func(context.Context) error) error {
 		if err == nil {
 			return nil
 		}
+		r.health.bootFailed(err)
 		if r.ctx.Err() != nil {
 			r.failures++
 			// A request the limit cut says less than the plane's last
@@ -378,6 +381,9 @@ type controlPlane struct {
 	// events is the sink that sends audit events to the plane. Run sets it
 	// before the heartbeat starts; nil in a process without one.
 	events *sessionEventSink
+	// health hears every handshake, for /readyz. Run sets it before the
+	// heartbeat starts; nil reports into nothing.
+	health *healthStatus
 }
 
 // WithControlPlaneToken supplies the sidecar token from the command line,
@@ -492,8 +498,9 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 //
 // retry turns the boot retry on (bootRetry); without it every request runs
 // once, for the checks WithoutBootRetry names. bootLog receives the retry's
-// log lines (WithBootLog); nil is stderr.
-func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFlag string, retry bool, bootLog io.Writer) (*Config, error) {
+// log lines (WithBootLog); nil is stderr. health hears the boot's attempts
+// and its outcome.
+func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFlag string, retry bool, bootLog io.Writer, health *healthStatus) (*Config, error) {
 	if local != nil && local.LoadFromDisk != nil {
 		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
 			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
@@ -531,6 +538,7 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 			urlSource, SidecarTokenEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes, IdentityTypeGCP)
 	}
 
+	health.planeConfigured()
 	// The first handshake reports nothing about a previous document: this
 	// process has handled none, and claiming otherwise would let a plane
 	// read a fresh boot as a sidecar that had already applied something.
@@ -546,7 +554,7 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 	if local != nil {
 		logLevel = local.LogLevel
 	}
-	retrier, cancel := newBootRetrier(ctx, bootRetry, retry, bootLog, planeURL, logLevel)
+	retrier, cancel := newBootRetrier(ctx, bootRetry, retry, bootLog, planeURL, logLevel, health)
 	defer cancel()
 	var answer handshakeAnswer
 	err = retrier.do("boot handshake", func(ctx context.Context) (ferr error) {
@@ -572,6 +580,7 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, cred: cred,
 			lastRaw: raw, diskMode: true, fileReport: report, license: planeDoc.License, licenseManaged: managed,
 			revision: answer.revision, sessionEvents: answer.sessionEvents}
+		health.planeAnswered(time.Now())
 		return local, nil
 	}
 	outcome := importNotRun
@@ -627,6 +636,7 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 	if (outcome == importNotRun || outcome == importLost) && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
+	health.planeAnswered(time.Now())
 	return cfg, nil
 }
 
@@ -1073,10 +1083,12 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		}
 		if err != nil {
 			rl.tel.heartbeatFailed()
+			cp.health.planeFailed(err)
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
 			continue
 		}
+		cp.health.planeAnswered(time.Now())
 		// Only an answer says whether the plane takes events. A failed
 		// handshake says nothing, so the sink keeps its state and its
 		// queue: a gateway that is down for a minute is the case the

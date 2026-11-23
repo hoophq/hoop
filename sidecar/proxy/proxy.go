@@ -240,6 +240,9 @@ type Server struct {
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
 	closing bool
+	// serving is true from the bind until Serve returns. With closing, it
+	// is what Serving reports; the listener stays set after both.
+	serving bool
 
 	active atomic.Int64
 	total  atomic.Int64
@@ -503,6 +506,7 @@ func (s *Server) Listen() error {
 		return net.ErrClosed
 	}
 	s.listener = ln
+	s.serving = true
 	s.mu.Unlock()
 
 	s.log.Info("hoop-inspect listening",
@@ -520,6 +524,11 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err := s.Listen(); err != nil {
 		return err
 	}
+	defer func() {
+		s.mu.Lock()
+		s.serving = false
+		s.mu.Unlock()
+	}()
 	s.mu.Lock()
 	ln := s.listener
 	s.mu.Unlock()
@@ -582,7 +591,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 }
 
-// Addr returns the bound address, or nil before Serve has listened.
+// Addr returns the bound address, or nil before Serve has listened. It stays
+// set after Close; Serving says whether the lane still accepts.
 func (s *Server) Addr() net.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -590,6 +600,16 @@ func (s *Server) Addr() net.Addr {
 		return nil
 	}
 	return s.listener.Addr()
+}
+
+// Serving reports that the lane is bound (by Listen or Serve) and still
+// accepts: false before the bind, once Close ran, and after Serve returned.
+// Between Listen and Serve the kernel queues connections, so it counts. A
+// health endpoint reads it.
+func (s *Server) Serving() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.serving && !s.closing
 }
 
 // Stats reports counters for a health or metrics endpoint.

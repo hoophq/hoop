@@ -189,6 +189,10 @@ jobs:
           budget=$(echo "$sc" | awk '/startupProbe:/{f=1} f&&/periodSeconds:/{p=$2} f&&/failureThreshold:/{print p*$2; exit}')
           [ "${budget:-0}" -ge 300 ] \
             || { echo "::error::sidecar startup probe budget is ${budget:-absent}s, under the 5-minute boot retry"; exit 1; }
+          # The kubelet never shows a probe's body; the log tail on exit is
+          # what `kubectl describe pod` can show of why the relay stopped.
+          echo "$sc" | grep -q 'terminationMessagePolicy: FallbackToLogsOnError' \
+            || { echo "::error::sidecar container lost terminationMessagePolicy: FallbackToLogsOnError"; exit 1; }
           # The startup probe takes the operator's values whole. ICA probes
           # /readyz with 180 failures; a moved probe port and custom timing
           # must reach the startup probe too, not only readiness and liveness.

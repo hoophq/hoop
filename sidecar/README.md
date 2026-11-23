@@ -1246,10 +1246,51 @@ never the signature.
 The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
 one authenticated write, the ICA `POST /v1/drain`. It serves
 no audit data and no lane rules, so a platform can probe it. A workspace that
-reaches it learns whether the process is up, and from `/readyz` the names of
-the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
-`admin.ica_readiness_json`, the ICA inspection state (`status`,
-`inspection_enabled`, `graphics_bypassed`, `protocol_validation_enabled`).
+reaches it learns whether the process is up, and from `/readyz` the process
+status as JSON, or, with `admin.ica_readiness_json`, the ICA inspection state
+(`status`, `inspection_enabled`, `graphics_bypassed`,
+`protocol_validation_enabled`).
+
+`/healthz` answers `200 ok` while the process runs, also while the boot
+retries its control plane handshake. `/readyz` answers 200 when a config is
+loaded and every lane serves, else 503. Probes read the status code; the body
+is for the person who reads it:
+
+```json
+{
+  "status": "ready",
+  "process_running": true,
+  "pid": 7,
+  "valid_license": true,
+  "config_loaded": true,
+  "lanes_open": true,
+  "control_plane_enabled": true,
+  "connected_to_control_plane": false,
+  "control_plane": {"last_handshake": "2026-11-23T17:40:12Z", "error": "unreachable"},
+  "lanes": [{"name": "paymentsdb", "protocol": "postgres", "state": "open"}]
+}
+```
+
+- `reason`, set on a 503: `waiting_for_control_plane` (no config yet, the
+  plane has not answered), `starting` (the config is not loaded yet),
+  `lanes_not_open` (a lane does not serve; `lanes` names it) or `stopping`
+  (the process is shutting down and takes no new traffic; `/healthz` stays
+  200 until it exits).
+- A lane's `state` is `open`, `starting` (not bound yet), `not_ready` (the
+  lane says it cannot serve: an ICA engine still loading or draining, a gRPC
+  lane without its schema, an MCP lane not bound) or `closed` (it stopped
+  accepting).
+- `control_plane.error` is the last failed handshake: `unreachable`,
+  `timeout`, `server_error`, `no_config` or `refused`. It is empty after a
+  success. `boot_attempts` counts the failed requests of the boot.
+- A control plane lost after the config loaded never makes `/readyz` 503:
+  the lanes keep serving the last good config, and only the body says so.
+- The body holds codes and lane names, never an error's text, a URL, a
+  token or a license.
+
+Earlier releases answered `/readyz` with plain text (`ready`, or
+`not ready: <lanes>`), and counted a lane ready before it bound. A script
+that read the text reads `status` and `lanes` now.
 
 The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
 have no authentication: whoever reaches them reads the audit trail and each
@@ -1269,9 +1310,15 @@ moved to that port.
 
 `HOOP_SIDECAR_HEALTH_LISTEN` binds one more listener with `/healthz` and
 `/readyz` only, for a deployment that probes a port other than
-`admin.listen`. It is an environment variable and not a config key. A bind
-failure stops the process, like a lane that cannot bind, and a port another
-listener of the config binds is refused at startup.
+`admin.listen`. It is an environment variable and not a config key. It binds
+when the process starts, before the config is known, so it answers while the
+boot waits for its control plane: `/healthz` 200, `/readyz` 503 with
+`waiting_for_control_plane` and the boot's attempts. `admin.listen` comes
+from the config and binds only after the handshake; a probe on it reads a
+refused connection until then, which a startup probe counts as not started.
+`-validate` and `-grpc-discover` do not bind it. A bind failure stops the
+process, like a lane that cannot bind, and a port another listener of the
+config binds is refused at startup.
 
 The audit trail also leaves the process through `audit.file`, the control
 plane copy (see "Connecting it to a Control Plane") and OTLP (see

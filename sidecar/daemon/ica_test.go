@@ -336,17 +336,36 @@ type brokenSink struct{}
 func (brokenSink) Write(context.Context, audit.Event) error { return errors.New("disk full") }
 func (brokenSink) Close() error                             { return nil }
 
-// /readyz consults only the endpoints that report readiness and names the
-// ones still loading.
+// A lane that reports readiness is judged by it alone; any other endpoint is
+// open once bound.
 func TestICAReadiness(t *testing.T) {
 	loaded := &fakeICAServer{ready: true}
 	loading := &fakeICAServer{ready: false}
-	plain := struct{ endpointServer }{} // grpc/ssh shape: no Ready
-	got := notReadyEndpoints([]endpointServer{loaded, plain, loading}, []string{"a", "b", "c"})
-	if strings.Join(got, ",") != "c" {
-		t.Fatalf("not ready: %v", got)
+	for _, tc := range []struct {
+		srv     endpointServer
+		stopped bool
+		want    string
+	}{
+		{loaded, false, laneOpen},
+		{loading, false, laneNotReady},
+		{boundLane{addr: &net.TCPAddr{Port: 1}}, false, laneOpen}, // grpc/ssh shape: no Ready
+		{boundLane{}, false, laneStarting},
+		// grpc/ssh keep their address after Close: Run's stop says closed.
+		{boundLane{addr: &net.TCPAddr{Port: 1}}, true, laneClosed},
+	} {
+		if got := endpointState(tc.srv, tc.stopped); got != tc.want {
+			t.Errorf("endpointState(%T, stopped=%v) = %q, want %q", tc.srv, tc.stopped, got, tc.want)
+		}
 	}
 }
+
+// boundLane is an endpoint with no Ready: open once Addr reports a bind.
+type boundLane struct {
+	endpointServer
+	addr net.Addr
+}
+
+func (b boundLane) Addr() net.Addr { return b.addr }
 
 func TestICAPortListDecodesNumbersAndStrings(t *testing.T) {
 	var p ICAPortList
