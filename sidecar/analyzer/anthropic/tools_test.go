@@ -93,6 +93,22 @@ func TestDecideReportsARefusal(t *testing.T) {
 	}
 }
 
+// tool_choice auto lets the model answer in prose. That reply is an error,
+// never a risk level.
+func TestAProseReplyIsNotAVerdict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"stop_reason":"end_turn","content":[
+		  {"type":"thinking","thinking":"","signature":"s"},
+		  {"type":"text","text":"report_low_risk: this statement is safe."}]}`)
+	}))
+	defer srv.Close()
+
+	res, err := newTestProvider(t, srv.URL).(analyzer.Provider).Classify(context.Background(), "s", "c")
+	if res != nil || err == nil || !strings.Contains(err.Error(), `called no risk tool (stop_reason "end_turn")`) {
+		t.Errorf("res=%+v err=%v, want no result and a no-risk-tool error", res, err)
+	}
+}
+
 // The classification request keeps its wire shape. tool_choice is auto:
 // Claude Sonnet 5.5 and Opus 5.5 answer "any" and "tool" with a 400.
 func TestTheClassificationRequestKeepsItsShape(t *testing.T) {

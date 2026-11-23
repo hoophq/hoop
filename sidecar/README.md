@@ -2671,9 +2671,10 @@ rather than send a setting that does nothing:
 Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
 ignore them; Google steers determinism to `thinking_level` instead. That is
 not checked, because the model name is the only signal and it changes with
-every release. Claude Sonnet 5.5, Opus 5.5 and Haiku 5.5 refuse
-`temperature`, `top_p` and `top_k`, and some earlier Claude models refuse
-`temperature` and `top_p` together; that answer comes from the API.
+every release. Claude Sonnet 5.5 and Opus 5.5 refuse `temperature`, `top_p`
+and `top_k`, and some earlier Claude models refuse `temperature` and `top_p`
+together; that answer comes from the API. Anthropic says to omit the three
+on Haiku 5.5 too.
 
 These narrow a model's answer; they do not make two calls agree. The verdict
 cache does: two statements of one shape share one verdict for `ttl_sec`,
