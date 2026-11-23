@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/services/users', () => ({ usersService: { listGroups: vi.fn() } }))
 vi.mock('@/services/accessRequests', () => ({ accessRequestsService: {} }))
 vi.mock('@/services/aiSessionAnalyzer', () => ({ aiSessionAnalyzerService: {} }))
+vi.mock('@/services/attributes', () => ({ attributesService: {} }))
 vi.mock('@/services/dataMasking', () => ({ dataMaskingService: {} }))
 vi.mock('@/services/guardrails', () => ({ guardrailsService: {} }))
 vi.mock('@/services/reviews', () => ({ reviewsService: {} }))
