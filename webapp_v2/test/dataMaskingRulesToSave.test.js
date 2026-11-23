@@ -23,8 +23,19 @@ describe('rulesToSave', () => {
 
   it('still asks for a rule name when there are no custom entity types', () => {
     expect(rulesToSave([rule()], [])).toEqual({ error: 'Give every rule a name, or remove it.' })
-    expect(rulesToSave([rule()], [{ key: 'c', name: 'RG_BR', regex: '' }])).toEqual({
-      error: 'Give every rule a name, or remove it.',
+  })
+
+  it('refuses an unnamed rule that has entity types or columns', () => {
+    const rules = [rule({ name: 'pii', entities: ['EMAIL_ADDRESS'] }), rule({ entities: ['PERSON'] })]
+    expect(rulesToSave(rules, custom)).toEqual({ error: 'Rule 2 needs a name, or remove it.' })
+    expect(rulesToSave([rule({ match: 'columns', columns: ['ssn'] })], custom)).toEqual({
+      error: 'Rule 1 needs a name, or remove it.',
+    })
+  })
+
+  it('reports a half-filled custom entity before the rules', () => {
+    expect(rulesToSave([rule()], [...custom, { key: 'c2', name: 'RG_BR1', regex: ' ' }])).toEqual({
+      error: 'Custom entity 2 needs a name and a regex, or remove it.',
     })
   })
 

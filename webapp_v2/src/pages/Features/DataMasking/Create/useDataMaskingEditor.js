@@ -128,11 +128,6 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
     }
     const named = checked.rules
     const spec = rulesToSpec(named, sshBound)
-    const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
-    if (half !== -1) {
-      showSnackbar({ level: 'error', text: `Custom entity ${half + 1} needs a name and a regex, or remove it.` })
-      return false
-    }
     const custom = customEntities.filter((c) => c.name.trim() !== '' && c.regex.trim() !== '')
     const payload = {
       name: name.trim(),

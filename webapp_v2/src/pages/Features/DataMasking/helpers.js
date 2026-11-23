@@ -168,7 +168,11 @@ export function targetProtocols(targets, sidecars) {
 // custom entity types has no entity group: its one rule row stays blank, and
 // the API refuses a group with no entity types.
 export function rulesToSave(rules, customEntities) {
-  const hasCustom = customEntities.some((c) => c.name.trim() !== '' && c.regex.trim() !== '')
+  const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
+  if (half !== -1) return { error: `Custom entity ${half + 1} needs a name and a regex, or remove it.` }
+  const hasCustom = customEntities.some((c) => c.name.trim() !== '')
+  const unnamed = rules.findIndex((r) => r.name.trim() === '' && (r.entities.length > 0 || r.columns.length > 0))
+  if (unnamed !== -1) return { error: `Rule ${unnamed + 1} needs a name, or remove it.` }
   const named = rules.filter((r) => r.name.trim() !== '')
   if (named.length === 0 && !hasCustom) return { error: 'Give every rule a name, or remove it.' }
   const empty = named.find((r) => (r.match === 'columns' ? r.columns : r.entities).length === 0)
