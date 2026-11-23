@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 )
 
@@ -61,7 +62,7 @@ func noMachine() machine { return machine{keyDir: "/nonexistent/keys"} }
 // are, except SSH: its host key and CA are files on this machine no default
 // can name, and the failure must say which field is missing.
 func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
-	choices := append([]string{demoHTTPID, demoPGID}, daemon.ServableProtocols()...)
+	choices := append([]string{demoID}, daemon.ServableProtocols()...)
 	for _, p := range choices {
 		d, err := newDraft(p, noMachine())
 		if err != nil {
@@ -80,25 +81,42 @@ func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
 	}
 }
 
-// The analyzer is on by default only when its key file is there, and the
-// config it then writes must validate with that key.
+// With no LLM key of the person's own, the analyzer is on with the model
+// Hoop hosts, and the config says so explicitly. A key file of their own
+// takes its place, and the config it then writes must validate with that key.
 func TestAnalyzerDefaultsFollowTheKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	d, _ := newDraft("postgres", machine{keyDir: dir})
-	if d.an.on {
-		t.Fatal("analyzer on with no key file")
+	if !d.an.on || d.an.provider != hostedProvider {
+		t.Fatalf("no key file: on=%v provider=%q, want the hosted model on", d.an.on, d.an.provider)
+	}
+	if err := validateDraft(t, d); err != nil {
+		t.Errorf("hosted analyzer config does not validate: %v", err)
+	}
+	cfg, _, _ := d.config()
+	if a := cfg.Analyzer; a == nil || a.UseHoopLLMProvider == nil || !*a.UseHoopLLMProvider || a.Provider != "" || a.CredentialsFile != "" {
+		t.Errorf("hosted analyzer section = %+v, want use_hoop_llm_provider: true alone", cfg.Analyzer)
+	}
+	if !strings.Contains(d.analyzerSummary(), "sent to Hoop") {
+		t.Errorf("summary hides where statements go: %q", d.analyzerSummary())
+	}
+	// A provider whose key is in the environment stays the person's choice,
+	// off until its key file exists, never swapped for the hosted model.
+	d, _ = newDraft("postgres", machine{keyDir: dir, provider: "anthropic"})
+	if d.an.on || d.an.provider != "anthropic" {
+		t.Errorf("anthropic key in env, no file: on=%v provider=%q, want anthropic off", d.an.on, d.an.provider)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "anthropic.key"), []byte("sk-test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	d, _ = newDraft("postgres", machine{keyDir: dir})
-	if !d.an.on {
-		t.Fatal("analyzer off although its key file exists")
+	if !d.an.on || d.an.provider != "anthropic" {
+		t.Fatalf("anthropic key file: on=%v provider=%q, want anthropic on", d.an.on, d.an.provider)
 	}
 	if err := validateDraft(t, d); err != nil {
 		t.Errorf("analyzer config does not validate: %v", err)
 	}
-	cfg, _, _ := d.config()
+	cfg, _, _ = d.config()
 	if cfg.Analyzer == nil || cfg.Listeners[0].Analyzer == nil {
 		t.Errorf("analyzer missing from the config: %+v", cfg)
 	}
@@ -599,5 +617,54 @@ func TestDetectPrefersDatabaseURLOverAnOpenPort(t *testing.T) {
 	}
 	if _, ok := m.foundFor("mysql"); !ok {
 		t.Error("foundFor(mysql) missed the open port")
+	}
+}
+
+// The form offers the hosted model first, under a label that says it needs
+// no key, and does not ask for a model or key file while it is chosen.
+func TestAnalyzerFormHostedChoice(t *testing.T) {
+	d, _ := newDraft("postgres", noMachine())
+	f := analyzerForm(d.an, d.protocol)
+	prov := f.byID("provider")
+	if len(prov.options) == 0 || prov.options[0] != hostedProvider {
+		t.Fatalf("provider options = %v, want %q first", prov.options, hostedProvider)
+	}
+	if strings.Count(strings.Join(prov.options, ","), hostedProvider) != 1 {
+		t.Errorf("provider options list %q twice: %v", hostedProvider, prov.options)
+	}
+	for _, id := range []string{"model", "key", "keynote"} {
+		if f.byID(id).visible() {
+			t.Errorf("field %s shows for the hosted model", id)
+		}
+	}
+	if !f.byID("hostednote").visible() {
+		t.Error("the hosted model's PII note is hidden")
+	}
+	a, err := analyzerFromForm(f, d.an)
+	if err != nil || a.provider != hostedProvider || !a.on {
+		t.Fatalf("analyzerFromForm = %+v, %v", a, err)
+	}
+	// Switching to a keyed provider suggests its key file and model.
+	prov.text = "anthropic"
+	a, err = analyzerFromForm(f, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.model != starterModels["anthropic"] || filepath.Base(a.keyFile) != "anthropic.key" {
+		t.Errorf("after switching to anthropic: model %q key %q", a.model, a.keyFile)
+	}
+}
+
+// Off, the commented hint for the hosted model names the flag, not a key.
+func TestAnalyzerHintHosted(t *testing.T) {
+	d, _ := newDraft("postgres", noMachine())
+	d.an.on = false
+	_, opts, err := d.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hint := strings.Join(opts.Footer, "\n")
+	if !strings.Contains(hint, "use_hoop_llm_provider: true") || strings.Contains(hint, "credentials_file") {
+		t.Errorf("hint = %q", hint)
 	}
 }

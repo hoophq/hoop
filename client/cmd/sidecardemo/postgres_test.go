@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,7 +120,7 @@ func TestPsqlCommands(t *testing.T) {
 
 	// Parsing reads the CA at sslrootcert, so it succeeds only when the odd
 	// home directory came through as one value.
-	_, args = psqlArgs(t, PGSteps[3].Psql(p))
+	_, args = psqlArgs(t, PGSteps[len(PGSteps)-1].Psql(p))
 	cfg, err = pgconn.ParseConfig(args[0])
 	if err != nil {
 		t.Fatalf("direct step connection string %q (CA at %s): %v", args[0], ca, err)
@@ -134,7 +135,7 @@ func TestPsqlCommands(t *testing.T) {
 func TestPsqlKeepsAnAddressLiteral(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	evil := "$(touch PWNED)`touch PWNED2`'\";.example.com:5432"
-	_, args := psqlArgs(t, PGSteps[3].Psql(Ports{Listen: PGListenAddr, API: evil}))
+	_, args := psqlArgs(t, PGSteps[len(PGSteps)-1].Psql(Ports{Listen: PGListenAddr, API: evil}))
 	if !strings.Contains(args[0], "$(touch PWNED)`touch PWNED2`") {
 		t.Errorf("connection string %q lost the address's text", args[0])
 	}
@@ -155,14 +156,36 @@ func TestCheckAddr(t *testing.T) {
 }
 
 // Only the comparison step goes around the sidecar, and only it carries no
-// audit event to tick it.
+// audit event to tick it. The analyzer step is ticked by its rating instead.
 func TestPGStepsShape(t *testing.T) {
 	for i, s := range PGSteps {
 		if s.SQL == "" || s.Method != "" {
 			t.Errorf("step %d (%s) is not a SQL step", i+1, s.Title)
 		}
-		if s.Direct != (s.SeenKind == "") {
+		if s.Direct != (s.SeenKind == "" && !s.Analyzer) {
 			t.Errorf("step %d (%s): direct %v but SeenKind %q", i+1, s.Title, s.Direct, s.SeenKind)
+		}
+	}
+}
+
+// The analyzer step is listed only for a listener that has an analyzer, in
+// both demos, and its command is offered under the same rule.
+func TestAnalyzerStepFollowsTheListener(t *testing.T) {
+	for _, kind := range []Kind{KindHTTP, KindPostgres} {
+		with, without := StepsFor(kind, true), StepsFor(kind, false)
+		if len(with) != len(without)+1 {
+			t.Errorf("%s: %d steps with the analyzer, %d without, want one more", kind, len(with), len(without))
+		}
+		if slices.ContainsFunc(without, func(s Step) bool { return s.Analyzer }) {
+			t.Errorf("%s: the analyzer step is listed without an analyzer", kind)
+		}
+		i := slices.IndexFunc(with, func(s Step) bool { return s.Analyzer })
+		if i < 0 || with[i].SeenOp == "" || with[i].Direct {
+			t.Errorf("%s: analyzer step = %+v", kind, with)
+		}
+		p := DefaultPortsFor(kind)
+		if n := len(TryCommands(kind, p, true)); n != len(with) {
+			t.Errorf("%s: %d commands for %d steps", kind, n, len(with))
 		}
 	}
 }

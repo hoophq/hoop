@@ -326,3 +326,17 @@ func TestSelectionBackgroundSurvivesColors(t *testing.T) {
 		t.Fatalf("the selected row is %d wide, want the full 20", ansi.StringWidth(got))
 	}
 }
+
+// The hosted model is named for what it is, and the status line says where
+// statements go, as the daemon's PII notice does.
+func TestHostedAnalyzerStatus(t *testing.T) {
+	m := newModel("1.2.3", nil, time.Now, nil)
+	rec, ok := ParseLog([]byte(`{"time":"2026-10-05T12:00:00Z","level":"INFO","msg":"risk analyzer attached","provider":"hoop","model":"qwen3-4b","send":"text","fail_open":false}`))
+	if !ok {
+		t.Fatal("ParseLog refused the line")
+	}
+	m.st.ApplyLog(rec)
+	if got := m.st.System.Analyzer; !strings.HasPrefix(got, "Hoop-hosted qwen3-4b · statements sent to Hoop") {
+		t.Errorf("System.Analyzer = %q", got)
+	}
+}

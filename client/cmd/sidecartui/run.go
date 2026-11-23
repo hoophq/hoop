@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,7 +33,8 @@ type Options struct {
 	AuditFile string
 	// Reviewer, when set, is the backend the daemon files held statements
 	// with (daemon.WithLocalReviewer); the TUI shows each one and records
-	// the answer. Operator is who answers, written with each decision.
+	// the answer. Operator is who answers, written with each decision;
+	// empty names the OS account that started the process.
 	Reviewer *Reviewer
 	Operator string
 	// SaveDir is where the TUI keeps a copy of what it captures: the audit
@@ -312,6 +314,9 @@ func runTUI(opts Options, run func() error) error {
 		return self.Signal(os.Interrupt)
 	}
 	m := newModel(opts.Version, append(opts.Notes, notes...), time.Now, stop)
+	if opts.Operator == "" {
+		opts.Operator = defaultOperator()
+	}
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
 	m.controlPlane, m.openURL = opts.ControlPlane, opts.OpenURL
 	if opts.Demo != nil {
@@ -563,4 +568,17 @@ func follow(f *os.File, max int, emit func([]byte, bool), stop <-chan struct{}) 
 			buf.reset()
 		}
 	}
+}
+
+// defaultOperator names the person reviewing at this terminal: the OS
+// account that started the process, which is who the decision is recorded
+// against.
+func defaultOperator() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "unknown"
 }
