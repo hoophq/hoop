@@ -18,6 +18,8 @@ const (
 	SidecarMirrorNameInUseQuery      = sidecarMirrorNameInUseQuery
 	SidecarMirrorResourceCreateQuery = sidecarMirrorResourceCreateQuery
 	OrphanResourceDeleteQuery        = orphanResourceDeleteQuery
+
+	StaleSidecarSessionsQuery = staleSidecarSessionsQuery
 )
 
 const LastUsedInterval = lastUsedInterval
