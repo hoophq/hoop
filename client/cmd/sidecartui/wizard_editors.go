@@ -10,9 +10,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -65,6 +67,7 @@ type analyzerDraft struct {
 // starterModels is the model each provider's block names: a cheap, fast
 // default for a classification call. Any model the account serves works.
 var starterModels = map[string]string{
+	hoop.Name:   analyzer.HostedModel,
 	"anthropic": "claude-haiku-4-5",
 	"openai":    "gpt-5-mini",
 	"gemini":    "gemini-2.5-flash",
@@ -304,9 +307,74 @@ func newDraft(id string, m machine) (*draft, error) {
 	default:
 		d.an.trigger = []string{"delete", "update"}
 	}
-	// An mcp lane refuses an analyzer.
-	d.an.on = d.protocol != "mcp" && provider != "vertex" && keyFileStatus(d.an.keyFile) == nil
+	// The analyzer is on by default, on the model Hoop hosts: no API key and
+	// no URL to set. A provider the person already set up for the sidecar is
+	// kept instead: any provider's key file in keyDir (the one the
+	// environment names first), or Vertex when its credentials are set,
+	// which still needs a project and so starts off. An API key only in the
+	// environment, with no key file, does not count: the default stays
+	// Hoop's model (decided by the design owner, DES-244). An mcp lane refuses an analyzer; grpc and spanner
+	// rate only decoded payloads, which need descriptors no default can
+	// name, so theirs starts off too.
+	d.an.on = !slices.Contains([]string{"mcp", "grpc", "spanner"}, d.protocol)
+	switch own := ownProvider(provider, keyDir); {
+	case provider == "vertex":
+		d.an.on = false
+	case own != "":
+		d.an.provider, d.an.model = own, starterModels[own]
+		d.an.keyFile = filepath.Join(keyDir, own+".key")
+	default:
+		d.an.provider, d.an.model = hoop.Name, analyzer.HostedModel
+		d.an.keyFile = filepath.Join(keyDir, hoop.Name+".key")
+	}
+	if kind != "" {
+		// The demo shows the AI with no key to set up: the model Hoop
+		// hosts (DEP-161) rates each read, and a high-risk one waits for
+		// the person at this terminal (sidecardemo.AnalyzerPrompt).
+		d.an = analyzerDraft{on: true, provider: hoop.Name, model: analyzer.HostedModel, keyDir: keyDir,
+			keyFile: filepath.Join(keyDir, hoop.Name+".key"), region: "global",
+			trigger: sidecardemo.AnalyzerTrigger(kind),
+			high:    string(analyzer.ActionRequireApproval), medium: string(analyzer.ActionWarn), low: string(analyzer.ActionAllow)}
+	}
 	return d, nil
+}
+
+// ownProvider is a provider whose key file is already in keyDir: preferred
+// first (the one the environment names), then any other this binary links.
+// "" when there is none.
+func ownProvider(preferred, keyDir string) string {
+	candidates := append([]string{preferred}, analyzer.RegisteredProviders()...)
+	for _, p := range candidates {
+		if p == hoop.Name || p == "vertex" || !slices.Contains(analyzer.RegisteredProviders(), p) {
+			continue
+		}
+		if keyFileStatus(filepath.Join(keyDir, p+".key")) == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// hosted reports the model Hoop hosts: no key file, no model to name.
+func (a analyzerDraft) hosted() bool { return a.provider == hoop.Name }
+
+// hostedLabel names the model Hoop hosts wherever a provider is shown: the
+// person never sees its URL, as with any other provider.
+const hostedLabel = "Hoop's own model (default)"
+
+// providerOptions lists the providers this binary links, the model Hoop hosts
+// first: it is the default and needs nothing from the person.
+func providerOptions() []string {
+	out := []string{}
+	for _, p := range analyzer.RegisteredProviders() {
+		if p != hoop.Name {
+			out = append(out, p)
+		}
+	}
+	if slices.Contains(analyzer.RegisteredProviders(), hoop.Name) {
+		out = append([]string{hoop.Name}, out...)
+	}
+	return out
 }
 
 // keyFileStatus is nil when path is a key file the analyzer will accept.
@@ -352,15 +420,45 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 	}
 	cfg := &daemon.Config{License: d.license}
 	if d.an.on {
-		cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model}
-		if d.an.provider == "vertex" {
-			cfg.Analyzer.Extra = daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}
-		} else {
-			cfg.Analyzer.CredentialsFile = d.an.keyFile
+		switch {
+		case d.an.hosted():
+			// The daemon refuses provider "hoop" by name: the hosted
+			// model is chosen with use_hoop_llm_provider, and takes no key.
+			on := true
+			cfg.Analyzer = &daemon.AnalyzerConfig{UseHoopLLMProvider: &on}
+		case d.an.provider == "vertex":
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				Extra: daemon.ProviderExtra{"project": d.an.project, "region": d.an.region}}
+		default:
+			cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model,
+				CredentialsFile: d.an.keyFile}
 		}
 		l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: d.an.high, MediumRisk: d.an.medium, LowRisk: d.an.low}
 		if len(d.an.trigger) > 0 {
 			l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(d.an.trigger...)}
+		}
+		if d.isDemo() {
+			// The demo's AI step must hold the same statement every time,
+			// whichever provider rates it: guidance that names what is high
+			// risk in the demo data, and only that data sent to the model.
+			cfg.Analyzer.TimeoutSec = int(sidecardemo.AnalyzerTimeout / time.Second)
+			l.Analyzer.Prompt = sidecardemo.AnalyzerPrompt(d.demoKind)
+			tables, resources := sidecardemo.AnalyzerScope(d.demoKind)
+			l.Analyzer.Trigger = &policy.AITrigger{Any: []policy.AITriggerItem{{
+				Operations: ops(d.an.trigger...), Tables: tables, Resources: resources}}}
+			if d.an.hosted() {
+				// The lowest temperature. Only on Hoop's model: some
+				// providers' models refuse a temperature.
+				zero := 0.0
+				cfg.Analyzer.Temperature = &zero
+			}
+		} else if d.an.hosted() {
+			// The default nobody chose must not stop traffic: before it, a
+			// new config ran with no analyzer. With Hoop's model out of
+			// reach, a statement it cannot rate passes (a holding lane
+			// still refuses it).
+			open := true
+			cfg.Analyzer.FailOpen = &open
 		}
 	}
 	// An http_header rule may only name a header the listener captures.
@@ -472,12 +570,15 @@ func analyzerHint(a analyzerDraft, listener string) []string {
 	if env, ok := keyEnv[a.provider]; ok {
 		out = append(out, fmt.Sprintf("  mkdir -p %s && (umask 077; printf %%s \"$%s\" > %s)", a.keyDir, env, a.keyFile), "")
 	}
-	out = append(out, "then add this block, and the lane block to listener "+listener+":", "",
-		"analyzer:", "  provider: "+a.provider, "  model: "+a.model)
-	if a.provider == "vertex" {
-		out = append(out, "  extra: {project: my-gcp-project, region: global}")
-	} else {
-		out = append(out, "  credentials_file: "+a.keyFile)
+	out = append(out, "then add this block, and the lane block to listener "+listener+":", "", "analyzer:")
+	switch {
+	case a.hosted():
+		out = append(out, "  use_hoop_llm_provider: true   # "+hostedLabel+": no API key")
+	case a.provider == "vertex":
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model,
+			"  extra: {project: my-gcp-project, region: global}")
+	default:
+		out = append(out, "  provider: "+a.provider, "  model: "+a.model, "  credentials_file: "+a.keyFile)
 	}
 	out = append(out, "", "    analyzer:", "      trigger: {operations: ["+strings.Join(a.trigger, ", ")+"]}",
 		"      high: "+a.high, "      medium: "+a.medium, "      low: "+a.low)
@@ -518,12 +619,23 @@ func (d *draft) analyzerSummary() string {
 		if d.protocol == "mcp" {
 			return "off · an mcp listener does not take one yet"
 		}
-		if d.an.provider != "vertex" && keyFileStatus(d.an.keyFile) != nil {
+		if d.an.provider != "vertex" && !d.an.hosted() && keyFileStatus(d.an.keyFile) != nil {
 			return "off · needs a key file for " + d.an.provider
 		}
 		return "off"
 	}
-	return fmt.Sprintf("%s %s · high→%s, medium→%s, low→%s", d.an.provider, d.an.model, d.an.high, d.an.medium, d.an.low)
+	// The trigger is not in the form: the summary names it, and the file
+	// is where it changes.
+	looks := "every statement"
+	if len(d.an.trigger) > 0 {
+		looks = strings.Join(d.an.trigger, ", ")
+	}
+	who := d.an.provider + " " + d.an.model
+	if d.an.hosted() {
+		who = hostedLabel + ", no API key"
+	}
+	return fmt.Sprintf("%s · looks at %s · high→%s, medium→%s, low→%s",
+		who, looks, d.an.high, d.an.medium, d.an.low)
 }
 
 func (d *draft) piiSummary() string {
@@ -855,32 +967,43 @@ func maskFromForm(f *form) (alcatraz.Rule, error) {
 
 var riskActions = []string{
 	string(analyzer.ActionAllow), string(analyzer.ActionWarn), string(analyzer.ActionBlock),
-	string(analyzer.ActionDefer), string(analyzer.ActionRequireReview),
+	string(analyzer.ActionDefer), string(analyzer.ActionRequireApproval),
 }
 
 var riskActionLabel = map[string]string{
 	"allow": "allow", "warn": "allow, flag in the audit", "block": "block",
-	"defer": "report, let policy decide", "require_review": "hold for approval in this terminal",
+	"defer": "report, let policy decide", "require_approval": "hold for approval",
 }
 
-func analyzerForm(a analyzerDraft, protocol string) *form {
-	providers := analyzer.RegisteredProviders()
-	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider}
+func analyzerForm(a analyzerDraft) *form {
+	providers := providerOptions()
+	prov := &field{id: "provider", label: "Provider", kind: fEnum, options: providers, text: a.provider,
+		optLabel: map[string]string{hoop.Name: hostedLabel + ", no API key"}}
 	if !slices.Contains(providers, prov.text) && len(providers) > 0 {
 		prov.text = providers[0]
 	}
 	// Every field shows while the analyzer is off too: what turning it on
 	// takes (a key file, a model) is the thing the person is deciding on.
-	hideForVertex := func() bool { return prov.text == "vertex" }
+	hideForVertex := func() bool { return prov.text == "vertex" || prov.text == hoop.Name }
 	hideUnlessVertex := func() bool { return prov.text != "vertex" }
 	key := &field{id: "key", label: "Key file", kind: fText, text: a.keyFile, hidden: hideForVertex,
 		help: "Read as written: no ~. Must be mode 0600 or stricter."}
+	model := &field{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
+		hidden: func() bool { return prov.text == hoop.Name },
+		help:   "Any model the provider serves to your account."}
+	// A default model or key file follows the provider on screen, not only
+	// on Done: else anthropic shows Hoop's model and hoop.key.
+	prov.changed = func(prev string) {
+		model.text, key.text = followProvider(prev, prov.text, model.text, key.text, a.keyDir)
+	}
 	fields := []*field{
 		{id: "on", label: "Enabled", kind: fBool, on: a.on,
 			help: "Off writes the analyzer into the file commented out, one uncomment away."},
 		prov,
-		{id: "model", label: "Model", kind: fText, text: a.model, placeholder: starterModels[prov.text],
-			help: "Any model the provider serves to your account."},
+		{id: "hostednote", kind: fNote, hidden: func() bool { return prov.text != hoop.Name }, note: func() string {
+			return stFaint.Render("Hoop runs it: no API key and no URL to set. Statement text goes to Hoop.")
+		}},
+		model,
 		key,
 		{id: "keynote", kind: fNote, hidden: hideForVertex, note: func() string {
 			path := key.text
@@ -896,8 +1019,6 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 		{id: "project", label: "GCP project", kind: fText, text: a.project, placeholder: "my-gcp-project", hidden: hideUnlessVertex,
 			help: "Vertex uses Google Application Default Credentials."},
 		{id: "region", label: "Region", kind: fText, text: a.region, placeholder: "global", hidden: hideUnlessVertex},
-		{id: "trigger", label: "Look at", kind: fMulti, multi: a.trigger, options: opsFor(protocol), placeholder: "every statement",
-			help: "Which operations are sent to the model. Empty sends everything."},
 		{id: "high", label: "High risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.high},
 		{id: "medium", label: "Medium risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.medium},
 		{id: "low", label: "Low risk", kind: fEnum, options: riskActions, optLabel: riskActionLabel, text: a.low},
@@ -906,23 +1027,34 @@ func analyzerForm(a analyzerDraft, protocol string) *form {
 	return newForm("AI analyzer", fields...)
 }
 
+// followProvider moves a model and key file that are prev's defaults, or
+// empty, to next's. A value the person typed stays.
+func followProvider(prev, next, model, keyFile, keyDir string) (string, string) {
+	if prev == next {
+		return model, keyFile
+	}
+	if model == "" || model == starterModels[prev] {
+		model = starterModels[next]
+	}
+	if keyFile == "" || keyFile == filepath.Join(keyDir, prev+".key") {
+		keyFile = filepath.Join(keyDir, next+".key")
+	}
+	return model, keyFile
+}
+
 func analyzerFromForm(f *form, a analyzerDraft) (analyzerDraft, error) {
 	f.store()
 	g := func(id string) *field { return f.byID(id) }
 	prev := a.provider
 	a.on, a.provider = g("on").on, g("provider").text
-	a.model = strings.TrimSpace(g("model").text)
-	if a.provider != prev && (a.model == "" || a.model == starterModels[prev]) {
-		a.model = starterModels[a.provider]
-	}
-	a.keyFile = strings.TrimSpace(g("key").text)
-	if a.provider != prev && a.keyFile == filepath.Join(a.keyDir, prev+".key") {
-		a.keyFile = filepath.Join(a.keyDir, a.provider+".key")
-	}
+	a.model, a.keyFile = followProvider(prev, a.provider,
+		strings.TrimSpace(g("model").text), strings.TrimSpace(g("key").text), a.keyDir)
 	a.project, a.region = strings.TrimSpace(g("project").text), strings.TrimSpace(g("region").text)
-	a.trigger = g("trigger").multi
 	a.high, a.medium, a.low = g("high").text, g("medium").text, g("low").text
 	if !a.on {
+		return a, nil
+	}
+	if a.hosted() {
 		return a, nil
 	}
 	if a.model == "" {

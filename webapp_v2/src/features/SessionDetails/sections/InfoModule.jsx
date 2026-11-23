@@ -26,7 +26,7 @@ import { formatFullDate } from '@/utils/datetime'
 import InfoRow from '../components/InfoRow'
 import ReviewBadge from '../components/ReviewBadge'
 import SessionStatusBadge from '../components/SessionStatusBadge'
-import { executedBy } from '../sessionState'
+import { createdBy, executedBy } from '../sessionState'
 import classes from './InfoModule.module.css'
 
 // The module always shows its first three details; "See more" shows the rest.
@@ -80,6 +80,7 @@ export default function InfoModule({ session }) {
   const [expanded, setExpanded] = useState(false)
   const iconOf = useConnectionIconGetter()
   const identity = identityOf(session)
+  const creator = createdBy(session)
   const icon = identity.icon ? iconOf({ subtype: session.connection_subtype }) : null
   const jiraUrl = session.integrations_metadata?.jira_issue_url
   const aiAction = session.ai_analysis?.action
@@ -104,10 +105,10 @@ export default function InfoModule({ session }) {
     <InfoRow key="user" icon={CircleUser} label="Created by">
       <Group gap="xs" wrap="nowrap">
         <Avatar size={24} radius="xl" color="blue" variant="filled">
-          {initialsOf(session.user_name)}
+          {initialsOf(creator)}
         </Avatar>
         <Text size="sm" fw={500}>
-          {session.user_name}
+          {creator}
         </Text>
       </Group>
     </InfoRow>,
