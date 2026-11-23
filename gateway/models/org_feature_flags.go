@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type OrgFeatureFlag struct {
@@ -17,6 +19,13 @@ func (OrgFeatureFlag) TableName() string { return "private.org_feature_flags" }
 func ListOrgFeatureFlags(orgID string) ([]OrgFeatureFlag, error) {
 	var flags []OrgFeatureFlag
 	err := DB.Where("org_id = ?", orgID).Find(&flags).Error
+	return flags, err
+}
+
+// ListAllOrgFeatureFlags returns the stored flags of every org.
+func ListAllOrgFeatureFlags(db *gorm.DB) ([]OrgFeatureFlag, error) {
+	var flags []OrgFeatureFlag
+	err := db.Find(&flags).Error
 	return flags, err
 }
 

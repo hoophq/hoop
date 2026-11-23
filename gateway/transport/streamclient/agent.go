@@ -3,6 +3,7 @@ package streamclient
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -35,6 +36,11 @@ type AgentStream struct {
 	connectionName string
 	agent          models.Agent
 	metadata       metadata.MD
+
+	// sendMu serializes the sends: gRPC forbids concurrent SendMsg on one
+	// stream, and proxies, plugins and flag updates send from their own
+	// goroutines.
+	sendMu sync.Mutex
 }
 
 // GetAgentStream returns the agent stream only when the agent belongs to orgID.
@@ -70,6 +76,21 @@ func NewAgent(a models.Agent, s pb.Transport_ConnectServer) *AgentStream {
 
 // Override context from transport stream
 func (s *AgentStream) Context() context.Context { return s.context }
+
+// Send sends pkt to the agent. Safe for concurrent use.
+func (s *AgentStream) Send(pkt *pb.Packet) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	return s.Transport_ConnectServer.Send(pkt)
+}
+
+// SendMsg takes the same lock as Send, so the promoted method cannot bypass
+// it.
+func (s *AgentStream) SendMsg(m any) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	return s.Transport_ConnectServer.SendMsg(m)
+}
 func (s *AgentStream) GetMeta(key string) string {
 	v := s.metadata.Get(key)
 	if len(v) > 0 {

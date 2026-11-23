@@ -1,6 +1,10 @@
 package featureflag
 
-import "testing"
+import (
+	"slices"
+	"sync"
+	"testing"
+)
 
 // testFlag is an in-catalog fixture used only by these tests to exercise the
 // flag system (Lookup/Set/SetAll/IsEnabled/SnapshotForOrg) independently of any
@@ -110,5 +114,106 @@ func TestSetAll(t *testing.T) {
 func TestCLIContextsStaysInCatalog(t *testing.T) {
 	if _, ok := Lookup(FlagCLIContexts); !ok {
 		t.Fatalf("%s left the catalog: every released `hoop context use` would refuse this gateway", FlagCLIContexts)
+	}
+}
+
+func TestReplace(t *testing.T) {
+	c := NewCache()
+	c.Set("org-a", testFlag, true)
+	c.Set("org-b", testFlag, true)
+
+	gen := c.Generation()
+	changed, ok := c.Replace(gen, map[string]map[string]bool{
+		"org-a": {testFlag: true},                       // unchanged
+		"org-c": {testFlag: true, "unknown.flag": true}, // new org
+	})
+	if !ok {
+		t.Fatal("Replace refused with no write since Generation")
+	}
+	if want := []string{"org-b", "org-c"}; !slices.Equal(changed, want) {
+		t.Fatalf("changed = %v, want %v", changed, want)
+	}
+	if !c.IsEnabled("org-a", testFlag) || !c.IsEnabled("org-c", testFlag) {
+		t.Fatal("Replace lost a stored value")
+	}
+	if c.IsEnabled("org-b", testFlag) {
+		t.Fatal("an org absent from the snapshot must read the default")
+	}
+	if _, ok := c.SnapshotForOrg("org-c")["unknown.flag"]; ok {
+		t.Fatal("Replace kept a flag the catalog does not know")
+	}
+
+	changed, ok = c.Replace(c.Generation(), map[string]map[string]bool{
+		"org-a": {testFlag: true}, "org-c": {testFlag: true},
+	})
+	if !ok || len(changed) != 0 {
+		t.Fatalf("same snapshot: changed = %v, ok = %v; want none, true", changed, ok)
+	}
+}
+
+// A refresh that read the database before a local write must not undo it.
+func TestReplaceRefusesASnapshotOlderThanAWrite(t *testing.T) {
+	c := NewCache()
+	gen := c.Generation()
+	c.Set("org-a", testFlag, true)
+	if _, ok := c.Replace(gen, map[string]map[string]bool{}); ok {
+		t.Fatal("Replace accepted a snapshot read before Set")
+	}
+	if !c.IsEnabled("org-a", testFlag) {
+		t.Fatal("the refused snapshot changed the cache")
+	}
+	gen = c.Generation()
+	c.SetAll("org-a", map[string]bool{})
+	if _, ok := c.Replace(gen, map[string]map[string]bool{"org-a": {testFlag: true}}); ok {
+		t.Fatal("Replace accepted a snapshot read before SetAll")
+	}
+}
+
+// Writers, refreshes and readers at once, for -race. A refresh that read
+// before a write never lands over it.
+func TestCacheConcurrentUse(t *testing.T) {
+	c := NewCache()
+	orgs := []string{"org-a", "org-b", "org-c"}
+	var wg sync.WaitGroup
+	for w := range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 500 {
+				org := orgs[(w+i)%len(orgs)]
+				gen := c.Generation()
+				if i%2 == 0 {
+					c.Set(org, testFlag, i%4 == 0)
+				} else {
+					c.SetAll(org, map[string]bool{testFlag: true})
+				}
+				if _, ok := c.Replace(gen, map[string]map[string]bool{org: {testFlag: false}}); ok {
+					t.Errorf("Replace applied a snapshot read before a write")
+					return
+				}
+			}
+		}()
+	}
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 500 {
+				org := orgs[i%len(orgs)]
+				c.Replace(c.Generation(), map[string]map[string]bool{org: {testFlag: i%2 == 0}})
+				_ = c.IsEnabled(org, testFlag)
+				for range c.SnapshotForOrg(org) {
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	_, ok := c.Replace(c.Generation(), map[string]map[string]bool{"org-a": {testFlag: true}})
+	if !ok {
+		t.Fatal("Replace refused with no write since Generation")
+	}
+	if !c.IsEnabled("org-a", testFlag) || c.IsEnabled("org-b", testFlag) {
+		t.Fatal("the last Replace is not the cache")
 	}
 }
