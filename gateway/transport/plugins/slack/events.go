@@ -208,10 +208,11 @@ func reviewRefusalMessage(err error) string {
 }
 
 // notifyOwnerRejected sends a DM to the session owner informing them that their
-// access request was rejected. Silently skipped if the owner has no Slack ID.
+// access request was rejected. Skipped if the owner has no Slack ID.
 func (p *slackPlugin) notifyOwnerRejected(ev *event, ctx *storagev2.Context, rev *models.Review) {
 	ownerSlackID := ptr.ToString(rev.OwnerSlackID)
 	if ownerSlackID == "" {
+		log.With("sid", ev.msg.SessionID).Infof("skipping rejection DM, review owner has no Slack ID")
 		return
 	}
 
