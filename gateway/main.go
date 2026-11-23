@@ -98,6 +98,7 @@ func Run() {
 	if err := models.InitDatabaseConnection(pgURI, dbMaxOpenConns); err != nil {
 		log.Fatal(err)
 	}
+	services.SizeSidecarEventSlots(dbMaxOpenConns)
 
 	goMigrateStep := bootstrap.Step("Golang migrations")
 	if err := modelsbootstrap.RunGolangMigrations(); err != nil {
