@@ -188,7 +188,8 @@ type AnalyzerConfig struct {
 	CredentialsFile string `json:"credentials_file,omitempty"`
 
 	// Extra carries provider-specific settings: Vertex's project, region
-	// and publisher; Gemini's api; the thinking and labels keys.
+	// and publisher; Gemini's api; Claude's effort; the thinking and labels
+	// keys.
 	Extra ProviderExtra `json:"extra,omitempty"`
 
 	// Prompt replaces the built-in risk guidance for every ai_analysis rule

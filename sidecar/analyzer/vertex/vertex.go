@@ -58,9 +58,9 @@ const defaultMaxTokens = 1024
 
 // Extra keys this provider reads from the config's analyzer section. The
 // google publisher also reads gemini.KeyThinkingLevel,
-// gemini.KeyThinkingBudget and gemini.KeyLabels; the other publishers refuse
-// them, because rawPredict and the OpenAI-compatible endpoint take no
-// equivalent.
+// gemini.KeyThinkingBudget and gemini.KeyLabels; the anthropic publisher
+// reads anthropic.KeyEffort. The other publishers refuse them, because their
+// endpoints take no equivalent.
 const (
 	KeyProject   = "project"
 	KeyRegion    = "region"
@@ -133,6 +133,10 @@ func init() {
 				}
 			}
 		}
+		if publisher != PublisherAnthropic && strings.TrimSpace(opts.Extra[anthropic.KeyEffort]) != "" {
+			return nil, fmt.Errorf("analyzer/vertex: %s applies to publisher %q only; publisher is %q",
+				anthropic.KeyEffort, PublisherAnthropic, publisher)
+		}
 
 		p := &Provider{
 			project:   project,
@@ -147,6 +151,9 @@ func init() {
 		}
 		if p.maxTokens <= 0 {
 			p.maxTokens = defaultMaxTokens
+			if publisher == PublisherAnthropic {
+				p.maxTokens = anthropic.DefaultMaxTokens
+			}
 		}
 		var err error
 		switch publisher {
@@ -160,7 +167,12 @@ func init() {
 		case PublisherOpenAPI:
 			err = opts.Sampling.Unsupported("analyzer/vertex", openai.UnsupportedSampling...)
 		default:
-			err = opts.Sampling.Unsupported("analyzer/vertex", anthropic.UnsupportedSampling...)
+			if err = opts.Sampling.Unsupported("analyzer/vertex", anthropic.UnsupportedSampling...); err != nil {
+				return nil, err
+			}
+			if p.claude, err = anthropic.ParseOutputConfig(opts.Extra); err != nil {
+				return nil, fmt.Errorf("analyzer/vertex: %w", err)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -182,6 +194,10 @@ type Provider struct {
 	// gen and labels serve the google publisher only.
 	gen    gemini.GenerationConfig
 	labels map[string]string
+
+	// claude serves the anthropic publisher only: nil sends no
+	// output_config.
+	claude *anthropic.OutputConfig
 
 	saJSON analyzer.Secret
 
@@ -412,7 +428,9 @@ func (p *Provider) encode(systemPrompt, content string, tools []analyzer.ToolSpe
 	case PublisherOpenAPI:
 		return json.Marshal(openai.BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, true))
 	default:
-		return json.Marshal(anthropic.BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, true))
+		req := anthropic.BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, true)
+		req.OutputConfig = p.claude
+		return json.Marshal(req)
 	}
 }
 

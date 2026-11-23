@@ -120,9 +120,10 @@ ok "model replied: ${reply}"
 h "Tool calling, which is how the analyzer reads a verdict"
 
 tools=$(cat <<'JSON'
-{"anthropic_version":"vertex-2023-10-16","max_tokens":256,
+{"anthropic_version":"vertex-2023-10-16","max_tokens":4096,
+ "system":"Report your verdict by calling exactly one of the provided tools. Do not answer in prose.",
  "messages":[{"role":"user","content":"DELETE FROM customers"}],
- "tool_choice":{"type":"any"},
+ "tool_choice":{"type":"auto"},
  "tools":[{"name":"report_high_risk","description":"Report high risk.",
    "input_schema":{"type":"object",
      "properties":{"title":{"type":"string"},"explanation":{"type":"string"}},

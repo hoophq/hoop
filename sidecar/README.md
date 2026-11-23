@@ -2544,10 +2544,10 @@ to the audit trail.
 
 | `provider` | Model | Credential | Extra keys |
 |---|---|---|---|
-| `anthropic` | Claude | Anthropic API key | |
+| `anthropic` | Claude | Anthropic API key | `effort` |
 | `openai` | any Chat Completions endpoint | API key | |
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
-| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
+| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: anthropic`, also `effort`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
 **The model Hoop hosts.** Analysis works without an LLM of your own: Hoop
 hosts a small model. Statement text, which can contain PII, is then sent to
@@ -2637,7 +2637,7 @@ analyzer:
   top_p: 0.9
   top_k: 40
   seed: 7
-  max_output_tokens: 1024        # the default
+  max_output_tokens: 1024        # the default; 4096 for Claude
   max_retries: 2
   timeout_sec: 15
 ```
@@ -2654,6 +2654,14 @@ Setting both keys is refused, because Google rejects a request with both.
 Both apply to `provider: gemini` and to `provider: vertex` with `publisher:
 google`; any other publisher refuses them.
 
+Claude Sonnet 5.5 and Opus 5.5 think by default, and `max_output_tokens`
+covers the thinking as well as the tool call, which is why the Claude
+default is 4096. `effort` (`low`, `medium`, `high`, `xhigh`, `max`) is sent
+as `output_config.effort`; `low` is the usual setting for one tool call.
+A Claude model without effort answers a set value with a 400. It applies to
+`provider: anthropic` and to `provider: vertex` with `publisher: anthropic`;
+any other publisher refuses it.
+
 **Sampling.** `temperature` (0 to 2), `top_p` (0 to 1), `top_k` (1 or more)
 and `seed` go to whichever API the provider speaks, under that API's own
 field name. A provider whose API has no field for one refuses it at startup
@@ -2668,14 +2676,19 @@ rather than send a setting that does nothing:
 Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
 ignore them; Google steers determinism to `thinking_level` instead. That is
 not checked, because the model name is the only signal and it changes with
-every release. Some Claude models refuse `temperature` and `top_p` together;
-that answer comes from the API.
+every release. Claude Sonnet 5.5 and Opus 5.5 refuse `temperature`, `top_p`
+and `top_k`, and some earlier Claude models refuse `temperature` and `top_p`
+together; that answer comes from the API. Anthropic says to omit the three
+on Haiku 5.5 too.
 
 These narrow a model's answer; they do not make two calls agree. The verdict
 cache does: two statements of one shape share one verdict for `ttl_sec`,
-with no second call. Structured output is already fixed: every provider is
-forced to call one of three risk tools, so the verdict is an enum.
-`max_output_tokens` caps the length of that tool call, not its shape.
+with no second call. Structured output is already fixed: every provider
+offers three risk tools and reads the verdict only from which one the model
+called, so the verdict is an enum. Claude is told to call one, not forced
+(`tool_choice: auto`), because Claude Sonnet 5.5 and Opus 5.5 refuse a
+forced call; a reply without a call fails as "called no risk tool".
+`max_output_tokens` caps the length of that reply, not its shape.
 
 **Retries.** `max_retries` re-sends a classification after a 408, 429, 500,
 502, 503 or 504, waiting about 250 ms, then twice as long each time (at most
