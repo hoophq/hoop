@@ -5,16 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 // The screen's login is the terminal's, in two steps; Wait saves it, and a
@@ -268,5 +271,39 @@ func TestSidecarNameFromHost(t *testing.T) {
 		if got := sidecarNameFromHost(host); got != want {
 			t.Errorf("%q: got %q, want %q", host, got, want)
 		}
+	}
+}
+
+// ENG-1153: Setup retries a plane that answers 5xx for up to five minutes.
+// While the CLI waits for a plane's config it holds SIGINT and SIGTERM
+// itself, so a stop must end that retry through the context, at once.
+func TestWaitForPlaneConfigStopsDuringTheBootRetry(t *testing.T) {
+	t.Setenv(daemon.ControlPlaneURLEnv, "")
+	t.Setenv(daemon.SidecarTokenEnv, "")
+	t.Setenv("HOOP_LICENSE", "")
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	setup := func(ctx context.Context) error {
+		_, _, err := daemon.SetupWith("", nil, nil, daemon.WithContext(ctx),
+			daemon.WithControlPlaneURL(srv.URL), daemon.WithControlPlaneToken("hsc_x"))
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(300*time.Millisecond, cancel)
+	start := time.Now()
+	err := waitForPlaneConfig(ctx, io.Discard, &savedSidecarLogin{URL: srv.URL, Name: "s"}, setup)
+	if !stoppedByPerson(err) {
+		t.Fatalf("err = %v, want a stop", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("the stop took %s, want it at once", took)
+	}
+	if calls.Load() == 0 {
+		t.Error("the plane was never asked; the case does not reach the retry")
 	}
 }

@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,6 +109,198 @@ const (
 	// last-seen staleness on the plane reads the same.
 	heartbeatJitter = 0.2
 )
+
+// bootRetryPolicy says how long the boot retries a control plane that is
+// unavailable (see planeUnavailableError), and how it spaces the attempts.
+type bootRetryPolicy struct {
+	// limit bounds the whole boot: every request, credential fetch and wait
+	// runs under one context with this deadline, and none starts after it.
+	// After it the process stops, as it did before it retried: the
+	// platform's restart policy takes over.
+	limit time.Duration
+	// base and ceiling bound the wait before attempt n: uniform over
+	// [0, min(ceiling, base*2^(n-1))) ("full jitter"). A fleet restarted by
+	// one rollout fails its first handshake in the same second; a jitter
+	// that only nudges each wait keeps it in step, a full one spreads it.
+	base, ceiling time.Duration
+	// out receives the attempt log lines. Nil is stderr, where Run logs.
+	out io.Writer
+}
+
+// bootRetry is the policy every deployment runs. A variable so a test does
+// not wait minutes for a case about what a retry does.
+var bootRetry = bootRetryPolicy{limit: 5 * time.Minute, base: time.Second, ceiling: 30 * time.Second}
+
+// planeUnavailableError is a control plane request that got no usable answer
+// for a reason that clears without an edit: no connection, a timeout, a 5xx,
+// or a success or 5xx whose body was cut. The boot retries it; the heartbeat
+// logs it like any other failure. Every other status (401, 412, 422, 429, a
+// redirect) is the plane's answer, even with a cut body, and asking again
+// gets the same one.
+type planeUnavailableError struct {
+	// status is the 5xx the plane answered; 0 when no usable answer came.
+	status int
+	err    error
+}
+
+func (e planeUnavailableError) Error() string { return e.err.Error() }
+func (e planeUnavailableError) Unwrap() error { return e.err }
+
+// unreachable wraps a transport failure. A certificate the client refuses, or
+// a TLS handshake against a port that speaks something else, is a wrong URL
+// or CA, not an outage, so it stays a plain error and stops the boot at once.
+// net/http reports the commonest such port, one that answers plain HTTP, as
+// http.ErrSchemeMismatch instead of the tls.RecordHeaderError under it.
+func unreachable(baseURL string, err error) error {
+	wrapped := fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
+	var cert *tls.CertificateVerificationError
+	var record tls.RecordHeaderError
+	if errors.As(err, &cert) || errors.As(err, &record) || errors.Is(err, http.ErrSchemeMismatch) {
+		return wrapped
+	}
+	return planeUnavailableError{err: wrapped}
+}
+
+// answeredError is a plane's answer that no case of the caller names. A 5xx
+// is the plane failing, not refusing, so the boot retries it.
+func answeredError(baseURL string, resp *http.Response, raw []byte) error {
+	err := fmt.Errorf("the control plane at %s answered %s: %s", baseURL, resp.Status, controlPlaneMessage(raw))
+	if resp.StatusCode >= 500 {
+		return planeUnavailableError{status: resp.StatusCode, err: err}
+	}
+	return err
+}
+
+// cutAnswer classifies a body that could not be read to its end. A success
+// or a 5xx is retried: the answer is not usable. Any other status keeps its
+// meaning, so it returns nil and the caller reads the status with what of
+// the body arrived.
+func cutAnswer(baseURL string, resp *http.Response, err error) error {
+	if resp.StatusCode >= 300 && resp.StatusCode < 500 {
+		return nil
+	}
+	status := 0
+	if resp.StatusCode >= 500 {
+		status = resp.StatusCode
+	}
+	return planeUnavailableError{status: status,
+		err: fmt.Errorf("reading the control plane response from %s (%s): %w", baseURL, resp.Status, err)}
+}
+
+// bootRetrier runs the boot's control plane requests under one
+// bootRetryPolicy. Every request gets ctx, which ends at the policy's limit
+// counted from the first request, or when the caller's context ends.
+// A nil bootRetrier runs each request once with no deadline of its own,
+// which is what the heartbeat's reimport needs: the heartbeat keeps its own
+// rhythm.
+type bootRetrier struct {
+	ctx context.Context
+	// parent is the caller's context. Its end is a stop, not the limit.
+	parent context.Context
+	// retry is off for the checks WithoutBootRetry names: one request
+	// each, still under parent.
+	retry    bool
+	policy   bootRetryPolicy
+	planeURL string
+	log      *slog.Logger
+	// failures counts the failed attempts of the whole boot.
+	failures int
+}
+
+// newBootRetrier starts the boot's clock. The caller defers the cancel.
+func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, planeURL, logLevel string) (*bootRetrier, context.CancelFunc) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if retry {
+		ctx, cancel = context.WithTimeout(parent, policy.limit)
+	} else {
+		ctx, cancel = context.WithCancel(parent)
+	}
+	out := policy.out
+	if out == nil {
+		out = os.Stderr
+	}
+	return &bootRetrier{ctx: ctx, parent: parent, retry: retry, policy: policy,
+		planeURL: planeURL, log: jsonLogger(out, logLevel)}, cancel
+}
+
+// do runs op until it succeeds, fails with anything but
+// planeUnavailableError, or the context ends. No attempt starts after the
+// context ends, and the wait between two attempts ends with it. Each failed
+// attempt that will be retried is logged with the wait before the next one.
+func (r *bootRetrier) do(what string, op func(context.Context) error) error {
+	if r == nil {
+		return op(context.Background())
+	}
+	var last error
+	for {
+		if r.ctx.Err() != nil {
+			return r.ended(what, last)
+		}
+		err := op(r.ctx)
+		if err == nil {
+			return nil
+		}
+		if r.ctx.Err() != nil {
+			r.failures++
+			// A request the limit cut says less than the plane's last
+			// answer: keep that one for the message.
+			if last == nil || !errors.Is(err, context.DeadlineExceeded) {
+				last = err
+			}
+			return r.ended(what, last)
+		}
+		if !r.retry || !errors.As(err, new(planeUnavailableError)) {
+			return err
+		}
+		r.failures++
+		last = err
+		deadline, _ := r.ctx.Deadline()
+		left := time.Until(deadline)
+		wait := min(fullJitter(r.failures, r.policy.base, r.policy.ceiling), left)
+		r.log.Warn("the control plane is unavailable; retrying the "+what,
+			"url", r.planeURL,
+			"attempt", r.failures,
+			"retry_in", wait.Round(time.Millisecond).String(),
+			"gives_up_in", left.Round(time.Second).String(),
+			"error", err.Error())
+		t := time.NewTimer(wait)
+		select {
+		case <-r.ctx.Done():
+			t.Stop()
+			return r.ended(what, err)
+		case <-t.C:
+		}
+	}
+}
+
+// ended is the error of a boot whose context ended: the caller stopped it,
+// or the limit passed. last is the failure that ended it, nil when the
+// limit passed before the step began.
+func (r *bootRetrier) ended(what string, last error) error {
+	if err := r.parent.Err(); err != nil {
+		return fmt.Errorf("stopped while waiting for the control plane at %s: %w", r.planeURL, err)
+	}
+	if last == nil {
+		return fmt.Errorf("the control plane at %s did not answer within %s; the %s was not sent "+
+			"(gave up after %d attempts)", r.planeURL, r.policy.limit, what, r.failures)
+	}
+	return fmt.Errorf("%w (gave up after %d attempts in %s)", last, r.failures, r.policy.limit)
+}
+
+// fullJitter draws the wait before the retry that follows failed attempt n:
+// uniform over [0, min(ceiling, base*2^(n-1))).
+func fullJitter(n int, base, ceiling time.Duration) time.Duration {
+	window := base
+	for i := 1; i < n && window < ceiling; i++ {
+		window *= 2
+	}
+	window = min(window, ceiling)
+	if window <= 0 {
+		return 0
+	}
+	return rand.N(window)
+}
 
 // controlPlane is the resolved connection Setup reached: where to call, what
 // to present, and the config bytes this process is serving, kept for the
@@ -289,7 +482,10 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // A plane answering "load_from_disk" hands the document back to the file:
 // the file's listeners serve, while the connection and the license stay
 // plane-side facts (see licenseManaged).
-func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, error) {
+//
+// retry turns the boot retry on (bootRetry); without it every request runs
+// once, for the checks WithoutBootRetry names.
+func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFlag string, retry bool) (*Config, error) {
 	if local != nil && local.LoadFromDisk != nil {
 		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
 			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
@@ -334,7 +530,21 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 	if err != nil {
 		return nil, err
 	}
-	answer, err := fetchControlPlaneConfig(planeURL, cred, handshakeRequest{Version: Version, LocalConfiguration: report})
+	// The boot retries a plane that is down or failing: a fleet restarted
+	// during a control plane outage then starts when the plane is back,
+	// not after the platform's restart backoff. Every other refusal stops
+	// the boot at once; asking again gets the same answer.
+	logLevel := ""
+	if local != nil {
+		logLevel = local.LogLevel
+	}
+	retrier, cancel := newBootRetrier(ctx, bootRetry, retry, planeURL, logLevel)
+	defer cancel()
+	var answer handshakeAnswer
+	err = retrier.do("boot handshake", func(ctx context.Context) (ferr error) {
+		answer, ferr = fetchControlPlaneConfig(ctx, planeURL, cred, handshakeRequest{Version: Version, LocalConfiguration: report})
+		return ferr
+	})
 	raw, managed := answer.raw, answer.managed
 	var planeDoc Config
 	if err == nil && json.Unmarshal(raw, &planeDoc) == nil &&
@@ -362,7 +572,7 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
 	if errors.Is(err, ErrPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
-		answer, imported, err = importLocalConfig(planeURL, cred, local)
+		answer, imported, err = importLocalConfig(planeURL, cred, local, retrier)
 		raw, managed = answer.raw, answer.managed
 	}
 	if err != nil {
@@ -450,13 +660,13 @@ type handshakeAnswer struct {
 
 // fetchControlPlaneConfig runs one handshake: it presents the credential,
 // reports what this sidecar is running, and returns the config document the
-// plane answered with.
+// plane answered with. ctx bounds the credential fetch and the request.
 //
 // managed reports whether the plane claimed the licensing decision, and
 // revision is the plane's name for this document. Both ride beside the
 // document rather than in it, so an older gateway simply does not say them;
 // see licenseManagedHeader.
-func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeRequest) (answer handshakeAnswer, err error) {
+func fetchControlPlaneConfig(ctx context.Context, baseURL string, cred credential, hs handshakeRequest) (answer handshakeAnswer, err error) {
 	body, merr := json.Marshal(hs)
 	if merr != nil {
 		return handshakeAnswer{}, merr
@@ -467,7 +677,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 	if perr != nil {
 		return handshakeAnswer{}, fmt.Errorf("control plane URL %q: %w", baseURL, perr)
 	}
-	req, rerr := http.NewRequest(http.MethodPost,
+	req, rerr := http.NewRequestWithContext(ctx, http.MethodPost,
 		u.JoinPath(controlPlaneHandshakePath).String(), bytes.NewReader(body))
 	if rerr != nil {
 		return handshakeAnswer{}, fmt.Errorf("control plane request: %w", rerr)
@@ -475,7 +685,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 	// A credential that cannot be read fails this handshake like an
 	// unreachable plane: a startup error at boot, a logged miss on the
 	// heartbeat, which keeps serving the last good config.
-	header, value, cerr := cred.present(context.Background())
+	header, value, cerr := cred.present(ctx)
 	if cerr != nil {
 		return handshakeAnswer{}, cerr
 	}
@@ -485,14 +695,16 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 
 	resp, derr := controlPlaneHTTPClient().Do(req)
 	if derr != nil {
-		return handshakeAnswer{}, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, derr)
+		return handshakeAnswer{}, unreachable(baseURL, derr)
 	}
 	// The body is always read to completion below; a close error after a
 	// full read carries nothing actionable, so it is dropped on purpose.
 	defer func() { _ = resp.Body.Close() }()
 	raw, aerr := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
 	if aerr != nil {
-		return handshakeAnswer{}, fmt.Errorf("reading the control plane response from %s: %w", baseURL, aerr)
+		if cut := cutAnswer(baseURL, resp, aerr); cut != nil {
+			return handshakeAnswer{}, cut
+		}
 	}
 
 	switch resp.StatusCode {
@@ -535,8 +747,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 			"never follows one, so the token was not re-sent. Configure the final URL",
 			baseURL, resp.Header.Get("Location"))
 	}
-	return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered %s: %s",
-		baseURL, resp.Status, controlPlaneMessage(raw))
+	return handshakeAnswer{}, answeredError(baseURL, resp, raw)
 }
 
 // controlPlaneHTTPClient never follows a redirect: the token rides a custom
@@ -567,7 +778,7 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 		return handshakeAnswer{}, fmt.Errorf("the control plane asks for the config file, "+
 			"but it does not load: %w", err)
 	}
-	answer, _, err := importLocalConfig(cp.url, cp.cred, local)
+	answer, _, err := importLocalConfig(cp.url, cp.cred, local, nil)
 	if err != nil {
 		return handshakeAnswer{}, err
 	}
@@ -626,7 +837,10 @@ func rawDeclaresListeners(raw []byte) bool {
 // on every handshake, and a copy stored here would go stale the day it is
 // renewed. The plane refuses the key as well; this keeps the refusal from
 // ever being reached.
-func importLocalConfig(planeURL string, cred credential, local *Config) (answer handshakeAnswer, pushed bool, err error) {
+//
+// retry runs each request under the boot's retry policy; the heartbeat
+// passes nil and each request runs once.
+func importLocalConfig(planeURL string, cred credential, local *Config, retry *bootRetrier) (answer handshakeAnswer, pushed bool, err error) {
 	body, err := localReport(local)
 	if err != nil {
 		return handshakeAnswer{}, false, err
@@ -634,7 +848,9 @@ func importLocalConfig(planeURL string, cred credential, local *Config) (answer 
 	if body == nil {
 		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
 	}
-	switch err := pushControlPlaneConfig(planeURL, cred, body); {
+	switch err := retry.do("configuration import", func(ctx context.Context) error {
+		return pushControlPlaneConfig(ctx, planeURL, cred, body)
+	}); {
 	case err == nil:
 		pushed = true
 	case errors.Is(err, errPlaneAlreadyConfigured):
@@ -644,7 +860,10 @@ func importLocalConfig(planeURL string, cred credential, local *Config) (answer 
 	default:
 		return handshakeAnswer{}, false, err
 	}
-	answer, err = fetchControlPlaneConfig(planeURL, cred, handshakeRequest{Version: Version})
+	err = retry.do("handshake after the configuration import", func(ctx context.Context) (ferr error) {
+		answer, ferr = fetchControlPlaneConfig(ctx, planeURL, cred, handshakeRequest{Version: Version})
+		return ferr
+	})
 	if err != nil {
 		return handshakeAnswer{}, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
 	}
@@ -680,17 +899,17 @@ func localReport(local *Config) (json.RawMessage, error) {
 // endpoint. The plane accepts it only when it holds no listeners yet;
 // errPlaneAlreadyConfigured reports that refusal so the caller can serve
 // the plane's document instead of overwriting it.
-func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error {
+func pushControlPlaneConfig(ctx context.Context, baseURL string, cred credential, body []byte) error {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return fmt.Errorf("control plane URL %q: %w", baseURL, err)
 	}
-	req, err := http.NewRequest(http.MethodPut,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
 		u.JoinPath(controlPlaneConfigurationPath).String(), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("control plane request: %w", err)
 	}
-	header, value, err := cred.present(context.Background())
+	header, value, err := cred.present(ctx)
 	if err != nil {
 		return err
 	}
@@ -699,12 +918,14 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
-		return fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
+		return unreachable(baseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
-	if err != nil {
-		return fmt.Errorf("reading the control plane response from %s: %w", baseURL, err)
+	raw, rerr := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
+	if rerr != nil {
+		if cut := cutAnswer(baseURL, resp, rerr); cut != nil {
+			return cut
+		}
 	}
 
 	switch resp.StatusCode {
@@ -734,8 +955,7 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 			"never follows one, so the token was not re-sent. Configure the final URL",
 			baseURL, resp.Header.Get("Location"))
 	}
-	return fmt.Errorf("the control plane at %s answered %s: %s",
-		baseURL, resp.Status, controlPlaneMessage(raw))
+	return answeredError(baseURL, resp, raw)
 }
 
 // controlPlaneMessage extracts the gateway's {"message": ...} error shape,
@@ -807,7 +1027,9 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		// restart, leaves the process serving its old rules while still
 		// handshaking on time, and nothing else distinguishes that from a
 		// sidecar that took the document.
-		answer, err := fetchControlPlaneConfig(cp.url, cp.cred, handshakeRequest{
+		// context.Background, as before the boot retry: a heartbeat
+		// request runs to its own timeout.
+		answer, err := fetchControlPlaneConfig(context.Background(), cp.url, cp.cred, handshakeRequest{
 			Version:            Version,
 			AppliedRevision:    cp.revision,
 			LastOutcome:        cp.outcome,

@@ -342,6 +342,10 @@ needs a restart.`,
 			daemon.WithEntrypoint(analytics.EntrypointCLI),
 			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
 		}
+		if sidecarValidateFlag {
+			// A check, not a boot: report a plane that is down now.
+			setupOpts = append(setupOpts, daemon.WithoutBootRetry())
+		}
 		var reviewer *sidecartui.Reviewer
 		var demoLanes []string
 		if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
@@ -350,8 +354,8 @@ needs a restart.`,
 		}
 		var cfg *daemon.Config
 		var det daemon.Plugin
-		setup := func() (err error) {
-			opts := slices.Clip(setupOpts)
+		setup := func(ctx context.Context) (err error) {
+			opts := append(slices.Clip(setupOpts), daemon.WithContext(ctx))
 			// The demo's AI step holds a statement for the person at this
 			// terminal, also when the free plan runs logged in. Read on
 			// every setup: the logged-in first run names the file late.
@@ -364,7 +368,7 @@ needs a restart.`,
 			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, opts...)
 			return err
 		}
-		err = setup()
+		err = setup(cmd.Context())
 		if login != nil && sidecarConfigFlag == "" && errors.Is(err, daemon.ErrPlaneHasNoConfig) {
 			// Logged in, and nothing to run yet: at a terminal the setup
 			// happens here, connected, and the file stays on this machine.
@@ -387,7 +391,7 @@ needs a restart.`,
 						return err
 					}
 					sidecarConfigFlag = boot.ConfigPath
-					err = setup()
+					err = setup(cmd.Context())
 				}
 			}
 			if sidecarConfigFlag == "" {
@@ -972,7 +976,10 @@ func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
 		daemon.WithControlPlaneURL(planeURL),
 		daemon.WithControlPlaneToken(token),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
-		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For),
+		// A person waits on the page: a plane that is down is reported
+		// now, not after the boot's retry.
+		daemon.WithoutBootRetry())
 	if err != nil {
 		return nil, err
 	}
@@ -997,7 +1004,8 @@ func validateSidecarConfig(path string) (string, error) {
 	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
 		daemon.WithLicense(sidecarLicenseFlag),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
-		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For),
+		daemon.WithoutBootRetry())
 	if err != nil {
 		return "", err
 	}

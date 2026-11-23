@@ -505,8 +505,26 @@ than merged: two authorities for one fact is the same mistake as a field
 written in two spellings. The pushed document drops `control_plane_url` and
 `license`: the URL is connection metadata this process already resolved, and
 the license belongs to the organization, which serves its own on every
-handshake. A first handshake that fails stops
-startup, since there is nothing to serve yet.
+handshake. There is nothing to serve before the first handshake answers, so
+the boot retries a plane that is down: a refused connection, a timeout, a
+5xx, or a success or 5xx whose body was cut. The wait before each attempt is
+drawn from zero to a ceiling that doubles from 1 s to 30 s, and each attempt
+logs a warning. One 5-minute deadline bounds every request and wait of the
+boot; after it the process stops as it would have on the first failure. Any
+other answer stops startup at once, also with a cut body: a refused token
+(401), a config the plane cannot build (422), a redirect, a 429, or a
+certificate or TLS handshake this process refuses. A 412 still imports the
+file, and the import requests share the same deadline. A check does not
+retry: `-validate`, `-grpc-discover` and the CLI's Connect page report a
+plane that is down at once. An embedder asks the same with
+`daemon.WithoutBootRetry()`, and stops a retrying boot by cancelling the
+context it passed with `daemon.WithContext(ctx)`.
+
+Under Kubernetes, a liveness probe on `admin.listen` fails while the process
+retries, since the admin server binds only after the handshake. Give the
+container a startup probe whose budget covers the retry, or the kubelet
+restarts it after the liveness threshold. The helm chart's startup probe is
+always on, 120 × 5 s.
 
 Once running, a heartbeat repeats the handshake about every minute (each
 wait is drawn from 48 to 72 seconds, so a fleet started together does not
