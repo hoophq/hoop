@@ -1,4 +1,5 @@
-import { Accordion, Avatar, Box, Flex, Text } from '@mantine/core';
+import { Accordion, Box, Flex, Text } from '@mantine/core';
+import Avatar from '@/components/Avatar';
 import { Check } from 'lucide-react';
 import classes from './StepAccordion.module.css';
 
