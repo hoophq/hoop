@@ -93,7 +93,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
             Monitor terminal sessions and resource usage in real time.
           </Text>
         </Stack>
-        {tab === 'rules' && (list.length > 0 || mixed) && (
+        {tab === 'rules' && list.length > 0 && (
           <NewRuleButton
             traffics={newTraffics}
             onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}

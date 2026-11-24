@@ -80,7 +80,9 @@ export default function ApiKeys() {
             Create and manage the keys that call the Hoop API.
           </Text>
         </Stack>
-        <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>
+        {keys.length > 0 && (
+          <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>
+        )}
       </Group>
 
       {keys.length === 0 ? (

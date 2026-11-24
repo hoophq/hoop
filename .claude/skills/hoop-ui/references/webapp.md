@@ -156,7 +156,7 @@ data, not a preview switch.
 | State | Use |
 | --- | --- |
 | Loading | `<PageLoader h={300} />` (a part of a page: `Skeleton`) |
-| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. Hide the header button while the list is empty. |
+| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. One create button per view: in the empty state (center) while the list is empty, in the header (top right) once it has items. Never both, never neither. A create menu (`NewRuleButton`) goes in `action` as an element. |
 | Empty, filters match nothing | `<EmptyState compact title="No Guardrails match your filters" description="Try clearing the filter above." />` |
 | Error | `<PageLoader error h={300} message="Failed to load Guardrails." />`, or `Alert color="red"` with a retry button |
 

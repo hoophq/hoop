@@ -1,3 +1,4 @@
+import { isValidElement } from 'react'
 import { Stack, Text, Image, Anchor } from '@mantine/core'
 import Button from '@/components/Button'
 
@@ -36,9 +37,9 @@ export default function EmptyState({
             <Text size="sm" c="dimmed" ta="center">{description}</Text>
           )}
         </Stack>
-        {action && (
-          <Button onClick={action.onClick}>{action.label}</Button>
-        )}
+        {isValidElement(action)
+          ? action
+          : action && <Button onClick={action.onClick}>{action.label}</Button>}
       </Stack>
 
       {docsUrl && docsLabel && (

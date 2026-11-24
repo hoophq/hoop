@@ -389,7 +389,7 @@ export default function Users() {
             <Button variant="outline" color="gray" loading={exporting} onClick={handleExport}>
               Export CSV
             </Button>
-            {orgTotal !== 1 && (
+            {orgTotal > 1 && (
               <Button onClick={handleAdd}>Add user</Button>
             )}
           </Group>

@@ -90,7 +90,10 @@ import EmptyState from '@/layout/EmptyState'
   description="Try clearing the filter above."
 />
 ```
-`action` is optional — omit when the user has no permission to create.
+`action` is optional — omit when the user has no permission to create. It is
+`{ label, onClick }`, or an element when the create action is a menu (`NewRuleButton`).
+The create button lives in the empty state while the list is empty, and in the
+page header once the list has items: never both.
 `compact` tightens the vertical space (drops the 50vh floor, smaller padding
 and gap; the illustration is unchanged) for an empty result rendered below a
 page header, callout or filter bar rather than as the whole screen.

@@ -139,9 +139,11 @@ export default function Guardrails() {
             Create custom rules to guide and protect usage of your Resource Roles and Sidecar listeners
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
-          Create new rule
-        </Button>
+        {list.length > 0 && (
+          <Button onClick={goCreate} disabled={atFreeLimit}>
+            Create new rule
+          </Button>
+        )}
       </Group>
 
       {atFreeLimit && (
@@ -199,6 +201,7 @@ export default function Guardrails() {
           compact
           title="No Guardrails yet"
           description="Create one for your Resource Roles or Sidecar listeners."
+          action={{ label: 'Create new rule', onClick: goCreate }}
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState

@@ -8,6 +8,7 @@ import ValueFilter from '@/components/ValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
+import NewRuleButton from '@/components/NewRuleButton'
 import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
@@ -65,12 +66,20 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
   const goCreate = () =>
     navigate(newRulePath('/features/ai-session-analyzer/rules/new', newTraffics[0]))
 
-  // The header's create menu covers both traffics.
+  // While the list is empty the create menu sits here, not in the header.
   if (list.length === 0 && mixed) {
     return (
       <EmptyState
         title="No rules in your organization yet"
         description={newRuleHint(newTraffics)}
+        action={
+          <NewRuleButton
+            traffics={newTraffics}
+            onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}
+          >
+            Create new rule
+          </NewRuleButton>
+        }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
         docsLabel="AI Analyzer Configuration"
       />

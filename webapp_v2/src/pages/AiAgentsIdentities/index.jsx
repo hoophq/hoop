@@ -83,7 +83,9 @@ export default function AiAgentsIdentities() {
             Create scoped, auditable identities for your AI agents.
           </Text>
         </Stack>
-        <Button onClick={() => navigate(NEW_PATH)}>Create new AI Agent</Button>
+        {agents.length > 0 && (
+          <Button onClick={() => navigate(NEW_PATH)}>Create new AI Agent</Button>
+        )}
       </Group>
 
       {agents.length === 0 ? (

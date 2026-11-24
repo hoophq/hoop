@@ -131,9 +131,11 @@ export default function DataMasking() {
             Mask sensitive data in real time at the protocol layer.
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
-          Create new rule
-        </Button>
+        {list.length > 0 && (
+          <Button onClick={goCreate} disabled={atFreeLimit}>
+            Create new rule
+          </Button>
+        )}
       </Group>
 
       {atFreeLimit && (
@@ -191,6 +193,7 @@ export default function DataMasking() {
           compact
           title="No Data Masking rules yet"
           description="Create one for your Resource Roles or Sidecar listeners."
+          action={{ label: 'Create new rule', onClick: goCreate }}
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState
