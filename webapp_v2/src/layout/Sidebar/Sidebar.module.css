@@ -1,7 +1,7 @@
 /* ── Nav link ──────────────────────────────────────────────── */
 
 .navLink {
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--hoop-nav-radius);
   color: var(--mantine-color-dimmed);
 }
 
@@ -80,7 +80,7 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--hoop-nav-radius);
   color: var(--mantine-color-dimmed);
   cursor: pointer;
   background: transparent;

@@ -91,7 +91,7 @@
        [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
         "Open your IDE and run the Claude Code plugin."]]
       [callout-link/main {:href "https://code.claude.com/docs/en/overview"
-                          :text "See supported IDEs at Claude Code documentation."}]]
+                          :text "Read the Claude Code docs"}]]
 
      [block-with-heading-and-text
       {:heading " In the Terminal "
@@ -217,4 +217,4 @@
        [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
         "Any client that speaks streamable HTTP works. Point it at the endpoint above and send the Authorization header with every request."]]
       [callout-link/main {:href "https://modelcontextprotocol.io/docs/develop/connect-local-servers"
-                          :text "See the Model Context Protocol documentation."}]]]))
+                          :text "Read the Model Context Protocol docs"}]]]))
