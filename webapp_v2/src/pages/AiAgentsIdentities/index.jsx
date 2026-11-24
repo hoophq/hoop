@@ -72,14 +72,14 @@ export default function AiAgentsIdentities() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load AI Agents Identities." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>AI Agents Identities</Title>
-          <Text c="dimmed" size="lg">
+          <Text c="dimmed" size="md">
             Create scoped, auditable identities for your AI agents.
           </Text>
         </Stack>

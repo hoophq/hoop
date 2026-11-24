@@ -57,7 +57,7 @@ export default function TemplatesTab({ onGoConfiguration }) {
       <EmptyState
         title="No Jira integration configured in your Organization yet."
         description="Configure your Jira instance to start creating Jira Templates."
-        action={{ label: 'Configure Jira Integration', onClick: onGoConfiguration }}
+        action={{ label: 'Configure Jira integration', onClick: onGoConfiguration }}
         docsUrl={docsUrl.integrations.jira}
         docsLabel="Jira templates documentation"
       />
@@ -72,7 +72,7 @@ export default function TemplatesTab({ onGoConfiguration }) {
         )}
         <EmptyState
           title="No Jira template configured in your Organization yet."
-          action={{ label: 'Create a new JIRA Template', onClick: goCreate }}
+          action={{ label: 'Create a new Jira template', onClick: goCreate }}
           docsUrl={docsUrl.integrations.jira}
           docsLabel="Jira templates documentation"
         />

@@ -69,15 +69,15 @@ export default function ApiKeys() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load API keys." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>API Keys</Title>
-          <Text c="dimmed" size="lg">
-            Create and manage API Keys
+          <Text c="dimmed" size="md">
+            Create and manage the keys that call the Hoop API.
           </Text>
         </Stack>
         <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>

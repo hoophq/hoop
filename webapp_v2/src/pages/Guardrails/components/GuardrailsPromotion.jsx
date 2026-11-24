@@ -8,9 +8,9 @@ import { docsUrl } from '@/utils/docsUrl'
 const FEATURE_ITEMS = [
   {
     icon: <ListCheck size={20} />,
-    title: 'Automated Policy Enforcement',
+    title: 'Automated Guardrail Enforcement',
     description:
-      "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements.",
+      "Real-time monitoring of access rules, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements.",
   },
   {
     icon: <ShieldCheck size={20} />,

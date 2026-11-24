@@ -39,7 +39,7 @@ function RoleActions({ role, testing, onDelete, onTest }) {
       )}
       {!mirror && canTestConnection(role) && (
         <Button variant="light" size="sm" disabled={testing} onClick={() => onTest(role.name)}>
-          Test Connection
+          Test connection
         </Button>
       )}
     </Group>

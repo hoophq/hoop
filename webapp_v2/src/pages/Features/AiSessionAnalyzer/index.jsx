@@ -63,7 +63,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
   }
 
   if (listStatus === 'error' || providerStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
+    return <PageLoader error h={300} message="Failed to load AI Analyzer." />
   }
 
   // The promotion replaces the whole page, not just the empty state — an admin

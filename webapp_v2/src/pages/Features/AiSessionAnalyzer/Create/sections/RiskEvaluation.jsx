@@ -108,10 +108,10 @@ export default function RiskEvaluation({
           Risk evaluation
         </Title>
         <Text size="sm" c="dimmed">
-          Define policies by risk level and define actions at session time.
+          Define rules by risk level and the action taken at session time.
         </Text>
         <Alert color="indigo" variant="light" icon={<Info size={16} />} mt="xs">
-          {"Recommended policies are calibrated to the session's risk profile"}
+          {"Recommended rules are calibrated to the session's risk profile."}
         </Alert>
       </Stack>
 

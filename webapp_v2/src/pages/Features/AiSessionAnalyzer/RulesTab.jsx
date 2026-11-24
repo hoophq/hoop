@@ -131,7 +131,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
       {filteredRules.length === 0 ? (
         <EmptyState
           compact
-          title="No AI Session Analyzer rules match your filters"
+          title="No AI Analyzer rules match your filters"
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (

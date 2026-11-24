@@ -111,7 +111,7 @@ export default function TerminalAccessTab({ connection }) {
         <Select
           placeholder="Select..."
           clearable
-          nothingFoundMessage="No Jira templates configured. Go to JIRA Integration to add one."
+          nothingFoundMessage="No Jira templates configured. Go to Jira integration to add one."
           data={jiraOptions}
           value={drafts.jira_issue_template_id || null}
           onChange={(value) => setDraft({ jira_issue_template_id: value || '' })}
@@ -124,7 +124,7 @@ export default function TerminalAccessTab({ connection }) {
           component={Link}
           to="/jira-templates"
         >
-          Go to JIRA Integration
+          Go to Jira integration
         </Button>
       </Stack>
 

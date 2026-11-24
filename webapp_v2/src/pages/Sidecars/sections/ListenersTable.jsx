@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Group, Image, Stack, Text } from '@mantine/core'
 import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, CirclePlus, Pencil, Search } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Table from '@/components/Table'
@@ -43,7 +44,7 @@ function PoliciesCell({ listener, config, boundRules }) {
   if (features.length > 0) return <FeaturePills compact features={features} />
   return (
     <Text size="xs" fw={500} c="var(--hoop-text-faint)">
-      {inheritedOnly ? 'Inherited policy' : 'No policies configured'}
+      {inheritedOnly ? 'Inherited rules' : 'No rules configured'}
     </Text>
   )
 }
@@ -119,7 +120,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
         </Group>
         {editable && (
           <Button variant="light" size="xs" leftSection={<CirclePlus size={16} />} onClick={onAdd}>
-            Add Listener
+            Add listener
           </Button>
         )}
       </Group>
@@ -155,15 +156,17 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
               return [
                 <Table.Tr key={`${label}-${index}`}>
                   <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      onClick={() => toggle(index)}
-                      aria-expanded={open}
-                      aria-label={`${open ? 'Hide' : 'Show'} details for ${label}`}
-                    >
-                      {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </ActionIcon>
+                    <Tooltip label={`${open ? 'Hide' : 'Show'} details for ${label}`}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => toggle(index)}
+                        aria-expanded={open}
+                        aria-label={`${open ? 'Hide' : 'Show'} details for ${label}`}
+                      >
+                        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </ActionIcon>
+                    </Tooltip>
                   </Table.Td>
                   <Table.Td miw={140}>
                     {/* An unnamed lane shows the name the daemon gives it, so

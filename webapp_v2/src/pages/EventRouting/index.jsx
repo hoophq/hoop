@@ -24,10 +24,20 @@ export default function EventRouting() {
   }, [fetchAll])
 
   if (subscriptions.status === "error") {
-    return <Text c="red">{subscriptions.error}</Text>
+    return (
+      <PageLoader
+        error
+        h={300}
+        message="Failed to load Event Routing subscriptions."
+        description={subscriptions.error}
+      />
+    )
   }
 
   const goToCreate = () => navigate("/features/event-routing/new")
+  // The empty Subscriptions tab shows its own create button.
+  const showCreate =
+    loading || subscriptions.data.length > 0 || activeTab !== "subscriptions"
 
   return (
     <>
@@ -38,13 +48,14 @@ export default function EventRouting() {
           <Stack gap="sm">
             <Title order={1}>Event Routing</Title>
             <Text size="md" c="dimmed">
-              Route platform events to runbooks. Each subscription becomes an
-              audited automation surface.
+              Route platform events to runbooks as audited sessions.
             </Text>
           </Stack>
-          <Button leftSection={<Plus size={16} />} onClick={goToCreate}>
-            Create subscription
-          </Button>
+          {showCreate && (
+            <Button leftSection={<Plus size={16} />} onClick={goToCreate}>
+              Create subscription
+            </Button>
+          )}
         </Group>
 
         {loading ? (

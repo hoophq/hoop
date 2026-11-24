@@ -1,16 +1,10 @@
-import { Box, Card, Flex, Group, Stack, Text, Title, ThemeIcon } from '@mantine/core'
+import { Box, Card, Group, Stack, Text, Title, ThemeIcon } from '@mantine/core'
 import { EyeOff, Shield } from 'lucide-react'
+import List from '@/components/List'
 
-function RuleRow({ rule, isLast }) {
+function RuleRow({ rule }) {
   return (
-    <Box
-      p="lg"
-      style={
-        isLast
-          ? undefined
-          : { borderBottom: '1px solid var(--mantine-color-default-border)' }
-      }
-    >
+    <Box p="lg">
       <Stack gap={4}>
         <Text size="md" fw={700} lineClamp={1}>
           {rule.name}
@@ -45,15 +39,11 @@ function Section({ icon, title, description, rules }) {
           )}
         </Stack>
       </Group>
-      <Card padding={0} withBorder>
-        {rules.map((rule, idx) => (
-          <RuleRow
-            key={rule.id ?? rule.name}
-            rule={rule}
-            isLast={idx === rules.length - 1}
-          />
+      <List>
+        {rules.map((rule) => (
+          <RuleRow key={rule.id ?? rule.name} rule={rule} />
         ))}
-      </Card>
+      </List>
     </Stack>
   )
 }

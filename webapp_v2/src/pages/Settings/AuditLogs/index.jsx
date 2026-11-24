@@ -245,15 +245,15 @@ export default function AuditLogs() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load Audit Logs." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Stack gap="xs">
-          <Title order={1}>Internal Audit Logs</Title>
-          <Text c="dimmed" size="lg">
-            Showing {logs.length} of {pagination.total} logs
+        <Stack gap="sm">
+          <Title order={1}>Audit Logs</Title>
+          <Text c="dimmed" size="md">
+            Review the changes people make in your organization.
           </Text>
         </Stack>
         <Group gap="sm" wrap="wrap">

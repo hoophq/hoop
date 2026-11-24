@@ -1,5 +1,6 @@
 import { Stack, Text, Anchor, Title, Grid, Box, Flex, Paper } from '@mantine/core';
 import ActionIcon from '@/components/ActionIcon';
+import Tooltip from '@/components/Tooltip';
 import { CopyButton } from '@mantine/core';
 import { Copy } from 'lucide-react';
 import Table from '@/components/Table';
@@ -13,10 +14,12 @@ const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/';
 function InlineCopy({ value }) {
   return (
     <CopyButton value={value}>
-      {({ copy }) =>
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy}>
-          <Copy size={12} />
-        </ActionIcon>}
+      {({ copied, copy }) =>
+        <Tooltip label={copied ? 'Copied' : 'Copy'}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy} aria-label={copied ? 'Copied' : 'Copy'}>
+            <Copy size={12} />
+          </ActionIcon>
+        </Tooltip>}
     </CopyButton>
   );
 }

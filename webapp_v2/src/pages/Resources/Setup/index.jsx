@@ -55,7 +55,7 @@ function Footer({ step }) {
         form={FORM_ID}
         disabled={roles.length === 0 || submitting || roleOptions !== 'ready'}
       >
-        {submitting ? 'Creating...' : 'Save and Finish'}
+        {submitting ? 'Creating...' : 'Save and finish'}
       </Button>
     )
   }

@@ -11,7 +11,7 @@ const FEATURE_ITEMS = [
   {
     icon: <ShieldCheck size={20} />,
     title: 'Configurable Rules',
-    description: 'Admins define alert or block policies per resource.',
+    description: 'Admins define alert or block rules per Resource.',
   },
   {
     icon: <Sparkles size={20} />,
@@ -24,13 +24,13 @@ const FEATURE_ITEMS = [
 export default function AiSessionAnalyzerPromotion({ onConfigure }) {
   return (
     <FeaturePromotion
-      featureName="AI Session Analyzer"
+      featureName="AI Analyzer"
       mode="empty-state"
       image="ai-session-analyzer-promotion.png"
       description="Monitor terminal sessions and resource usage in real time."
       featureItems={FEATURE_ITEMS}
       onPrimaryClick={onConfigure}
-      primaryText="Configure AI Session Analyzer"
+      primaryText="Configure AI Analyzer"
     />
   )
 }

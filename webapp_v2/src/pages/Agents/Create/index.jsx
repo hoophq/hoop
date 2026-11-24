@@ -165,9 +165,9 @@ function AgentsCreate() {
       </Button>
 
       <Stack gap="sm">
-        <Title order={1}>Setup new Agent</Title>
+        <Title order={1}>Set up a new Agent</Title>
         <Text size="md" c="dimmed">
-          Follow the steps below to setup a new Agent in your environment
+          Follow the steps below to set up a new Agent in your environment.
         </Text>
       </Stack>
 

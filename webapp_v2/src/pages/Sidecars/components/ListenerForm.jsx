@@ -3,6 +3,7 @@ import { Box, Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import Autocomplete from '@/components/Autocomplete'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
@@ -68,14 +69,16 @@ function MapInput({ field, value, onChange, ...wrapper }) {
             ) : (
               <TextInput w={160} value={v} onChange={(e) => setRow(i, [k, e.currentTarget.value])} />
             )}
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              aria-label="Remove"
-              onClick={() => commit(rows.filter((_, j) => j !== i))}
-            >
-              <Trash2 size={16} />
-            </ActionIcon>
+            <Tooltip label={k ? `Remove ${k}` : 'Remove entry'}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label={k ? `Remove ${k}` : 'Remove entry'}
+                onClick={() => commit(rows.filter((_, j) => j !== i))}
+              >
+                <Trash2 size={16} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         ))}
         <Button

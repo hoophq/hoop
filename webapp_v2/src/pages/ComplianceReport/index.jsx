@@ -5,6 +5,7 @@ import ActionIcon from '@/components/ActionIcon'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
+import Tooltip from '@/components/Tooltip'
 import { Carousel } from '@mantine/carousel'
 import { AlertCircle, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
 import { reportsService } from '@/services/reports'
@@ -278,10 +279,10 @@ function ComplianceReport() {
   return (
     <Stack gap="xxlAlt" className={styles.reportRoot}>
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>Compliance Report</Title>
-          <Text size="lg" c="dimmed">
-            A compliance visibility across industry frameworks
+          <Text size="md" c="dimmed">
+            See how your setup meets common compliance frameworks.
           </Text>
         </Stack>
         {!printing && (
@@ -336,24 +337,28 @@ function ComplianceReport() {
           <Group justify="space-between" align="center">
             <Title order={4}>{`Action Required (${actionRequired.length})`}</Title>
             <Group gap="xs">
-              <ActionIcon
-                variant="default"
-                size="xs"
-                aria-label="Previous actions"
-                disabled={!canScroll.prev}
-                onClick={() => embla?.scrollPrev()}
-              >
-                <ChevronLeft size={16} />
-              </ActionIcon>
-              <ActionIcon
-                variant="default"
-                size="xs"
-                aria-label="Next actions"
-                disabled={!canScroll.next}
-                onClick={() => embla?.scrollNext()}
-              >
-                <ChevronRight size={16} />
-              </ActionIcon>
+              <Tooltip label="Previous actions">
+                <ActionIcon
+                  variant="default"
+                  size="xs"
+                  aria-label="Previous actions"
+                  disabled={!canScroll.prev}
+                  onClick={() => embla?.scrollPrev()}
+                >
+                  <ChevronLeft size={16} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Next actions">
+                <ActionIcon
+                  variant="default"
+                  size="xs"
+                  aria-label="Next actions"
+                  disabled={!canScroll.next}
+                  onClick={() => embla?.scrollNext()}
+                >
+                  <ChevronRight size={16} />
+                </ActionIcon>
+              </Tooltip>
             </Group>
           </Group>
           <Carousel

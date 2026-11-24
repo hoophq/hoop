@@ -159,7 +159,7 @@ function Setup() {
             Set up your instance
           </Title>
           <Text size="sm" c="dimmed" mb="lg">
-            Takes less than a minute. Add a connection right after.
+            Takes less than a minute. Add a Resource right after.
           </Text>
 
           <form onSubmit={handleSubmit}>

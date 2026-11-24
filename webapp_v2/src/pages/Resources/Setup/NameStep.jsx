@@ -7,7 +7,7 @@ import StepHeader from './components/StepHeader'
 import StepRow from './components/StepRow'
 import { useResourceSetupStore } from './store'
 
-const BADGES = { new: { label: 'NEW', color: 'green' }, beta: { label: 'BETA', color: 'indigo' } }
+const BADGES = { new: { label: 'NEW', color: 'green' }, beta: { label: 'BETA', color: 'gray' } }
 
 // The CLJS wizard names these by hand: linux-vm has no metadata entry, and the
 // other subtypes differ from their catalog names.

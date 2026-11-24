@@ -216,7 +216,7 @@ function Agents() {
   }
 
   if (error) {
-    return <Text c="red">{error}</Text>
+    return <PageLoader error h={300} message="Failed to load Agents." description={error} />
   }
 
   return (
@@ -229,18 +229,18 @@ function Agents() {
       />
       <EditTagsModal key={tagsSession} agent={tagsAgent} opened={tagsOpened} onClose={closeTags} />
 
-      <Stack gap="xxl">
+      <Stack gap="xl">
         <Group justify="space-between" align="flex-start">
           <Stack gap="sm">
             <Title order={1}>Agents</Title>
             <Text size="md" c="dimmed">
-              View and manage your Agents for your resource roles
+              View and manage the Agents that run your Resource Roles.
             </Text>
             <DocsBtnCallOut text="Read the Agents docs" href={docsUrl.setup.agents} />
           </Stack>
           {isAdmin && agents.length > 0 && (
             <Button onClick={() => navigate('/agents/new')}>
-              Setup new Agent
+              Set up a new Agent
             </Button>
           )}
         </Group>
@@ -251,7 +251,7 @@ function Agents() {
             description="Create a new Agent to your Organization to show it here"
             action={
               isAdmin
-                ? { label: 'Setup new Agent', onClick: () => navigate('/agents/new') }
+                ? { label: 'Set up a new Agent', onClick: () => navigate('/agents/new') }
                 : null
             }
           />

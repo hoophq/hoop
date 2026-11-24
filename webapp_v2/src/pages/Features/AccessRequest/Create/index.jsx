@@ -342,7 +342,7 @@ function RuleFormFields({ rule, isEdit }) {
             />
           )}
           {managed && (
-            <Alert color="blue" variant="light" icon={<Info size={16} />}>
+            <Alert color="indigo" variant="light" icon={<Info size={16} />}>
               {MANAGED_RULE_MESSAGE}
             </Alert>
           )}

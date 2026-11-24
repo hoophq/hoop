@@ -63,7 +63,7 @@ export default function AIDataMaskingSection() {
               component="a"
               href="/ai-data-masking"
             >
-              Go to AI Data Masking Management
+              Go to AI Data Masking
             </Button>}
         </Stack>
       }

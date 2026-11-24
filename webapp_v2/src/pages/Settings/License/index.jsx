@@ -104,9 +104,9 @@ function SettingsLicense() {
   return (
     <Stack gap={0}>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>License</Title>
-          <Text size="lg" c="dimmed">
+          <Text size="md" c="dimmed">
             View and manage your organization's license.
           </Text>
         </Stack>

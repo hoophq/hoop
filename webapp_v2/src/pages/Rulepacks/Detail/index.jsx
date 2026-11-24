@@ -13,7 +13,7 @@ import RolesTab from './RolesTab'
 import Button from '@/components/Button'
 
 const FREE_LICENSE_MESSAGE =
-  'Applying rulepacks to connections is an Enterprise feature. Upgrade to bundle and roll out guardrails and data masking rules across many connections at once.'
+  'Applying rulepacks to Resource Roles is an Enterprise feature. Upgrade to roll out Guardrails and Data Masking rules across many Resource Roles at once.'
 
 function DetailHeader({ rulepack, onBack }) {
   return (

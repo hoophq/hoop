@@ -15,7 +15,7 @@ const FEATURE_ITEMS = [
     icon: <FolderLock size={20} />,
     title: 'No Configuration Required',
     description:
-      'Automatically masks sensitive data in the data stream of any connection where Live Data Masking is enabled.',
+      'Automatically masks sensitive data in the data stream of any Resource where Live Data Masking is enabled.',
   },
   {
     icon: <Combine size={20} />,
@@ -58,7 +58,7 @@ export default function DataMaskingPromotion({
       featureName="Live Data Masking"
       mode="empty-state"
       image="data-masking-promotion.png"
-      description="Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
+      description="Data Masking rules that mask sensitive data in real time at the protocol layer."
       featureItems={FEATURE_ITEMS}
       {...providerProps}
     />

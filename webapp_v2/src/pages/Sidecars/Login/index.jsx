@@ -139,7 +139,7 @@ export default function SidecarLogin() {
     <Stack gap="xl" maw={560}>
       <Stack gap="sm">
         <Title order={1}>Connect a Sidecar</Title>
-        <Text size="lg" c="dimmed">
+        <Text size="md" c="dimmed">
           A sidecar started with hoop start sidecar asks to join your organization.
         </Text>
       </Stack>

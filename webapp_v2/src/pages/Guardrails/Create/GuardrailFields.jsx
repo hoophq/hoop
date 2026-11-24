@@ -14,6 +14,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
+import Tooltip from '@/components/Tooltip'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { AGENT_GUARDRAIL_TYPES, AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
@@ -53,9 +54,11 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             {`Rule ${index + 1}`}
           </Text>
           {removable && (
-            <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
-              <Trash2 size={16} />
-            </ActionIcon>
+            <Tooltip label="Remove rule">
+              <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
+                <Trash2 size={16} />
+              </ActionIcon>
+            </Tooltip>
           )}
         </Group>
 

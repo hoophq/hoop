@@ -108,8 +108,8 @@ export default function RolesTab() {
       level: 'error',
       text:
         missing && missing.length > 0
-          ? `Unknown connections: ${missing.join(', ')}`
-          : 'Failed to apply rulepack',
+          ? `Unknown Resource Roles: ${missing.join(', ')}`
+          : 'Failed to apply rulepack.',
     })
   }
 
@@ -160,8 +160,8 @@ export default function RolesTab() {
           <Box p="xl" ta="center">
             <Text size="sm" c="dimmed">
               {anyFilter
-                ? 'No connections match your filters.'
-                : 'No connections available.'}
+                ? 'No Resource Roles match your filters.'
+                : 'No Resource Roles available.'}
             </Text>
           </Box>
         ) : (

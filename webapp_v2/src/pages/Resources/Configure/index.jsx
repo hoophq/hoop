@@ -148,18 +148,18 @@ export default function ConfigureResource() {
       <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
         <Group justify="space-between" align="flex-start">
           <Stack gap="xs">
-            <Title order={2}>Configure Resource</Title>
+            <Title order={1}>Configure Resource</Title>
             <Group gap="sm" align="center">
               <Image src={iconFor(resource)} w={20} h={20} alt="" />
               <Text>{resource.name}</Text>
             </Group>
           </Stack>
           <Button
-            size="sm"
+            variant="default"
             leftSection={<Plus size={16} />}
             onClick={() => navigate('/resources/' + encodeURIComponent(resource.name) + '/add-role')}
           >
-            Add New Role
+            Add Resource Role
           </Button>
         </Group>
 

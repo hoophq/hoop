@@ -132,7 +132,7 @@ export default function McpRenderer({
       }
       setBusy(false)
       setAuthError(null)
-      showSnackbar({ level: 'success', text: 'MCP connection authorized' })
+      showSnackbar({ level: 'success', text: 'MCP login authorized.' })
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to redeem token')
     }

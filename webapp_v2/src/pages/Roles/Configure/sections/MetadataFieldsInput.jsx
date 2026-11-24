@@ -2,6 +2,7 @@ import { Stack, Grid, Group } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import TextInput from '@/components/TextInput'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
@@ -34,14 +35,16 @@ export default function MetadataFieldsInput() {
           <Grid.Col span={1}>
             {i > 0 && (
               <Group justify="center">
-                <ActionIcon
-                  variant="subtle"
-                  color="red"
-                  onClick={() => removeField(i)}
-                  aria-label="Remove field"
-                >
-                  <Trash2 size={16} />
-                </ActionIcon>
+                <Tooltip label="Remove field">
+                  <ActionIcon
+                    variant="subtle"
+                    color="red"
+                    onClick={() => removeField(i)}
+                    aria-label="Remove field"
+                  >
+                    <Trash2 size={16} />
+                  </ActionIcon>
+                </Tooltip>
               </Group>
             )}
           </Grid.Col>
@@ -53,7 +56,7 @@ export default function MetadataFieldsInput() {
         w="fit-content"
         onClick={addField}
       >
-        Add New Field
+        Add field
       </Button>
     </Stack>
   )

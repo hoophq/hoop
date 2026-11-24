@@ -366,7 +366,7 @@ export default function EventRoutingDetail() {
             <StatusBadge status={sub.status} />
           </Group>
           {sub.description && (
-            <Text size="sm" c="dimmed">
+            <Text size="md" c="dimmed">
               {sub.description}
             </Text>
           )}
@@ -394,6 +394,7 @@ export default function EventRoutingDetail() {
               variant="light"
               color="red"
               onClick={deleteControls.open}
+              aria-label="Delete subscription"
             >
               <Trash2 size={16} />
             </ActionIcon>

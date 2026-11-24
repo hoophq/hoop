@@ -112,9 +112,9 @@ export default function AccessRequest() {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
-          <Title order={1}>Access Request</Title>
+          <Title order={1}>Approval rules</Title>
           <Text size="md" c="dimmed">
-            Create secure access request rules for your resources
+            Choose which Resource Roles need an approval before access.
           </Text>
         </Stack>
         {rules.length > 0 && (

@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Card, Flex, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Flex, Group, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
 import { ArrowRight, EyeOff, Search, Shield, Sparkles } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import Badge from '@/components/Badge'
+import List from '@/components/List'
+import EmptyState from '@/layout/EmptyState'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import { useRulepackStore } from './store'
 import FeatureFlagGate from './FeatureFlagGate'
 
 const FREE_LICENSE_MESSAGE =
-  'Applying rulepacks to connections is an Enterprise feature. Upgrade to bundle and roll out guardrails and data masking rules across many connections at once.'
+  'Applying rulepacks to Resource Roles is an Enterprise feature. Upgrade to roll out Guardrails and Data Masking rules across many Resource Roles at once.'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -25,21 +27,14 @@ function FeatureBadge({ icon, label }) {
   )
 }
 
-function RulepackRow({ rulepack, isLast, onConfigure }) {
+function RulepackRow({ rulepack, onConfigure }) {
   const hasDataMasking = (rulepack.data_masking_rules ?? []).length > 0
   const hasGuardrails = (rulepack.guardrail_rules ?? []).length > 0
   const hasAiAnalyzer = (rulepack.ai_session_analyzer_rules ?? []).length > 0
   const anyBadge = hasDataMasking || hasGuardrails || hasAiAnalyzer
 
   return (
-    <Box
-      p="lg"
-      style={
-        isLast
-          ? undefined
-          : { borderBottom: '1px solid var(--mantine-color-default-border)' }
-      }
-    >
+    <Box p="lg">
       <Flex align="center" gap="md">
         <Stack gap={4} flex={1} miw={0}>
           <Text size="lg" fw={700} lineClamp={1}>
@@ -55,13 +50,18 @@ function RulepackRow({ rulepack, isLast, onConfigure }) {
               {hasDataMasking && <FeatureBadge icon={EyeOff} label="Data Masking" />}
               {hasGuardrails && <FeatureBadge icon={Shield} label="Guardrails" />}
               {hasAiAnalyzer && (
-                <FeatureBadge icon={Sparkles} label="AI Session Analyzer" />
+                <FeatureBadge icon={Sparkles} label="AI Analyzer" />
               )}
             </Group>
           )}
         </Stack>
         <Group gap="xs" wrap="nowrap">
-          <Button onClick={() => onConfigure(rulepack.id)} rightSection={<ArrowRight size={16} />}>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => onConfigure(rulepack.id)}
+            rightSection={<ArrowRight size={16} />}
+          >
             Configure
           </Button>
         </Group>
@@ -107,7 +107,7 @@ function RulepackListContent() {
       <Stack gap="sm">
         <Title order={1}>Rulepacks</Title>
         <Text size="md" c="dimmed">
-          Bundle configurations and apply them to many connections at once.
+          Bundle rules and apply them to many Resource Roles at once.
         </Text>
       </Stack>
 
@@ -122,30 +122,28 @@ function RulepackListContent() {
 
       {showLoader ? (
         <PageLoader h={300} />
+      ) : listStatus === 'error' ? (
+        <PageLoader error h={300} message="Failed to load rulepacks." />
       ) : list.length === 0 ? (
-        <Card padding="xl" withBorder>
-          <Stack gap={4} align="center" ta="center">
-            <Text fw={600}>
-              {searching ? 'No rulepacks match your search' : 'No rulepacks yet'}
-            </Text>
-            <Text size="sm" c="dimmed">
-              {searching
-                ? 'Try a different search term.'
-                : 'Rulepacks bundle related rules and let you apply them to many connections at once.'}
-            </Text>
-          </Stack>
-        </Card>
+        <EmptyState
+          compact
+          title={searching ? 'No rulepacks match your search' : 'No rulepacks yet'}
+          description={
+            searching
+              ? 'Try a different search term.'
+              : 'Rulepacks bundle related rules so you can apply them to many Resource Roles at once.'
+          }
+        />
       ) : (
-        <Card padding={0} withBorder>
-          {list.map((rulepack, idx) => (
+        <List>
+          {list.map((rulepack) => (
             <RulepackRow
               key={rulepack.id}
               rulepack={rulepack}
-              isLast={idx === list.length - 1}
               onConfigure={(id) => navigate(`/rulepacks/${id}`)}
             />
           ))}
-        </Card>
+        </List>
       )}
     </Stack>
   )

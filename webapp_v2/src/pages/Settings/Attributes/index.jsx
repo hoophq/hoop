@@ -139,15 +139,15 @@ export default function Attributes() {
     : attributes
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load Attributes." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="center">
-        <Stack gap="xs" flex={1} miw={0}>
+        <Stack gap="sm" flex={1} miw={0}>
           <Title order={1}>Attributes</Title>
-          <Text c="dimmed" size="lg">
-            Properties that control how features and security policies apply to connections. Assign attributes to connections to automatically enforce consistent behaviors.
+          <Text c="dimmed" size="md">
+            Tag Resources with attributes to apply the same rules to all of them.
           </Text>
         </Stack>
         {attributes.length > 0 && (
@@ -176,7 +176,7 @@ export default function Attributes() {
 
           {filtered.length === 0 ? (
             <Text c="dimmed" size="sm">
-              {`No attributes match connection '${filterConn}'.`}
+              {`No attributes match Resource '${filterConn}'.`}
             </Text>
           ) : (
             <Paper withBorder>

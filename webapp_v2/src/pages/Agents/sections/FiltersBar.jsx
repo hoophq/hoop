@@ -37,7 +37,7 @@ export default function FiltersBar({ filters, versions, onChange }) {
           size="sm"
           onClick={() => onChange({ ...DEFAULT_FILTERS, sort: filters.sort })}
         >
-          Clear Filters
+          Clear filters
         </Button>
       )}
       <TextInput

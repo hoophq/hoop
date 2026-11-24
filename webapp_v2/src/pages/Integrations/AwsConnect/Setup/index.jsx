@@ -105,8 +105,10 @@ export default function AwsConnectSetup({ mode = 'create' }) {
       <Stack maw={1000} mx="auto" gap="xl" align="center">
         <Image src="/images/hoop-branding/PNG/hoop-symbol_black@4x.png" alt="Hoop" w={64} h={64} fit="contain" />
         <Stack gap="xs" align="center">
-          <Title order={1}>AWS Connect</Title>
-          <Text size="md">Follow the steps to setup your AWS resources.</Text>
+          <Title order={1}>Resource Discovery</Title>
+          <Text size="md" c="dimmed">
+            Follow the steps to set up your AWS Resources.
+          </Text>
         </Stack>
         <Stepper size="xs" iconSize={24} active={STEPS.findIndex((s) => s.id === step)}>
           {STEPS.map((s) => (
@@ -142,7 +144,7 @@ export default function AwsConnectSetup({ mode = 'create' }) {
       <ConfirmDialog
         opened={confirming}
         title="Confirm finishing setup?"
-        confirmLabel="Confirm and Reset Password"
+        confirmLabel="Confirm and reset password"
         danger
         onClose={() => setConfirming(false)}
         onConfirm={() => {

@@ -97,7 +97,7 @@ export default function FederationTestModal({ opened, onClose }) {
               onChange={(e) => setEmail(e.currentTarget.value)}
               required
             />
-            <Alert color="blue" variant="light" icon={<Info size={16} />}>
+            <Alert color="indigo" variant="light" icon={<Info size={16} />}>
               This is a dry run. No session is opened, no audit record is created.
             </Alert>
             {loading && (

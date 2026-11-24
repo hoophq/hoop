@@ -160,7 +160,7 @@ function GroupFormFields({ groupName, isEdit }) {
           data-scrolled={!headerInView || undefined}
         >
           <Title order={2} lts="-0.00625em">
-            {isEdit ? `Edit group: ${groupName}` : 'Create new access control group'}
+            {isEdit ? `Edit group: ${groupName}` : 'Create a new Access Control group'}
           </Title>
           <Group gap="sm">
             {isEdit && (

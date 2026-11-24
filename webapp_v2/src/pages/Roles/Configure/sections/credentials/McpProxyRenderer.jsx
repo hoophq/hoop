@@ -427,8 +427,8 @@ export default function McpProxyRenderer({
       setAuthError(null)
       showSnackbar({
         level: 'success',
-        text: 'MCP connection authorized',
-        description: 'Save the connection to finish attaching the login.',
+        text: 'MCP login authorized.',
+        description: 'Save the Resource Role to finish attaching the login.',
       })
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to redeem token')
@@ -689,8 +689,8 @@ export default function McpProxyRenderer({
             {authMode === 'passthrough' && (
               <Stack gap="xs">
                 <Text size="sm" c="dimmed">
-                  No credential is stored on this connection. Each user&apos;s MCP
-                  client sends its own token, and Hoop forwards it to the server —
+                  No credential is stored on this Resource Role. Each user&apos;s MCP
+                  client sends its own token, and Hoop forwards it to the server,
                   so the server sees who is calling, and access follows each
                   user&apos;s own permissions.
                 </Text>

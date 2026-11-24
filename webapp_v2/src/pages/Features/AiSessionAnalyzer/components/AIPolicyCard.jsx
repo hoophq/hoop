@@ -172,7 +172,7 @@ export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onTogg
   return (
     <SettingsCard
       icon={PackagePlus}
-      title="AI policy settings"
+      title="AI Analyzer settings"
       subtitle="Let the AI choose which rules protect each statement in this risk level"
       panel={false}
       badge={

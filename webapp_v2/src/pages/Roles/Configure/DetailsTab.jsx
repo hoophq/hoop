@@ -48,8 +48,8 @@ export default function DetailsTab({ connection }) {
             <Badge size="sm" color="green" variant="filled">NEW</Badge>
           </Group>
           <Text size="sm" c="dimmed">
-            Properties that determine how access policies, guardrails, and
-            other features apply to this resource role. Attributes are
+            Properties that determine how access rules, Guardrails, and
+            other features apply to this Resource Role. Attributes are
             evaluated by rules you configure.
           </Text>
         </Stack>

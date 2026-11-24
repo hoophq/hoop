@@ -225,9 +225,9 @@ export default function ServerLogs() {
   return (
     <Stack gap="lg" h="calc(100vh - 160px)">
       <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>Server Logs</Title>
-          <Text c="dimmed" size="lg">
+          <Text c="dimmed" size="md">
             Runtime logs from the gateway and connected agents, streamed in real time.
           </Text>
         </Stack>

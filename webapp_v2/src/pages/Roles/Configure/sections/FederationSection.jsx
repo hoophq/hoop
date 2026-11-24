@@ -27,7 +27,7 @@ const PROVIDER_OPTIONS = [
 
 const FALLBACK_OPTIONS = [
   { value: 'deny', label: 'Deny the session' },
-  { value: 'static', label: "Use the connection's static credentials" },
+  { value: 'static', label: "Use the Resource Role's static credentials" },
 ]
 
 function Section({ title, help, children }) {
@@ -177,7 +177,7 @@ function OAuthConsent() {
 
   if (!savedAsOAuth) {
     return (
-      <Alert color="blue" variant="light" icon={<Info size={16} />}>
+      <Alert color="indigo" variant="light" icon={<Info size={16} />}>
         Save the role with GCP OAuth first. Then each user, you included, connects their own
         Google account from this screen before running a session.
       </Alert>
@@ -205,7 +205,7 @@ function OAuthConsent() {
       <Group gap="sm">
         <Tooltip label="Save your changes first: connecting leaves this page." disabled={!dirty}>
           <Box component="span" display="inline-block">
-            <Button onClick={connect} loading={connecting} disabled={dirty}>
+            <Button variant="default" onClick={connect} loading={connecting} disabled={dirty}>
               Connect Google account
             </Button>
           </Box>

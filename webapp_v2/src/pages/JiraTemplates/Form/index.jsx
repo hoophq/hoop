@@ -170,7 +170,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
         data-scrolled={!headerInView || undefined}
       >
         <Title order={2}>
-          {isEdit ? 'Configure JIRA Template' : 'Create a new JIRA Template'}
+          {isEdit ? 'Configure Jira template' : 'Create a new Jira template'}
         </Title>
         <Group gap="sm">
           {isEdit && (

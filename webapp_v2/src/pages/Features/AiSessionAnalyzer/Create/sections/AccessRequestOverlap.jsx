@@ -52,7 +52,7 @@ export default function AccessRequestOverlap({
       data-testid="access-request-overlap"
     >
       <Text size="sm" mb="xs">
-        Access Request rules run before the AI Session Analyzer. Commands on these roles
+        Access Request rules run before the AI Analyzer. Commands on these roles
         can wait for approval whatever the risk level. To let the analyzer decide, remove
         the role, or the shared attribute, from the Access Request rule.
       </Text>

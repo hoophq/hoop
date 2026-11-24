@@ -59,7 +59,7 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
     if (error && !metadata) {
       return (
         <CredentialsError
-          title="Could not load the connection catalog."
+          title="Could not load the Resource catalog."
           message={error}
         />
       )

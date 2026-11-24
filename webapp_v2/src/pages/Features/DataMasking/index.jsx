@@ -126,9 +126,9 @@ export default function DataMasking() {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
-          <Title order={1}>Live Data Masking</Title>
+          <Title order={1}>Data Masking</Title>
           <Text size="md" c="dimmed">
-            Automatically mask sensitive data in real-time at the protocol layer
+            Mask sensitive data in real time at the protocol layer.
           </Text>
         </Stack>
         <Button onClick={goCreate} disabled={atFreeLimit}>

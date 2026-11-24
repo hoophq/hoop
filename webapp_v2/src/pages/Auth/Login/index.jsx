@@ -196,7 +196,7 @@ function Login() {
   return (
     <AuthCard>
       <Title order={2} ta="center" mb="lg">
-        Login
+        Log in
       </Title>
 
       {error && (
@@ -225,7 +225,7 @@ function Login() {
           />
 
           <Button type="submit" fullWidth loading={loading}>
-            Login
+            Log in
           </Button>
         </Stack>
       </form>

@@ -136,7 +136,12 @@ function SettingsInfrastructure() {
   return (
     <>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
-        <Title order={1}>Infrastructure</Title>
+        <Stack gap="sm">
+          <Title order={1}>Infrastructure</Title>
+          <Text size="md" c="dimmed">
+            Set how your gateway shares usage data and which ports its proxies use.
+          </Text>
+        </Stack>
         <Button loading={saving} onClick={handleSave}>
           Save
         </Button>

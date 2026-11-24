@@ -143,11 +143,16 @@ export default function Resources() {
     <>
       <Tabs value={tab} onChange={(next) => next && switchTab(next)} unstyled>
         <Stack gap="md" pb="md" className={pageClasses.toolbar}>
-          <Group justify="space-between">
-            <Title order={1}>Resources</Title>
+          <Group justify="space-between" align="flex-start">
+            <Stack gap="sm">
+              <Title order={1}>Resources</Title>
+              <Text size="md" c="dimmed">
+                Find the Resources and Resource Roles you can access.
+              </Text>
+            </Stack>
             {resources.items.length > 0 && (
               <Button onClick={() => navigate('/resource-catalog')}>
-                {isAdmin ? 'Setup new Resource' : 'Explore Resource Catalog'}
+                {isAdmin ? 'Set up a new Resource' : 'Explore the Resource catalog'}
               </Button>
             )}
           </Group>
