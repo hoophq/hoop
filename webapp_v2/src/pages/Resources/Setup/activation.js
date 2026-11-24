@@ -66,7 +66,7 @@ function buildCard({ feature, label, genericDescription }, templates, ctx) {
       enabled: true,
       badge: { label: 'Enabled', color: 'green' },
       title: label,
-      description: 'Already enabled for this resource role.',
+      description: 'Already enabled for this Resource Role.',
       cta: { kind: 'list', label: `Go to ${label}` },
     }
   }

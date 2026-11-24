@@ -362,7 +362,7 @@ function RuleFormFields({ rule, isEdit }) {
               />
               <TextInput
                 label="Description (Optional)"
-                placeholder="Describe how this is used in your resource roles"
+                placeholder="Describe how this is used in your Resource Roles"
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
                 disabled={managed || submitting}
@@ -372,7 +372,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Access request type"
-            description="Define how to request to your resource roles. Select one or both."
+            description="Define how to request to your Resource Roles. Select one or both."
           >
             <Stack gap="md">
               <SimpleGrid cols={2} spacing="md">
@@ -406,7 +406,7 @@ function RuleFormFields({ rule, isEdit }) {
           {accessTypeIncludes(accessType, ACCESS_TYPE.JIT) && (
             <SectionRow
               title="Access time range"
-              description="Select for how long temporary access will be available for your resource roles. Rule applied for Native Just-in-Time only."
+              description="Select for how long temporary access will be available for your Resource Roles. Rule applied for Native Just-in-Time only."
             >
               <Select
                 label="Time Range"
@@ -422,7 +422,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Resource configuration"
-            description="Select which resource roles to apply this configuration."
+            description="Select which Resource Roles to apply this configuration."
           >
             <ResourceRolesSelect
               connections={connections}
@@ -567,7 +567,7 @@ function RuleFormFields({ rule, isEdit }) {
         {pendingSwitch && (
           <Stack gap="lg">
             <Text size="sm">
-              {`Switching to ${accessTypeLabel(pendingSwitch.target)} will remove ${pendingSwitch.invalid.length} resource roles that don't support this type. This can't be undone.`}
+              {`Switching to ${accessTypeLabel(pendingSwitch.target)} will remove ${pendingSwitch.invalid.length} Resource Roles that don't support this type. This can't be undone.`}
             </Text>
             <Group justify="flex-end" gap="sm">
               <Button

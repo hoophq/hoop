@@ -66,7 +66,7 @@ export default function ReviewSection({ kind = 'command' }) {
   return (
     <ToggleSection
       title={title}
-      description="Require approval prior to resource role execution."
+      description="Require approval prior to Resource Role execution."
       checked={reviewEnabled}
       disabled={isFreeLicense}
       onChange={handleReviewToggle}

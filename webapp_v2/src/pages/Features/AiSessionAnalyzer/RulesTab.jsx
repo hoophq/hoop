@@ -113,7 +113,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
           <AsyncValueFilter
             icon={Rotate3d}
             label="Resource Role"
-            placeholder="Search resource roles"
+            placeholder="Search Resource Roles"
             selected={selectedRole}
             onSelect={setSelectedRole}
             onClear={() => setSelectedRole(null)}

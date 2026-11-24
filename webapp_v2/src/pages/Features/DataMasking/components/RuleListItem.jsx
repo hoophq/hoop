@@ -21,7 +21,7 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
         <Stack gap={2} w={220} className={classes.panelLabel}>
           <Text fw={500}>Connected Resources</Text>
           <Text size="sm" c="dimmed">
-            Resource Roles that are using this Live Data Masking rule.
+            Resource Roles that are using this Data Masking rule.
           </Text>
         </Stack>
         <Box

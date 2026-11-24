@@ -398,29 +398,29 @@ export default function EventRoutingForm() {
 
         <SectionRow
           title="Target runbook"
-          description="Pick the resource role first, then the runbook to execute when matching events fire."
+          description="Pick the Resource Role first, then the runbook to execute when matching events fire."
         >
           <Stack gap="md">
             <Select
               label="Resource role"
               withAsterisk
-              placeholder="Select a resource role"
+              placeholder="Select a Resource Role"
               data={connectionOptions}
               value={form.connectionName || null}
               onChange={selectConnection}
               searchable
-              nothingFoundMessage="No resource roles"
+              nothingFoundMessage="No Resource Roles"
             />
             <Select
               label="Runbook"
               withAsterisk
               placeholder={
                 !form.connectionName
-                  ? "Select a resource role first"
+                  ? "Select a Resource Role first"
                   : runbooksStatus === "loading"
                     ? "Loading runbooks…"
                     : noRunbooks
-                      ? "No runbooks for this resource role"
+                      ? "No runbooks for this Resource Role"
                       : "Select a runbook"
               }
               data={runbookOptions}
@@ -434,7 +434,7 @@ export default function EventRoutingForm() {
             />
             {noRunbooks && (
               <Text size="xs" c="dimmed">
-                {"No runbooks are configured for this resource role. "}
+                {"No runbooks are configured for this Resource Role. "}
                 <Anchor href="/features/runbooks/setup" size="xs">
                   Set up runbooks
                 </Anchor>
@@ -444,7 +444,7 @@ export default function EventRoutingForm() {
             {runbooksStatus === "error" && (
               <Text size="xs" c="red">
                 {runbooksByConnection[form.connectionName]?.error ||
-                  "Failed to load runbooks for this resource role."}
+                  "Failed to load runbooks for this Resource Role."}
               </Text>
             )}
           </Stack>

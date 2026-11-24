@@ -198,7 +198,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
       <Stack gap="xxlAlt">
         <FormSection
           title="Integration details"
-          description="Used to identify your Jira configuration in your resource roles."
+          description="Used to identify your Jira configuration in your Resource Roles."
         >
           <Stack gap="md" maw={600}>
             <TextInput
@@ -260,7 +260,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
 
         <FormSection
           title="Associate Resource Roles"
-          description="Select resource roles where this template should be applied"
+          description="Select Resource Roles where this template should be applied"
         >
           <Box maw={600}>
             <ConnectionsMultiSelect
@@ -271,8 +271,8 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
         </FormSection>
 
         <FormSection
-          title="Configure resource role tags mapping"
-          description="Match key-value information in Jira fields with your resource role tags."
+          title="Configure Resource Role tags mapping"
+          description="Match key-value information in Jira fields with your Resource Role tags."
         >
           <PresetMappingTable
             rows={mappingRows}
@@ -286,7 +286,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
 
         <FormSection
           title="Configure automated mapping"
-          description="Append additional information to your Jira cards when executing a command in your resource roles."
+          description="Append additional information to your Jira cards when executing a command in your Resource Roles."
         >
           <AutomatedMappingTable
             rows={mappingRows}

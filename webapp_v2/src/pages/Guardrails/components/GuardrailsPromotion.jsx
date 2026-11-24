@@ -43,7 +43,7 @@ export default function GuardrailsPromotion({ dlpAvailable, onCreate }) {
       featureName="Guardrails"
       mode="empty-state"
       image="guardrails-promotion.png"
-      description="Create custom rules to guide and protect usage within your resource roles."
+      description="Create custom rules to guide and protect usage within your Resource Roles."
       featureItems={FEATURE_ITEMS}
       {...providerProps}
     />

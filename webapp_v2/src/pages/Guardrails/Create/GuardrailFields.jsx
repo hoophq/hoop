@@ -315,7 +315,7 @@ export default function GuardrailFields({ editor }) {
         title="Associate Resource Roles"
         description={
           hasRedactCredentials
-            ? 'Agent traffic. Select the resource roles where this guardrail applies.'
+            ? 'Agent traffic. Select the Resource Roles where this guardrail applies.'
             : AGENT_DLP_REQUIRED
         }
       >

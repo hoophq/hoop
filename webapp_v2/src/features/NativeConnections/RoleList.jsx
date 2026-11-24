@@ -55,7 +55,7 @@ export function RoleList({
   if (error) {
     return (
       <Stack gap="sm" px="md">
-        <Alert color="red" icon={<TriangleAlert size={16} />} title="Could not load resource roles">
+        <Alert color="red" icon={<TriangleAlert size={16} />} title="Could not load Resource Roles">
           {error}
         </Alert>
         <Button variant="light" size="xs" w="fit-content" onClick={onRetry}>
@@ -76,7 +76,7 @@ export function RoleList({
       <EmptyBlock
         icon={<CableCar size={20} aria-hidden="true" />}
         title="No native connections available"
-        description="None of your resource roles support native access yet, or native access is turned off for them."
+        description="None of your Resource Roles support native access yet, or native access is turned off for them."
       >
         <DocsBtnCallOut href={NATIVE_ACCESS_DOCS_URL} text="Learn about native access" />
       </EmptyBlock>

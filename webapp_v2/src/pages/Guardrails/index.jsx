@@ -169,7 +169,7 @@ export default function Guardrails() {
               <AsyncValueFilter
                 icon={Rotate3d}
                 label="Resource Role"
-                placeholder="Search resource roles"
+                placeholder="Search Resource Roles"
                 selected={selectedRole}
                 onSelect={setSelectedRole}
                 onClear={() => setSelectedRole(null)}
@@ -198,7 +198,7 @@ export default function Guardrails() {
         <EmptyState
           compact
           title="No Guardrails yet"
-          description="Create one for your resource roles or sidecar listeners."
+          description="Create one for your Resource Roles or Sidecar listeners."
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState

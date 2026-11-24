@@ -15,7 +15,7 @@ const FEATURE_ITEMS = [
     icon: <FolderLock size={20} />,
     title: 'No Configuration Required',
     description:
-      'Automatically masks sensitive data in the data stream of any Resource where Live Data Masking is enabled.',
+      'Automatically masks sensitive data in the data stream of any Resource where Data Masking is enabled.',
   },
   {
     icon: <Combine size={20} />,
@@ -32,7 +32,7 @@ const FEATURE_ITEMS = [
 ]
 
 const DEPRECATED_GCP_INFO =
-  'Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of Live Data Masking setup in your environment.'
+  'Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of Data Masking setup in your environment.'
 
 export default function DataMaskingPromotion({
   redactProvider,
@@ -48,14 +48,14 @@ export default function DataMaskingPromotion({
       }
     : {
         docsHref: docsUrl.features.aiDatamasking,
-        docsText: 'Go to Live Data Masking Docs',
+        docsText: 'Read the Data Masking docs',
         extraInformation:
           redactProvider === 'gcp' ? DEPRECATED_GCP_INFO : undefined,
       }
 
   return (
     <FeaturePromotion
-      featureName="Live Data Masking"
+      featureName="Data Masking"
       mode="empty-state"
       image="data-masking-promotion.png"
       description="Data Masking rules that mask sensitive data in real time at the protocol layer."

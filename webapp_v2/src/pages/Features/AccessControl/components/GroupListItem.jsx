@@ -56,7 +56,7 @@ function ConnectionsSection({ connections, getIconUrl, onShowConnections, onConf
   return (
     <PanelSection
       title="Resources"
-      description="These resource roles can be accessed by this user group."
+      description="These Resource Roles can be accessed by this user group."
     >
       {connections.length === 0 ? (
         <Text size="sm" c="dimmed">
@@ -189,7 +189,7 @@ export default function GroupListItem({
             onClick={() => setExpanded((value) => !value)}
             rightSection={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           >
-            {`${plural(group.connections.length, 'resource role')} · ${usersLabel}`}
+            {`${plural(group.connections.length, 'Resource Role')} · ${usersLabel}`}
           </Button>
 
           <Button variant="default" onClick={() => onConfigure(group.name)}>

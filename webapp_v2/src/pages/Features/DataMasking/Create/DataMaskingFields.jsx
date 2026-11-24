@@ -272,7 +272,7 @@ export default function DataMaskingFields({ editor }) {
       <SectionRow
         title="Resource Role configuration"
         description={
-          agentReady ? 'Agent traffic. Select the resource roles where this rule applies.' : AGENT_PROVIDER_REQUIRED
+          agentReady ? 'Agent traffic. Select the Resource Roles where this rule applies.' : AGENT_PROVIDER_REQUIRED
         }
       >
         <ConnectionsMultiSelect value={connectionIds} onChange={setConnectionIds} disabled={!agentReady} />

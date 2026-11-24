@@ -77,7 +77,7 @@ function ConfigurationForm({ integration }) {
 
       <SectionRow
         title="Configure integration"
-        description="Boost productivity by linking your resource roles with Jira."
+        description="Boost productivity by linking your Resource Roles with Jira."
       >
         <form onSubmit={handleSubmit}>
           <Stack gap="lg">

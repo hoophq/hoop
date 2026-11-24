@@ -200,7 +200,7 @@ function GroupFormFields({ groupName, isEdit }) {
 
           <SectionRow
             title="Resource Role configuration"
-            description="Select which resource roles this group should have access to."
+            description="Select which Resource Roles this group should have access to."
           >
             <ConnectionsMultiSelect value={connectionIds} onChange={setConnectionIds} />
           </SectionRow>

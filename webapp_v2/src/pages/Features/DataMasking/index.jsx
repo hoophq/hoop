@@ -25,7 +25,7 @@ import { RULE_DRIVEN_PROVIDERS } from './helpers'
 import List from '@/components/List'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
-  'Your organization has reached Live Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
+  'Your organization has reached Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
 const AGENT_PROVIDER_REQUIRED =
   'Masking rules for agent resources need a DLP provider. Sidecars mask without one.'
@@ -106,7 +106,7 @@ export default function DataMasking() {
 
   if (listStatus === 'error') {
     return (
-      <PageLoader error h={300} message="Failed to load Live Data Masking rules." />
+      <PageLoader error h={300} message="Failed to load Data Masking rules." />
     )
   }
 
@@ -161,7 +161,7 @@ export default function DataMasking() {
               <AsyncValueFilter
                 icon={Rotate3d}
                 label="Resource Role"
-                placeholder="Search resource roles"
+                placeholder="Search Resource Roles"
                 selected={selectedRole}
                 onSelect={setSelectedRole}
                 onClear={() => setSelectedRole(null)}
@@ -189,13 +189,13 @@ export default function DataMasking() {
       {list.length === 0 ? (
         <EmptyState
           compact
-          title="No Live Data Masking rules yet"
-          description="Create one for your resource roles or sidecar listeners."
+          title="No Data Masking rules yet"
+          description="Create one for your Resource Roles or Sidecar listeners."
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState
           compact
-          title="No Live Data Masking rules match your filters"
+          title="No Data Masking rules match your filters"
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (

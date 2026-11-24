@@ -38,14 +38,14 @@ function AdditionalConfiguration() {
         checked={createConnection}
         onChange={(e) => update({ createConnection: e.currentTarget.checked })}
         label="Create Resource Role"
-        description="When enabled, resource roles will be automatically created after configuring the resources."
+        description="When enabled, Resource Roles will be automatically created after configuring the resources."
       />
       <Stack gap="sm">
         <Switch
           checked={vaultEnabled}
           onChange={(e) => update({ vaultEnabled: e.currentTarget.checked })}
           label="Enable Vault Secrets Provider"
-          description="Integrate with HashiCorp Vault to dynamically expand environment variables in your resource roles. Currently, only Vault is supported."
+          description="Integrate with HashiCorp Vault to dynamically expand environment variables in your Resource Roles. Currently, only Vault is supported."
         />
         <DocsLink href={docsUrl.setup.configuration.secretsManager}>
           Read the Secrets Manager docs
@@ -96,7 +96,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           <TextInput
             miw={ROLE_NAME_MIN_WIDTH}
             aria-label={`Resource role name for ${row.name}`}
-            placeholder="Enter resource role name"
+            placeholder="Enter Resource Role name"
             value={roleName(row, roleNames)}
             onChange={(e) => setMapValue('roleNames', row.id, e.currentTarget.value)}
           />

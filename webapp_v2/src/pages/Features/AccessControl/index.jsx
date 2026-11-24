@@ -163,7 +163,7 @@ export default function AccessControl() {
             <AsyncValueFilter
               icon={Rotate3d}
               label="Resource Roles"
-              placeholder="Search resource roles"
+              placeholder="Search Resource Roles"
               selected={selectedRole}
               onSelect={selectRole}
               onClear={() => selectRole(null)}

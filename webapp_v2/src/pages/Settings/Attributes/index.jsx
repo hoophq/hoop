@@ -62,7 +62,7 @@ function ConnectionFilter({ value, onChange, connections }) {
             </Button>
           )}
           <TextInput
-            placeholder="Search resource roles"
+            placeholder="Search Resource Roles"
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
             leftSection={<Search size={14} />}
