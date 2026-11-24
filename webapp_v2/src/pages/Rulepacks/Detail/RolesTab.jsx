@@ -105,7 +105,7 @@ export default function RolesTab() {
     if (result.ok) {
       showSnackbar({
         level: 'success',
-        text: 'Rulepack applied successfully',
+        text: 'Rulepack applied.',
       })
       return
     }

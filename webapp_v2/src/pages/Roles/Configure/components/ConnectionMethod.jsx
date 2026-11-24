@@ -39,7 +39,7 @@ const METHOD_DEFINITIONS = [
     id: CONNECTION_METHODS.IAM_FEDERATION,
     title: 'IAM Federation',
     description:
-      'Impersonate users at session time via GCP IAM — no static credentials stored per user.',
+      'Impersonate users at session time through GCP IAM. No static credentials are stored for each user.',
     icon: Fingerprint,
   },
 ]

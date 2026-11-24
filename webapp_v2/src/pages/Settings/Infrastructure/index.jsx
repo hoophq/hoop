@@ -127,7 +127,7 @@ function SettingsInfrastructure() {
       })
       showSnackbar({
         level: 'success',
-        text: 'Infrastructure configuration saved successfully!',
+        text: 'Infrastructure settings saved.',
       })
     } catch {
       showSnackbar({
@@ -183,7 +183,7 @@ function SettingsInfrastructure() {
           description="Specify the gRPC endpoint URL for establishing secure connections between Hoop agents and your gateway infrastructure."
           callout={
             <DocsBtnCallOut
-              text="Learn more about gRPC"
+              text="Read the gRPC docs"
               href={docsUrl.clients.commandLine.managingConfiguration}
             />
           }

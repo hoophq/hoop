@@ -68,7 +68,7 @@ export default function TerminalAccessTab({ connection }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more about Runbooks
+            Read the Runbooks docs
           </Button>
         }
       />

@@ -246,8 +246,8 @@ function RuleFormFields({ rule, isEdit }) {
       showSnackbar({
         level: 'success',
         text: isEdit
-          ? `Access Request rule '${rule.name}' updated successfully!`
-          : `Access Request rule '${name}' created successfully!`,
+          ? `Access Request rule "${rule.name}" updated.`
+          : `Access Request rule "${name}" created.`,
       })
       navigate(LIST_PATH)
       return
@@ -270,7 +270,7 @@ function RuleFormFields({ rule, isEdit }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: `Access Request rule '${rule.name}' deleted successfully!`,
+        text: `Access Request rule "${rule.name}" deleted.`,
       })
       navigate(LIST_PATH)
       return

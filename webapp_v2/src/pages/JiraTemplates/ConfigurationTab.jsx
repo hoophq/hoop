@@ -59,7 +59,7 @@ function ConfigurationForm({ integration }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: isCreate ? 'Jira integration created!' : 'Jira integration updated!',
+        text: isCreate ? 'Jira integration created.' : 'Jira integration updated.',
       })
     } else {
       showSnackbar({

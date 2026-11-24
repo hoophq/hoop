@@ -98,7 +98,7 @@ export default function ConfigureResource() {
   const save = async () => {
     try {
       if (!(await rename(name))) return
-      showSnackbar({ level: 'success', text: 'Resource name updated successfully!' })
+      showSnackbar({ level: 'success', text: 'Resource name updated.' })
       navigate('/resources/configure/' + encodeURIComponent(name), { replace: true })
     } catch (err) {
       showSnackbar({
@@ -113,7 +113,7 @@ export default function ConfigureResource() {
     setDeleting(true)
     try {
       if (!(await deleteResource())) return
-      showSnackbar({ level: 'success', text: 'Resource deleted successfully!' })
+      showSnackbar({ level: 'success', text: 'Resource deleted.' })
       navigate('/resources?tab=resources')
     } catch (err) {
       setDeleting(false)

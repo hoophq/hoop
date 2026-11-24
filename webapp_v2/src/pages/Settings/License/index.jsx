@@ -94,7 +94,7 @@ function SettingsLicense() {
     setSaving(true)
     try {
       await licenseService.update(parsed)
-      showSnackbar({ level: 'success', text: 'License updated successfully' })
+      showSnackbar({ level: 'success', text: 'License updated.' })
       const [updated, serverInfo] = await Promise.all([licenseService.getInfo(), authService.getServerInfo()])
       setLicenseInfo(updated)
       setServerInfo(serverInfo)

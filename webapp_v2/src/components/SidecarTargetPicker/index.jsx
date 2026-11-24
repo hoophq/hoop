@@ -164,7 +164,7 @@ function PillHint({ names }) {
         </Text>
       ))}
       <Text size="xs" c="gray.5" mt={4}>
-        {rest > 0 ? `+${rest} more — click to see all` : 'Click to edit'}
+        {rest > 0 ? `+${rest} more. Click to see all` : 'Click to edit'}
       </Text>
     </Stack>
   )

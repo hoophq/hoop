@@ -253,7 +253,7 @@ export default function McpRenderer({
               <Group gap={6} align="center">
                 <Check size={16} color="var(--mantine-color-green-filled)" />
                 <Text size="sm" fw={500} c="green">
-                  {'Authorized — access token stored'}
+                  {'Authorized. Access token stored.'}
                 </Text>
               </Group>
               <Group gap="sm">

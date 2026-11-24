@@ -19,7 +19,7 @@ import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
   code_exchange_failure:
-    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+    'Failed to sign up. Try again. If the error continues, talk to your account administrator.',
   pending_review: 'The organization administrator must approve your access first',
   unregistered:
     'Your user is not registered. Try to signup or talk to the account administrator',
@@ -86,7 +86,7 @@ function Signup() {
 
   return (
     <Container size={420} my={40}>
-      <Paper withBorder shadow="md" p={30} mt={30}>
+      <Paper withBorder p={30} mt={30}>
         <Stack align="center" mb="lg">
           <Title order={2} ta="center">
             Welcome to hoop.dev

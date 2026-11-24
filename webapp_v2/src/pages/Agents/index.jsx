@@ -246,7 +246,7 @@ function Agents() {
             <Text size="md" c="dimmed">
               View and manage your Agents for your resource roles
             </Text>
-            <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
+            <DocsBtnCallOut text="Read the Agents docs" href={docsUrl.setup.agents} />
           </Stack>
           {isAdmin && agents.length > 0 && (
             <Button onClick={() => navigate('/agents/new')}>

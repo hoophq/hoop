@@ -53,7 +53,7 @@ export default function AIDataMaskingSection() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more about AI Data Masking
+            Read the AI Data Masking docs
           </Button>
           {redactProvider === 'mspresidio' &&
             <Button

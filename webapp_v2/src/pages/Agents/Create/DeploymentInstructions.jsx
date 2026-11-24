@@ -197,7 +197,7 @@ export function DeploymentMain({ installMethod, hoopKey }) {
               Setup your Agent in your infrastructure.
             </Text>
           </Stack>
-          <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
+          <DocsBtnCallOut text="Read the Agents docs" href={docsUrl.setup.agents} />
         </Stack>
       </Grid.Col>
       <Grid.Col span={9}>

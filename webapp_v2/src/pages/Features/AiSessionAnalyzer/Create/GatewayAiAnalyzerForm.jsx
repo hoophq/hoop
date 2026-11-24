@@ -88,7 +88,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: isEdit ? 'Rule updated successfully!' : 'Rule created successfully!',
+        text: isEdit ? 'Rule updated.' : 'Rule created.',
       })
       navigate(LIST_PATH)
     } else {
@@ -104,7 +104,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     const { ok, error } = await deleteRule(ruleName)
     deleteModal.close()
     if (ok) {
-      showSnackbar({ level: 'success', text: 'Rule deleted successfully!' })
+      showSnackbar({ level: 'success', text: 'Rule deleted.' })
       navigate(LIST_PATH)
     } else {
       showSnackbar({

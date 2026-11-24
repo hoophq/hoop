@@ -106,7 +106,7 @@ export default function ConfigureRolePage() {
       await save()
       showSnackbar({
         level: 'success',
-        text: 'Role ' + connection.name + ' updated!',
+        text: `Resource Role "${connection.name}" updated.`,
       })
       navigate('/resources?tab=roles')
     } catch (err) {

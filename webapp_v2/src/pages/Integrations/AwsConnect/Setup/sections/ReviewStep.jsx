@@ -48,7 +48,7 @@ function AdditionalConfiguration() {
           description="Integrate with HashiCorp Vault to dynamically expand environment variables in your resource roles. Currently, only Vault is supported."
         />
         <DocsLink href={docsUrl.setup.configuration.secretsManager}>
-          Learn more about Secrets Manager Configuration
+          Read the Secrets Manager docs
         </DocsLink>
         {vaultEnabled && (
           <TextInput
@@ -142,7 +142,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           Please review your selected AWS database resources and assign an Agent to each resource role before
           proceeding. You can also customize the resource role names.
         </Text>
-        <DocsLink href={docsUrl.concepts.agents}>Learn more about Agents</DocsLink>
+        <DocsLink href={docsUrl.concepts.agents}>Read the Agents docs</DocsLink>
       </Stack>
 
       <AdditionalConfiguration />

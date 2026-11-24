@@ -87,7 +87,7 @@ function Register() {
   return (
     <Center mih="100vh" bg="var(--hoop-surface-strong)">
       <Box w="90%" maw={400}>
-        <Paper shadow="sm" p={40}>
+        <Paper withBorder p={40}>
           <Box
             component="img"
             src="/images/hoop-branding/SVG/hoop-symbol_black.svg"

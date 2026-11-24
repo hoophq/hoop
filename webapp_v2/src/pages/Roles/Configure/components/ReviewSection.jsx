@@ -147,7 +147,7 @@ export default function ReviewSection({ kind = 'command' }) {
             display="inline-flex"
           >
             <ArrowUpRight size={14} />
-            {kind === 'jit' ? 'Learn more about Just-in-Time Approvals' : 'Learn more about Approvals'}
+            {kind === 'jit' ? 'Read the Just-in-Time Approvals docs' : 'Read the Approvals docs'}
           </Anchor>
         </Stack>
       }

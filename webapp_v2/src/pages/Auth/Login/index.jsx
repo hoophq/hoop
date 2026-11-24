@@ -22,9 +22,9 @@ import { samePagePath } from '@/utils/redirect'
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
   code_exchange_failure:
-    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+    'Failed to sign in. Try again. If the error continues, talk to your account administrator.',
   unexpected_error:
-    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+    'Failed to sign in. Try again. If the error continues, talk to your account administrator.',
   pending_review: 'The organization administrator must approve your access first',
   unregistered:
     'Your user is not registered. Try to signup or talk to the account administrator',
@@ -41,7 +41,7 @@ function AuthCard({ children }) {
   return (
     <Center mih="100vh" bg="var(--hoop-surface-muted)">
       <Box w="90%" maw={400}>
-        <Paper shadow="sm" p={40}>
+        <Paper withBorder p={40}>
           <Box
             component="img"
             src="/images/hoop-branding/SVG/hoop-symbol_black.svg"

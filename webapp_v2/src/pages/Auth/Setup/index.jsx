@@ -138,7 +138,7 @@ function Setup() {
       goAfterAuth(navigate, POST_SETUP_PATH, { replace: true })
     } catch (err) {
       setError(
-        err.response?.data?.message || 'Something went wrong. Please try again.'
+        err.response?.data?.message || 'Failed to finish setup. Try again.'
       )
     } finally {
       setLoading(false)

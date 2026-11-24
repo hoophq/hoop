@@ -602,7 +602,7 @@ export default function McpProxyRenderer({
         )}
         {createMode && catalog.status === 'error' && (
           <Text size="sm" c="dimmed">
-            Server catalog unavailable — configure the endpoint manually below.
+            Server catalog unavailable. Configure the endpoint below.
           </Text>
         )}
 
@@ -749,10 +749,10 @@ export default function McpProxyRenderer({
                       <Check size={16} color="var(--mantine-color-green-filled)" />
                       <Text size="sm" fw={500} c="green">
                         {granted && !pendingFlowId
-                          ? 'Authorized — token renewed automatically'
+                          ? 'Authorized. The token renews automatically.'
                           : pendingFlowId
-                            ? 'Authorized — save to finish attaching the login'
-                            : 'Authorized — access token stored'}
+                            ? 'Authorized. Save to attach the login.'
+                            : 'Authorized. Access token stored.'}
                       </Text>
                     </Group>
                     <Group gap="sm">
@@ -846,7 +846,7 @@ export default function McpProxyRenderer({
             onChange={(e) => setSetting(ENV.approvalTools, e.currentTarget.value)}
           />
           <Text size="sm" c="amber">
-            Approval routing is not available yet — matched tools are denied
+            Approval routing is not available yet. Matched tools are denied
             until it ships.
           </Text>
         </AccordionSection>

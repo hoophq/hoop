@@ -17,7 +17,7 @@ export default function ApiKeysCreated() {
               <CheckCircle size={40} />
             </ThemeIcon>
             <Title order={2} ta="center">
-              Your API key is ready!
+              Your API key is ready.
             </Title>
           </Flex>
 
