@@ -164,6 +164,25 @@ export function targetProtocols(targets, sidecars) {
   })
 }
 
+// The rules a save sends, or the form error that stops it. A rule with only
+// custom entity types has no entity group: its one rule row stays blank, and
+// the API refuses a group with no entity types.
+export function rulesToSave(rules, customEntities) {
+  const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
+  if (half !== -1) return { error: `Custom entity ${half + 1} needs a name and a regex, or remove it.` }
+  const hasCustom = customEntities.some((c) => c.name.trim() !== '')
+  const unnamed = rules.findIndex((r) => r.name.trim() === '' && (r.entities.length > 0 || r.columns.length > 0))
+  if (unnamed !== -1) return { error: `Rule ${unnamed + 1} needs a name, or remove it.` }
+  const named = rules.filter((r) => r.name.trim() !== '')
+  if (named.length === 0 && !hasCustom) return { error: 'Give every rule a name, or remove it.' }
+  const empty = named.find((r) => (r.match === 'columns' ? r.columns : r.entities).length === 0)
+  if (empty) {
+    const what = empty.match === 'columns' ? 'a column' : 'an entity type'
+    return { error: `Rule ${rules.indexOf(empty) + 1} needs ${what}, or remove it.` }
+  }
+  return { rules: named }
+}
+
 export const MATCHES = [
   { value: 'entities', label: 'Detected entities' },
   { value: 'columns', label: 'Result-set columns' },
