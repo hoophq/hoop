@@ -121,6 +121,9 @@ it.
   `Text size="md" c="dimmed"`; right, the primary `Button`.
   The title is the sidebar label. `PageLayout` already pads the page: add no
   outer padding.
+- **One line per level.** The header line says what the page does. A line
+  about one choice goes in that section's `SectionRow` description. Never a
+  loose `Text` between the header and the first section.
 - **One primary button per view.** Filled indigo, no variant. Top right of
   the page header, or bottom right of a modal. Other buttons:
   `variant="default"` (secondary), `variant="subtle"` (quiet, Cancel),
