@@ -27,6 +27,8 @@ to flag, how severe a break is, and what to look for first in a screenshot.
   decide. "Newer" is the file's last change:
   `git log -1 --format=%cs -- <file>`. When the code copies an older
   command that breaks a rule, flag it once and name the old place.
+- **Old section titles.** A `Title order={4}` section the change does not
+  touch. Flag a new one: sections use `order={2}`.
 - **The legacy app** (`webapp/`). It is out of scope.
 
 ## Known differences

@@ -140,7 +140,7 @@ it.
 - **Back link** on a form or details page: `Button variant="transparent"
   color="gray"` with `leftSection={<ArrowLeft size={16} />}`, above the title.
 - **Details page:** back link, `Title order={1}` with the item name, sections with
-  `Title order={4}`. Facts in a key/value `Table`. More than three sections:
+  `Title order={2}`. Facts in a key/value `Table`. More than three sections:
   `Tabs`.
 - **Modals:** `Modal` from `@/components/Modal`. A delete or an action that
   cannot be undone: `ConfirmDialog` with `danger`.
@@ -191,7 +191,9 @@ the work: a page writes no `transition` or `transform` on a control.
   never the label. An `aria-label` alone is not one.
 - **Every control has a name.** An icon-only button has a `Tooltip` and
   an `aria-label`. A picture has `alt`.
-- **Headings go one level at a time.** No `tabindex` above 0.
+- **Headings go one level at a time:** the page `Title order={1}`, its
+  sections `order={2}`, a part of a section `order={3}`. Do not skip a
+  level to get a smaller size. No `tabindex` above 0.
 - **The first error takes the focus** on a form that fails, and the error
   sits under its own field.
 - The skip link (`layout/SkipLink.jsx`) stays the first stop of Tab.
