@@ -130,7 +130,7 @@
   height: 2px;
   border-radius: var(--mantine-radius-xs);
   background: var(--hoop-border-strong);
-  transition: background 150ms ease;
+  transition: background var(--hoop-motion-in) var(--hoop-ease);
 }
 
 .strengthBar[data-active='true'] {

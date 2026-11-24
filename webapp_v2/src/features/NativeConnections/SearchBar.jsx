@@ -9,10 +9,10 @@ function countLabelFor({ searching, truncated, shown, matched, total }) {
   if (searching && truncated) {
     // Both the render cap and the query are biting — report against the
     // matches, otherwise the number reads as a share of the whole list.
-    return `Showing ${shown} of ${matched} results — refine your search`
+    return `Showing ${shown} of ${matched} results. Refine your search.`
   }
   if (searching) return `Showing ${matched} of ${total} results.`
-  if (truncated) return `Showing ${shown} of ${total} Resource Roles — refine your search`
+  if (truncated) return `Showing ${shown} of ${total} Resource Roles. Refine your search.`
   return `Showing ${total} Resource Role${total === 1 ? '' : 's'}`
 }
 

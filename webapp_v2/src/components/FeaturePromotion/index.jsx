@@ -92,7 +92,7 @@ export default function FeaturePromotion({
         )}
       </Stack>
 
-      <Box w="50%" miw="50%" bg="blue.0">
+      <Box w="50%" miw="50%" bg="var(--hoop-tint-indigo)">
         {image && (
           <Image
             src={`/images/illustrations/${image}`}

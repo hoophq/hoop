@@ -80,8 +80,8 @@ export default function SidecarSourceModal({
             </Alert>
             <Text size="sm">
               {hasReport
-                ? 'Hoop takes the configuration file the sidecar reported, shown on this page, and serves it on the next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'
-                : 'The sidecar sends its configuration file to Hoop on its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'}
+                ? 'Hoop takes the configuration file the sidecar reported, shown on this page, and serves it on the next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Analyzer. Edit the configuration in Hoop from then on.'
+                : 'The sidecar sends its configuration file to Hoop on its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Analyzer. Edit the configuration in Hoop from then on.'}
             </Text>
           </>
         )}

@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     feature: 'ai-analyzer',
-    label: 'AI Session Analyzer',
+    label: 'AI Analyzer',
     genericDescription:
       'Reviews every session for suspicious activity. Stops operations that exceed your risk limit.',
     createPath: '/features/ai-session-analyzer/rules/new',

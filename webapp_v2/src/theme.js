@@ -1,4 +1,4 @@
-import { createTheme, rem } from '@mantine/core';
+import { createTheme, Menu, rem } from '@mantine/core';
 import { SpotlightTheme } from '@/components/Spotlight/theme';
 import { AppShellTheme } from '@/components/AppShell/theme';
 import { BadgeTheme } from '@/components/Badge/theme';
@@ -393,6 +393,9 @@ export const theme = createTheme({
 
   components: {
     Spotlight: SpotlightTheme,
+    // A menu floats over the page, like a combobox dropdown
+    // (components/Input/theme.js): it keeps the same shadow.
+    Menu: Menu.extend({ defaultProps: { shadow: 'md' } }),
     AppShell: AppShellTheme,
     Badge: BadgeTheme,
     Pill: PillTheme,

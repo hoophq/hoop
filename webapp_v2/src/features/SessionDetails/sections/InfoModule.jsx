@@ -153,7 +153,7 @@ export default function InfoModule({ session }) {
       </InfoRow>
     ),
     aiAction && (
-      <InfoRow key="ai" icon={Sparkles} label="AI Session Analyzer">
+      <InfoRow key="ai" icon={Sparkles} label="AI Analyzer">
         <Badge color={AI_ACTIONS[aiAction]?.color || 'gray'} variant="light" chip>
           {AI_ACTIONS[aiAction]?.label || aiAction}
         </Badge>

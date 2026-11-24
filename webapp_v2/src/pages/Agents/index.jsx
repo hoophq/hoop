@@ -1,4 +1,5 @@
-import { Title, Group, Text, Badge, Stack, Modal, Card, Box, Flex } from '@mantine/core'
+import { Title, Group, Text, Stack, Card, Box, Flex } from '@mantine/core'
+import Modal from '@/components/Modal'
 import Button from '@/components/Button'
 import { useDisclosure } from '@mantine/hooks'
 import { useEffect, useMemo, useState } from 'react'
@@ -11,7 +12,8 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
 import PageLoader from '@/components/PageLoader'
 import TagsEditor from '@/components/TagsEditor'
-import TagBadge from '@/components/Badge'
+import Badge from '@/components/Badge'
+import List from '@/components/List'
 import Tooltip from '@/components/Tooltip'
 import { showSnackbar } from '@/utils/snackbar'
 import { labelForTag, AGENT_TAG_RULES } from '@/utils/tags'
@@ -114,21 +116,18 @@ function AgentTags({ tags }) {
     <Group gap="xs" mt="xs">
       {entries.map(([key, value]) => (
         <Tooltip key={key} label={key}>
-          <TagBadge tag chip variant="light" color="gray">
+          <Badge tag chip variant="light" color="gray">
             {`${labelForTag(key)}: ${value}`}
-          </TagBadge>
+          </Badge>
         </Tooltip>
       ))}
     </Group>
   )
 }
 
-function AgentRow({ agent, isAdmin, isLast, onDelete, onEditTags }) {
+function AgentRow({ agent, isAdmin, onDelete, onEditTags }) {
   return (
-    <Box
-      p="lg"
-      style={isLast ? undefined : { borderBottom: '1px solid var(--mantine-color-default-border)' }}
-    >
+    <Box p="lg">
       <Flex align="center">
         <Box flex={1}>
           <Text size="lg" fw={700}>{agent.name}</Text>
@@ -261,22 +260,21 @@ function Agents() {
             {visibleAgents.length === 0 ? (
               <EmptyState
                 compact
-                title="No agents match your filters"
+                title="No Agents match your filters"
                 description="Try clearing the filters above."
               />
             ) : (
-              <Card padding={0} withBorder>
-                {visibleAgents.map((agent, i) => (
+              <List>
+                {visibleAgents.map((agent) => (
                   <AgentRow
                     key={agent.id}
                     agent={agent}
                     isAdmin={isAdmin}
-                    isLast={i === visibleAgents.length - 1}
                     onDelete={handleDeleteClick}
                     onEditTags={handleEditTagsClick}
                   />
                 ))}
-              </Card>
+              </List>
             )}
           </Stack>
         )}

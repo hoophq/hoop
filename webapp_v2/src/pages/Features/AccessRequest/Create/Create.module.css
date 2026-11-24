@@ -36,7 +36,7 @@
    border (withBorder) and paints it navy when checked. */
 .typeCard {
   width: 100%;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color var(--hoop-motion-out) var(--hoop-ease), border-color var(--hoop-motion-out) var(--hoop-ease);
 }
 
 .typeCard:hover {

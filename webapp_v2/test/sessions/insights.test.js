@@ -9,14 +9,14 @@ import {
 
 describe('blockedMessage', () => {
   it('counts forbidden keywords for a deny-words rule', () => {
-    expect(blockedMessage('deny_words_list', 'input', ['DELETE'])).toBe('Query blocked — 1 forbidden keyword detected')
+    expect(blockedMessage('deny_words_list', 'input', ['DELETE'])).toBe('Query blocked: 1 forbidden keyword detected')
     expect(blockedMessage('deny_words_list', 'output', ['a', 'b'])).toBe(
-      'Response blocked — 2 forbidden keywords detected',
+      'Response blocked: 2 forbidden keywords detected',
     )
   })
 
   it('names a pattern violation and falls back for other rules', () => {
-    expect(blockedMessage('pattern_match', 'output')).toBe('Response blocked — pattern violation detected')
+    expect(blockedMessage('pattern_match', 'output')).toBe('Response blocked: pattern violation detected')
     expect(blockedMessage('sidecar', undefined)).toBe('Query blocked')
   })
 })

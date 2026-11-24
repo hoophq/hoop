@@ -8,7 +8,7 @@ const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 const DEFAULT_TITLE = 'Unlock all protection controls'
 const DEFAULT_SUBTITLE =
-  'Unlock unlimited Guardrails, Masking Rules, AI Session Analyzer, and more.'
+  'Unlock unlimited Guardrails, Masking Rules, AI Analyzer, and more.'
 
 /**
  * Dark enterprise upsell banner pinned to feature pages for free-plan users.

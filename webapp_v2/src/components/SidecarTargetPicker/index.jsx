@@ -163,7 +163,7 @@ function PillHint({ names }) {
           {n}
         </Text>
       ))}
-      <Text size="xs" c="gray.5" mt={4}>
+      <Text size="xs" c="var(--hoop-text-faint)" mt={4}>
         {rest > 0 ? `+${rest} more. Click to see all` : 'Click to edit'}
       </Text>
     </Stack>

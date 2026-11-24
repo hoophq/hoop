@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Paper, Title, PasswordInput, Text, Anchor, Stack, Center, Box } from '@mantine/core'
+import { Paper, Title, Text, Anchor, Stack, Center, Box } from '@mantine/core'
+import PasswordInput from '@/components/PasswordInput'
 import TextInput from '@/components/TextInput'
 import Button from '@/components/Button'
 import Alert from '@/components/Alert'
