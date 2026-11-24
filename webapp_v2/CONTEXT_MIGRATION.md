@@ -89,7 +89,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/settings/attributes` | React | Done |
 | `/settings/attributes/new` | React | Done |
 | `/settings/attributes/edit/:name` | React | Done |
-| `/settings/protection-rules` | React | Done |
+| `/compliance-packs` | React | Done (`/settings/protection-rules` redirects here) |
 | `/onboarding/protection-rules` | React | Done (chrome-less, above the `/onboarding/*` splat) |
 | `/onboarding/aws-connect` | React | Done (ENG-920). The AWS discovery wizard, chrome-less, above the `/onboarding/*` splat |
 | `/integrations/aws-connect`, `/integrations/aws-connect/setup` | React | Done (ENG-920). Jobs page and the wizard. The CLJS panels stay until ENG-922 |

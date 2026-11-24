@@ -59,6 +59,14 @@ func isICA(lc ListenerConfig) bool {
 // share one profile. Options holds overrides only; the lane's Notes report
 // the resolved values.
 type ICARuntimeConfig struct {
+	// RawTCP bypasses ICA decoding, OCR and redaction without recording. A cold
+	// restart applies the toggle; normal session limits and admission still apply.
+	RawTCP *ICARawTCPConfig `json:"raw_tcp,omitempty" cap:"ica_raw_tcp"`
+
+	// DiagnosticRecording is a local, explicitly acknowledged raw TCP test window.
+	// It is off when absent. All ICA lanes share one bounded recorder. Changing
+	// this block requires a cold restart, never a live inspection fallback.
+	DiagnosticRecording *ICADiagnosticRecordingConfig `json:"diagnostic_recording,omitempty" cap:"ica_diagnostic_recording"`
 	// TurboOCR native device assets; used only with options.ocr_backend: turboocr.
 	OCRTurboLibrary  string `json:"ocr_turbo_library,omitempty" cap:"ica_gpu"`
 	OCRTurboDetModel string `json:"ocr_turbo_det_model,omitempty" cap:"ica_gpu"`
@@ -122,8 +130,8 @@ const (
 // pointer, and nil keeps the profile's value. Field names are the agent's
 // flag names with underscores, so an operator who knows
 // -ocr-fresh-reuse-frames finds ocr_fresh_reuse_frames. ICAOptions omits the
-// agent's UNSAFE and LAB ONLY modes; a lane that needs them runs the
-// standalone agent.
+// agent's UNSAFE and LAB ONLY options. Bounded raw recording is a separate,
+// explicitly acknowledged top-level diagnostic_recording block.
 //
 // validate checks ranges here so the control plane refuses a typo without
 // an engine. Cross-setting rules (adaptive_coalescing needs
@@ -214,6 +222,32 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 		}
 	}
 	problems = append(problems, r.Options.validate(where+".options")...)
+	if rawTCPEnabled(r.RawTCP) {
+		if r.DiagnosticRecording != nil {
+			problems = append(problems, "ica.raw_tcp and ica.diagnostic_recording are mutually exclusive")
+		}
+		if len(listeners) == 0 {
+			problems = append(problems, "ica.raw_tcp requires an ICA listener")
+		}
+		for _, l := range listeners {
+			if !isICA(l) || (l.ICA != nil && l.ICA.EDT) {
+				problems = append(problems, "ica.raw_tcp requires an ICA-only TCP process (no EDT or other protocols)")
+				break
+			}
+		}
+	}
+	if r.DiagnosticRecording != nil {
+		problems = append(problems, r.DiagnosticRecording.validate()...)
+		if len(listeners) == 0 {
+			problems = append(problems, "ica.diagnostic_recording requires an ICA listener")
+		}
+		for _, l := range listeners {
+			if !isICA(l) || (l.ICA != nil && l.ICA.EDT) {
+				problems = append(problems, "ica.diagnostic_recording requires an ICA-only TCP process (no EDT or other protocols)")
+				break
+			}
+		}
+	}
 	if e := r.EDT; e != nil {
 		if e.RetentionSec != 0 && (e.RetentionSec < 1 || e.RetentionSec > icaMaxEDTRetentionSec) {
 			problems = append(problems, fmt.Sprintf("%s.edt.retention_sec must be 1..%d", where, icaMaxEDTRetentionSec))
@@ -519,6 +553,8 @@ type ICALane struct {
 // ICARuntime is the resolved top-level block: paths and bounds as the
 // operator wrote them (empty = engine default) plus the overrides.
 type ICARuntime struct {
+	RawTCP                                                                                 *ICARawTCPConfig
+	DiagnosticRecording                                                                    *ICADiagnosticRecordingConfig
 	OCRTurboLibrary, OCRTurboDetModel, OCRTurboRecModel, OCRTurboRecDict, OCRTurboClsModel string
 	OCRWorker, Tessdata, NERModel, NERORTLibrary                                           string
 	FailureDiagnosticDir                                                                   string
@@ -556,8 +592,8 @@ type ICAServer interface {
 	Addr() net.Addr
 	Stats() (active, total, denied int64)
 	Notes() []string
-	// Ready reports whether the OCR/NER runtime is loaded. It returns false
-	// before Serve and while the model loads.
+	// Ready reports whether the runtime and admission path are ready. It is false
+	// during model loading, diagnostic capture occupancy, drain or capacity limits.
 	Ready() bool
 }
 
@@ -645,6 +681,14 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 		OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
 		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec,
 		ReadinessCapacity: r.ReadinessCapacity, ReadinessHeadroom: r.ReadinessHeadroom, DrainTimeoutSec: r.DrainTimeoutSec}
+	if r.RawTCP != nil {
+		copy := *r.RawTCP
+		out.RawTCP = &copy
+	}
+	if r.DiagnosticRecording != nil {
+		copy := *r.DiagnosticRecording
+		out.DiagnosticRecording = &copy
+	}
 	if r.Options != nil {
 		out.Options = *r.Options
 	}
@@ -885,7 +929,7 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	// suppressed and dropped ride on EDT refusals: how many datagrams the
 	// engine folded into this row, and how many refusal rows it could not
 	// queue.
-	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped"} {
+	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped", "mode", "inspection_enabled", "protocol_validation_enabled", "graphics_bypassed", "capture_enabled", "redact_video"} {
 		if v, ok := e.Data[key]; ok {
 			out.Metadata[key] = fmt.Sprint(v)
 		}

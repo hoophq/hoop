@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 )
@@ -34,9 +35,15 @@ const DefaultEndpoint = "https://api.anthropic.com/v1/messages"
 // are classified in a deployment nobody touched.
 const apiVersion = "2023-06-01"
 
-// defaultMaxTokens bounds the reply. A tool call with a title and a short
-// explanation is a few hundred tokens; 1024 is slack, not a budget.
-const defaultMaxTokens = 1024
+// DefaultMaxTokens bounds the reply. A tool call with a title and a short
+// explanation is a few hundred tokens, but Claude Sonnet 5.5 and Opus 5.5
+// think by default, and max_tokens covers the thinking too.
+const DefaultMaxTokens = 4096
+
+// KeyEffort is the extra key that sets how much a Claude model thinks, sent
+// as output_config.effort. Unset sends nothing, so the model default applies.
+// A model without the effort setting answers a set value with a 400.
+const KeyEffort = "effort"
 
 // UnsupportedSampling names the sampling parameters the Messages API has no
 // field for. A provider speaking this encoder refuses them at construction.
@@ -57,12 +64,17 @@ func init() {
 		if err := opts.Sampling.Unsupported("analyzer/"+Name, UnsupportedSampling...); err != nil {
 			return nil, err
 		}
+		output, err := ParseOutputConfig(opts.Extra)
+		if err != nil {
+			return nil, fmt.Errorf("analyzer/%s: %w", Name, err)
+		}
 		return &Provider{
 			endpoint:  endpoint,
 			model:     opts.Model,
 			key:       opts.Credential,
 			maxTokens: pickMaxTokens(opts.MaxOutputTokens),
 			sampling:  opts.Sampling,
+			output:    output,
 			client:    opts.Client(), // no timeout: the caller's ctx owns the deadline
 		}, nil
 	})
@@ -72,7 +84,20 @@ func pickMaxTokens(n int) int {
 	if n > 0 {
 		return n
 	}
-	return defaultMaxTokens
+	return DefaultMaxTokens
+}
+
+// ParseOutputConfig reads KeyEffort from extra. It returns nil when the key
+// is unset, so the request carries no output_config.
+func ParseOutputConfig(extra map[string]string) (*OutputConfig, error) {
+	effort := strings.ToLower(strings.TrimSpace(extra[KeyEffort]))
+	switch effort {
+	case "":
+		return nil, nil
+	case "low", "medium", "high", "xhigh", "max":
+		return &OutputConfig{Effort: effort}, nil
+	}
+	return nil, fmt.Errorf("unknown %s %q (want low, medium, high, xhigh or max)", KeyEffort, extra[KeyEffort])
 }
 
 // Provider classifies statements with the Anthropic Messages API.
@@ -82,6 +107,7 @@ type Provider struct {
 	key       analyzer.Secret
 	maxTokens int
 	sampling  analyzer.Sampling
+	output    *OutputConfig
 	client    *http.Client
 }
 
@@ -110,6 +136,7 @@ func (p *Provider) Decide(ctx context.Context, systemPrompt, content string, too
 
 // send posts one request body. The caller closes the response body.
 func (p *Provider) send(ctx context.Context, request Request) (*http.Response, error) {
+	request.OutputConfig = p.output
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/anthropic: encoding request: %w", err)
@@ -151,10 +178,18 @@ type Request struct {
 	TopP        *float64 `json:"top_p,omitempty"`
 	TopK        *int     `json:"top_k,omitempty"`
 
+	// OutputConfig is nil unless the effort extra is set.
+	OutputConfig *OutputConfig `json:"output_config,omitempty"`
+
 	System     string     `json:"system"`
 	Messages   []Message  `json:"messages"`
 	Tools      []Tool     `json:"tools"`
 	ToolChoice ToolChoice `json:"tool_choice"`
+}
+
+// OutputConfig carries the effort level of a Claude model.
+type OutputConfig struct {
+	Effort string `json:"effort"`
 }
 
 // Message is one turn.
@@ -177,14 +212,25 @@ type InputSchema struct {
 	Required   []string            `json:"required"`
 }
 
-// Property is one schema field.
+// Property is one schema field. Items describes an array's elements.
 type Property struct {
-	Type        string   `json:"type"`
-	Description string   `json:"description"`
-	Enum        []string `json:"enum,omitempty"`
+	Type        string    `json:"type"`
+	Description string    `json:"description"`
+	Enum        []string  `json:"enum,omitempty"`
+	Items       *Property `json:"items,omitempty"`
 }
 
-// ToolChoice forces the model to call a tool.
+// property renders one tool argument, its array elements included.
+func property(p analyzer.ToolProperty) Property {
+	out := Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+	if p.Items != nil {
+		items := property(*p.Items)
+		out.Items = &items
+	}
+	return out
+}
+
+// ToolChoice tells the model whether it may, or must, call a tool.
 type ToolChoice struct {
 	Type string `json:"type"`
 }
@@ -203,15 +249,15 @@ func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt
 	return BuildToolRequest(model, maxTokens, s, systemPrompt, content, analyzer.ToolSpecs(), forVertex)
 }
 
-// BuildToolRequest renders a request that offers tools and forces a call of
-// one of them. BuildRequest is this with the risk tools.
+// BuildToolRequest renders a request that offers tools and lets the model
+// call one of them. BuildRequest is this with the risk tools.
 func BuildToolRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string,
 	specs []analyzer.ToolSpec, forVertex bool) Request {
 	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
 		props := make(map[string]Property, len(s.Input.Properties))
 		for name, p := range s.Input.Properties {
-			props[name] = Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+			props[name] = property(p)
 		}
 		tools = append(tools, Tool{
 			Name:        s.Name,
@@ -228,10 +274,11 @@ func BuildToolRequest(model string, maxTokens int, s analyzer.Sampling, systemPr
 		System:      systemPrompt,
 		Messages:    []Message{{Role: "user", Content: content}},
 		Tools:       tools,
-		// "any" forces a tool call. Without it the model may answer in
-		// prose, and a classifier whose output shape is optional is a
-		// parsing problem rather than an enum.
-		ToolChoice: ToolChoice{Type: "any"},
+		// "auto", not "any": Claude Sonnet 5.5 and Opus 5.5 refuse a forced
+		// tool call with a 400. The prompt contract tells the model to call
+		// exactly one tool, and a reply in prose fails as "called no risk
+		// tool" (ParseResponse), so the verdict stays an enum.
+		ToolChoice: ToolChoice{Type: "auto"},
 	}
 	if forVertex {
 		req.AnthropicVersion = VertexAPIVersion

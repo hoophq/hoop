@@ -69,6 +69,11 @@ config:
   POSTGRES_DB_URI: ''
   # 'postgres://<user>:<pwd>@<db-host>:<port>/<dbname>'
 
+  ## Most PostgreSQL connections one pod opens; past it a query waits in
+  ## process instead of taking a server slot. For several replicas prefer
+  ## postgresPool.connectionBudget below, which does the division.
+  # POSTGRES_MAX_OPEN_CONNS: '50'
+
   # -- REQUIRED. The address the web app and every sidecar reach this on. Must
   # carry a scheme: appconfig parses it with url.Parse, and without one the
   # hostname is read as a URL path and every route is mounted under it.
@@ -177,6 +182,26 @@ replicas: 1
 # rewritten when the review settles.
 deploymentStrategy:
   type: Recreate
+
+# -- PostgreSQL connections for the whole release.
+#
+# The database serves the sum over every pod, so size the sum: 2-4 x the
+# database's vCPUs is where throughput peaks; past that, connections only
+# queue on the CPU. The chart divides the budget by the pods that can run at
+# once (replicas, plus maxSurge unless the strategy is Recreate) and starts
+# each with the result as POSTGRES_MAX_OPEN_CONNS, so the sum holds once a
+# rollout settles. A budget below that pod count fails the render.
+#
+# The sum is the steady state. With RollingUpdate a stopping pod keeps its
+# pool for up to 10 seconds while its replacement already runs, and a pod
+# from before a replicas change keeps the cap it started with; for those
+# seconds the sum can reach about twice the budget. Keep twice the budget
+# below max_connections minus the reserved slots. Recreate removes every
+# old pod before it creates one, so it never overlaps.
+# Set this or config.POSTGRES_MAX_OPEN_CONNS, not both.
+postgresPool:
+  connectionBudget: null
+  # connectionBudget: 8   # a 2 vCPU database
 
 # -- Readiness and liveness probes. OFF by default.
 #

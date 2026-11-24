@@ -42,8 +42,9 @@ compiles in `golang:1.26-alpine`, which must be at least the `go 1.26.10`
 every module in `sidecar/` declares; `docker pull golang:1.26-alpine` if
 the build stops at `requires go >= 1.26.10`.
 
-Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
-admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
+Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin (`/healthz`,
+`/readyz`), `19002` sidecar read API (`/stats`, `/config`, `/api/*`), `9901`
+Envoy admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
 postgres listener is `envoy:5432`; 5433 is only the host-side publication,
 because a laptop usually has something on 5432 already.
 
@@ -136,11 +137,18 @@ in front of a test MCP server: `initialize`, `tools/list` without the tools
 an `mcp_tool` rule hides, an allowed call, a call to a hidden tool and a call
 over the `mcp_gateway` budget, then the audit rows. It runs without Envoy: the lane binds loopback only.
 
+[`reload/`](reload/README.md) edits the sidecar's config while it runs: the
+demo appends a fourth lane, which starts in place; adds a lane that cannot
+bind, which the sidecar refuses as a whole document; and removes the fourth
+lane, which stops, while a `psql` session on `appdb` stays open through all
+of it. The sidecar re-reads the file on a ten-second stat or on `SIGHUP`,
+with no restart.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
 ```bash
-curl -s localhost:19000/stats | python3 -m json.tool
+curl -s localhost:19002/stats | python3 -m json.tool
 ```
 
 | `addr` reads | Transport |
@@ -326,12 +334,12 @@ would have rewritten it.
 
 ### Check the recorded evidence
 
-The audit trail is JSONL on stdout plus a queryable store on the admin
-listener:
+The audit trail is JSONL on stdout plus a queryable store on the read API
+listener (`admin.api_listen`, port 19002):
 
 ```bash
-curl -s localhost:19000/api/sessions | python3 -m json.tool
-curl -s localhost:19000/stats        | python3 -m json.tool
+curl -s localhost:19002/api/sessions | python3 -m json.tool
+curl -s localhost:19002/stats        | python3 -m json.tool
 docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
@@ -499,8 +507,8 @@ audit vocabulary and it keeps the specific word (`budget_exhausted`,
 with the word in `reason`:
 
 ```bash
-curl -s localhost:19000/api/stats | python3 -m json.tool   # by_risk
-curl -s localhost:19000/config    | python3 -m json.tool   # each lane's resolved analyzer
+curl -s localhost:19002/api/stats | python3 -m json.tool   # by_risk
+curl -s localhost:19002/config    | python3 -m json.tool   # each lane's resolved analyzer
 ```
 
 This evaluator **fails open** by default. It depends on a third-party API, and

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
@@ -262,6 +263,7 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 func TestValidateSpecForLane(t *testing.T) {
 	ssh := daemon.ListenerConfig{Name: "bastion", Protocol: "ssh"}
 	pg := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}
+	mcp := daemon.ListenerConfig{Name: "tools", Protocol: "mcp"}
 	analyzed := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres",
 		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
 	analyzedHTTP := daemon.ListenerConfig{Name: "api", Protocol: "http",
@@ -327,6 +329,26 @@ func TestValidateSpecForLane(t *testing.T) {
 			kind: SidecarRuleMask,
 			lane: pg,
 			spec: `{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`,
+		},
+		{
+			// An mcp lane masks strings without their keys.
+			name: "a column rule on an mcp lane",
+			kind: SidecarRuleMask,
+			lane: mcp,
+			spec: `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
+			want: "names columns",
+		},
+		{
+			name: "an entity rule on an mcp lane",
+			kind: SidecarRuleMask,
+			lane: mcp,
+			spec: `{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`,
+		},
+		{
+			name: "the same column rule on a postgres lane",
+			kind: SidecarRuleMask,
+			lane: pg,
+			spec: `{"rules":[{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}]}`,
 		},
 		{
 			// The sidecar refuses a lane analyzer block with no provider.
@@ -397,5 +419,49 @@ func TestValidateSpecForLane(t *testing.T) {
 				t.Errorf("refusal does not name %q: %v", tt.want, err)
 			}
 		})
+	}
+}
+
+// The sidecar refuses a column rule in an mcp lane's own mask block. The
+// served document never puts one there, whatever route bound it: the mcp
+// lane masks with the entity rules only, and a postgres lane keeps both.
+func TestAServedMCPLaneNeverHoldsAColumnMaskRule(t *testing.T) {
+	const columnRule = `{"name":"ssn-column","entities":["US_SSN"],"columns":["ssn"],"strategy":"redact"}`
+	const entityRule = `{"name":"email","entities":["EMAIL_ADDRESS"],"strategy":"redact"}`
+	column := models.BoundRule{RuleName: "ssn-column", Spec: json.RawMessage(`{"rules":[` + columnRule + `]}`)}
+	entity := models.BoundRule{RuleName: "email", Spec: json.RawMessage(`{"rules":[` + entityRule + `]}`)}
+	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{
+		{Name: "appdb", Protocol: "postgres", Listen: "127.0.0.1:15432", Upstream: "db:5432"},
+		{Name: "tools", Protocol: "mcp", Listen: "127.0.0.1:18901", Upstream: "https://h/mcp"},
+	}}
+	on := func(b models.BoundRule, lane string) models.BoundRule { b.ListenerName = lane; return b }
+	for name, c := range map[string]struct {
+		bound      []models.BoundRule
+		mcp, appdb string
+	}{
+		"columns only":         {[]models.BoundRule{on(column, "tools"), on(column, "appdb")}, "", `[` + columnRule + `]`},
+		"columns and entities": {[]models.BoundRule{on(column, "tools"), on(entity, "tools"), on(column, "appdb"), on(entity, "appdb")}, `[` + entityRule + `]`, `[` + columnRule + `,` + entityRule + `]`},
+		"entities":             {[]models.BoundRule{on(entity, "tools")}, `[` + entityRule + `]`, ""},
+	} {
+		composed, err := foldSidecarRules(cfg, nil, c.bound, nil)
+		if err != nil {
+			t.Fatalf("%s: fold: %v", name, err)
+		}
+		served, err := json.Marshal(composed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := daemon.CheckConfigBytes(served); err != nil {
+			t.Errorf("%s: the sidecar refuses the served document: %v", name, err)
+		}
+		for i, want := range []string{c.appdb, c.mcp} {
+			got := ""
+			if m := composed.Listeners[i].Mask; m != nil {
+				got = string(m.Rules)
+			}
+			if got != want {
+				t.Errorf("%s: %s mask %s, want %s", name, composed.Listeners[i].Name, got, want)
+			}
+		}
 	}
 }

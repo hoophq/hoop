@@ -12,14 +12,14 @@ import {
   validateListener,
 } from './listeners'
 
-// Worth knowing before you add copy here: a listener change is NOT applied to a
-// running sidecar. reload.go:167 compares the document with the rule sections
-// nulled out and returns reloadRestart on any other difference, so topology
-// waits for a restart while guardrails, masking, opa and pii hot-swap within
-// one heartbeat. The UI says nothing about it on purpose — the product's
-// intent is that the plane orchestrates the sidecar and restarts are not a
-// user-facing idea. If that intent lands in the daemon (ADR-0014 option 2,
-// rejected once), nothing here has to change.
+// Worth knowing before you add copy here: a running sidecar starts an added
+// listener and stops a removed one within one heartbeat, with no restart
+// (sidecar/daemon/reload.go, diffTopology). An edit to a running listener's
+// own fields, a rename, and an added listener on an ica sidecar wait for a
+// restart; the sidecar reports that, and a listener it could not start, as
+// the config state on its page. Guardrails, masking, opa and pii hot-swap.
+// The form says nothing about restarts on purpose: the product's intent is
+// that the plane orchestrates the sidecar.
 
 // Prefer `problems`: `message` joins them with newlines, which a Text collapses.
 export const saveErrorMessage = (error) => {

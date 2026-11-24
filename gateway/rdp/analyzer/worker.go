@@ -697,7 +697,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 
 	// 5. Write aggregate results to session_metrics and sessions.metrics
 	if len(aggregatedCounts) > 0 {
-		if err := models.IncrementSessionAnalyzedMetrics(models.DB, job.SessionID, aggregatedCounts); err != nil {
+		if err := models.IncrementSessionAnalyzedMetrics(models.DB, job.OrgID, job.SessionID, aggregatedCounts); err != nil {
 			log.With("sid", job.SessionID).Warnf("failed to write session_metrics: %v", err)
 		}
 		if err := models.UpdateSessionAnalyzerMetrics(job.OrgID, job.SessionID, aggregatedCounts); err != nil {

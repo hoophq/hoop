@@ -31,3 +31,6 @@ func PendingFilings(e *Evaluator) int {
 	defer e.pins.mu.Unlock()
 	return len(e.pins.filing)
 }
+
+// DecodeStrict is decodeStrict, which reads the arguments of a rule call.
+var DecodeStrict = decodeStrict

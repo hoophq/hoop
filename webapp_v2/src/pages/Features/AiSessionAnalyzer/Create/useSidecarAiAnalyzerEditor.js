@@ -3,20 +3,32 @@ import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import {
+  AI_RULE_EXISTING,
+  AI_RULE_EXISTING_AND_NEW,
+  AI_RULE_FEATURES,
   APPROVER_AI,
   APPROVER_HUMAN,
   HANDOFF_CHOICES,
   HANDOFF_HOLD,
   REVIEW_ACTION,
   analyzerActionsFor,
+  appliesAIRules,
   isHandoffAction,
   isHoldAction,
-  operationsFor,
+  readLevelAIRules,
   readLevelApprover,
   readLevelHandoff,
   writeLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
+import {
+  ROUTING_AI,
+  ROUTING_STATIC,
+  emptyRouting,
+  isRoutingMode,
+  readRouting,
+  routingToSpec,
+} from './approvalRouting'
 
 const LEVEL_KEYS = ['high', 'medium', 'low']
 
@@ -26,27 +38,88 @@ const LEVEL_KEYS = ['high', 'medium', 'low']
 export const APPROVER_RULE = 'approval_rule'
 
 // Who approves one level's hold. A new hold uses the AI agent. A hand-off
-// level keeps here the approver of its "Hold for approval" choice.
-const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '' })
+// level keeps here the approver of its "Hold for approval" choice. `routing`
+// is a human level's "How approval is done" (ENG-663): a new hold lets the
+// AI decide. `groupsChosen` marks `groups` as a By groups selection, stored or
+// made, so an empty one means the administrators and is not seeded again.
+const emptyApproval = () => ({
+  approver: APPROVER_AI,
+  groups: [],
+  groupsChosen: false,
+  prompt: '',
+  routing: emptyRouting(),
+})
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
+
+// A person on By groups with no selection made yet: the one level the form
+// fills with every group once they are known.
+const unseededStatic = (approval) =>
+  approval.approver === APPROVER_HUMAN &&
+  approval.routing.mode === ROUTING_STATIC &&
+  approval.groups.length === 0 &&
+  !approval.groupsChosen
+
+// An approver is configured once it is chosen and, for a person, once "How
+// approval is done" is too. An imported rule's hold is decided by that rule.
+export const approverConfigured = (approval) =>
+  approval.approver === APPROVER_RULE ||
+  approval.approver === APPROVER_AI ||
+  (approval.approver === APPROVER_HUMAN && isRoutingMode(approval.routing.mode))
 
 // A hand-off level's prompt and allowed actions (ENG-661). A new one allows all.
 const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value) })
 const emptyHandoffs = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyHandoff()]))
 
+// A hand-off is configured once the agent has an action to pick.
+export const handoffConfigured = (handoff) => handoff.allowed.length > 0
+
+// One level's AI rule options (ENG-662), per feature: off by default. `rules`
+// null allows every library rule; `create` lets the AI create one-time rules.
+const emptyAIFeature = () => ({ on: false, rules: null, create: false })
+const emptyAIRules = () => Object.fromEntries(AI_RULE_FEATURES.map(({ key }) => [key, emptyAIFeature()]))
+const emptyAIRuleLevels = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyAIRules()]))
+
+// ai_rules.<level> of a stored spec (ENG-662), as the form's per-feature options.
+function readAIRules(spec, level) {
+  const read = readLevelAIRules(spec, level)
+  return Object.fromEntries(
+    AI_RULE_FEATURES.map(({ key }) => {
+      const opt = read[key]
+      if (!opt) return [key, emptyAIFeature()]
+      return [key, { on: true, rules: opt.rules, create: opt.mode === AI_RULE_EXISTING_AND_NEW }]
+    }),
+  )
+}
+
+// The AI policy settings card is configured once one feature is on; a level
+// uses AI rules when its action applies them and the card is configured.
+export const aiPolicyConfigured = (ai) => AI_RULE_FEATURES.some(({ key }) => ai[key].on)
+const usesAIRules = (action, ai) => appliesAIRules(action) && aiPolicyConfigured(ai)
+
+// ai_rules.<level>: the features that are on. `rules` is written only for a
+// selection that is not every rule: absent allows all.
+function aiRulesToSpec(ai) {
+  const out = {}
+  for (const { key } of AI_RULE_FEATURES) {
+    const f = ai[key]
+    if (!f.on) continue
+    out[key] = { mode: f.create ? AI_RULE_EXISTING_AND_NEW : AI_RULE_EXISTING }
+    if (f.rules !== null) out[key].rules = [...f.rules]
+  }
+  return out
+}
+
+// A new rule sets no level: an unset level allows, and a save needs one set.
+// `trigger` and `max_calls` have no field since ENG-1157; a stored value is
+// kept as it is, so a save does not erase it.
 const EMPTY = {
-  trigger_operations: [],
-  trigger_tables: [],
-  trigger_resources: [],
-  // Items: every field one names must match (ADR-0030).
-  trigger_any: [],
-  trigger_exclude: [],
-  high: 'block',
+  trigger: null,
+  high: '',
   medium: '',
   low: '',
   prompt: '',
   message: '',
-  max_calls: '',
+  max_calls: null,
   approval_rule: '',
   review_mode: '',
   // No field edits it; kept so a save does not erase what the API set.
@@ -56,36 +129,46 @@ const EMPTY = {
 // `reviewers` are the groups of the rule's own approval rule. A level that
 // can hold with no approvers entry gets them, so it keeps its meaning as a
 // human hold.
-function specToForm(spec, ruleName, reviewers) {
-  if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs() }
+export function specToForm(spec, ruleName, reviewers) {
+  if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs(), ai: emptyAIRuleLevels() }
   const imported = Boolean(spec.approval_rule) && spec.approval_rule !== ruleName
   const form = {
-    trigger_operations: spec.trigger?.operations ?? [],
-    trigger_tables: spec.trigger?.tables ?? [],
-    trigger_resources: spec.trigger?.resources ?? [],
-    trigger_any: spec.trigger?.any ?? [],
-    trigger_exclude: spec.trigger?.exclude ?? [],
+    trigger: spec.trigger ?? null,
     prompt: spec.prompt ?? '',
     message: spec.message ?? '',
-    max_calls: spec.max_calls ?? '',
+    max_calls: spec.max_calls ?? null,
     approval_rule: spec.approval_rule ?? '',
     review_mode: spec.review_mode ?? '',
     match_ignore: spec.match_ignore ?? [],
     approval: emptyApprovals(),
     handoff: emptyHandoffs(),
+    ai: emptyAIRuleLevels(),
   }
   for (const level of LEVEL_KEYS) {
+    form.ai[level] = readAIRules(spec, level)
     const action = spec[level] ?? ''
-    form[level] = isHoldAction(action) ? REVIEW_ACTION : action
+    // An unset level allows; one that sets AI rules shows as Allow, so its
+    // options stay in view and are saved.
+    form[level] = isHoldAction(action) ? REVIEW_ACTION : action || (usesAIRules('', form.ai[level]) ? 'allow' : '')
     if (isHandoffAction(action)) form.handoff[level] = readLevelHandoff(spec, level)
     if (!canHold(form, level)) continue
     const read = readLevelApprover(spec, level)
     if (read) {
-      form.approval[level] = read
+      // Only a person's entry has a way to approve; an AI agent's one turns
+      // into a person with no mode yet, like a new hold.
+      const human = read.approver === APPROVER_HUMAN
+      const routing = human ? readRouting(read.routing) : emptyRouting()
+      form.approval[level] = { ...emptyApproval(), ...read, routing, groupsChosen: human && routing.mode === ROUTING_STATIC }
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
-      form.approval[level] = { ...emptyApproval(), approver: APPROVER_HUMAN, groups: reviewers }
+      form.approval[level] = {
+        ...emptyApproval(),
+        approver: APPROVER_HUMAN,
+        groups: reviewers,
+        groupsChosen: true,
+        routing: emptyRouting(ROUTING_STATIC),
+      }
     }
   }
   return form
@@ -102,10 +185,22 @@ function holdApprovers(f) {
   return new Set(LEVEL_KEYS.filter((level) => canHold(f, level)).map((level) => f.approval[level].approver))
 }
 
+// The held levels whose person has no "How approval is done" yet: a save
+// has nothing to write for them, so it is refused.
+export const humanLevelsWithoutMode = (f) =>
+  LEVEL_KEYS.filter(
+    (level) =>
+      canHold(f, level) && f.approval[level].approver === APPROVER_HUMAN && !isRoutingMode(f.approval[level].routing.mode),
+  )
+
 // approvers.<level> (ENG-680). A level an imported approval rule decides has
-// no entry: it files under that rule.
+// no entry: it files under that rule. An AI-routed human level writes its
+// routing and no groups: the sidecar refuses both. A human level with no mode
+// is refused by `save` before this runs (humanLevelsWithoutMode).
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
+    if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
+    if (approval.routing.mode !== ROUTING_STATIC) return null
     return approval.groups.length > 0 ? { type: APPROVER_HUMAN, groups: approval.groups } : { type: APPROVER_HUMAN }
   }
   if (approval.approver === APPROVER_AI) {
@@ -115,41 +210,27 @@ function approverToSpec(approval) {
   return null
 }
 
-// An item keeps only the fields it names, or is null when it names none.
-function compactItem(item) {
-  const out = {}
-  for (const key of ['operations', 'tables', 'resources']) {
-    if (item[key]?.length > 0) out[key] = item[key]
-  }
-  return Object.keys(out).length > 0 ? out : null
-}
-
-function formToSpec(f, ruleName) {
+export function formToSpec(f, ruleName) {
   const spec = {}
-  const trigger = {}
-  if (f.trigger_operations.length > 0) trigger.operations = f.trigger_operations
-  if (f.trigger_tables.length > 0) trigger.tables = f.trigger_tables
-  if (f.trigger_resources.length > 0) trigger.resources = f.trigger_resources
-  // The sidecar refuses an item that names no field, so an empty row is dropped.
-  const any = f.trigger_any.map(compactItem).filter(Boolean)
-  const exclude = f.trigger_exclude.map(compactItem).filter(Boolean)
-  if (any.length > 0) trigger.any = any
-  if (exclude.length > 0) trigger.exclude = exclude
-  if (Object.keys(trigger).length > 0) spec.trigger = trigger
+  if (f.trigger) spec.trigger = f.trigger
   const handoffs = {}
   const approvers = {}
+  const aiRules = {}
   for (const level of LEVEL_KEYS) {
     if (f[level] === '') continue
     spec[level] = f[level]
     if (isHandoffAction(f[level])) handoffs[level] = writeLevelHandoff(f.handoff[level])
     const approver = canHold(f, level) ? approverToSpec(f.approval[level]) : null
     if (approver) approvers[level] = approver
+    const rules = appliesAIRules(f[level]) ? aiRulesToSpec(f.ai[level]) : {}
+    if (Object.keys(rules).length > 0) aiRules[level] = rules
   }
   if (Object.keys(handoffs).length > 0) spec.handoffs = handoffs
   if (Object.keys(approvers).length > 0) spec.approvers = approvers
+  if (Object.keys(aiRules).length > 0) spec.ai_rules = aiRules
   if (f.prompt.trim() !== '') spec.prompt = f.prompt.trim()
   if (f.message.trim() !== '') spec.message = f.message.trim()
-  if (f.max_calls !== '' && f.max_calls !== null) spec.max_calls = Number(f.max_calls)
+  if (f.max_calls !== null) spec.max_calls = f.max_calls
   const held = holdApprovers(f)
   // A hold needs an approval rule; the plane keeps one named after this rule.
   // A stored one naming another rule (an imported file's) is kept.
@@ -167,6 +248,32 @@ function formToSpec(f, ruleName) {
 const secToMinutes = (s) => (s ? s / 60 : '')
 const minutesToSec = (m) => (m === '' || m == null ? 0 : Math.round(Number(m) * 60))
 
+// The names of one feature's rule_library entries in a sidecar's stored
+// document. A mask list that is not a list holds no name, as the gateway reads it.
+function sidecarLibraryNames(sidecar, key) {
+  const entries = sidecar.configuration?.rule_library?.[key]
+  if (!Array.isArray(entries)) return []
+  return entries.map((r) => r?.name).filter((n) => typeof n === 'string' && n !== '')
+}
+
+// The rule_library entries of one feature that every sidecar of targets holds.
+// The gateway accepts these names as it accepts a library rule's
+// (ValidateAnalyzerAIRules): an entry only some targets hold is refused. A
+// rule bound nowhere, or to a sidecar not in the list, has none.
+function targetLibraryEntries(targets, sidecars, key) {
+  const ids = [...new Set(targets.map((t) => t.sidecar_id))]
+  if (ids.length === 0) return []
+  const docs = ids.map((id) => sidecars.find((sc) => sc.id === id || sc.name === id))
+  if (docs.some((sc) => !sc)) return []
+  const [first, ...rest] = docs.map((sc) => new Set(sidecarLibraryNames(sc, key)))
+  const description =
+    docs.length === 1 ? `From the file of sidecar ${docs[0].name}` : 'From the file of every target sidecar'
+  return [...first]
+    .filter((name) => rest.every((names) => names.has(name)))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, description }))
+}
+
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
@@ -174,6 +281,10 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const updateRule = useAiSessionAnalyzerStore((s) => s.updateRule)
   const deleteRule = useAiSessionAnalyzerStore((s) => s.deleteRule)
   const sidecars = useSidecarStore((s) => s.sidecars)
+  const ruleLibrary = useAiSessionAnalyzerStore((s) => s.ruleLibrary)
+  const ruleLibraryStatus = useAiSessionAnalyzerStore((s) => s.ruleLibraryStatus)
+  const fetchRuleLibrary = useAiSessionAnalyzerStore((s) => s.fetchRuleLibrary)
+  const fetchRoutingIntegrations = useAiSessionAnalyzerStore((s) => s.fetchRoutingIntegrations)
 
   const [name, setName] = useState(stored?.name ?? '')
   const [description, setDescription] = useState(stored?.description ?? '')
@@ -194,12 +305,18 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
       return { ...f, [level]: action, approval }
     })
-  // Levels turned to a person before the groups loaded: they get every group
-  // once the list arrives, unless the editor picks groups first.
+  // A level set to "By groups" before the groups loaded gets every group once
+  // the list arrives (routingModePatch seeds from an empty option list),
+  // unless the editor picks groups first. A level that is no longer a person
+  // on By groups when the list arrives is not seeded; routingModePatch and
+  // setApprover seed it when it returns.
   const groupsLoaded = useRef(false)
   const awaitingGroups = useRef(new Set())
   const setApproval = (level, patch) => {
     if ('groups' in patch) awaitingGroups.current.delete(level)
+    if (patch.routing?.mode === ROUTING_STATIC && patch.groups?.length === 0 && !groupsLoaded.current) {
+      awaitingGroups.current.add(level)
+    }
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))
   }
   const setHandoffPrompt = (level, prompt) =>
@@ -215,19 +332,67 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const allowed = HANDOFF_CHOICES.map((c) => c.value).filter((v) => next.has(v))
       return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
     })
-  // A level that turns to a person starts with every group selected; an
-  // emptied list leaves the decision to the administrators. Picking the
-  // approver a level already has changes nothing, so an administrators-only
-  // level keeps its empty list.
+  // Picking the approver a level already has changes nothing. A person's
+  // groups are seeded when "How approval is done" is set (routingModePatch),
+  // or here when a person on By groups returns with no selection made.
   const setApprover = (level, approver) => {
     if (form.approval[level].approver === approver) return
-    if (approver === APPROVER_HUMAN && !groupsLoaded.current) awaitingGroups.current.add(level)
-    else awaitingGroups.current.delete(level)
     setForm((f) => {
-      const current = f.approval[level]
-      const groups = approver === APPROVER_HUMAN && current.groups.length === 0 ? [...groupOptions].sort() : current.groups
-      return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
+      const current = { ...f.approval[level], approver }
+      if (unseededStatic(current) && groupsLoaded.current && groupOptions.length > 0) {
+        current.groups = [...groupOptions].sort()
+        current.groupsChosen = true
+      }
+      return { ...f, approval: { ...f.approval, [level]: current } }
     })
+  }
+  // The rules a level's feature may name: the library's and the target
+  // sidecars' own (targetLibraryEntries).
+  const sidecarLibrary = useMemo(
+    () => Object.fromEntries(AI_RULE_FEATURES.map(({ key }) => [key, targetLibraryEntries(targets, sidecars, key)])),
+    [targets, sidecars],
+  )
+  const knownRulesFor = (key) => {
+    const library = ruleLibrary[key]
+    const names = new Set(library.map((r) => r.name))
+    return [...library, ...sidecarLibrary[key].filter((r) => !names.has(r.name))]
+  }
+  // Plus the level's stored names neither holds, so they can be unselected.
+  const aiRuleOptionsFor = (level, key) => {
+    const known = knownRulesFor(key)
+    const names = new Set(known.map((r) => r.name))
+    const stale = (form.ai[level][key].rules ?? [])
+      .filter((n) => !names.has(n))
+      .map((name) => ({
+        name,
+        description:
+          'No rule of your list with sidecar rules has this name, nor does the file of every target sidecar. Unselect it to save: the gateway refuses this name.',
+      }))
+    return [...known, ...stale]
+  }
+  const setAIFeature = (level, key, patch) =>
+    setForm((f) => ({
+      ...f,
+      ai: { ...f.ai, [level]: { ...f.ai[level], [key]: { ...f.ai[level][key], ...patch } } },
+    }))
+  // A selection that is exactly the known rules, loaded and non-empty, is
+  // "all" (null), which also covers the rules added later: the sidecar
+  // applies every rule it serves. Anything else, an empty selection or one
+  // with stale names included, stays a list. "Select all" is the explicit way
+  // to choose all.
+  const toggleAIRule = (level, key, name) => {
+    const options = aiRuleOptionsFor(level, key).map((r) => r.name)
+    const current = form.ai[level][key].rules
+    const next = new Set(current ?? options)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    const known = knownRulesFor(key)
+    const all =
+      ruleLibraryStatus === 'success' &&
+      known.length > 0 &&
+      next.size === known.length &&
+      known.every((r) => next.has(r.name))
+    setAIFeature(level, key, { rules: all ? null : options.filter((n) => next.has(n)) })
   }
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
@@ -244,6 +409,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setApprovalTouched(true)
   }
   const [groupOptions, setGroupOptions] = useState([])
+  // Like ruleLibraryStatus: the candidate card collapses a full selection to
+  // "all" only once the org's groups are known.
+  const [groupsStatus, setGroupsStatus] = useState('loading')
 
   useEffect(() => {
     let cancelled = false
@@ -257,8 +425,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
         const approval = { ...f.approval }
         for (const level of waiting) {
           const current = approval[level]
-          if (current.approver === APPROVER_HUMAN && current.groups.length === 0) {
-            approval[level] = { ...current, groups: [...options].sort() }
+          if (unseededStatic(current)) {
+            approval[level] = { ...current, groups: [...options].sort(), groupsChosen: true }
           }
         }
         return { ...f, approval }
@@ -270,37 +438,36 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
         if (cancelled) return
         const options = Array.isArray(data) ? data : []
         setGroupOptions(options)
+        setGroupsStatus('success')
         settle(options)
       })
       .catch(() => {
-        if (!cancelled) settle([])
+        if (cancelled) return
+        setGroupsStatus('error')
+        settle([])
       })
     return () => {
       cancelled = true
     }
   }, [])
 
-  const protocol = useMemo(() => {
-    const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    const first = targets[0]
-    if (!first) return ''
-    const lane = byId.get(first.sidecar_id)?.configuration?.listeners?.find((l) => l.name === first.listener_name)
-    return lane?.protocol ?? ''
-  }, [targets, sidecars])
+  useEffect(() => {
+    fetchRuleLibrary()
+  }, [fetchRuleLibrary])
 
-  const isHTTP = protocol.toLowerCase() === 'http'
-  const operations = useMemo(() => operationsFor(protocol), [protocol])
+  // The integrations an AI-routed level can notify through: once per form.
+  useEffect(() => {
+    fetchRoutingIntegrations()
+  }, [fetchRoutingIntegrations])
+
   const actions = useMemo(() => analyzerActionsFor(), [])
-  // Exclude alone selects nothing, so it does not count as a trigger.
-  const noTrigger =
-    form.trigger_operations.length === 0 &&
-    form.trigger_tables.length === 0 &&
-    form.trigger_resources.length === 0 &&
-    form.trigger_any.length === 0
 
   const canSubmit = name.trim() !== '' && !submitting
   // Plus the level's stored ones, so a removed group can still be unselected.
-  const groupOptionsFor = (level) => [...new Set([...groupOptions, ...form.approval[level].groups])].sort()
+  const groupOptionsFor = (level) => {
+    const { groups, routing } = form.approval[level]
+    return [...new Set([...groupOptions, ...groups, ...(routing.candidates ?? [])])].sort()
+  }
   const approvers = holdApprovers(form)
   // A person decides: the hold waits, so its mode applies.
   const waits = approvers.has(APPROVER_HUMAN) || approvers.has(APPROVER_RULE)
@@ -312,6 +479,11 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     const spec = formToSpec(form, name.trim())
     if (!spec.high && !spec.medium && !spec.low) {
       showSnackbar({ level: 'error', text: 'Set an action for at least one risk level.' })
+      return false
+    }
+    const [missing] = humanLevelsWithoutMode(form)
+    if (missing) {
+      showSnackbar({ level: 'error', text: `Select how approval is done for ${missing} risk.` })
       return false
     }
     const payload = {
@@ -369,16 +541,18 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setAllowed,
     setApprover,
     groupOptionsFor,
+    groupsStatus,
+    ruleLibraryStatus,
+    aiRuleOptionsFor,
+    setAIFeature,
+    toggleAIRule,
     pendingMinutes,
     editPendingMinutes,
     approvalMinutes,
     editApprovalMinutes,
     waits,
     humanHold,
-    isHTTP,
-    operations,
     actions,
-    noTrigger,
     canSubmit,
     submitting,
     save,

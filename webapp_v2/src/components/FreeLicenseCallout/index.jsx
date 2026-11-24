@@ -34,7 +34,6 @@ export default function FreeLicenseCallout({ message, variant = 'info' }) {
       color={color}
       variant="light"
       icon={<Icon size={16} />}
-      radius="md"
     >
       <Group gap="xs" align="center" wrap="wrap">
         <Text size="sm" component="span">

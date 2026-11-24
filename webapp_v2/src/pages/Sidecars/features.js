@@ -1,7 +1,10 @@
 import {
+  AI_RULE_FEATURES,
   APPROVER_HUMAN,
+  appliesAIRules,
   isHandoffAction,
   isHoldAction,
+  readLevelAIRules,
   readLevelApprover,
   readLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
@@ -44,27 +47,45 @@ const RISK_ACTIONS = {
 }
 
 // Who approves a hold: the block's approval rule, the AI agent, or the members
-// of some groups. `sep` follows "Human": ": " in a level, " " inside a hand-off
-// list.
+// of some groups, which an AI agent selects with AI routing (ENG-663). `sep`
+// follows "Human": ": " in a level, " " inside a hand-off list.
 function approverDetail(read, sep) {
   if (!read) return 'approval rule'
   if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  if (read.routing) {
+    const candidates = Array.isArray(read.routing.candidates) ? read.routing.candidates : []
+    return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}`
+  }
   return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
 }
 
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold
 // with no entry is decided through the block's approval rule. A hand-off
 // lists in `handoffs.<level>` the actions its agent may select (ENG-661).
-function riskDetail(spec, level) {
-  const action = spec[level]
+function riskAction(spec, level) {
+  const action = spec[level] ?? ''
   const read = readLevelApprover(spec, level)
   if (isHandoffAction(action)) {
     const { allowed } = readLevelHandoff(spec, level)
     const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
     return `hand-off (${parts.join(', ')})`
   }
-  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  if (!isHoldAction(action)) return RISK_ACTIONS[action || 'allow'] ?? action
   return `hold (${approverDetail(read, ': ')})`
+}
+
+// The AI rule features `ai_rules.<level>` sets (ENG-662), named as their keys.
+// A block or defer level ignores them, so they are not shown there.
+function aiRuleKeys(spec, level) {
+  if (!appliesAIRules(spec[level])) return []
+  const ai = readLevelAIRules(spec, level)
+  return AI_RULE_FEATURES.map(({ key }) => key).filter((key) => ai[key])
+}
+
+function riskDetail(spec, level) {
+  const ai = aiRuleKeys(spec, level)
+  const action = riskAction(spec, level)
+  return ai.length > 0 ? `${action} + AI rules (${ai.join(', ')})` : action
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -136,7 +157,7 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => spec[level])
+    .filter((level) => spec[level] || aiRuleKeys(spec, level).length > 0)
     .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
@@ -229,25 +250,27 @@ function summary(key, rules) {
 }
 
 // The rules each listener writes for itself, as rows of the sidecar-level
-// card, "On <listener>". For a config file the sidecar runs: a document Hoop
-// owns keeps its rules as bound rule items, which distributedRules lists.
+// card, "On <listener>". A document Hoop owns keeps them too: POST and PUT
+// store it as sent, and only an adopted file is split into rule items.
 function laneRows(key, config) {
   const rows = []
   for (const lane of config?.listeners ?? []) {
+    // A lane's guardrails.mode overrides the card's mode for its rules, so a row says so.
+    const laneMode = key === 'guardrails' ? guardrailMode(lane, config) : null
+    const mode = laneMode !== guardrailMode(null, config) ? laneMode : null
     for (const row of ROWS[key](lane, config, [])) {
       if (row.source !== SOURCE_LISTENER) continue
-      rows.push({ ...row, id: `${lane.name}-${row.id}`, detail: `On ${lane.name}` })
+      rows.push({ ...row, id: `${lane.name}-${row.id}`, detail: `On ${lane.name}`, mode })
     }
   }
   return rows
 }
 
-// includeLanes adds each listener's own rules to the sidecar-level card
-// (listener null), for a config file that keeps them per listener.
-export function featureList(listener, config, boundRules, { includeLanes = false } = {}) {
+// defaultsOnly leaves the lanes' own rules out: what a new listener inherits.
+export function featureList(listener, config, boundRules, { defaultsOnly = false } = {}) {
   return FEATURE_ORDER.map((key) => {
     const rules = ROWS[key](listener, config, boundRules)
-    if (includeLanes && listener == null) rules.push(...laneRows(key, config))
+    if (listener == null && !defaultsOnly) rules.push(...laneRows(key, config))
     return {
       ...FEATURES[key],
       rules,

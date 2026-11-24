@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Badge Box Flex Text]]
-   ["lucide-react" :refer [ChevronDown]]
+   ["lucide-react" :refer [AlertTriangle ChevronDown]]
    [clojure.string :as cs]
    [webapp.formatters :as formatters]))
 
@@ -43,9 +43,127 @@
    (when-not (cs/blank? reason)
      [:> Text {:as "p" :size "1" :class "text-[--gray-11] mt-1 whitespace-pre-wrap"} reason])])
 
+(def ^:private ai-rule-kind
+  "AI rule kinds (`metadata.sidecar.ai_decisions[].ai_rules[].kind`)."
+  {"guardrail" {:label "Guardrail" :color "blue"}
+   "mask"      {:label "Data masking" :color "purple"}})
+
+(def ^:private max-summary-chars 160)
+
+(defn- as-text
+  "A definition value as one line: a list joined by commas, anything else as
+  its string. Created definitions come from the model, so no shape is assumed."
+  [v]
+  (if (sequential? v)
+    (cs/join ", " (map str v))
+    (str v)))
+
+(defn- shorten [s]
+  (if (> (count s) max-summary-chars)
+    (str (subs s 0 (dec max-summary-chars)) "\u2026")
+    s))
+
+(defn- present? [v]
+  (not (cs/blank? (as-text v))))
+
+(defn- guardrail-summary
+  [{:keys [type words pattern_regex operations tables access entities]}]
+  (let [scope (when (and (present? operations) (not= type "operation"))
+                (str " on " (as-text operations)))
+        [label value] (case type
+                        "deny_words_list" ["Deny words" words]
+                        "pattern_match"   ["Pattern" pattern_regex]
+                        "table"           [(str "Tables" (when (present? access) (str " (" (as-text access) ")")))
+                                           tables]
+                        "pii"             ["PII" entities]
+                        "operation"       ["Operations" operations]
+                        [(str "Guardrail of type " (if (present? type) (as-text type) "unknown")) nil])]
+    (str label scope (when (present? value) (str ": " (as-text value))))))
+
+(defn- mask-summary [{:keys [strategy entities columns]}]
+  (let [targets (remove nil? [(when (present? entities) (str "entities " (as-text entities)))
+                              (when (present? columns) (str "columns " (as-text columns)))])]
+    (str (cs/capitalize (if (present? strategy) (as-text strategy) "redact"))
+         (when (seq targets) (str " " (cs/join "; " targets))))))
+
+(defn- definition-summary
+  "A created rule's definition in one short line."
+  [kind definition]
+  (cond
+    (not (map? definition)) "definition not recorded"
+    (= kind "guardrail") (shorten (guardrail-summary definition))
+    :else (shorten (mask-summary definition))))
+
+(defn- definition-json [definition]
+  ;; js->clj keywordized the keys; keep a key's namespace part ("a/b").
+  (js/JSON.stringify (clj->js definition :keyword-fn #(subs (str %) 1)) nil 2))
+
+(defn- definition-block
+  "The full definition of a created rule, collapsed."
+  [definition]
+  (when (map? definition)
+    [:details {:class "mt-1"}
+     [:summary {:class "cursor-pointer w-fit text-xs text-[--gray-11]"} "Definition"]
+     [:pre {:tab-index 0
+            :class "mt-1 max-h-64 overflow-auto rounded bg-[--gray-3] p-2 text-xs font-mono text-[--gray-12] whitespace-pre-wrap break-all"}
+      (definition-json definition)]]))
+
+(defn- kind-badge [kind]
+  (let [{:keys [label color]} (get ai-rule-kind kind {:label kind :color "gray"})]
+    [:> Badge {:variant "soft" :color color} label]))
+
+(defn- ai-rule-item [{:keys [kind rule definition reason matched]}]
+  [:li {:class "py-1"}
+   [:> Flex {:align "center" :gap "2" :wrap "wrap"}
+    [kind-badge kind]
+    [:> Text {:size "1" :class "text-[--gray-11]"} (if (cs/blank? rule) "Created:" "Applied:")]
+    [:> Text {:size "1" :weight "medium" :class "text-[--gray-12] break-all"}
+     (if (cs/blank? rule) (definition-summary kind definition) rule)]
+    (when (true? matched)
+      [:> Badge {:variant "soft" :color "red"} "Matched"])]
+   (when-not (cs/blank? reason)
+     [:> Text {:as "p" :size "1" :class "text-[--gray-11] mt-1 whitespace-pre-wrap"} reason])
+   (when (cs/blank? rule)
+     [definition-block definition])])
+
+(defn- ai-rule-invalid-item [{:keys [kind definition reason error]}]
+  [:li {:class "py-1"}
+   [:> Flex {:align "center" :gap "2" :wrap "wrap"}
+    [:> AlertTriangle {:size 14 :aria-hidden true :className "text-[--amber-11] shrink-0"}]
+    [kind-badge kind]
+    [:> Text {:size "1" :class "text-[--amber-11]"} "Invalid, not applied:"]
+    [:> Text {:size "1" :weight "medium" :class "text-[--gray-12] break-all"}
+     (definition-summary kind definition)]]
+   (when-not (cs/blank? error)
+     [:> Text {:as "p" :size "1" :class "text-[--amber-11] mt-1 whitespace-pre-wrap"} error])
+   (when-not (cs/blank? reason)
+     [:> Text {:as "p" :size "1" :class "text-[--gray-11] mt-1 whitespace-pre-wrap"} reason])
+   [definition-block definition]])
+
+(defn- ai-rules-section
+  "The rules the AI applied or created for one decision. `ai-rules` nil means
+  no rule turn ran; an empty list means it ran and applied none."
+  [ai-rules ai-rule-invalid ai-rules-error]
+  (when (or (some? ai-rules) (seq ai-rule-invalid) (not (cs/blank? ai-rules-error)))
+    [:> Box
+     (when (or (some? ai-rules) (seq ai-rule-invalid))
+       [:> Text {:size "1" :class "text-[--gray-11]"} "AI rules:"])
+     (if (seq ai-rules)
+       [:ul {:aria-label "AI rules" :class "mt-1"}
+        (map-indexed (fn [idx r] ^{:key idx} [ai-rule-item r]) ai-rules)]
+       (when (some? ai-rules)
+         [:> Text {:as "p" :size "1" :class "text-[--gray-11] mt-1"} "None applied."]))
+     (when (seq ai-rule-invalid)
+       [:ul {:aria-label "Invalid AI rules" :class "mt-1"}
+        (map-indexed (fn [idx r] ^{:key idx} [ai-rule-invalid-item r]) ai-rule-invalid)])
+     (when-not (cs/blank? ai-rules-error)
+       [:> Text {:as "p" :size "1" :class "text-[--gray-11] whitespace-pre-wrap"}
+        (str "AI rules not applied: " ai-rules-error)])]))
+
 (defn- ai-decision-row
   [{:keys [timestamp risk_level risk_action handoff_decision handoff_reason
-           approver approval_decision approval_reason_code approval_reason review_id]}]
+           approver approval_decision approval_reason_code approval_reason review_id
+           ai_rules ai_rule_invalid ai_rules_error]}]
   [:li {:class "py-3 border-t border-[--gray-3] first:border-t-0"}
    [:> Flex {:direction "column" :gap "2"}
     [:> Flex {:align "center" :gap "3" :wrap "wrap"}
@@ -71,6 +189,7 @@
         (when-not (cs/blank? approval_reason_code)
           [:> Text {:size "1" :class "text-[--gray-11] font-mono"} approval_reason_code])]
        approval_reason])
+    [ai-rules-section ai_rules ai_rule_invalid ai_rules_error]
     (when review_id
       [:a {:href (str "/approvals/" (js/encodeURIComponent review_id))
            :class "text-xs text-blue-600 underline font-mono w-fit"}

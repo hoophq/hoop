@@ -19,9 +19,9 @@ built the image at least once:
 docker compose -f docker-compose.yml -f uds/docker-compose.uds.yml up -d
 ```
 
-Everything else works unchanged — `./demo.sh`, the admin endpoints on 19000,
-the psql lane through `envoy:5432`. Tear down with the same file pair plus
-`down -v`.
+Everything else works unchanged — `./demo.sh`, the admin endpoints on 19000
+and 19002, the psql lane through `envoy:5432`. Tear down with the same file
+pair plus `down -v`.
 
 ## Why bother
 
@@ -40,7 +40,8 @@ docker compose "${CF[@]}" exec -T hoop-inspect netstat -ltn
 
 ```
 tcp  0  0  127.0.0.11:44787  0.0.0.0:*  LISTEN     docker's internal resolver
-tcp  0  0  :::19000          :::*       LISTEN     the admin API
+tcp  0  0  :::19000          :::*       LISTEN     the admin probes
+tcp  0  0  :::19002          :::*       LISTEN     the read API
 ```
 
 That is the whole list. On the default stack the same command also shows
@@ -58,9 +59,10 @@ Use `nc`, not `(echo > /dev/tcp/host/port)`. The latter is a bash builtin; the
 every port closed — including the open ones on the default stack, which makes
 it a check that always passes and proves nothing.
 
-The admin listener stays on TCP 19000 on purpose. It serves `/healthz` to a
-container healthcheck and `/stats` to a scraper, and moving it to a socket
-would mean exec-ing into the container to read either.
+The admin listeners stay on TCP 19000 and 19002 on purpose. 19000 serves
+`/healthz` to a container healthcheck and 19002 serves `/stats` to a scraper,
+and moving them to a socket would mean exec-ing into the container to read
+either.
 
 ## The two permission traps
 

@@ -8,7 +8,7 @@ import { COMPLIANCE_PROFILES, GENERAL_PROFILES, MANUAL_CARD } from './constants'
 
 /**
  * The protection-profile picker shared by the onboarding page and the
- * Settings → Protection rules page: three sections of selectable cards.
+ * Compliance packs page (`/compliance-packs`): three sections of selectable cards.
  * Enterprise profiles are disabled on the free plan, with an inline
  * "Add your license here" escape hatch.
  *

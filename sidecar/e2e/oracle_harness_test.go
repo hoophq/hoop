@@ -23,16 +23,19 @@ import (
 const (
 	oracleUser     = "app"
 	oraclePassword = "app"
+	// Pin both the database and its bundled SQL*Plus client. A floating 23
+	// tag can change the OCI/TTC dialect without any source change.
+	oracleDefaultImage = "gvenzl/oracle-free:23.26.3-slim-faststart@sha256:31aa4d1623c302e495e90a35b5ef809c8e51ba800e5a64dd4c2dd6e346ec6831"
 )
 
-// The default is Oracle Free 23. SIDECAR_E2E_ORACLE_IMAGE runs the same tests
-// against another gvenzl image, which honours the same ORACLE_PASSWORD and
+// The default is an immutable Oracle Free 23.26.3 baseline.
+// SIDECAR_E2E_ORACLE_IMAGE runs the same tests against another gvenzl image, which honours the same ORACLE_PASSWORD and
 // APP_USER variables, e.g. gvenzl/oracle-xe:21-slim-faststart with
 // SIDECAR_E2E_ORACLE_SERVICE=XEPDB1. SIDECAR_E2E_ORACLE_PLATFORM picks the
 // image platform: linux/amd64 on Apple silicon runs what CI runs, and OCI
 // sends platform-dependent fields.
 var (
-	oracleImage    = envOr("SIDECAR_E2E_ORACLE_IMAGE", "gvenzl/oracle-free:23-slim-faststart")
+	oracleImage    = envOr("SIDECAR_E2E_ORACLE_IMAGE", oracleDefaultImage)
 	oracleService  = envOr("SIDECAR_E2E_ORACLE_SERVICE", "FREEPDB1")
 	oraclePlatform = os.Getenv("SIDECAR_E2E_ORACLE_PLATFORM")
 )

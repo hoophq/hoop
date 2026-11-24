@@ -36,12 +36,9 @@ export function protocolInfo(protocol) {
   return { label: protocolLabel(protocol), subtype: ICON_SUBTYPES[protocol] ?? null }
 }
 
-// The features a lane of a protocol cannot carry, and why. The sidecar refuses
-// a mask block and an analyzer on an mcp lane (validateLane, sidecar/daemon/config.go).
-const NOT_ON_MCP = 'Not on MCP listeners yet'
-const LANE_FEATURE_BLOCKS = {
-  mcp: { 'data-masking': NOT_ON_MCP, 'ai-analyzer': NOT_ON_MCP },
-}
+// The features a lane of a protocol cannot carry, and why. Keep in step with
+// validateLane in sidecar/daemon/config.go.
+const LANE_FEATURE_BLOCKS = {}
 
 export const laneFeatureBlocked = (protocol, featureKey) => LANE_FEATURE_BLOCKS[protocol]?.[featureKey] ?? null
 
@@ -129,6 +126,26 @@ export function auditEnabled(config) {
 // listeners, and the daemon refuses a config without them.
 export function hasConfiguration(config) {
   return !!config && (config.listeners ?? []).length > 0
+}
+
+// The admin addresses, one settings row each. admin.listen serves the probes;
+// admin.api_listen serves the unauthenticated read routes, so it has its own
+// row: "Off" on one row must not hide the other listener.
+export const ADMIN_ADDRESSES = [
+  { key: 'listen', label: 'Admin', placeholder: '127.0.0.1:19000', done: 'Admin endpoint updated.' },
+  { key: 'api_listen', label: 'Read API', placeholder: '127.0.0.1:19002', done: 'Read API endpoint updated.' },
+]
+
+// The admin block to PATCH when one of its addresses changes. The PATCH merges
+// top-level keys only, so the other admin keys (listen, api_listen,
+// ica_readiness_json) are sent back as stored, or they would be dropped. An
+// empty address removes its key: the daemon opens no listener for it.
+export function adminWith(admin, key, address) {
+  const next = { ...admin }
+  const value = address.trim()
+  if (value) next[key] = value
+  else delete next[key]
+  return next
 }
 
 // The control plane released this sidecar's configuration: it answers the

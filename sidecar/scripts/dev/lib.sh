@@ -24,6 +24,7 @@ export HTTP_UPSTREAM_PORT="${HTTP_UPSTREAM_PORT:-58080}"
 export PG_RELAY_PORT="${PG_RELAY_PORT:-15432}"
 export HTTP_RELAY_PORT="${HTTP_RELAY_PORT:-18080}"
 export ADMIN_PORT="${ADMIN_PORT:-19000}"
+export API_PORT="${API_PORT:-19002}"
 
 # Everything this suite writes lands here, including the relay log and the
 # audit stream, so a failed run leaves evidence to read.
@@ -37,8 +38,8 @@ export BIN="$WORKDIR/hoop-inspect"
 
 export PGC="env PGPASSWORD=testpass PGSSLMODE=disable psql -h 127.0.0.1 -p ${PG_RELAY_PORT} -U testuser -d appdb"
 
-# admin GETs a path off the relay's admin listener.
-admin() { curl -sf "http://127.0.0.1:${ADMIN_PORT}$1"; }
+# admin GETs a read route (/stats, /config, /api/*) off the relay's API listener.
+admin() { curl -sf "http://127.0.0.1:${API_PORT}$1"; }
 
 # jq is optional; python3 is already required for the JSON the relay emits.
 pyq() { python3 -c "$1"; }

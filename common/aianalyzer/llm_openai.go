@@ -101,13 +101,13 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 	if len(completion.Choices) == 0 {
 		return nil, fmt.Errorf("openai: no choices returned in response")
 	}
-
 	choice := completion.Choices[0]
 	resp := &ChatResponse{
 		Content:      choice.Message.Content,
 		Model:        completion.Model,
 		InputTokens:  int(completion.Usage.PromptTokens),
 		OutputTokens: int(completion.Usage.CompletionTokens),
+		Refusal:      choice.Message.Refusal,
 	}
 	for _, tc := range choice.Message.ToolCalls {
 		resp.ToolCalls = append(resp.ToolCalls, ToolCall{
@@ -123,17 +123,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 func openaiTools(tools []Tool) []openai.ChatCompletionToolParam {
 	result := make([]openai.ChatCompletionToolParam, len(tools))
 	for i, t := range tools {
-		props := make(map[string]any, len(t.InputSchema.Properties))
-		for name, prop := range t.InputSchema.Properties {
-			p := map[string]any{"type": prop.Type}
-			if prop.Description != "" {
-				p["description"] = prop.Description
-			}
-			if len(prop.Enum) > 0 {
-				p["enum"] = prop.Enum
-			}
-			props[name] = p
-		}
+		props := propertiesSchema(t.InputSchema.Properties)
 		params := openai.FunctionParameters{"type": "object", "properties": props}
 		if len(t.InputSchema.Required) > 0 {
 			params["required"] = t.InputSchema.Required

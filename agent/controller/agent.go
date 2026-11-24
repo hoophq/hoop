@@ -248,11 +248,19 @@ func (a *Agent) sessionStateFor(sessionID string) *sessionState {
 
 func (a *Agent) Close(cause error) {
 	log.Infof("shutting down agent controller")
+	// Close in parallel: an exec Close can wait for its client to cancel the
+	// running statement, and the caller gives the whole shutdown 10s.
+	var wg sync.WaitGroup
 	for _, obj := range a.connStore.List() {
 		if client, _ := obj.(io.Closer); client != nil {
-			_ = client.Close()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = client.Close()
+			}()
 		}
 	}
+	wg.Wait()
 	a.shutdownCancelFn(cause)
 	_, _ = a.client.Close()
 }

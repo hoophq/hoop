@@ -34,7 +34,7 @@
 //
 // The REAL artifact, not a library composition: `hoop-inspect` built from
 // sidecar/cmd and launched as a subprocess against mysql:8, mongo:7, and
-// gvenzl/oracle-free:23-slim-faststart containers. That matters because masking
+// digest-pinned Oracle Free 23.26.3 containers. That matters because masking
 // is only reachable through the binary — the detection plugin is a nested
 // module the root cannot import, so a test that called daemon.Run in-process
 // would have to pass a nil Plugin and would silently test the unmasked path.

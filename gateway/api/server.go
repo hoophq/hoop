@@ -874,6 +874,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/approvals/count", countReviews...)
 	r.GET("/reviews/:id", getReview...)
 	r.GET("/approvals/:id", getReview...)
+	r.GET("/approvals/routing/integrations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.GetRoutingIntegrations,
+	)
 	r.PUT("/reviews/:id", updateReview...)
 	r.PUT("/approvals/:id", updateReview...)
 

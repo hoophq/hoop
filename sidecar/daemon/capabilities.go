@@ -86,6 +86,12 @@ const (
 	// downstream_tls on an mcp listener. 1.289.0 decodes both keys and
 	// refuses them there.
 	CapabilityMCPCallerToken = "mcp_caller_token"
+	// CapabilityMCPMask means this build masks results on an mcp listener.
+	// 1.290.0 refuses a mask block there and ignores inherited rules.
+	CapabilityMCPMask = "mcp_mask"
+	// CapabilityMCPAnalyzer means this build runs an analyzer on an mcp
+	// listener. Older builds from 1.289.0 decode the block and refuse it there.
+	CapabilityMCPAnalyzer = "mcp_analyzer"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -176,7 +182,7 @@ var behaviourCapabilities = []string{CapabilitySessionEvents}
 
 // valueCapabilities are the value forms this build reads; see the kinds
 // above. CheckServable checks each one by hand.
-var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken}
+var valueCapabilities = []string{CapabilityAddressURL, CapabilityPIINER, CapabilityMCPCallerToken, CapabilityMCPMask, CapabilityMCPAnalyzer}
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
@@ -297,6 +303,14 @@ func CheckServable(cfg Config, hs Handshake) error {
 		if isMCPGateway(l) && (l.CallerToken != nil || l.DownstreamTLS != nil) {
 			need(where, "sets caller_token or downstream_tls on an mcp listener", CapabilityMCPCallerToken)
 		}
+		if _, _, mc := served.resolve(l); isMCPGateway(l) {
+			if applied, _ := mcpMask(l, mc); applied.hasRules() {
+				need(where, "binds mask rules to an mcp listener", CapabilityMCPMask)
+			}
+			if served.laneAnalyzes(l) {
+				need(where, "runs an analyzer on an mcp listener", CapabilityMCPAnalyzer)
+			}
+		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.
 		if analyzer.IsPluginProtocol(inspect.Protocol(l.Protocol)) {
@@ -385,6 +399,9 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 	if cfg.Guardrails != nil {
 		visit("the configuration", cfg.Guardrails.Rules)
 	}
+	if cfg.RuleLibrary != nil {
+		visit("the configuration's rule_library", cfg.RuleLibrary.Guardrails)
+	}
 	if cfg.Policy != nil {
 		visit("the configuration", cfg.Policy.Rules)
 	}
@@ -413,8 +430,8 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // and refuses the whole document over one, and the canonical form is what
 // every build reads. approval_mode that disagrees with review_mode is served
 // as written: normalize refuses it, and picking one here would hide that.
-// An approvers or handoffs block that names no level is dropped: it says
-// nothing, and an older build refuses the key.
+// An approvers, handoffs or ai_rules block that names no level is dropped:
+// it says nothing, and an older build refuses the key.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
@@ -444,6 +461,9 @@ func ServedForm(cfg Config) Config {
 		}
 		if block.Handoffs != nil && block.Handoffs.isZero() {
 			block.Handoffs = nil
+		}
+		if block.AIRules != nil && block.AIRules.isZero() {
+			block.AIRules = nil
 		}
 		if !reflect.DeepEqual(block, *l.Analyzer) {
 			listeners[i].Analyzer = &block

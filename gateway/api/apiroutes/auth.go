@@ -41,6 +41,20 @@ func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, i
 
 const apiKeyAuthContextKey = "api-key-auth"
 
+// apiKeyOrgID returns the org of the server API key. The org checks compare
+// org ids as strings, so a uuid comes back in its canonical form.
+func apiKeyOrgID(apiKey, serverOrgID string) string {
+	// legacy api key format: orgID|key; the xapi- format uses the server config
+	orgID := strings.Split(apiKey, "|")[0]
+	if strings.HasPrefix(apiKey, "xapi-") {
+		orgID = serverOrgID
+	}
+	if id, err := uuid.Parse(orgID); err == nil {
+		return id.String()
+	}
+	return orgID
+}
+
 func (r *Router) OnlyApiKeyAccess(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if ctx == nil {
@@ -80,16 +94,9 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 			return
 		}
 
-		// legacy api key format: orgID|key
-		orgID := strings.Split(apiKey, "|")[0]
-		if strings.HasPrefix(apiKey, "xapi-") {
-			// the new format is derived from the server config database
-			orgID = serverConfig.OrgID
-		}
-
 		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 		r.setUserContext(&models.Context{
-			OrgID:          orgID,
+			OrgID:          apiKeyOrgID(apiKey, serverConfig.OrgID),
 			OrgName:        proto.DefaultOrgName,
 			OrgLicenseData: serverConfig.OrgLicenseData,
 			UserID:         deterministicUuid.String(),

@@ -67,12 +67,26 @@ def version(value):
 
 def defines(header, names):
     text = header.read_text()
+    macros = dict(re.findall(r"^\s*#\s*define[ \t]+(\w+)[ \t]+([^\r\n]+)", text, re.M))
     values = []
     for name in names:
-        match = re.search(r"^\s*#\s*define\s+" + re.escape(name) + r"\s+(\d+)\b", text, re.M)
-        if not match:
-            raise ValueError(f"missing {name} in {header}")
-        values.append(match[1])
+        token = name
+        seen = set()
+        while token in macros:
+            if token in seen:
+                raise ValueError(f"cyclic version macro {name} in {header}")
+            seen.add(token)
+            # TensorRT 10.16 aliases NV_TENSORRT_* to TRT_*_ENTERPRISE.
+            # Only integer literals and identifier aliases are accepted;
+            # never evaluate SDK header expressions as Python or shell code.
+            token = re.split(r"//|/\*", macros[token], maxsplit=1)[0].strip()
+            if re.fullmatch(r"\d+", token):
+                break
+            if not re.fullmatch(r"[A-Za-z_]\w*", token):
+                raise ValueError(f"non-numeric version macro {name} in {header}")
+        if not re.fullmatch(r"\d+", token):
+            raise ValueError(f"missing numeric version macro {name} in {header}")
+        values.append(token)
     return ".".join(values)
 
 

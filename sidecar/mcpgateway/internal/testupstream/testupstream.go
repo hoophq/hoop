@@ -25,6 +25,23 @@ type customer struct {
 	SSN   string `json:"ssn"`
 }
 
+type contact struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+type profile struct {
+	Customer customer  `json:"customer"`
+	Contacts []contact `json:"contacts"`
+	Notes    []string  `json:"notes"`
+	Visits   int       `json:"visits"`
+}
+
+// CustomerURI is a resource whose text carries PII.
+const CustomerURI = "customer://42"
+
+const customerText = "Jane Doe, email jane.doe@example.com, SSN 123-45-6789"
+
 type queryIn struct {
 	SQL string `json:"sql"`
 }
@@ -52,6 +69,26 @@ func NewServer(echoDesc string) *mcp.Server {
 		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, customer, error) {
 			c := customer{Name: "Jane Doe", Email: "jane.doe@example.com", SSN: "123-45-6789"}
 			return text(fmt.Sprintf("Customer %s: %s, email %s, SSN %s", in.ID, c.Name, c.Email, c.SSN)), c, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "customer_record", Description: "Return a customer record as an embedded resource."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.EmbeddedResource{
+				Resource: &mcp.ResourceContents{URI: "customer://" + in.ID, MIMEType: "text/plain", Text: customerText},
+			}}}, nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "customer_profile", Description: "Return a customer profile as structured content."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, profile, error) {
+			p := profile{
+				Customer: customer{Name: "Jane Doe", Email: "jane.doe@example.com", SSN: "123-45-6789"},
+				Contacts: []contact{{Kind: "email", Value: "jane.doe@example.com"}, {Kind: "backup", Value: "Jane Doe <jane.doe@example.com>"}},
+				Notes:    []string{"verified SSN 123-45-6789"},
+				Visits:   3,
+			}
+			return text("profile of customer " + in.ID), p, nil
+		})
+	s.AddResource(&mcp.Resource{URI: CustomerURI, Name: "customer", MIMEType: "text/plain"},
+		func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "text/plain", Text: customerText}}}, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_customer", Description: "Delete a customer by id."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, any, error) {

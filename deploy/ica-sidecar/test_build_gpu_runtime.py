@@ -24,6 +24,30 @@ class BuilderTests(unittest.TestCase):
             stream.write(data)
         return path
 
+    def test_sdk_version_macros_accept_tensorrt_enterprise_aliases(self):
+        header = self.file("trt/NvInferVersion.h", b"""
+#define TRT_MAJOR_ENTERPRISE 10
+#define TRT_MINOR_ENTERPRISE 16
+#define TRT_PATCH_ENTERPRISE 0
+#define TRT_BUILD_ENTERPRISE 72
+#define NV_TENSORRT_MAJOR TRT_MAJOR_ENTERPRISE //!< major version
+#define NV_TENSORRT_MINOR TRT_MINOR_ENTERPRISE /* minor version */
+#define NV_TENSORRT_PATCH TRT_PATCH_ENTERPRISE
+#define NV_TENSORRT_BUILD TRT_BUILD_ENTERPRISE
+""")
+        self.assertEqual(builder.defines(header, ["NV_TENSORRT_" + part for part in
+            ("MAJOR", "MINOR", "PATCH", "BUILD")]), "10.16.0.72")
+
+    def test_sdk_version_macros_reject_cycles_missing_aliases_and_expressions(self):
+        for index, declaration in enumerate((
+                b"#define VERSION MISSING\n",
+                b"#define VERSION OTHER\n#define OTHER VERSION\n",
+                b"#define VERSION 10 + 1\n",
+                b"#define VERSION __import__('os')\n")):
+            header = self.file(f"invalid-{index}.h", declaration)
+            with self.assertRaises(ValueError):
+                builder.defines(header, ["VERSION"])
+
     def test_dependency_parser_and_host_exclusions(self):
         entries = builder.dependencies("libocr.so.1 => /sdk/libocr.so.1 (0xff)\n/lib64/ld-linux-x86-64.so.2 (0xff)\nlinux-vdso.so.1 (0xff)")
         self.assertEqual(entries[0], ("libocr.so.1", Path("/sdk/libocr.so.1")))

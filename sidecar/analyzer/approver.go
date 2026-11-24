@@ -218,6 +218,24 @@ func withFiledLevel(ctx context.Context, level RiskLevel) context.Context {
 	return context.WithValue(ctx, filedLevelKey{}, level)
 }
 
+type filedPrincipalKey struct{}
+
+// FiledPrincipal reports the principal of a statement held under a human
+// level: the one the agents read (identity header, database user). Empty
+// for a hold under the lane's approval rule, or with no principal. The
+// reviewer decides whether to send it.
+func FiledPrincipal(ctx context.Context) string {
+	p, _ := ctx.Value(filedPrincipalKey{}).(string)
+	return p
+}
+
+func withFiledPrincipal(ctx context.Context, p string) context.Context {
+	if p == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, filedPrincipalKey{}, p)
+}
+
 // maxAgentReasonBytes bounds the reason kept on the record.
 const maxAgentReasonBytes = 1 << 10
 

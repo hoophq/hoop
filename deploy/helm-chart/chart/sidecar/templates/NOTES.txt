@@ -1,13 +1,15 @@
 Inspection sidecar deployed
 
-The relay opens one listener per entry in your config's `listeners` block and
-nothing else. Check what each one resolved to:
+The relay opens one listener per entry in your config's `listeners` block,
+and the admin server on admin.listen, which serves only /healthz and /readyz
+to the probes. Check what each one resolved to:
 
   kubectl logs deploy/{{ include "hoopsidecar.fullname" . }}
 
-With the admin server configured, /healthz, /stats and /config report the
-running state, and /config is the resolved result — every default a lane
-inherited, already folded in.
+With admin.api_listen set, /stats and /config report the running state, and
+/config is the resolved result — every default a lane inherited, already
+folded in. That listener has no authentication: leave it off where the
+workspace it serves must not read the audit trail or the rules.
 
 Validate a config change before it reaches a pod:
 

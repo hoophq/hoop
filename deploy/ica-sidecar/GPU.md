@@ -85,8 +85,10 @@ loopback/private and never put the token in YAML, Git or command-line arguments.
 The endpoint accepts no body, refuses empty/mixed/unsupported processes, is
 idempotent, and makes initialized ICA managers unready until restart. It does
 not shut down the process or enforce a drain timeout; the deployment controller
-waits for `/stats` active sessions before a controlled restart. Use the strict
-JSON readiness option above when deploying behind the external ICA relay.
+waits for `/stats` active sessions before a controlled restart. `/stats` is on
+`admin.api_listen` (off unless set; the examples use `127.0.0.1:19002`), not on
+`admin.listen`. Use the strict JSON readiness option above when deploying
+behind the external ICA relay.
 
 ## Prepare one native GPU asset set
 
@@ -165,15 +167,12 @@ docker buildx build -f Dockerfile.sidecar --platform linux/amd64 --target ica-gp
 
 The export contains `binaries/hoop-ica-gpu-assets_<version>_Linux_amd64.tar.gz`
 and its checksum file. Verify the published outer checksum before extraction.
-The tag release workflow builds/publishes the GPU image and includes the native
-bundle in its release artifacts only when repository variables
-`ICA_GPU_ASSETS_URL` and `ICA_GPU_ASSETS_SHA256` are both configured. With neither,
-existing CPU releases behave as before; one without the other fails the release
-job. A PR that changes the bundle inputs gets the same preview as the CPU bundle:
-`hoophq/hoopsidecar:<PR>.0.0-g<sha>-ica-gpu` and the native bundle at
-`releases.hoop.dev/release/<PR>.0.0-g<sha>/`, skipped while the variables are
-unset. Updating that asset set is an explicit release input, not an automatic engine
-regeneration. No GPU artifacts are published by this source change itself.
+GPU image/bundle publication now uses the explicitly dispatched
+[manual GPU release flow](GPU-RELEASE.md) in private libhoop-ica. It packages the
+selected existing Hoop release and records GPU download links/checksums in the
+matching private libhoop-ica engine release. The Hoop release page is not edited. Normal PR/tag workflows publish CPU flavors and do not build ICA
+GPU images, even if old global GPU URL/SHA variables are still set. Local Docker
+commands above continue accepting explicit runtime URL/SHA inputs.
 
 On a GPU host with NVIDIA Container Toolkit, first run the smoke test:
 

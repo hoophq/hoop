@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,24 +29,36 @@ import (
 // recSession is the sidecar session a test lane opens: it records what the
 // engine hands it, denies the tools in deny and hides the tools in hide.
 type recSession struct {
-	mu     sync.Mutex
-	id     string
-	deny   map[string]string
-	hide   map[string]bool
-	calls  []string
-	acts   []string
-	seen   []string
-	closed bool
+	mu        sync.Mutex
+	id        string
+	deny      map[string]string
+	hide      map[string]bool
+	held      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	calls     []string
+	acts      []string
+	seen      []string
+	masked    []string
+	closed    bool
 }
 
 func (s *recSession) ID() string { return s.id }
 
-func (s *recSession) ToolCall(_ context.Context, tool string, args []byte) daemon.MCPVerdict {
+// ToolCall denies a tool in deny. A tool in held waits until the request
+// ends, as a hold does, then answers that it still waits.
+func (s *recSession) ToolCall(ctx context.Context, tool string, args []byte) daemon.MCPVerdict {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.calls = append(s.calls, tool)
 	s.seen = append(s.seen, tool, string(args))
-	if rule, ok := s.deny[tool]; ok {
+	rule, denied := s.deny[tool]
+	held := s.held[tool]
+	s.mu.Unlock()
+	switch {
+	case held:
+		<-ctx.Done()
+		return daemon.MCPVerdict{Message: "still waiting (approval 9f97)", Rule: rule, Held: true}
+	case denied:
 		return daemon.MCPVerdict{Message: "not allowed", Rule: rule}
 	}
 	return daemon.MCPVerdict{Allowed: true}
@@ -74,6 +87,30 @@ func (s *recSession) Record(_ context.Context, activity string, attrs map[string
 	}
 }
 
+func (s *recSession) Mask(text string) (string, []string, int, error) {
+	if s.mask == nil {
+		return text, nil, 0, nil
+	}
+	return s.mask(text)
+}
+
+func (s *recSession) RecordMasked(_ context.Context, entities []string, count int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recordErr != nil {
+		return s.recordErr
+	}
+	sorted := slices.Sorted(slices.Values(entities))
+	s.masked = append(s.masked, fmt.Sprintf("%s:%d", strings.Join(slices.Compact(sorted), ","), count))
+	return nil
+}
+
+func (s *recSession) maskedRecords() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.masked...)
+}
+
 func (s *recSession) Close(context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -95,18 +132,21 @@ func (s *recSession) everything() string {
 
 // testLane opens one recSession per MCP session.
 type testLane struct {
-	mu       sync.Mutex
-	deny     map[string]string
-	hide     map[string]bool
-	sessions []*recSession
-	callers  []daemon.MCPCaller
+	mu        sync.Mutex
+	deny      map[string]string
+	hide      map[string]bool
+	held      map[string]bool
+	mask      func(string) (string, []string, int, error)
+	recordErr error
+	sessions  []*recSession
+	callers   []daemon.MCPCaller
 }
 
 func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSession, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callers = append(l.callers, c)
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, held: l.held, mask: l.mask, recordErr: l.recordErr}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -472,6 +512,26 @@ func TestARuleDenialIsAToolError(t *testing.T) {
 	}
 }
 
+// A held call answers as a tool error that says it is held, and the lane's
+// RequestTimeout ends the wait.
+func TestAHeldCallAnswersWithinTheRequestTimeout(t *testing.T) {
+	ln := &testLane{deny: map[string]string{"delete_customer": "tools"}, held: map[string]bool{"delete_customer": true}}
+	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
+	t.Cleanup(up.Close)
+	_, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
+		Transport: daemon.MCPTransportStreamableHTTP, Open: ln.open, RequestTimeout: 200 * time.Millisecond})
+	c := &client{url: url, hc: &http.Client{Timeout: 30 * time.Second}}
+	c.init(t)
+	start := time.Now()
+	body := c.call(t, 3, "delete_customer", `{"id":"7"}`)
+	if !strings.Contains(body, `"isError":true`) || !strings.Contains(body, "held for approval by the hoop sidecar (rule tools): still waiting (approval 9f97)") {
+		t.Fatalf("held call: %s", body)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("the held call answered after %s, past the lane's request timeout", d)
+	}
+}
+
 // One sidecar session per MCP session, closed when the client ends it.
 func TestOneSidecarSessionPerMCPSession(t *testing.T) {
 	ln := &testLane{}
@@ -522,14 +582,15 @@ func (r *recRecorder) count(msg string) int {
 // mcpproxy's observer feeds the lane's telemetry by method, tool and
 // decision, and every refusal reaches the lane's denied count, mcpproxy's
 // own included. A tool the upstream did not list, a call refused as invalid
-// params and a method MCP does not define are counted as (other).
+// params and a method MCP does not define are counted as (other). Invalid
+// params are refused before the budget, so they spend none of it.
 func TestTheObserverCountsMessagesByToolAndDecision(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}, hide: map[string]bool{"delete_customer": true}}
 	rec := &recRecorder{}
 	up := httptest.NewServer(testupstream.Handler(testupstream.NewServer("")))
 	t.Cleanup(up.Close)
 	srv, url := serveLane(t, daemon.MCPGatewayLane{Name: "u", Listen: "127.0.0.1:0", Upstream: up.URL + "/mcp",
-		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 4}, Open: ln.open, Telemetry: rec})
+		Transport: daemon.MCPTransportStreamableHTTP, Policy: daemon.MCPGatewayConfig{MaxCallsPerSession: 3}, Open: ln.open, Telemetry: rec})
 	c := &client{url: url}
 	c.init(t)
 	c.list(t)
@@ -864,4 +925,36 @@ func TestARefusedRequestClosesItsConnection(t *testing.T) {
 	if _, err := r.ReadByte(); err != io.EOF {
 		t.Fatalf("the connection stayed open after a refusal: %v", err)
 	}
+}
+
+// The daemon reads a non-nil Addr as proof of the bind, and closes a lane a
+// reload gave up on: Addr is nil until Serve binds, and a Serve that runs
+// after Close binds nothing.
+func TestALaneClosedBeforeServeDoesNotBind(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := probe.Addr().String()
+	probe.Close()
+
+	srv, err := mcpgateway.Build(daemon.MCPGatewayLane{Name: "u", Listen: addr,
+		Upstream: "http://127.0.0.1:1/mcp", Transport: daemon.MCPTransportStreamableHTTP})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := srv.Addr(); a != nil {
+		t.Fatalf("Addr = %v before Serve bound", a)
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Serve(context.Background()); err != nil {
+		t.Fatalf("Serve after Close = %v, want nil", err)
+	}
+	held, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("the closed lane holds its port: %v", err)
+	}
+	held.Close()
 }

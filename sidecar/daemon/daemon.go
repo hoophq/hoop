@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,7 +57,7 @@ import (
 	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
-// Version is the release this process reports: the admin /stats endpoint,
+// Version is the release this process reports: the admin API /stats endpoint,
 // the -version flag, the control plane handshake and the User-Agent of every
 // outbound HTTP call. The shipped binary is `hoop start sidecar`, which sets
 // it to the hoop release the binary was built from, so the sidecar and the
@@ -93,6 +94,7 @@ type setupOptions struct {
 	entrypoint      string
 	deprecatedAlias bool
 	localReviewer   LocalReviewer
+	localFirst      []string
 	planeURL        string
 	firstRun        FirstRunObserver
 }
@@ -191,6 +193,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
 	cfg.localReviewer = o.localReviewer
+	cfg.localReviewerFirst = o.localFirst
 	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
@@ -228,8 +231,6 @@ const (
 	PlaneLicenseSource = "the control plane"
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
-	// adminLicenseSource names a license installed through PUT /license.
-	adminLicenseSource = "the admin API"
 )
 
 // setConfigFormat records the format of the document that is AUTHORITATIVE
@@ -622,6 +623,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkHealthListen(cfg, strings.TrimSpace(os.Getenv(HealthListenEnv))); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs
@@ -699,9 +703,6 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
-			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
-				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
-			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -916,6 +917,10 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
+	healthAddr := strings.TrimSpace(os.Getenv(HealthListenEnv))
+	if err := checkHealthListen(cfg, healthAddr); err != nil {
+		return err
+	}
 	if cfg.MCP != nil && cfg.cp == nil {
 		// checkMCP accepts a plane the file only names, which is right for
 		// -validate. A running process must hold the connection itself.
@@ -1019,19 +1024,6 @@ func Run(cfg *Config, det Plugin) error {
 	// Every gate on every lane counts into it, keyed by protocol.
 	tel := newTelemetry(cfg, log)
 	defer tel.close()
-	for i := range lanes {
-		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
-		// One recorder per lane for the process's life: a reload swaps
-		// rules into the servers built below, which keep theirs.
-		lanes[i].telemetry = otel.lane(lanes[i].name, lanes[i].cfg.Protocol)
-	}
-
-	// Before any listener binds: a lane that cannot read its tokens stops
-	// startup with an error naming the file.
-	tokenFiles, err := openCallerTokens(lanes, log)
-	if err != nil {
-		return err
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
@@ -1046,81 +1038,29 @@ func Run(cfg *Config, det Plugin) error {
 	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
 	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
-	// Two server SHAPES, one loop of lane facts. A relay lane pumps bytes
-	// through a Gate and runs proxy.Server; an ENDPOINT lane terminates the
-	// protocol itself and runs the one libhoop built — the grpc transport
-	// (ADR-0013) or the ssh endpoint (ADR-0015). The two endpoints share an
-	// interface rather than a slice each, so adding the third protocol that
-	// terminates in-process does not mean a fourth pair of slices to keep
-	// in lockstep here, in the error fan-in, in the shutdown loop and in
-	// the stats zip. The stats zip pairs a server with a name by index, so
-	// each pair must stay in lockstep.
-	servers := make([]*proxy.Server, 0, len(lanes))
-	relayNames := make([]string, 0, len(lanes))
-	var endpoints []endpointServer
-	var endpointNames []string
-	// relayProtocols and endpointProtocols ride beside the names, for the
-	// telemetry snapshot: a metric is keyed by lane AND protocol.
-	relayProtocols := make([]string, 0, len(lanes))
-	var endpointProtocols []string
-	// statSources pairs every server with its lane's protocol, so usage
-	// can report connections per protocol without naming a lane.
-	statSources := make([]statSource, 0, len(lanes))
+	// A relay lane pumps bytes through a Gate and runs proxy.Server; an
+	// endpoint lane terminates the protocol itself and runs the server
+	// libhoop built: the grpc transport (ADR-0013) or the ssh endpoint
+	// (ADR-0015). Both shapes register in one laneSet, which /stats,
+	// /readyz, the usage ticker and the shutdown loop read, and which a
+	// reload that adds or removes a listener grows and shrinks. The
+	// runtime is the one build path startup and reload share. This loop
+	// builds every lane without binding; the loop below starts them, so a
+	// lane that cannot be built (a token file it cannot read, an engine
+	// this build did not link) stops startup before any socket opens.
+	rt := &laneRuntime{cfg: cfg, sink: auditSink, tel: tel, otel: otel, log: log,
+		set: &laneSet{}, tokens: &tokenWatch{}}
+	built := make([]runningLane, 0, len(lanes))
 	// swappers are the reload targets, one per lane of either shape.
 	swappers := make(map[string]ruleSwapper, len(lanes))
-	for _, ln := range lanes {
-		switch {
-		case isGRPCTransport(ln.cfg):
-			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, cfg.reviewSettler(log), log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, gsrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
-			swappers[ln.name] = rules
-		case isSSH(ln.cfg):
-			ssrv, rules, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, ssrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
-			swappers[ln.name] = rules
-		case isICA(ln.cfg):
-			isrv, rules, serr := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, isrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
-			swappers[ln.name] = rules
-		case isMCPGateway(ln.cfg):
-			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
-			if serr != nil {
-				return serr
-			}
-			endpoints = append(endpoints, msrv)
-			endpointNames = append(endpointNames, ln.name)
-			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
-			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
-		default:
-			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
-			if serr != nil {
-				return serr
-			}
-			servers = append(servers, srv)
-			relayNames = append(relayNames, ln.name)
-			relayProtocols = append(relayProtocols, ln.cfg.Protocol)
-			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
-			swappers[ln.name] = relayRules{srv}
+	for i := range lanes {
+		rl, serr := rt.build(&lanes[i])
+		if serr != nil {
+			return serr
 		}
+		built = append(built, rl)
+		swappers[rl.name] = rl.rules
+		ln := lanes[i]
 
 		// One line per lane naming what it enforces. The config file does not
 		// show what a lane inherited, so this logs the RESOLVED stack: it turns
@@ -1159,20 +1099,15 @@ func Run(cfg *Config, det Plugin) error {
 	// the config generation, the plane copy's drop count. Read on every
 	// export from the same sources /stats renders, so the two agree.
 	otel.observe(func() telem.ProcessSnapshot {
+		running := rt.set.snapshot()
 		snap := telem.ProcessSnapshot{
-			Lanes:            make([]telem.LaneStats, 0, len(servers)+len(endpoints)),
+			Lanes:            make([]telem.LaneStats, 0, len(running)),
 			ConfigGeneration: int64(view.Load().gen),
 		}
-		for i, s := range servers {
-			active, total, _ := s.Stats()
+		for _, l := range running {
+			active, total, _ := l.stats()
 			snap.Lanes = append(snap.Lanes, telem.LaneStats{
-				Lane: relayNames[i], Protocol: relayProtocols[i], Active: active, Total: total,
-			})
-		}
-		for i, s := range endpoints {
-			active, total, _ := s.Stats()
-			snap.Lanes = append(snap.Lanes, telem.LaneStats{
-				Lane: endpointNames[i], Protocol: endpointProtocols[i], Active: active, Total: total,
+				Lane: l.name, Protocol: l.protocol, Active: active, Total: total,
 			})
 		}
 		if ac.events != nil {
@@ -1183,16 +1118,50 @@ func Run(cfg *Config, det Plugin) error {
 		return snap
 	})
 
-	// The reloader swaps rule-only drift into the servers built above and
-	// keeps the restart log for everything else (ADR-0014). One source
-	// feeds it per process: the plane's heartbeat, or the config file's
-	// watcher. Both share the run context, so shutdown stops them with
-	// everything else.
+	// The reloader swaps rule-only drift into the servers built above,
+	// starts and stops the lanes a document adds and removes, and keeps
+	// the restart log for everything else (ADR-0014). One source feeds it
+	// per process: the plane's heartbeat, or the config file's watcher.
+	// Both share the run context, so shutdown stops them with everything
+	// else.
 	rl, rerr := newReloader(cfg, lanes, swappers, det, analyzerDeps, view, licState)
 	if rerr != nil {
 		return rerr
 	}
 	rl.tel = tel
+	rl.rt = rt
+
+	// The serve side is set and the startup lanes are in the registry
+	// before a reload source starts below: a document that adds a listener
+	// uses wg and fail, and one that removes a listener must find it.
+	//
+	// errCh carries the first failure. fail drops later ones, which the
+	// lane that hit them has logged; a reload can grow the lane count, so
+	// the channel cannot be sized to it.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
+	fail := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
+	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
+	for i, b := range built {
+		if serr := rt.start(b); serr != nil {
+			// fail reports it through the channel a Serve failure uses, so
+			// the select below runs the one shutdown path. start closed
+			// this lane; the lanes not started yet hold no socket, and
+			// close releases an engine among them.
+			log.Error("listener failed", "listener", b.name, "error", serr)
+			fail(serr)
+			for _, rest := range built[i+1:] {
+				_ = rest.close()
+			}
+			break
+		}
+	}
+
 	switch {
 	case cfg.cp != nil:
 		log.Info("control plane connected",
@@ -1231,27 +1200,35 @@ func Run(cfg *Config, det Plugin) error {
 			"hint", "send SIGHUP to re-read it now")
 	}
 	go rl.watchFile(ctx, log)
-	if len(tokenFiles) > 0 {
-		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
-	}
+	go watchCallerTokens(ctx, log, rt.tokens, fileWatchEvery)
 
-	adminSecret := os.Getenv(AdminSecretEnv)
-	if cfg.Admin.Listen != "" {
+	var runAdmin func() error
+	if cfg.Admin.Listen != "" || cfg.Admin.APIListen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log, cfg.Admin.ICAReadinessJSON)
-	} else if strings.TrimSpace(adminSecret) != "" {
-		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
-			"hint", "set admin.listen to install a license through the admin API")
+		runAdmin = func() error {
+			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, rt.set,
+				view, ac, analyzerCfg, am, licState, otel, log, icaReadinessJSONFor(cfg))
+		}
+	}
+	// PUT /license is gone. An operator who still sets its secret expects a
+	// way to install a license, so say where it went instead of ignoring it.
+	if strings.TrimSpace(os.Getenv(removedAdminSecretEnv)) != "" {
+		log.Warn(removedAdminSecretEnv+" is set, but PUT /license was removed; the variable does nothing",
+			"hint", "replace the license file the license source names, set HOOP_LICENSE and restart, or set it in the control plane")
+	}
+	if cfg.Admin.Listen != "" && cfg.Admin.APIListen == "" {
+		log.Info("admin read routes are off: /stats, /metrics, /config, /events and /api/* answer only on admin.api_listen",
+			"hint", "set admin.api_listen to serve them; they have no authentication")
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
-	// the series closes on the last window. Lanes come from the view so a
-	// reload's new analyzer instances are the ones read.
-	usage := func() { tel.trackUsage(statSources, view.Load().lanes) }
+	// the series closes on the last window. usage reads both inputs per
+	// window: the registry for the lanes a reload added since, the view
+	// for the analyzer instances it swapped in.
+	usage := func() { tel.trackUsage(rt.set.statSources, view.Load().lanes) }
 	go func() {
 		t := time.NewTicker(usageEvery)
 		defer t.Stop()
@@ -1264,29 +1241,6 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}
 	}()
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints)+1)
-	for i, srv := range servers {
-		wg.Add(1)
-		go func(s *proxy.Server, name string) {
-			defer wg.Done()
-			if serr := s.Serve(ctx); serr != nil {
-				log.Error("listener failed", "listener", name, "error", serr)
-				errCh <- serr
-			}
-		}(srv, relayNames[i])
-	}
-	for i, srv := range endpoints {
-		wg.Add(1)
-		go func(s endpointServer, name string) {
-			defer wg.Done()
-			if serr := s.Serve(ctx); serr != nil {
-				log.Error("listener failed", "listener", name, "error", serr)
-				errCh <- serr
-			}
-		}(srv, endpointNames[i])
-	}
 	if cfg.MCP != nil {
 		// checkMCP proved a server is linked, and the check above that
 		// cfg.cp is set.
@@ -1298,7 +1252,30 @@ func Run(cfg *Config, det Plugin) error {
 			// operator who configured the block expects agents to reach it.
 			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
 				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
-				errCh <- serr
+				fail(serr)
+			}
+		}()
+	}
+	if runAdmin != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A bind failure stops the process: healthy probes on
+			// admin.listen must not hide read routes that never started.
+			if serr := runAdmin(); serr != nil {
+				log.Error("admin endpoint failed", "error", serr)
+				fail(serr)
+			}
+		}()
+	}
+	if addr := healthAddr; addr != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h := healthState{rt.set, icaReadinessJSONFor(cfg)}
+			if serr := serveHealth(ctx, addr, h, log); serr != nil {
+				log.Error("health endpoint failed", "listen", addr, "error", serr)
+				fail(serr)
 			}
 		}()
 	}
@@ -1324,21 +1301,7 @@ func Run(cfg *Config, det Plugin) error {
 		tel.trackLicenseExpired(cfg, licState)
 		cancel()
 	}
-	for _, srv := range servers {
-		_ = srv.Close()
-	}
-	// Endpoint lanes close together: an ica lane's Close drains its sessions
-	// for up to 30s, and closing lanes one after another would add those
-	// windows up past the pod's termination grace period.
-	var closing sync.WaitGroup
-	for i, srv := range endpoints {
-		closing.Go(func() {
-			if cerr := srv.Close(); cerr != nil {
-				log.Warn("listener close failed", "listener", endpointNames[i], "error", cerr)
-			}
-		})
-	}
-	closing.Wait()
+	rt.set.closeAll(log)
 	wg.Wait()
 	close(errCh)
 
@@ -1392,6 +1355,11 @@ type lane struct {
 	name   string
 	policy policy.Evaluator
 	masker gate.Masker
+
+	// maskScope ties a mask the lane's analyzer applies to one statement
+	// to its response (ENG-662); none on a lane whose analyzer masks no
+	// response. See laneMaskScope.
+	maskScope gate.MaskScope
 
 	// codecFactory overrides the registry for this lane. Nil means the
 	// registry default: every non-http lane that did not configure its
@@ -1503,12 +1471,33 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if why := holdRefusal(cfg, lc.Analyzer, ac); why != "" {
+		if why := holdRefusal(cfg, name, lc.Analyzer, ac); why != "" {
 			problems = append(problems, name+": "+why)
 			continue
 		}
 
-		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
+		// The block's AI rule options resolve against rule_library on a
+		// copy, so the config keeps what was written.
+		la := lc.Analyzer
+		var aiNotes []string
+		if la != nil {
+			var logger *slog.Logger
+			if ac != nil {
+				logger = ac.log
+			}
+			ai, notes, err := buildLaneAIRules(cfg.RuleLibrary, la, lc, det, logger)
+			if err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
+			if ai != nil {
+				resolved := *la
+				resolved.ai = ai
+				la = &resolved
+			}
+			aiNotes = notes
+		}
+		pol, err := buildPolicy(name, gc, la, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1523,12 +1512,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		// An mcp lane masks nothing yet: inherited rules are accepted and
-		// Validate notes them, so one mask block can serve every lane.
-		var masker gate.Masker
-		if !isMCPGateway(lc) {
-			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		var skippedMask []string
+		if isMCPGateway(lc) {
+			mc, skippedMask = mcpMask(lc, mc)
 		}
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1544,6 +1532,10 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+			maskScope:    laneMaskScope(lc),
+		}
+		for _, rule := range skippedMask {
+			ln.notes = append(ln.notes, fmt.Sprintf("mcp: top-level %s names columns and does not apply to lane %q", rule, name))
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1599,11 +1591,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
+		holdWait := analyzer.ReviewWait
+		if isMCPGateway(lc) {
+			holdWait = mcpHoldWait
+		}
 		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
-			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
+			time.Duration(lc.IdleTimeoutSec)*time.Second < holdWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
-					"approval wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+					"approval wait does", lc.IdleTimeoutSec, holdWait))
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
@@ -1653,6 +1649,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if lc.Analyzer != nil {
 			ln.notes = append(ln.notes,
 				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
+			// What the AI rule options do not do, said where -validate
+			// and the startup log read them; none of them refuses the lane.
+			ln.notes = append(ln.notes, aiNotes...)
+			// What the approvers routing settings do not do; none refuses.
+			ln.notes = append(ln.notes, LaneApproverWarnings(lc.Analyzer)...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {
@@ -1777,6 +1778,7 @@ func buildServer(
 		Policy:              ln.policy,
 		Audit:               sink,
 		Masker:              ln.masker,
+		MaskScope:           ln.maskScope,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
 		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),
@@ -1848,7 +1850,7 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchem
 					"cannot rebuild a response; remove the rules from this lane, or set "+
 					"mask: {rules: []} on it", proto)
 		}
-	case !gate.MaskSupported(proto):
+	case !maskSupported(proto):
 		return nil, fmt.Errorf(
 			"mask.rules is set but masking is not supported on %s; remove the rules from "+
 				"this lane, or set mask: {rules: []} on it", proto)
@@ -1963,59 +1965,86 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 	return out, nil
 }
 
-// serveAdmin exposes health and stats.
+// serveAdmin runs the admin listeners. Both bind separately from the data
+// path, so a platform can probe or scrape them without reaching the proxy,
+// and vice versa.
 //
-// It binds separately from the data path so a platform can scrape it without
-// reaching the proxy, and vice versa.
+// addr (admin.listen) serves /healthz, /readyz and the token-gated ICA
+// drain, and no audit data or lane rules. apiAddr (admin.api_listen) serves
+// the unauthenticated read routes. Either is skipped when empty.
+//
+// Both bind before either serves, and a bind or serve failure is returned:
+// probes that answer must not hide read routes that never started.
 func serveAdmin(
 	ctx context.Context,
 	addr string,
-	servers []*proxy.Server,
-	relayNames []string,
-	endpoints []endpointServer,
-	endpointNames []string,
+	apiAddr string,
+	lanes *laneSet,
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	otel *otelExporter,
-	licenseAPI http.Handler,
 	log *slog.Logger,
 	icaReadinessJSON bool,
-) {
+) error {
+	var probesLn, apiLn net.Listener
+	if addr != "" {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("admin listener (admin.listen): %w", err)
+		}
+		probesLn = ln
+	}
+	if apiAddr != "" {
+		ln, err := net.Listen("tcp", apiAddr)
+		if err != nil {
+			if probesLn != nil {
+				_ = probesLn.Close()
+			}
+			return fmt.Errorf("admin API listener (admin.api_listen): %w", err)
+		}
+		apiLn = ln
+	}
+
+	probes := http.NewServeMux()
+	handleHealth(probes, healthState{lanes, icaReadinessJSON})
+
+	// The one write here is the ICA deployment drain. It has its own token
+	// and is off unless the operator sets it: every read route is
+	// unauthenticated, and a write must not be.
+	probes.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), lanes))
+
+	// Releases up to 1.306 served the read routes here. A scraper still
+	// pointed at this port gets a 404 that says where they went, rather than
+	// a bare one it might mistake for a typo.
+	moved := func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "moved: this route is served on admin.api_listen, which is off unless set", http.StatusNotFound)
+	}
+	for _, p := range []string{"GET /stats", "GET /metrics", "GET /config", "GET /events", "/api/"} {
+		probes.HandleFunc(p, moved)
+	}
+
+	errs := make(chan error, 2)
+	serving := 0
+	if probesLn != nil {
+		serving++
+		go func() { errs <- serveHTTP(ctx, "admin endpoint", probesLn, probes, log) }()
+	}
+	wait := func() error {
+		for range serving {
+			if err := <-errs; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if apiLn == nil {
+		return wait()
+	}
+
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	})
-
-	// License writes require their own secret. ICA deployment drain below has a
-	// separate token and is disabled by default. licenseHandler refuses it unless the
-	// operator set AdminSecretEnv, and then asks for that secret: every
-	// read here is unauthenticated, and a write must not be.
-	mux.Handle("PUT /license", licenseAPI)
-	mux.Handle("POST /v1/drain", icaDrainHandler(os.Getenv(ICADeployTokenEnv), endpoints, len(servers)))
-
-	// An ica lane's engine loads a model and starts OCR workers after the
-	// socket binds, which can take minutes, and the engine refuses
-	// connections until then. /readyz reports that, separate from
-	// /healthz; other lanes are ready once bound, so it returns 200 for them.
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if icaReadinessJSON {
-			writeICAReadiness(w, endpoints, len(servers))
-			return
-		}
-		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ready")
-	})
-
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {
 			Name   string `json:"name"`
@@ -2024,29 +2053,18 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		out := make([]stat, 0, len(servers)+len(endpoints))
-		for i, s := range servers {
-			active, total, denied := s.Stats()
+		// The registry lists a lane a reload added and drops one it
+		// removed; the startup slices would show neither.
+		running := lanes.snapshot()
+		out := make([]stat, 0, len(running))
+		for _, l := range running {
+			active, total, denied := l.stats()
 			a := ""
-			if s.Addr() != nil {
-				a = s.Addr().String()
-			}
-			// servers and relayNames are built in lockstep from the relay
-			// listeners, so the index is the join. Endpoint lanes are
-			// appended below from their own lockstep slices.
-			out = append(out, stat{
-				Name: relayNames[i], Addr: a,
-				Active: active, Total: total, Denied: denied,
-			})
-		}
-		for i, s := range endpoints {
-			active, total, denied := s.Stats()
-			a := ""
-			if s.Addr() != nil {
-				a = s.Addr().String()
+			if addr := l.addr(); addr != nil {
+				a = addr.String()
 			}
 			out = append(out, stat{
-				Name: endpointNames[i], Addr: a,
+				Name: l.name, Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}
@@ -2160,7 +2178,7 @@ func serveAdmin(
 			// A plug-in lane's answer is its module's; the view does not
 			// build a codec to ask, so it says nothing, since a guess could
 			// be wrong.
-			if !v.Masking && !isPluginLane(ln.cfg) && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
+			if !v.Masking && !isPluginLane(ln.cfg) && !maskSupported(inspect.Protocol(ln.cfg.Protocol)) {
 				v.MaskNote = "masking is not supported on this protocol"
 			}
 			out = append(out, v)
@@ -2227,11 +2245,11 @@ func serveAdmin(
 	}
 
 	// The query API: the endpoints a UI renders. Mounted under /api so the
-	// operational endpoints above (/healthz, /stats) stay stable and
+	// operational endpoints above (/stats, /metrics) stay stable and
 	// separately scrapeable.
 	//
-	// It sits on the ADMIN listener by design. This is a read interface to
-	// every statement every user ran; it belongs behind whatever already
+	// It sits on the admin API listener by design. This is a read interface
+	// to every statement every user ran; it belongs behind whatever already
 	// decides who may see audit data, and the data-path ports must never
 	// serve it.
 	if ac.query != nil {
@@ -2242,9 +2260,15 @@ func serveAdmin(
 			"paths", "/api/sessions, /api/sessions/{id}, /api/sessions/{id}/events, /api/events, /api/stats")
 	}
 
+	serving++
+	go func() { errs <- serveHTTP(ctx, "admin API endpoint", apiLn, mux, log) }()
+	return wait()
+}
+
+// serveHTTP serves handler on ln until ctx ends, and returns a serve failure.
+func serveHTTP(ctx context.Context, name string, ln net.Listener, handler http.Handler, log *slog.Logger) error {
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -2254,8 +2278,9 @@ func serveAdmin(
 		_ = srv.Shutdown(shutCtx)
 	}()
 
-	log.Info("admin endpoint listening", "listen", addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("admin endpoint failed", "error", err)
+	log.Info(name+" listening", "listen", ln.Addr().String())
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("%s: %w", name, err)
 	}
+	return nil
 }

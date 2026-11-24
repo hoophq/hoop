@@ -85,7 +85,7 @@ c_step "Ready"
 cat <<'EOF'
   Verify:      sidecar/scripts/dev/mssql2019-check.sh
   A session:   sidecar/scripts/dev/mssql2019-stack.sh sql
-  Audit API:   curl -s localhost:19001/api/sessions | jq
+  Audit API:   curl -s localhost:19003/api/sessions | jq
   Tear down:   sidecar/scripts/dev/mssql2019-stack.sh down
 
   The lane, by hand:

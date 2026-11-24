@@ -121,8 +121,10 @@ type model struct {
 	// runs on its own; approvals are then decided there. openURL opens a
 	// link in the browser, and cpFlash says what the last open did.
 	controlPlane string
-	openURL      func(string) error
-	cpFlash      string
+	// localApprovals: Approvals stay here although controlPlane is set.
+	localApprovals bool
+	openURL        func(string) error
+	cpFlash        string
 }
 
 // reviewsURL is where the control plane shows the approval requests this
@@ -228,6 +230,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Attrs: []Attr{{"approval", lr.ID}, {"listener", lr.Listener}}})
 			}
 		}
+		if m.tour != nil {
+			m.tour.setHeld(len(m.tourPending()) > 0)
+		}
 		return m, nil
 	case droppedMsg:
 		m.dropped = int64(msg)
@@ -278,11 +283,20 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.tab == tabTour && m.tour != nil {
+		// enter opens the decision the AI step waits on, without leaving
+		// the tour. Not a: in the dialog a approves, so a double press
+		// would release a statement nobody read.
+		if (k.String() == "enter" || k.String() == "space") && m.tour.held {
+			if p := m.tourPending(); len(p) > 0 {
+				m.openModal(p[0])
+				return m, nil
+			}
+		}
 		if cmd, used := m.tour.key(k); used {
 			return m, cmd
 		}
 	}
-	if m.tab == tabReviews && m.controlPlane != "" {
+	if m.tab == tabReviews && m.planeApprovals() {
 		link := reviewsURL(m.controlPlane)
 		switch k.String() {
 		case "o":

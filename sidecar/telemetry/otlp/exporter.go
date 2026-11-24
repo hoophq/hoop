@@ -322,11 +322,13 @@ func (e *Exporter) buildInstruments() error {
 
 // Lane returns the lane's recorder, building it on first call. A reload
 // asks again by the same name and gets the same recorder, so its counters
-// continue.
+// continue. A name that comes back under another protocol (a listener
+// removed, then added again) gets a new recorder: the old one carries the
+// old protocol attribute.
 func (e *Exporter) Lane(name, protocol string) telemetry.LaneRecorder {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if l, ok := e.lanes[name]; ok {
+	if l, ok := e.lanes[name]; ok && l.protocol == protocol {
 		return l
 	}
 	l := newLane(e, name, protocol)

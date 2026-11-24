@@ -155,6 +155,45 @@ export function normalizeEntityName(name) {
     .replace(/[^A-Z0-9_]/g, '')
 }
 
+// The protocol of each target listener, '' for one its sidecar does not list.
+export function targetProtocols(targets, sidecars) {
+  const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
+  return targets.map((t) => {
+    const lane = byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
+    return (lane?.protocol ?? '').toLowerCase()
+  })
+}
+
+// The rules a save sends, or the form error that stops it. A rule with only
+// custom entity types has no entity group: its one rule row stays blank, and
+// the API refuses a group with no entity types.
+export function rulesToSave(rules, customEntities) {
+  const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
+  if (half !== -1) return { error: `Custom entity ${half + 1} needs a name and a regex, or remove it.` }
+  const hasCustom = customEntities.some((c) => c.name.trim() !== '')
+  const unnamed = rules.findIndex((r) => r.name.trim() === '' && (r.entities.length > 0 || r.columns.length > 0))
+  if (unnamed !== -1) return { error: `Rule ${unnamed + 1} needs a name, or remove it.` }
+  const named = rules.filter((r) => r.name.trim() !== '')
+  if (named.length === 0 && !hasCustom) return { error: 'Give every rule a name, or remove it.' }
+  const empty = named.find((r) => (r.match === 'columns' ? r.columns : r.entities).length === 0)
+  if (empty) {
+    const what = empty.match === 'columns' ? 'a column' : 'an entity type'
+    return { error: `Rule ${rules.indexOf(empty) + 1} needs ${what}, or remove it.` }
+  }
+  return { rules: named }
+}
+
+export const MATCHES = [
+  { value: 'entities', label: 'Detected entities' },
+  { value: 'columns', label: 'Result-set columns' },
+]
+
+export const NO_COLUMNS_ON_MCP = 'An MCP listener has no result-set columns, so it masks by detected entities only.'
+
+// The plane refuses a column rule bound to an mcp listener.
+export const matchOptions = (mcpBound) =>
+  mcpBound ? MATCHES.map((m) => (m.value === 'columns' ? { ...m, disabled: true } : m)) : MATCHES
+
 export function scoreToPercent(scoreThreshold) {
   if (scoreThreshold === null || scoreThreshold === undefined) return ''
   return Math.round(scoreThreshold * 100)

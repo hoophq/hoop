@@ -119,6 +119,13 @@ type Config struct {
 	// stays out via the analyzer registry, not via an opaque section.
 	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
 
+	// RuleLibrary holds the existing Guardrails and Data Masking rules an
+	// analyzer risk level may let the AI apply (ENG-662). They never run
+	// unless the AI applies one to a statement: the rules a listener
+	// attaches keep running as before. A config file writes them here; the
+	// control plane serves here the rules the levels select.
+	RuleLibrary *RuleLibrary `json:"rule_library,omitempty" cap:"analyzer_ai_rules"`
+
 	// Trust adds CA certificates to the host trust store for every outbound
 	// TLS client this process builds. See TrustConfig. Absent is the host
 	// trust store alone, which is every config written before the key.
@@ -216,6 +223,11 @@ type Config struct {
 	// localReviewer files held statements with whoever runs this process,
 	// when it has no control plane. WithLocalReviewer fills it; see there.
 	localReviewer LocalReviewer
+
+	// localReviewerFirst names the listeners whose human holds go to
+	// localReviewer even with a control plane. WithLocalReviewerFirst sets
+	// it; see there.
+	localReviewerFirst []string
 
 	// entrypoint, deprecatedAlias and configFormat are facts the entry
 	// point learned about its own invocation, carried here so Run can
@@ -847,12 +859,37 @@ func (a AuditConfig) failOpen() bool { return a.FailOpen != nil && *a.FailOpen }
 // lane the reverse of the operator's posture with nothing failing.
 func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 
-// AdminConfig configures the health/stats endpoint.
+// AdminConfig configures the admin listeners.
+//
+// Listen serves the probes (/healthz, /readyz) and the token-gated ICA drain
+// (POST /v1/drain): nothing on it reads audit data or
+// rules. APIListen serves the unauthenticated read routes (/stats, /metrics,
+// /config, /events, /api/*) and is off unless set, because anything that
+// reaches it reads the audit trail and each lane's rules.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
+	// APIListen is where the read routes bind. Empty turns them off.
+	APIListen string `json:"api_listen,omitempty" cap:"admin_api_listen"`
 	// ICAReadinessJSON lets an external relay require explicit live engine
 	// inspection attestation. Default keeps the existing plaintext /readyz API.
 	ICAReadinessJSON bool `json:"ica_readiness_json,omitempty" cap:"ica_readiness_json"`
+}
+
+// validate refuses an api_listen that is not host:port or that shares the
+// probe listener's address: the two are separate servers, so one would fail
+// to bind.
+func (a AdminConfig) validate() []string {
+	if a.APIListen == "" {
+		return nil
+	}
+	ah, ap, ok := listenHostPort(a.APIListen)
+	if !ok {
+		return []string{fmt.Sprintf("admin.api_listen %q: want host:port with a port number", a.APIListen)}
+	}
+	if lh, lp, ok := listenHostPort(a.Listen); ok && lp == ap && sameBindHost(lh, ah) {
+		return []string{fmt.Sprintf("admin.api_listen %q binds the same port as admin.listen %q; pick another port", a.APIListen, a.Listen)}
+	}
+	return nil
 }
 
 // LoadConfig reads and validates a config file.
@@ -1379,8 +1416,13 @@ func (c *Config) validate(onHost bool) error {
 	// limit its license lifts. buildLanes is the single site instead.
 
 	problems = append(problems, c.MCP.validate()...)
+	problems = append(problems, c.RuleLibrary.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
+	if c.ICA != nil && c.ICA.DiagnosticRecording != nil && !c.Admin.ICAReadinessJSON {
+		problems = append(problems, "ica.diagnostic_recording requires admin.ica_readiness_json: true for truthful recording readiness")
+	}
 	problems = append(problems, c.Telemetry.Validate()...)
+	problems = append(problems, c.Admin.validate()...)
 	if c.Audit.QueryMaxBytes < 0 {
 		problems = append(problems, fmt.Sprintf("audit.query_max_bytes: %d is negative; omit it for the 64 MiB default", c.Audit.QueryMaxBytes))
 	}
@@ -1720,11 +1762,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	}
 	if isMCPGateway(lc) {
 		problems = append(problems, validateMCPGatewayLane(lc, name)...)
-		if lc.Mask != nil && lc.Mask.hasRules() {
-			problems = append(problems, name+": a mask block on an mcp listener does not apply yet; mask rules inherited from the top level are accepted and noted")
-		}
-		if lc.Analyzer != nil {
-			problems = append(problems, name+": analyzer does not apply to an mcp listener yet")
+		if lc.Mask != nil {
+			problems = append(problems, ValidateMCPMasking(*lc.Mask, name)...)
 		}
 	} else if lc.MCPGateway != nil {
 		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))
@@ -1879,7 +1918,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
 						"or set mask: {rules: []} on this lane.", name))
 			}
-		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !isMCPGateway(lc) && !gate.MaskSupported(p) {
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !maskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
 			// capability), and buildMasker asks it through the factory; the
 			// config alone cannot say, and the plane never loads one.
@@ -2121,6 +2160,16 @@ type analyzerDeps struct {
 	// when cp is nil. Held here for the same reason as cp: a reload that
 	// adds require_review to a lane gets a reviewer without a restart.
 	local LocalReviewer
+
+	// localFirst names the listeners that ask local before cp. Set only
+	// for the CLI's built-in demo; see filesLocally.
+	localFirst []string
+
+	// lanesFromPlane: the lanes this ac builds come from the plane's own
+	// document. Set at setup from the boot owner; cp.diskMode keeps that
+	// boot value, so a reload sets this on its staged copy, both ways.
+	// See filesLocally.
+	lanesFromPlane bool
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every

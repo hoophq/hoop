@@ -71,7 +71,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
         title="No rules in your organization yet"
         description={newRuleHint(newTraffics)}
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Session Analyzer Configuration"
+        docsLabel="AI Analyzer Configuration"
       />
     )
   }
@@ -89,10 +89,10 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
         action={
           providerConfigured
             ? { label: 'Create new rule', onClick: goCreate }
-            : { label: 'Configure AI Session Analyzer', onClick: onGoConfigure }
+            : { label: 'Configure AI Analyzer', onClick: onGoConfigure }
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Session Analyzer Configuration"
+        docsLabel="AI Analyzer Configuration"
       />
     )
   }

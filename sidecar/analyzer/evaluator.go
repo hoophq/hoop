@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,6 +19,11 @@ import (
 // call sits inline on a proxied connection, and a model that has not answered
 // in ten seconds has already cost more than its verdict is worth.
 const DefaultTimeout = 10 * time.Second
+
+// DefaultReviewTimeout is the least time one approval filing gets. The
+// control plane can run AI routing (up to 20 s) before it answers a filing
+// that opens a new review (ENG-663).
+const DefaultReviewTimeout = 30 * time.Second
 
 // DefaultMaxInputBytes bounds what is sent per statement.
 const DefaultMaxInputBytes = 8 << 10
@@ -139,12 +145,20 @@ func selectOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
 	if matchOperation(ops, stmt) {
 		return true
 	}
-	m := stmt.Metadata["http.sql_method"]
-	return m != "" && slices.Contains(ops, inspect.Operation(m))
+	if m := stmt.Metadata["http.sql_method"]; m != "" && slices.Contains(ops, inspect.Operation(m)) {
+		return true
+	}
+	return mcpSQLTool(stmt) != "" && slices.Contains(ops, inspect.OpCall)
 }
 
+// matchTable also matches SQL an mcp lane read out of a tool call by the
+// tool's name, which the call itself carries in Tables.
 func matchTable(tables []string, stmt inspect.Statement) bool {
+	tool := mcpSQLTool(stmt)
 	for _, want := range tables {
+		if tool != "" && strings.EqualFold(want, tool) {
+			return true
+		}
 		for _, got := range stmt.Tables {
 			if strings.EqualFold(want, got) {
 				return true
@@ -152,6 +166,15 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 		}
 	}
 	return false
+}
+
+// mcpSQLTool names the tool whose call carried stmt, when stmt is SQL an mcp
+// lane read out of its arguments.
+func mcpSQLTool(stmt inspect.Statement) string {
+	if _, ok := stmt.Metadata[inspect.MetadataMCPSQLIndex]; !ok {
+		return ""
+	}
+	return stmt.Metadata[inspect.MetadataMCPTool]
 }
 
 // matchResource matches an HTTP target: an HTTP statement's resource, or
@@ -223,9 +246,10 @@ type Config struct {
 	// not called: its hold denies, and policy.Observe records would_deny.
 	Observing bool
 
-	// RecordRedact rewrites the approval agent's and the hand-off agent's
-	// reasons before the audit record keeps them, with the build's detector
-	// whatever the send mode. Nil keeps no free text from either agent.
+	// RecordRedact rewrites the approval, hand-off and rule agents' prose
+	// (reasons, and the definitions and errors of AI rules) before the
+	// audit record keeps it, with the build's detector whatever the send
+	// mode. Nil keeps no free text from any of them.
 	RecordRedact func(string) string
 
 	// Trigger narrows what is classified. A zero Trigger classifies
@@ -248,6 +272,11 @@ type Config struct {
 
 	// Timeout bounds one classification. Zero uses DefaultTimeout.
 	Timeout time.Duration
+
+	// ReviewTimeout bounds one approval filing when it is longer than
+	// Timeout. Zero uses DefaultReviewTimeout. A claim or a settle keeps
+	// Timeout: only a filing waits for the plane's routing.
+	ReviewTimeout time.Duration
 
 	// MaxRetries is how many times a classification is re-sent after a
 	// retryable provider answer (408, 429, 500, 502, 503, 504). Zero sends
@@ -348,6 +377,29 @@ type Config struct {
 	// Such a level needs an entry here and a Provider that is a
 	// ToolCaller; an entry for a level with another action is refused.
 	Handoffs map[RiskLevel]Handoff
+
+	// Rules are the AI rule options per risk level (ENG-662): the
+	// guardrails and data masking rules the AI may apply to a statement it
+	// rated, or create for it. Valid on allow, warn, require_review and
+	// ai-handoff levels; New refuses an entry on any other action. Such
+	// a level needs a Provider that is a ToolCaller.
+	Rules map[RiskLevel]LevelRules
+
+	// CompileGuardrail compiles one guardrail, existing or AI-created, the
+	// way the lane compiles a config rule. Nil uses policy.NewRules, which
+	// refuses a pii rule.
+	CompileGuardrail func(policy.Rule) (policy.Evaluator, error)
+
+	// CompileMask compiles one data masking rule, existing or AI-created,
+	// the way the lane compiles a config rule. Required when a level has
+	// mask options.
+	CompileMask func(definition json.RawMessage) (policy.ResponseMask, error)
+
+	// OnRuleInvalid is told about every rule the AI created that failed
+	// validation, so the operator sees it beside the audit record. err is
+	// the error as the record keeps it (RecordRedact), never the raw one,
+	// which quotes the agent's arguments. Nil reports nothing.
+	OnRuleInvalid func(level RiskLevel, kind string, err error)
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -380,6 +432,9 @@ type Evaluator struct {
 
 	// pins keeps the hand-off decisions whose hold was filed.
 	pins *handoffPins
+	// ruleLevels is the runtime form of Config.Rules, per level with at
+	// least one rule tool.
+	ruleLevels map[RiskLevel]*ruleLevel
 
 	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
 	// constants read directly, so a test can shorten them; nothing outside
@@ -422,6 +477,9 @@ func New(cfg Config) (*Evaluator, error) {
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = DefaultTimeout
+	}
+	if cfg.ReviewTimeout <= 0 {
+		cfg.ReviewTimeout = DefaultReviewTimeout
 	}
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
@@ -495,6 +553,10 @@ func New(cfg Config) (*Evaluator, error) {
 			holds = true
 		}
 	}
+	ruleLevels, err := newRuleLevels(cfg, actions)
+	if err != nil {
+		return nil, err
+	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
 	budget := cfg.Budget
 	if budget == nil {
@@ -508,6 +570,7 @@ func New(cfg Config) (*Evaluator, error) {
 		agentPrompts: agentPrompts,
 		handoffs:     handoffs,
 		pins:         newHandoffPins(),
+		ruleLevels:   ruleLevels,
 		holds:        holds,
 		budget:       budget,
 		reviewWait:   ReviewWait,
@@ -660,6 +723,15 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		return e.applyHandoff(ctx, stmt, ec, notes, level, c, d)
 	}
 
+	if e.ruleLevels[level] != nil {
+		// The rule turn runs before the hold, so an AI guardrail that
+		// matches ends the statement with nothing filed, and an AI mask
+		// is attached before anyone approves the statement.
+		if v, ok := e.enforceRules(stmt, ec, notes, e.ruleTurn(ctx, stmt, ec, level, c)); !ok {
+			return v
+		}
+	}
+
 	if action == ActionRequireReview {
 		// A CACHED verdict reaches here like any other. The cache
 		// collapses classifications, not approvals: the statement in
@@ -709,7 +781,7 @@ func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalConte
 	case ApproverAIAgent:
 		return e.requestAgentApproval(ctx, stmt, ec, notes, level, c.res, c.text, agentPrompt)
 	case ApproverHuman:
-		ctx = withFiledLevel(ctx, level)
+		ctx = withFiledPrincipal(withFiledLevel(ctx, level), principal(ec))
 	}
 	return e.requestHold(ctx, stmt, ec, notes, pin)
 }
@@ -946,13 +1018,16 @@ func (e *Evaluator) classify(
 // would rather pass traffic than lose a database to a model vendor's outage;
 // it was never an answer about a statement a human was supposed to see, and
 // reading it as one would turn every outage into a bypass of the approval.
+//
+// UnavailableMessage starts every such denial, so a client (the CLI demo's
+// tour) can tell it from a rule's.
 func (e *Evaluator) failure(err error) policy.Verdict {
 	if e.cfg.FailOpen && !e.holds {
 		return policy.Verdict{Err: err}
 	}
-	msg := "risk analysis unavailable; denying"
+	msg := UnavailableMessage + "; denying"
 	if e.holds {
-		msg = "risk analysis unavailable and this lane holds statements for " +
+		msg = UnavailableMessage + " and this lane holds statements for " +
 			"approval; denying"
 	}
 	return policy.Verdict{

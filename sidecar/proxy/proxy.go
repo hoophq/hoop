@@ -116,6 +116,10 @@ type Config struct {
 	Audit  audit.Sink
 	Masker gate.Masker
 
+	// MaskScope is handed to each connection's Gate; see gate.MaskScope.
+	// SwapLane replaces it.
+	MaskScope gate.MaskScope
+
 	// FailOnAuditError makes a failed audit write deny the statement.
 	FailOnAuditError bool
 
@@ -216,6 +220,7 @@ type laneRules struct {
 	policy       policy.Evaluator
 	masker       gate.Masker
 	codecFactory func() inspect.Codec
+	maskScope    gate.MaskScope
 }
 
 // Server accepts connections and relays them through a Gate.
@@ -344,7 +349,8 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlAuth:           mysqlAuth,
 		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
-	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory})
+	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory,
+		maskScope: cfg.MaskScope})
 	if cfg.Protocol == inspect.HTTP {
 		s.h2 = newH2Lane(s)
 	}
@@ -419,8 +425,12 @@ func (s *Server) releaseMySQLHandshake() {
 // The factory must lift the header NewServer checked. The daemon keeps that
 // true: a change to a listener's credential header or http block is
 // restart-bound, so a reload never reaches here with one.
-func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec) {
-	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory})
+//
+// maskScope ties a mask the policy applies to one statement to its response;
+// it swaps with the policy that applies such masks.
+func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec,
+	maskScope gate.MaskScope) {
+	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory, maskScope: maskScope})
 }
 
 // reclaimStaleSocket removes a leftover unix socket file so a restart can
@@ -460,19 +470,38 @@ func (s *Server) reclaimStaleSocket() error {
 	return nil
 }
 
-// Serve listens and accepts until ctx is cancelled or Close is called.
-func (s *Server) Serve(ctx context.Context) error {
+// Listen binds the configured address without accepting. Serve binds on its
+// own when Listen was not called; a caller that has to know the bind outcome
+// before it commits to the lane (a reload adding a listener) calls Listen
+// first and Serve after. A second call on a bound server is a no-op, and a
+// server that Close ended refuses to bind again.
+func (s *Server) Listen() error {
+	s.mu.Lock()
+	bound, closing := s.listener != nil, s.closing
+	s.mu.Unlock()
+	if bound {
+		return nil
+	}
+	if closing {
+		return net.ErrClosed
+	}
 	if err := s.reclaimStaleSocket(); err != nil {
 		return err
 	}
 
 	ln, err := net.Listen(s.cfg.Network, s.cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("sidecar/proxy: listen %s %s: %w",
-			s.cfg.Network, s.cfg.Listen, err)
+		// net.OpError already reads "listen tcp 0.0.0.0:15432: bind: ...".
+		return fmt.Errorf("sidecar/proxy: %w", err)
 	}
 
 	s.mu.Lock()
+	if s.closing {
+		// Close ran between the check above and the bind: honour it.
+		s.mu.Unlock()
+		_ = ln.Close()
+		return net.ErrClosed
+	}
 	s.listener = ln
 	s.mu.Unlock()
 
@@ -482,6 +511,18 @@ func (s *Server) Serve(ctx context.Context) error {
 		"upstream", s.cfg.Upstream,
 		"protocol", string(s.cfg.Protocol),
 		"connection", s.cfg.Connection)
+	return nil
+}
+
+// Serve listens (unless Listen already did) and accepts until ctx is
+// cancelled or Close is called.
+func (s *Server) Serve(ctx context.Context) error {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
 
 	// Close the listener on context cancellation so Accept unblocks.
 	go func() {
@@ -697,6 +738,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Policy:           rules.policy,
 		Audit:            s.cfg.Audit,
 		Masker:           rules.masker,
+		MaskScope:        rules.maskScope,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
@@ -956,6 +998,12 @@ func (s *Server) pump(
 				}
 			}
 			tail, err := g.FlushResponseChecked()
+			if errors.Is(err, gate.ErrMaskedTailDropped) {
+				// An AI mask owned the response in flight: the held bytes
+				// were dropped, and the client gets a cut response.
+				log.Warn("response tail dropped at connection end", "error", err)
+				return
+			}
 			if err != nil {
 				// A close-delimited body too large to mask ends only here,
 				// and its head is still held: answer as for any refusal.

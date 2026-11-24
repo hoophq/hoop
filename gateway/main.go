@@ -75,7 +75,7 @@ func Run() {
 	bootstrap.Phase("Bootstrapping")
 
 	pgURI := appconfig.Get().PgURI()
-	migrateURI, dbMaxOpenConns := pgURI, 0
+	migrateURI, dbMaxOpenConns := pgURI, appconfig.Get().PgMaxOpenConns()
 	if appconfig.Get().IsPgliteEnabled() {
 		pgliteStep := bootstrap.Step("Embedded database (pglite)")
 		pgliteInstance, err := pglite.Start(context.Background(), appconfig.Get().PgliteDataDir())
@@ -98,6 +98,7 @@ func Run() {
 	if err := models.InitDatabaseConnection(pgURI, dbMaxOpenConns); err != nil {
 		log.Fatal(err)
 	}
+	services.SizeSidecarEventSlots(dbMaxOpenConns)
 
 	goMigrateStep := bootstrap.Step("Golang migrations")
 	if err := modelsbootstrap.RunGolangMigrations(); err != nil {

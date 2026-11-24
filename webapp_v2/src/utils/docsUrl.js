@@ -39,12 +39,11 @@ export const docsUrl = {
     // The full Deployment and ConfigMap, for Kubernetes without the chart.
     kubernetesManifest: 'https://hoop.dev/docs/install/kubernetes#running-as-sidecar',
     containerImages: 'https://hoop.dev/docs/install/container-images',
-    // The three rule vocabularies a control plane distributes. They are the
-    // SIDECAR's, not the gateway's: features.guardrails and
-    // features.aiDatamasking above document a different implementation.
+    // The two rule vocabularies a control plane distributes with a docs
+    // button. They are the SIDECAR's, not the gateway's: features.guardrails
+    // and features.aiDatamasking above document a different implementation.
     policyRules: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/policy-rules',
     dataMasking: 'https://hoop.dev/docs/features/data-masking',
-    riskAnalysis: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/risk-analysis',
   },
   controlPlane: {
     // The Slack app, the channels per listener and the approver match.

@@ -1,6 +1,41 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { attributesService } from '@/services/attributes'
+import { dataMaskingService } from '@/services/dataMasking'
+import { guardrailsService } from '@/services/guardrails'
+import { reviewsService } from '@/services/reviews'
+import { useAuthStore } from '@/stores/useAuthStore'
+
+const EMPTY_LIBRARY = { guardrails: [], mask: [] }
+
+// The integrations an AI-routed approval notifies through (ENG-663).
+const EMPTY_INTEGRATION = { integrated: false, channels: [] }
+const EMPTY_INTEGRATIONS = { slack: EMPTY_INTEGRATION, teams: EMPTY_INTEGRATION }
+
+// One integration of GET /approvals/routing/integrations. A channel with no
+// id cannot be named in the spec, so it is dropped.
+const readIntegration = (value) => ({
+  integrated: value?.integrated === true,
+  channels: (Array.isArray(value?.channels) ? value.channels : [])
+    .filter((c) => typeof c?.id === 'string' && c.id !== '')
+    .map((c) => ({ id: c.id, name: typeof c.name === 'string' && c.name !== '' ? c.name : c.id })),
+})
+
+const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
+
+// A library row the AI may apply: its sidecar block holds at least one rule,
+// each an object. The gateway accepts only these names (libraryGuardrails,
+// libraryMasks in gateway/services/sidecarairules.go) and serves only these
+// rows into rule_library; rulepack rows are not listed at all.
+const holdsSidecarRules = (spec) =>
+  isObject(spec) && Array.isArray(spec.rules) && spec.rules.length > 0 && spec.rules.every(isObject)
+
+const libraryEntries = (rows) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((r) => holdsSidecarRules(r.sidecar_spec))
+    .map((r) => ({ name: r.name, description: r.description ?? '' }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
 export const useAiSessionAnalyzerStore = create((set, get) => ({
   list: [],
@@ -18,6 +53,26 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   accessRequestRules: [],
   accessRequestRulesStatus: 'idle',
+  accessRequestRulesRequestId: 0,
+
+  // With the access request rules, tells the form which selected roles an
+  // access request rule also covers through a shared attribute.
+  attributes: [],
+  attributesStatus: 'idle',
+  attributesRequestId: 0,
+
+  // The guardrail and data masking rules a risk level may let the AI apply.
+  // Session-scoped: cleared on logout. `ruleLibraryRequestId` is the
+  // generation counter: only the newest fetch, of this session, commits.
+  ruleLibrary: EMPTY_LIBRARY,
+  ruleLibraryStatus: 'idle',
+  ruleLibraryRequestId: 0,
+
+  // Session-scoped as the rule library: cleared on logout, and only the
+  // newest fetch of this session commits.
+  routingIntegrations: EMPTY_INTEGRATIONS,
+  routingIntegrationsStatus: 'idle',
+  routingIntegrationsRequestId: 0,
 
   submitting: false,
 
@@ -93,17 +148,110 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   // Feeds the require_access_request picker in the rule form. The status is kept
   // so the form can tell "this org has no rules" from "the list failed to load".
   fetchAccessRequestRules: async () => {
-    set({ accessRequestRulesStatus: 'loading' })
+    // Cleared at the start so the form never reads a list from an earlier visit
+    // or account; the id drops a response that a newer fetch replaced.
+    const requestId = get().accessRequestRulesRequestId + 1
+    set({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'loading',
+      accessRequestRulesRequestId: requestId,
+    })
     try {
       const { data } = await accessRequestsService.list()
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({
         accessRequestRules: data?.data ?? [],
         accessRequestRulesStatus: 'success',
       })
     } catch {
+      if (get().accessRequestRulesRequestId !== requestId) return
       set({ accessRequestRulesStatus: 'error' })
     }
   },
+
+  fetchAttributes: async () => {
+    const requestId = get().attributesRequestId + 1
+    set({ attributes: [], attributesStatus: 'loading', attributesRequestId: requestId })
+    try {
+      const attributes = await attributesService.listAll()
+      if (get().attributesRequestId !== requestId) return
+      set({ attributes, attributesStatus: 'success' })
+    } catch {
+      if (get().attributesRequestId !== requestId) return
+      set({ attributesStatus: 'error' })
+    }
+  },
+
+  // Bumps both generations, so a fetch still in flight from the old account
+  // cannot fill a list after logout.
+  resetAccessRequestOverlap: () =>
+    set((state) => ({
+      accessRequestRules: [],
+      accessRequestRulesStatus: 'idle',
+      accessRequestRulesRequestId: state.accessRequestRulesRequestId + 1,
+      attributes: [],
+      attributesStatus: 'idle',
+      attributesRequestId: state.attributesRequestId + 1,
+    })),
+
+  // Both lists or neither: a level shows its two features side by side, and
+  // "all rules" is only written back when the list is known. The list is
+  // emptied while a fetch runs and on a failure, so no earlier list (another
+  // session's, or a stale one) is shown in its place.
+  fetchRuleLibrary: async () => {
+    const requestId = get().ruleLibraryRequestId + 1
+    set({ ruleLibrary: EMPTY_LIBRARY, ruleLibraryStatus: 'loading', ruleLibraryRequestId: requestId })
+    const current = () => get().ruleLibraryRequestId === requestId
+    try {
+      const [guardrails, mask] = await Promise.all([guardrailsService.list(), dataMaskingService.list()])
+      if (!current()) return
+      set({
+        ruleLibrary: { guardrails: libraryEntries(guardrails.data), mask: libraryEntries(mask.data) },
+        ruleLibraryStatus: 'success',
+      })
+    } catch {
+      if (!current()) return
+      set({ ruleLibrary: EMPTY_LIBRARY, ruleLibraryStatus: 'error' })
+    }
+  },
+
+  // Bumps the generation, so a fetch still in flight cannot fill the list.
+  resetRuleLibrary: () =>
+    set((state) => ({
+      ruleLibrary: EMPTY_LIBRARY,
+      ruleLibraryStatus: 'idle',
+      ruleLibraryRequestId: state.ruleLibraryRequestId + 1,
+    })),
+
+  // Emptied while a fetch runs and on a failure, so no other session's
+  // channels are shown.
+  fetchRoutingIntegrations: async () => {
+    const requestId = get().routingIntegrationsRequestId + 1
+    set({
+      routingIntegrations: EMPTY_INTEGRATIONS,
+      routingIntegrationsStatus: 'loading',
+      routingIntegrationsRequestId: requestId,
+    })
+    const current = () => get().routingIntegrationsRequestId === requestId
+    try {
+      const { data } = await reviewsService.routingIntegrations()
+      if (!current()) return
+      set({
+        routingIntegrations: { slack: readIntegration(data?.slack), teams: readIntegration(data?.teams) },
+        routingIntegrationsStatus: 'success',
+      })
+    } catch {
+      if (!current()) return
+      set({ routingIntegrations: EMPTY_INTEGRATIONS, routingIntegrationsStatus: 'error' })
+    }
+  },
+
+  resetRoutingIntegrations: () =>
+    set((state) => ({
+      routingIntegrations: EMPTY_INTEGRATIONS,
+      routingIntegrationsStatus: 'idle',
+      routingIntegrationsRequestId: state.routingIntegrationsRequestId + 1,
+    })),
 
   createRule: async (payload) => {
     set({ submitting: true })
@@ -144,3 +292,14 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
     }
   },
 }))
+
+// The rule library and the integration channels name another org's data:
+// drop them when the session ends, as useSidecarStore does. Module state
+// outlives a logout.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useAiSessionAnalyzerStore.getState().resetRuleLibrary()
+    useAiSessionAnalyzerStore.getState().resetRoutingIntegrations()
+    useAiSessionAnalyzerStore.getState().resetAccessRequestOverlap()
+  }
+})

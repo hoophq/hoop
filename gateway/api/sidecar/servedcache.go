@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/license"
 )
@@ -50,7 +51,7 @@ type servedEntry struct {
 // servedFingerprint names every input the served document is a function of.
 // An empty configuration hash is a row read by a query that did not compute
 // it; the caller must not consult the cache with that, see cachedServed.
-func servedFingerprint(sc *models.Sidecar, bound models.SidecarBoundRules, licenseData json.RawMessage, state license.State, hs daemon.Handshake) [32]byte {
+func servedFingerprint(sc *models.Sidecar, bound models.SidecarBoundRules, library services.RuleLibraryRows, licenseData json.RawMessage, state license.State, hs daemon.Handshake) [32]byte {
 	h := sha256.New()
 	write := func(s string) {
 		var n [8]byte
@@ -64,6 +65,14 @@ func servedFingerprint(sc *models.Sidecar, bound models.SidecarBoundRules, licen
 		for _, r := range rules {
 			write(r.ListenerName)
 			write(r.RuleName)
+			write(string(r.Spec))
+		}
+	}
+	// The organization library rows the levels select (rule_library).
+	for _, rows := range library {
+		write("")
+		for _, r := range rows {
+			write(r.Name)
 			write(string(r.Spec))
 		}
 	}

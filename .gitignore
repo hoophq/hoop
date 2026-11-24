@@ -70,6 +70,8 @@ client/cmd/auth
 client/cmd/custom.go
 gateway/cmd/gateway/.env
 rest-client/
+# the envoy-stack reload demo's editable copy of the sidecar config
+deploy/docker-compose/envoy-stack/reload/work/
 
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions

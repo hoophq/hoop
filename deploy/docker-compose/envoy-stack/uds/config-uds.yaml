@@ -14,6 +14,7 @@ admin:
   # Still TCP. The admin API is for humans and scrapers, and putting it on a
   # socket would mean exec-ing into the container to read /healthz.
   listen: 0.0.0.0:19000
+  api_listen: 0.0.0.0:19002 # /stats /metrics /config /events /api/*; no auth
 
 audit:
   file: "-"

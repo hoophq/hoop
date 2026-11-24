@@ -26,6 +26,7 @@ import (
 	sidecarinspect "github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/telemetry"
 	"github.com/hoophq/mcpproxy/audit"
+	"github.com/hoophq/mcpproxy/auth/outbound"
 	"github.com/hoophq/mcpproxy/backend"
 	"github.com/hoophq/mcpproxy/checks"
 	"github.com/hoophq/mcpproxy/config"
@@ -93,6 +94,14 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	if lane.Transport == daemon.MCPTransportSSE {
 		transport = backend.TransportSSE
 	}
+	s.passthroughHeader = strings.TrimSpace(lane.Policy.PassthroughHeader)
+	var tokens func(context.Context) (string, error)
+	if s.passthroughHeader != "" {
+		if transport != backend.TransportStreamableHTTP {
+			return nil, errors.New("mcp: mcp_gateway.passthrough_header needs transport streamable-http")
+		}
+		tokens = outbound.NewPassthrough()
+	}
 	bcfg := config.Backend{Transport: transport, URL: lane.Upstream}
 	origin, err := url.Parse(lane.Upstream)
 	if err != nil {
@@ -125,7 +134,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		default:
 			b := backend.NewRemote(lane.Name, bcfg, s.log)
 			b.Client = client
-			return b, nil
+			if tokens == nil {
+				return b, nil
+			}
+			b.TokenSource = tokens
+			return redactingBackend{b}, nil
 		}
 	}
 
@@ -142,7 +155,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	// The hoop check runs after mcpproxy's own (budgets, overrides) and
 	// before the terminal audit tap.
 	last := len(pipeline) - 1
-	pipeline = append(pipeline[:last:last], &hoopCheck{s: s}, pipeline[last])
+	own := []inspect.Check{&hoopCheck{s: s}}
+	if lane.MaskResults {
+		own = append(own, &maskCheck{s: s})
+	}
+	pipeline = append(append(pipeline[:last:last], own...), pipeline[last])
 
 	gw, err := mcpgw.New(mcpgw.Options{
 		Backends:           map[string]backend.Factory{lane.Name: factory},
@@ -151,6 +168,7 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 		Observer:           s,
 		Logger:             s.log,
 		SessionIdleTimeout: lane.SessionIdleTimeout,
+		RequestTimeout:     lane.RequestTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
 			id := inspect.Identity{Claims: map[string]any{"peer": r.RemoteAddr}}
 			switch {
@@ -195,6 +213,8 @@ type server struct {
 	lane daemon.MCPGatewayLane
 	log  *slog.Logger
 	gw   *mcpgw.Gateway
+	// passthroughHeader carries the caller's own upstream credential; "" is off.
+	passthroughHeader string
 	// renamed maps an overrides name to the real tool name. A hidden tool
 	// never reaches overrides, so its session holds no rename for it.
 	renamed map[string]string
@@ -229,12 +249,19 @@ func (s *server) Serve(ctx context.Context) error {
 		ln = tls.NewListener(ln, s.lane.DownstreamTLS)
 	}
 	srv := &http.Server{
-		Handler:           s.checkCaller(s.gw.Handler()),
+		Handler:           s.checkCaller(s.passthrough(s.gw.Handler())),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       connIdleTimeout,
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
 	s.mu.Lock()
+	if s.closed {
+		// Close ran before the bind: a lane a reload gave up on must not
+		// hold the port.
+		s.mu.Unlock()
+		_ = ln.Close()
+		return nil
+	}
 	s.ln, s.srv = ln, srv
 	s.mu.Unlock()
 	s.log.Info("mcp lane listening", "listen", ln.Addr().String(), "upstream", s.lane.Upstream, "transport", s.lane.Transport)
@@ -279,6 +306,56 @@ func (s *server) checkCaller(next http.Handler) http.Handler {
 	})
 }
 
+// passthrough moves the caller's own upstream credential from its header to
+// the request context, where the backend's token source reads it.
+func (s *server) passthrough(next http.Handler) http.Handler {
+	h := s.passthroughHeader
+	if h == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		values := r.Header.Values(h)
+		r.Header.Del(h)
+		var credential, reason string
+		switch len(values) {
+		case 0:
+		case 1:
+			// A bare "Bearer" carries no credential; TrimBearer keeps it.
+			if credential = outbound.TrimBearer(values[0]); strings.EqualFold(credential, "bearer") {
+				credential = ""
+			}
+		default:
+			reason = "the request carried more than one " + h + " header"
+		}
+		if credential == "" && reason == "" {
+			reason = "the request carried no " + h + " header, the caller's own credential for the MCP server"
+		}
+		if reason != "" {
+			s.log.Info("mcp request refused", "peer", r.RemoteAddr, "reason", reason)
+			w.Header().Set("Connection", "close")
+			http.Error(w, "request refused: "+reason, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(outbound.WithClientToken(r.Context(), credential)))
+	})
+}
+
+// redactingBackend removes the caller's upstream credential from the errors
+// Send returns. An upstream error body can quote it, and mcpproxy logs them.
+type redactingBackend struct{ backend.Backend }
+
+func (b redactingBackend) Send(ctx context.Context, msg []byte) error {
+	err := b.Backend.Send(ctx, msg)
+	if err == nil {
+		return nil
+	}
+	credential, ok := outbound.ClientTokenFrom(ctx)
+	if !ok || !strings.Contains(err.Error(), credential) {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), credential, "[REDACTED]"))
+}
+
 func (s *server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -303,14 +380,15 @@ func (s *server) Close() error {
 	return nil
 }
 
+// Addr is the bound address, nil until Serve has bound: the daemon reads a
+// non-nil address as proof of the bind.
 func (s *server) Addr() net.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ln != nil {
-		return s.ln.Addr()
+	if s.ln == nil {
+		return nil
 	}
-	a, _ := net.ResolveTCPAddr("tcp", s.lane.Listen)
-	return a
+	return s.ln.Addr()
 }
 
 func (s *server) Stats() (active, total, denied int64) {
@@ -808,6 +886,9 @@ func unreadableCatalog(ctx context.Context, ls daemon.MCPLaneSession, err error)
 // isError set: MCP reports a failed call as a result, so the model sees it.
 func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decision {
 	msg := "denied by the hoop sidecar"
+	if v.Held {
+		msg = "held for approval by the hoop sidecar"
+	}
 	if v.Rule != "" {
 		msg += " (rule " + v.Rule + ")"
 	}
@@ -840,3 +921,52 @@ func (c *hoopCheck) response(ctx context.Context, ls daemon.MCPLaneSession, ms i
 	}
 	return inspect.AllowAll
 }
+
+// maskCheck masks results with mcpproxy's redactor. Hooks.Redact gets no
+// session, so a redactor is built per message around the session's masker.
+type maskCheck struct{ s *server }
+
+func (c *maskCheck) Name() string { return checks.NameRedact }
+
+func (c *maskCheck) Inspect(ctx context.Context, ms inspect.Session, m *inspect.Msg) inspect.Decision {
+	if m == nil || m.Env == nil || m.Dir != inspect.S2C || !m.Env.IsResponse() {
+		return inspect.AllowAll
+	}
+	ls, err := c.s.laneSession(ctx, ms)
+	if err != nil {
+		return inspect.Decision{Verdict: inspect.Kill, Reason: err.Error(), Rule: checkName}
+	}
+	var entities []string
+	var recordErr error
+	hooks := inspect.Hooks{Redact: func(_ context.Context, text string) (string, int, error) {
+		out, names, n, err := ls.Mask(text)
+		if err != nil {
+			c.s.log.Warn("mcp result withheld: masking failed", "error", err)
+			return "", 0, err
+		}
+		entities = append(entities, names...)
+		return out, n, nil
+	}}
+	sink := sinkFunc(func(ctx context.Context, ev audit.Event) {
+		if ev.Type != audit.EventRedacted {
+			c.s.Emit(ctx, ev)
+			return
+		}
+		n, ok := ev.Fields["redactions"].(int)
+		if !ok {
+			recordErr = errors.New("the redacted event carries no count")
+			return
+		}
+		recordErr = ls.RecordMasked(ctx, entities, n)
+	})
+	d := checks.NewRedactor(hooks, sink).Inspect(ctx, ms, m)
+	if d.Verdict == inspect.Allow && recordErr != nil {
+		c.s.log.Warn("mcp result withheld: masked values not recorded", "error", recordErr)
+		return inspect.Denyf(m.Env, jsonrpc.CodePolicyDenied, checks.NameRedact, "result withheld: audit trail unavailable")
+	}
+	return d
+}
+
+type sinkFunc func(context.Context, audit.Event)
+
+func (f sinkFunc) Emit(ctx context.Context, ev audit.Event) { f(ctx, ev) }

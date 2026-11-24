@@ -483,6 +483,10 @@ embed-webapp:
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C gateway/webappui/staticui --strip-components=2 ./public
 	touch gateway/webappui/staticui/.gitkeep
 
+# Helm >= 3.19 tags a pushed chart by reading its manifest back, and GHCR can
+# answer that read with 404 (helm/helm#31348). A retry finds it and tags it.
+helm_push = for i in 1 2 3; do helm push $(1) oci://ghcr.io/hoophq/helm-charts/ && exit 0; sleep 10; done; exit 1
+
 build-helm-chart:
 	mkdir -p ${DIST_FOLDER}
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
@@ -498,12 +502,12 @@ build-helm-chart:
 	helm package -u ./deploy/helm-chart/chart/hoop-ng/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm package -u ./deploy/helm-chart/chart/hoopagent-ng/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm registry login ghcr.io --username ${GITHUB_USERNAME} --password ${GITHUB_CONTAINER_REGISTRY_TOKEN}
-	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoopsidecar-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoopcontrolplane-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoop-ng-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoopagent-ng-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+	$(call helm_push,${DIST_FOLDER}/hoop-chart-${VERSION}.tgz)
+	$(call helm_push,${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz)
+	$(call helm_push,${DIST_FOLDER}/hoopsidecar-chart-${VERSION}.tgz)
+	$(call helm_push,${DIST_FOLDER}/hoopcontrolplane-chart-${VERSION}.tgz)
+	$(call helm_push,${DIST_FOLDER}/hoop-ng-chart-${VERSION}.tgz)
+	$(call helm_push,${DIST_FOLDER}/hoopagent-ng-chart-${VERSION}.tgz)
 
 build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway

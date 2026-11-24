@@ -1,9 +1,13 @@
 package apisidecar
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +45,9 @@ const (
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
+	eventsBusyOrgID      = "00000000-0000-0000-0000-0000000000f4"
+	eventsSlowBodyOrgID  = "00000000-0000-0000-0000-0000000000f5"
+	eventsBusyStallOrgID = "00000000-0000-0000-0000-0000000000f6"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -296,6 +303,120 @@ func TestPostEventsAnswers412WhileTheFlagIsOff(t *testing.T) {
 	enableSessionEvents(t, eventsFlagOffOrgID)
 	rec = postEvents(sc, []byte(`not json`))
 	assert.Equal(t, http.StatusBadRequest, rec.Code, "with the flag on the body is read: %s", rec.Body)
+}
+
+// readSpy records whether the handler read the body.
+type readSpy struct {
+	r    io.Reader
+	read bool
+}
+
+func (s *readSpy) Read(p []byte) (int, error) {
+	s.read = true
+	return s.r.Read(p)
+}
+
+// A replica behind on events answers 503 before it reads the body, so the
+// sidecar keeps the batch and resends it after its backoff.
+func TestPostEventsAnswers503WhileTheIngestIsFull(t *testing.T) {
+	enableSessionEvents(t, eventsBusyOrgID)
+	wait := eventsAdmitWait
+	eventsAdmitWait = 0
+	t.Cleanup(func() { eventsAdmitWait = wait })
+
+	var releases []func()
+	for {
+		release, ok := services.AdmitSidecarEvents(context.Background(), 0)
+		if !ok {
+			break
+		}
+		releases = append(releases, release)
+		require.Less(t, len(releases), 1000, "the ingest never filled")
+	}
+
+	sc := memorySidecar(eventsBusyOrgID)
+	body := &readSpy{r: strings.NewReader(`not json`)}
+	rec := callPostEvents(sc, httptest.NewRequest(http.MethodPost, "/api/sidecars/events", body))
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	assert.False(t, body.read, "the body was read before the 503")
+
+	for _, release := range releases {
+		release()
+	}
+	rec = postEvents(sc, []byte(`not json`))
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "with a free slot the body is read: %s", rec.Body)
+}
+
+// A body that stops arriving gives its ingest slot back after the read
+// timeout, with a 503 the sidecar resends.
+func TestPostEventsAnswers503ToABodyThatStopsArriving(t *testing.T) {
+	enableSessionEvents(t, eventsSlowBodyOrgID)
+	services.SizeSidecarEventSlots(5)
+	t.Cleanup(func() { services.SizeSidecarEventSlots(50) })
+	timeout := eventsReadTimeout
+	eventsReadTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { eventsReadTimeout = timeout })
+
+	srv := eventsServer(t, memorySidecar(eventsSlowBodyOrgID))
+
+	body, stall := io.Pipe()
+	t.Cleanup(func() { _ = stall.Close() })
+	go func() { _, _ = stall.Write([]byte(`{"events":[`)) }()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/sidecars/events", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	started := time.Now()
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Less(t, time.Since(started), 5*time.Second)
+
+	release, ok := services.AdmitSidecarEvents(context.Background(), time.Second)
+	require.True(t, ok, "the only slot came back")
+	release()
+}
+
+// A full ingest answers a body that stops arriving without waiting for the
+// rest of it.
+func TestPostEventsAnswers503ToAStalledBodyWhileTheIngestIsFull(t *testing.T) {
+	enableSessionEvents(t, eventsBusyStallOrgID)
+	services.SizeSidecarEventSlots(5)
+	t.Cleanup(func() { services.SizeSidecarEventSlots(50) })
+	wait := eventsAdmitWait
+	eventsAdmitWait = 0
+	t.Cleanup(func() { eventsAdmitWait = wait })
+	release, ok := services.AdmitSidecarEvents(context.Background(), 0)
+	require.True(t, ok)
+	t.Cleanup(release)
+
+	srv := eventsServer(t, memorySidecar(eventsBusyStallOrgID))
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	_, err = io.WriteString(conn, "POST /api/sidecars/events HTTP/1.1\r\nHost: plane\r\n"+
+		"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"events\":[")
+	require.NoError(t, err)
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err, "no answer while the body stalls")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+func eventsServer(t *testing.T, sc *models.Sidecar) *httptest.Server {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/sidecars/events", func(c *gin.Context) {
+		c.Set("sidecar-auth", sc)
+		PostEvents(c)
+	})
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // The limits are refused before the database is read: no test here boots it.

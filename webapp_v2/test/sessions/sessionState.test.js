@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   blockReasonTab,
   canDownloadInput,
+  createdBy,
   executedBy,
   insightsByTab,
   isOutputHidden,
@@ -61,6 +62,15 @@ describe('insights by tab (NB19)', () => {
     expect(blockReasonTab({ guardrails_info: [output, input] })).toBe('input')
     expect(blockReasonTab({ ai_analysis: { action: 'allow_execution' } })).toBe(null)
     expect(blockReasonTab({})).toBe(null)
+  })
+})
+
+describe('created by (ENG-1147)', () => {
+  it('reads the name, and the email of a sidecar session without one', () => {
+    expect(createdBy({ user_name: 'Jane Doe', user: 'jane@demo.local' })).toBe('Jane Doe')
+    expect(createdBy({ user_name: '', user: 'dev@demo.local' })).toBe('dev@demo.local')
+    expect(createdBy({ user_name: 'app_rw', user: '' })).toBe('app_rw')
+    expect(createdBy({})).toBe('')
   })
 })
 

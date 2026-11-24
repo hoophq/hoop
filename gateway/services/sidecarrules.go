@@ -360,6 +360,8 @@ func listBoundRules(db *gorm.DB, kind SidecarRuleKind, orgID uuid.UUID, sidecarI
 	return nil, fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
 
+func isMCPListener(l daemon.ListenerConfig) bool { return strings.EqualFold(l.Protocol, "mcp") }
+
 // validateSpecForLane runs the refusals that depend on which lane the rule
 // lands on. Everything here is a startup refusal on the sidecar.
 //
@@ -384,7 +386,8 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 				ruleName, where, strings.Join(problems, "; "))
 		}
 	case SidecarRuleMask:
-		if !isSSH {
+		isMCP := isMCPListener(lane)
+		if !isSSH && !isMCP {
 			return nil
 		}
 		var block struct {
@@ -394,8 +397,13 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 			return fmt.Errorf("data masking rule %q: %w", ruleName, err)
 		}
 		// An ssh lane rewrites a byte stream in place, so only a
-		// length-preserving strategy can run there. The daemon owns that list.
-		problems := daemon.ValidateSSHMasking(daemon.MaskConfig{Rules: block.Rules}, where)
+		// length-preserving strategy can run there. An mcp lane masks strings
+		// without their keys, so a column rule never fires. The daemon owns both.
+		validate := daemon.ValidateSSHMasking
+		if isMCP {
+			validate = daemon.ValidateMCPMasking
+		}
+		problems := validate(daemon.MaskConfig{Rules: block.Rules}, where)
 		if len(problems) > 0 {
 			return fmt.Errorf("data masking rule %q: %s", ruleName, strings.Join(problems, "; "))
 		}
