@@ -132,10 +132,6 @@ func withoutRule(bound []models.BoundRule, name string) []models.BoundRule {
 // would refuse), and that nothing a rule contributes lands outside the
 // hot-reloadable sections.
 func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models.BoundRule) (daemon.Config, error) {
-	if len(guardrails) == 0 && len(masking) == 0 && len(analyzers) == 0 {
-		return cfg, nil
-	}
-
 	// Copy the listener slice before writing into it. cfg shares its backing
 	// array with the row the middleware loaded, and composing in place would
 	// leave the next request reading a document with rules already folded in
@@ -254,6 +250,13 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 			return cfg, fmt.Errorf("analyzer rule %q: %w", b.RuleName, err)
 		}
 		listeners[idx].Analyzer = mergeAnalyzerBlock(listeners[idx].Analyzer, block)
+	}
+	// A lane block with no action is the base of a bound rule. With no rule it
+	// does nothing, and the sidecar refuses it.
+	for i, l := range listeners {
+		if a := l.Analyzer; a != nil && claimed[l.Name] == "" && a.HighRisk == "" && a.MediumRisk == "" && a.LowRisk == "" {
+			listeners[i].Analyzer = nil
+		}
 	}
 	return cfg, nil
 }
@@ -434,9 +437,8 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 }
 
 // CheckStoredSidecarConfiguration is CheckSidecarConfiguration for a stored
-// document. A lane analyzer block is the base its bound analyzer rule merges
-// over, so it may name no action of its own; it is checked with that rule
-// folded in. A binding to a missing lane is left to the binding check.
+// document, with its bound analyzer rules folded in as they are served. A
+// binding to a missing lane is left to the binding check.
 func CheckStoredSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
 	cfg := daemon.Config(sc.Configuration)
 	orgID, err := uuid.Parse(sc.OrgID)

@@ -80,4 +80,12 @@ describe('the sidecar-level feature card', () => {
     const bound = [{ kind: 'guardrail', rule_name: 'no-drop', listener_name: 'appdb' }]
     expect(card('guardrails', bound).rules.map((r) => r.name)).toEqual(['no-drop', 'no-admin-api'])
   })
+
+  it('counts an imported analyzer once, without its lane overrides', () => {
+    const lanes = config.listeners.map((l) => (l.name === 'appdb' ? { ...l, analyzer: { max_calls: 50 } } : l))
+    const bound = [{ kind: 'analyzer', rule_name: 'edge-appdb-analyzer', listener_name: 'appdb' }]
+    const analyzer = featureList(null, { ...config, listeners: lanes }, bound).find((f) => f.key === 'ai-analyzer')
+    expect(analyzer.summary).toBe('1 rule')
+    expect(analyzer.rules.map((r) => r.name)).toEqual(['edge-appdb-analyzer'])
+  })
 })
