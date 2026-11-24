@@ -155,7 +155,12 @@ export default function AgentStep() {
             w="100%"
           />
           {!creating && (
-            <Button variant="subtle" leftSection={<Plus size={16} />} onClick={() => setAgentMode('create')}>
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              leftSection={<Plus size={14} />}
+              onClick={() => setAgentMode('create')}
+            >
               Create new Agent
             </Button>
           )}
