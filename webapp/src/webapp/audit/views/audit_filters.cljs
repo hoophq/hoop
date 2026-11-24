@@ -212,7 +212,7 @@
               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                [:span {:class "text-white text-xxs font-bold"}
                 "1"]])]]
-          [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+          [:> Popover.Content {:size "2" :style {:border-radius 0 :width "384px" :max-height "384px"}}
            [:div {:class "w-full max-h-96 overflow-y-auto"}
             [:div
              [:div {:class "mb-2"}
@@ -240,7 +240,7 @@
                   (for [user users-search-results]
                     ^{:key (:text user)}
                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                      "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                                      "text-sm text-gray-700 hover:bg-gray-200 rounded-none px-3 py-2")
                           :on-click (fn []
                                       (rf/dispatch [:audit->filter-sessions
                                                     {"user" (if (= (:value user) (get filters "user"))
@@ -267,22 +267,22 @@
                [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                 [:span {:class "text-white text-xxs font-bold"}
                  "1"]])]]
-           [:> Popover.Content {:size "2" :style {:width "384px"}}
+           [:> Popover.Content {:size "2" :style {:border-radius 0 :width "384px"}}
             [:div {:class "w-full max-h-96"}
              [:div
               ;; Clear filter option
               (when (get filters "connection")
                 [:div {:class "mb-2 pb-2 border-b border-gray-200"}
                  [:div {:class (str "flex cursor-pointer items-center gap-2 "
-                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-none px-3 py-2")
                         :on-click (fn []
                                     (rf/dispatch [:audit->filter-sessions {"connection" ""}]))}
                   [:span "Clear filter"]]])
 
               [:div {:class "mb-2 relative"}
                [:input {:type "text"
-                        :class "w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md text-sm"
-                        :placeholder "Search resource roles"
+                        :class "w-full pr-10 pl-3 py-2 border border-gray-300 rounded-none text-sm"
+                        :placeholder "Search Resource Roles"
                         :value @search-term-connections
                         :onChange (fn [e]
                                     (let [value (-> e .-target .-value)
@@ -321,7 +321,7 @@
                     (for [connection connections-data]
                       ^{:key (:name connection)}
                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-2 "
-                                        "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                                        "text-sm text-gray-700 hover:bg-gray-200 rounded-none px-3 py-2")
                             :on-click (fn []
                                         (rf/dispatch [:audit->filter-sessions
                                                       {"connection" (if (= (:name connection) (get filters "connection"))
@@ -338,8 +338,8 @@
                           [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]]]
                 [:div {:class "px-3 py-4 text-xs text-gray-700 italic"}
                  (if (seq @search-term-connections)
-                   "No connections found matching your search"
-                   "No connections with this criteria")])]]]]]
+                   "No Resource Roles match your search."
+                   "No Resource Roles match this filter.")])]]]]]
 
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
@@ -357,7 +357,7 @@
               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                [:span {:class "text-white text-xxs font-bold"}
                 "1"]])]]
-          [:> Popover.Content {:size "2" :style {:width "256px" :max-height "384px"}}
+          [:> Popover.Content {:size "2" :style {:border-radius 0 :width "256px" :max-height "384px"}}
            [:div {:class "w-full max-h-96 overflow-y-auto"}
             [:div
              [:div {:class "mb-2"}
@@ -384,7 +384,7 @@
                   (for [type connection-types-search-options]
                     ^{:key (:value type)}
                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                      "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                                      "text-sm text-gray-700 hover:bg-gray-200 rounded-none px-3 py-2")
                           :on-click (fn []
                                       (rf/dispatch [:audit->filter-sessions
                                                     {"type" (if (= (:value type) (get filters "type"))
@@ -410,7 +410,7 @@
               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                [:span {:class "text-white text-xxs font-bold"}
                 "1"]])]]
-          [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+          [:> Popover.Content {:size "2" :style {:border-radius 0 :width "384px" :max-height "384px"}}
            [:div {:class "w-full max-h-96 overflow-y-auto"}
             [:div
              [:div {:class "relative"}
@@ -419,7 +419,7 @@
                 (for [status review-status-options]
                   ^{:key (:text status)}
                   [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-none px-3 py-2")
                         :on-click (fn []
                                     (rf/dispatch [:audit->filter-sessions
                                                   {"review.status" (if (= (:value status) (get filters "review.status"))
@@ -489,9 +489,10 @@
             [:> Workflow {:size 16}]
             [:span {:class "text-sm font-semibold"}
              "Workflow"]]]
-          [:> Popover.Content {:size "2" :style {:width "384px"}}
+          [:> Popover.Content {:size "2" :style {:border-radius 0 :width "384px"}}
            [:div {:class "w-full space-y-3"}
             [:> TextField.Root {:size "2"
+                                :radius "none"
                                 :placeholder "Enter a correlation ID"
                                 :value @workflow-correlation-id
                                 :onChange #(reset! workflow-correlation-id (-> % .-target .-value))
