@@ -72,7 +72,15 @@ call site sets nothing. Do not draw a pill by hand on another component.
 A button next to a field is square. In a filter bar, a search or any row
 where a button sits beside an input, use `Button variant="field"`, or
 `ActionIcon variant="field"` for an icon alone: it takes the field corners
-(`--hoop-field-radius`, 0), fill, border and height.
+(`--hoop-field-radius`, 0), fill, border and height. Its label is semibold in
+the text color, with the icon in the same color, so every filter bar reads
+alike (the legacy Sessions bar included). Never restyle a filter trigger on a
+page; the `ValueFilter`, `AsyncValueFilter`, `FilterPopover` and
+`SidecarListenerFilter` components already use it.
+
+Nav items are square, from `--hoop-nav-radius` (0): the sidebar items, the
+header user button, their hover and active fill. An open group keeps the
+weight and color of every other item; only the current page is bold.
 
 Lists are square. `List` and `Table` take their corners and lines from
 `--hoop-list-radius` (0) and `--hoop-list-border`. A page never sets them.
@@ -134,9 +142,16 @@ it.
 - **Lists:** one `Table`, or one `List` (`@/components/List`). Use `List`
   when each item has a name, a description and one action. Use `Table` when
   items have many columns. A row draws no border, corner or first/last flag:
-  `List` does. Row actions: `ActionMenu` (right), or `size="sm"` buttons.
-  Filters (`ValueFilter`, `AsyncValueFilter`) in a `Group gap="sm"` above the
-  list.
+  `List` does. Row actions: `ActionMenu` (right), or `size="sm"`
+  `variant="default"` buttons ("Edit", "Configure"), never `compact-*` or a
+  subtle text button. Filters (`ValueFilter`, `AsyncValueFilter`) and a
+  search field in a `Group gap="sm"` above the list, at the standard control
+  size (no `size="xs"`).
+- **A section inside a card** (as `pages/Sidecars/components/SidecarDetails.jsx`):
+  its title is `Text fw={600}` like its siblings (Global settings, Features,
+  Listeners); a count beside it is `Text size="sm" c="dimmed"`, lowercase
+  ("4 listeners"). Its action is a `variant="default" size="sm"` button.
+  Gray text uses `c="dimmed"`, never a role token on a `c` prop.
 - **No card inside a card.** One exception: `SettingsCard` in
   `pages/Features/AiSessionAnalyzer/` nests on purpose. Do not add a border
   around or inside it.
@@ -159,7 +174,7 @@ data, not a preview switch.
 | State | Use |
 | --- | --- |
 | Loading | `<PageLoader h={300} />` (a part of a page: `Skeleton`) |
-| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. One create button per view: in the empty state (center) while the list is empty, in the header (top right) once it has items. Never both, never neither. A create menu (`NewRuleButton`) goes in `action` as an element. Same shape on every page: title "No <things> yet", one `description` line on what to do, then `docsUrl` and `docsLabel="<Feature> documentation"` (it renders "Need more information? Check out our ..."). Not `compact`: that is for filters that match nothing. |
+| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. One create button per view: in the empty state (center) while the list is empty, in the header (top right) once it has items. Never both, never neither. A create menu (`NewRuleButton`) goes in `action` as an element. Same shape on every page: title "No <things> yet", one `description` line on what to do, then `docsUrl` and `docsLabel="<Feature> documentation"` (it renders "Need more information? Check out our ..."). Not `compact`: that is for filters that match nothing. Never cap the description width: a short line runs on one line, not broken in the middle. |
 | Empty, filters match nothing | `<EmptyState compact title="No Guardrails match your filters" description="Try clearing the filter above." />` |
 | Error | `<PageLoader error h={300} message="Failed to load Guardrails." />`, or `Alert color="red"` with a retry button |
 
@@ -192,6 +207,11 @@ the work: a page writes no `transition` or `transform` on a control.
   that is not one of them does the same.
 - **Labels you can see.** Every field has a `label`. A placeholder is
   never the label. An `aria-label` alone is not one.
+- **One helper size.** A field's help text is its `description`, and every
+  description is the same size: the theme sizes it from the field
+  (`components/Input/theme.js`), and a bare `Input.Wrapper` (around a
+  `SegmentedControl` or a custom control) gets the same default. Never a
+  hand-made `Text size="xs"` under a field.
 - **Every control has a name.** An icon-only button has a `Tooltip` and
   an `aria-label`. A picture has `alt`.
 - **Headings go one level at a time.** No `tabindex` above 0.

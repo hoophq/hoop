@@ -22,8 +22,12 @@ skill and the repo disagree, the repo wins. Say so in your report.
 
 The legacy ClojureScript app (`webapp/`) gets no new UI. Do not copy its look
 into React. A page it still renders (Sessions, Runbooks, Terminal) follows the
-same shape rules, set in its own code: a field, or a filter button beside a
-field, is square (Radix `radius "none"`, Tailwind `rounded-none`).
+same shape rules, set in its own code: a field, a filter button beside a
+field, a popover and its rows are square (Radix `radius "none"`, Tailwind
+`rounded-none`). Its shared parts already follow them: `selection-card`
+(square, indigo when selected) and `callout-link` (a pill docs button). A
+Tailwind class the legacy CSS build has not seen does nothing until that
+build runs: set a one-off value with `:style` and a Radix token instead.
 
 ## Steps
 
