@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Center, Stack, Loader, Text, Transition } from '@mantine/core'
 import { XCircle } from 'lucide-react'
+import classes from './PageLoader.module.css'
 
 // Most callers pass no `h` and render inside AppShell.Main, which already
 // reserves the shell header with `padding-top: var(--app-shell-header-offset)`.
@@ -17,17 +18,8 @@ function PageLoader({ message, description, error, overlay, h }) {
     return () => clearTimeout(timer)
   }, [])
 
-  const containerStyle = overlay
-    ? {
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'var(--mantine-color-body)',
-        zIndex: 200,
-      }
-    : undefined
-
   return (
-    <Center style={containerStyle} h={overlay ? undefined : (h ?? DEFAULT_HEIGHT)}>
+    <Center className={overlay ? classes.overlay : undefined} h={overlay ? undefined : (h ?? DEFAULT_HEIGHT)}>
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
           <Stack align="center" gap="xl" maw={320} style={styles}>

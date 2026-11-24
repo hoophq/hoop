@@ -63,22 +63,17 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
       onChange={onToggle}
     >
       <Group gap="md" align="center" wrap="nowrap" p="md">
-        <Checkbox.Indicator
-          size="sm"
-          color="white"
-          iconColor="var(--brand-navy)"
-          disabled={disabled}
-        />
+        <Checkbox.Indicator size="sm" disabled={disabled} />
         {Icon && (
           <ThemeIcon size="lg" variant="default" className={classes.typeCardIcon}>
             <Icon size={20} aria-hidden="true" />
           </ThemeIcon>
         )}
         <Stack gap={2} align="flex-start">
-          <Text size="sm" fw={500} c={checked ? 'white' : undefined}>
+          <Text size="sm" fw={500}>
             {title}
           </Text>
-          <Text size="xs" ta="left" c={checked ? 'var(--hoop-on-navy-dimmed)' : 'dimmed'}>
+          <Text size="xs" ta="left" c="dimmed">
             {description}
           </Text>
         </Stack>

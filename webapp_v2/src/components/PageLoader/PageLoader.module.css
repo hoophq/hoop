@@ -1,0 +1,7 @@
+/* The loader that covers the whole app while it starts. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--mantine-color-body);
+  z-index: 200;
+}

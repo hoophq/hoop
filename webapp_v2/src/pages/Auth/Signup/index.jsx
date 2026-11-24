@@ -103,7 +103,8 @@ function Signup() {
         <form onSubmit={handleSubmit}>
           <Stack>
             <TextInput
-              placeholder="Dunder Mifflin Inc"
+              label="Organization name"
+              placeholder="Acme Inc"
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
               required
@@ -113,7 +114,7 @@ function Signup() {
             {!currentUser?.name && (
               <TextInput
                 label="Your name"
-                placeholder="Michael Scott"
+                placeholder="Jane Doe"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 required
