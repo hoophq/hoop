@@ -14,7 +14,7 @@ function ActionCard({ icon: Icon, title, badge, description, onClick }) {
     <UnstyledButton onClick={onClick} className={classes.actionCard}>
       <Paper withBorder p="md" bg="transparent">
         <Group gap="md" wrap="nowrap">
-          <Avatar size="lg" radius="var(--hoop-icon-radius)" color="gray" variant="light">
+          <Avatar size="lg" tile color="gray" variant="light">
             <Icon size={20} />
           </Avatar>
           <Stack gap={2} flex={1}>

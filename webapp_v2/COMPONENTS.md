@@ -407,7 +407,7 @@ import Avatar from '@/components/Avatar'
   <Avatar size={24} color="gray" variant="light">+2</Avatar>
 </Avatar.Group>
 ```
-`radius` defaults to `xl`; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
+`radius` defaults to `xl`; `tile` makes it a square icon tile (`--hoop-icon-radius`), so a page never passes a radius; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
 
 ### `ActionMenu`
 Dropdown action menu for table rows and cards. Uses a `MoreHorizontal` icon trigger.
