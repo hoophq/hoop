@@ -72,7 +72,7 @@ export default function DetailsTab({ connection }) {
         <Stack gap="xs">
           <Title order={4}>Tags</Title>
           <Text size="sm" c="dimmed">
-            Labels for filtering, searching, and grouping resource roles in
+            Labels for filtering, searching, and grouping Resource Roles in
             your catalog.
           </Text>
         </Stack>

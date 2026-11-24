@@ -103,6 +103,7 @@ export default function SettingsExperimental() {
                   <Badge
                     variant="light"
                     color={STABILITY_COLOR[flag.stability] ?? 'gray'}
+                    fullLabel
                   >
                     {flag.stability}
                   </Badge>

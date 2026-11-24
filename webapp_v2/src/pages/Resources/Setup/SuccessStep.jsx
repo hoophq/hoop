@@ -64,7 +64,7 @@ export default function SuccessStep() {
               {`Your ${setup.subtype} is now protected by the access gateway.`}
             </Text>
             <Text c="dimmed" ta="center">
-              Every resource role will be authenticated, audited, and secured.
+              Every Resource Role will be authenticated, audited, and secured.
             </Text>
           </Stack>
         </Stack>

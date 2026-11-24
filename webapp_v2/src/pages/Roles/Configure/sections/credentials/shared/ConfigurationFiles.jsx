@@ -128,7 +128,7 @@ export default function ConfigurationFiles({ connection, hideRoleInfo }) {
         <Title order={4}>Configuration files</Title>
         <Text size="sm" c="dimmed">
           Add values from your configuration file and use them as an
-          environment variable in your resource role.
+          environment variable in your Resource Role.
         </Text>
       </Stack>
 

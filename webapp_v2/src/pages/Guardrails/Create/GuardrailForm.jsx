@@ -94,7 +94,7 @@ function FormFields({ guardrail, id, isEdit }) {
         <Stack gap="lg">
           <Text size="sm">
             This action will permanently delete this Guardrail and cannot be undone. Every
-            resource role and listener it applies to stops enforcing it. Are you sure you
+            Resource Role and listener it applies to stops enforcing it. Are you sure you
             want to proceed?
           </Text>
           <Group justify="flex-end" gap="sm">

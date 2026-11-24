@@ -7,7 +7,7 @@ import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 
 const OPTIONS = [
   { traffic: TRAFFIC_AGENT, label: 'For agent resources', description: 'Resource roles served by an agent' },
-  { traffic: TRAFFIC_SIDECAR, label: 'For sidecar listeners', description: 'Listeners of your sidecars' },
+  { traffic: TRAFFIC_SIDECAR, label: 'For Sidecar listeners', description: 'Listeners of your Sidecars' },
 ]
 
 // `blocked` maps a traffic to the reason it cannot take a new rule. No

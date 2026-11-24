@@ -60,7 +60,7 @@ function ConnectionsSection({ connections, getIconUrl, onShowConnections, onConf
     >
       {connections.length === 0 ? (
         <Text size="sm" c="dimmed">
-          No resource roles in this group
+          No Resource Roles in this group
         </Text>
       ) : (
         <PagedList

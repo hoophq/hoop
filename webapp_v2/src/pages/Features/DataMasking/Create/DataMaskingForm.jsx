@@ -94,7 +94,7 @@ function FormFields({ rule: stored, id, isEdit }) {
         <Stack gap="lg">
           <Text size="sm">
             This action will permanently delete this Data Masking rule and cannot be undone.
-            Every resource role and listener it applies to stops masking with it. Are you
+            Every Resource Role and listener it applies to stops masking with it. Are you
             sure you want to proceed?
           </Text>
           <Group justify="flex-end" gap="sm">

@@ -396,7 +396,7 @@ function RuleFormFields({ rule, isEdit }) {
               <Group gap="xs" wrap="nowrap" align="flex-start" c="dimmed">
                 <Info size={16} />
                 <Text size="sm">
-                  Only resource roles that support the selected access types will be
+                  Only Resource Roles that support the selected access types will be
                   available.
                 </Text>
               </Group>
