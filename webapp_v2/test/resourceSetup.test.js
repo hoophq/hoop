@@ -938,6 +938,22 @@ describe('/resources/:name/add-role', () => {
     expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '1 role(s) created, 1 failed' })
   })
 
+  it('two roles with one name: only the one the gateway took counts as created (Q13)', async () => {
+    startOn(PG)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-pg-dup')
+    store().setRoleName(role(1).id, 'ar-pg-dup')
+    fill(0, reader)
+    fill(1, reader)
+    connectionsService.create
+      .mockResolvedValueOnce({ name: 'ar-pg-dup' })
+      .mockRejectedValueOnce(gatewayError('already exists'))
+    await store().addRoles(connections)
+    expect(store().createdRoles).toHaveLength(1)
+    expect(store().failedRoles).toEqual([{ id: role(1).id, name: 'ar-pg-dup', error: 'already exists' }])
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '1 role(s) created, 1 failed' })
+  })
+
   it('says so when the role it could not configure is still there', async () => {
     startOn(BQ)
     store().setRoleName(role(0).id, 'ar-bq-fed')

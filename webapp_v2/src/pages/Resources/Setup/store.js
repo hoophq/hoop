@@ -430,7 +430,7 @@ export const useResourceSetupStore = create((set, get) => {
       const results = await Promise.all(bodies.map((body, i) => createRole(roles[i], body)))
       if (!current()) return
       const created = results.filter((result) => result.created)
-      const failed = results.filter((result) => result.error).map(({ name, error }) => ({ name, error }))
+      const failed = results.flatMap(({ name, error }, i) => (error ? [{ id: roles[i].id, name, error }] : []))
       failed.forEach((role) =>
         showSnackbar({ level: 'error', text: `Failed to create role: ${role.name}`, description: role.error }),
       )
@@ -450,10 +450,9 @@ export const useResourceSetupStore = create((set, get) => {
         set({ submitting: false })
         return
       }
-      const createdNames = new Set(created.map((result) => result.name))
       set({
         submitting: false,
-        createdRoles: bodies.filter((body) => createdNames.has(body.name)),
+        createdRoles: bodies.filter((_, i) => results[i].created),
         failedRoles: failed,
         step: 'success',
       })

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Group, Stack } from '@mantine/core'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
@@ -43,17 +43,24 @@ function Footer() {
 }
 
 // /resources/:resourceName/add-role for the families React creates. The route
-// switch (modes/ByAddRoleSetup) has read the resource into `target`.
+// switch (modes/ByAddRoleSetup) reads the resource into `target`.
 export default function ResourceAddRole() {
   const navigate = useNavigate()
+  const { resourceName } = useParams()
   const target = useResourceSetupStore((s) => s.target)
   const resource = useResourceSetupStore((s) => s.resource)
   const step = useResourceSetupStore((s) => s.step)
   const startAddRole = useResourceSetupStore((s) => s.startAddRole)
   const loadTarget = useResourceSetupStore((s) => s.loadTarget)
   const addRoles = useResourceSetupStore((s) => s.addRoles)
-  const connections = useConnectionsMetadataStore((s) => s.metadata?.connections)
+  const metadata = useConnectionsMetadataStore((s) => s.metadata)
+  const metadataError = useConnectionsMetadataStore((s) => s.error)
+  const loadMetadata = useConnectionsMetadataStore((s) => s.load)
   const scrollRef = useRef(null)
+
+  useEffect(() => {
+    loadMetadata()
+  }, [loadMetadata])
 
   useEffect(() => {
     if (target.resource) startAddRole(target.resource)
@@ -63,6 +70,7 @@ export default function ResourceAddRole() {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [step])
 
+  if (target.name !== resourceName || target.status === 'loading') return <PageLoader h={400} />
   if (target.status === 'not-found') {
     return (
       <EmptyState
@@ -82,12 +90,22 @@ export default function ResourceAddRole() {
       </Stack>
     )
   }
+  if (!metadata) {
+    if (!metadataError) return <PageLoader h={400} />
+    return (
+      <EmptyState
+        title="Could not load the resource catalog"
+        description={metadataError}
+        action={{ label: 'Try again', onClick: loadMetadata }}
+      />
+    )
+  }
   // The store still holds an earlier run until startAddRole() lands.
   if (!target.resource || resource !== target.resource) return <PageLoader h={400} />
 
   const onSubmit = (event) => {
     event.preventDefault()
-    addRoles(connections)
+    addRoles(metadata.connections)
   }
 
   return (

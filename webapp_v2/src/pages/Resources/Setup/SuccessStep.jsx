@@ -90,7 +90,7 @@ export default function SuccessStep() {
           <Alert icon={<AlertCircle size={16} />} color="red" title="Not created" w="100%">
             <Stack gap="xs">
               {failedRoles.map((role) => (
-                <Text key={role.name} size="sm">
+                <Text key={role.id} size="sm">
                   <Text span fw={500} size="sm">
                     {role.name}
                   </Text>
