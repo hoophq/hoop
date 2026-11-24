@@ -135,8 +135,11 @@ func TestAStandaloneTopologyEditKeepsTheRestartPath(t *testing.T) {
 	if rl.gen != 0 {
 		t.Fatalf("generation = %d, want 0", rl.gen)
 	}
-	if !strings.Contains(buf.String(), "config file changed the configuration beyond the rules; restart to apply it") {
+	if !strings.Contains(buf.String(), "restart to apply it") {
 		t.Errorf("no restart line:\n%s", buf)
+	}
+	if !strings.Contains(rl.lastReason, `config file changed listener "appdb" beyond its rules`) {
+		t.Errorf("reason = %q", rl.lastReason)
 	}
 	// Said once: the document is handled, and the next tick over the same
 	// file adds nothing.

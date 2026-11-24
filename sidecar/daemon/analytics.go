@@ -70,7 +70,8 @@ type telemetry struct {
 	// carries the real interval rather than the nominal ticker.
 	lastUsage time.Time
 	// conns is the lifetime connection total per protocol the previous
-	// usage event saw; the servers only hold running totals.
+	// usage event saw; the servers only hold running totals. retireLane
+	// takes a removed lane's totals out of it. Under usageMu.
 	conns map[string]connSnapshot
 	// analyzers is the Stats each evaluator reported at the previous usage
 	// event, keyed by instance. A reload that swaps a lane's evaluators
@@ -429,8 +430,13 @@ type reloadReport struct {
 	gen     int
 	swapped int
 	kept    int
+	// added and removed count the listeners the document started and
+	// stopped.
+	added   int
+	removed int
 	// changed names the config sections that differed from the running
-	// generation: guardrails, opa, mask, analyzer, pii. Fixed vocabulary.
+	// generation: guardrails, opa, mask, analyzer, pii, license,
+	// listeners. Fixed vocabulary.
 	changed []string
 	cfg     *Config
 	lanes   []lane
@@ -463,6 +469,8 @@ func (t *telemetry) trackReload(r reloadReport) {
 		"outcome":           outcome,
 		"lanes-swapped":     r.swapped,
 		"lanes-kept":        r.kept,
+		"lanes-added":       r.added,
+		"lanes-removed":     r.removed,
 	}
 	if r.changed != nil {
 		p["changed"] = r.changed
@@ -486,20 +494,53 @@ type protoUsage struct {
 }
 
 // trackUsage emits EventUsage with the deltas since the previous one.
-// sources are the running servers with their protocols; lanes are the
-// generation currently serving, read for their analyzer instances.
-func (t *telemetry) trackUsage(sources []statSource, lanes []lane) {
+// sources returns the running servers with their protocols, and is read
+// under the usage lock so a lane retireLane removes is never in a window
+// twice; lanes are the generation currently serving, read for their
+// analyzer instances.
+func (t *telemetry) trackUsage(sources func() []statSource, lanes []lane) {
 	if t == nil {
 		return
 	}
-	t.client.Track(analytics.EventUsage, t.usageProperties(sources, lanes))
+	t.usageMu.Lock()
+	p := t.usageWindow(sources(), lanes)
+	t.usageMu.Unlock()
+	t.client.Track(analytics.EventUsage, p)
 }
 
-// usageProperties cuts one usage window and advances every baseline. Split
-// from trackUsage so a test reads the numbers without a Segment stub.
+// usageProperties is trackUsage without the event, so a test reads the
+// numbers without a Segment stub.
 func (t *telemetry) usageProperties(sources []statSource, lanes []lane) analytics.Properties {
 	t.usageMu.Lock()
 	defer t.usageMu.Unlock()
+	return t.usageWindow(sources, lanes)
+}
+
+// retireLane takes a lane out of the registry and its lifetime connection
+// totals out of the usage baseline, in one step under the usage lock. The
+// next window then counts what the lane did since the previous one, and
+// the lanes that stay do not read as a negative delta. Connections the
+// lane accepts between this and its Close are not counted.
+func (t *telemetry) retireLane(set *laneSet, name string) (runningLane, bool) {
+	if t == nil {
+		return set.remove(name)
+	}
+	t.usageMu.Lock()
+	defer t.usageMu.Unlock()
+	rl, ok := set.remove(name)
+	if ok {
+		_, total, denied := rl.stats()
+		c := t.conns[rl.protocol]
+		c.total -= total
+		c.denied -= denied
+		t.conns[rl.protocol] = c
+	}
+	return rl, ok
+}
+
+// usageWindow cuts one usage window and advances every baseline. The
+// caller holds usageMu.
+func (t *telemetry) usageWindow(sources []statSource, lanes []lane) analytics.Properties {
 	now := time.Now()
 	u := t.counters.Snapshot()
 
@@ -514,6 +555,13 @@ func (t *telemetry) usageProperties(sources []statSource, lanes []lane) analytic
 		c.total += tot
 		c.denied += d
 		cur[s.protocol] = c
+	}
+	// A protocol whose last lane a reload removed has no source left;
+	// retireLane left that lane's last window in the baseline.
+	for proto, prev := range t.conns {
+		if _, ok := cur[proto]; !ok && prev != (connSnapshot{}) {
+			cur[proto] = connSnapshot{}
+		}
 	}
 	byProto := make(map[string]protoUsage, len(cur))
 	for proto, c := range cur {
