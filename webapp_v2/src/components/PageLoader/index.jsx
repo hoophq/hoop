@@ -30,7 +30,7 @@ function PageLoader({ message, description, error, overlay, h }) {
     <Center style={containerStyle} h={overlay ? undefined : (h ?? DEFAULT_HEIGHT)}>
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
-          <Stack align="center" gap="xl" style={{ ...styles, maxWidth: 320 }}>
+          <Stack align="center" gap="xl" maw={320} style={styles}>
             <img
               src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
               height={40}

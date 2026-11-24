@@ -69,9 +69,8 @@ function RulepackRow({ rulepack, isLast, onConfigure }) {
           )}
         </Stack>
         <Group gap="xs" wrap="nowrap">
-          <Button onClick={() => onConfigure(rulepack.id)}>
+          <Button onClick={() => onConfigure(rulepack.id)} rightSection={<ArrowRight size={16} />}>
             Configure
-            <ArrowRight size={16} style={{ marginLeft: 4 }} />
           </Button>
         </Group>
       </Flex>

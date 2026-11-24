@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Button, Divider, Group, Image, Paper, Popover, Stack, Text, Title } from '@mantine/core'
+import { Box, Button, Divider, Group, Image, Paper, Popover, ScrollArea, Stack, Text, Title } from '@mantine/core'
 import { Check, Rotate3d, Search, X } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -66,9 +66,9 @@ function ConnectionFilter({ value, onChange, connections }) {
             onChange={(e) => setSearch(e.currentTarget.value)}
             leftSection={<Search size={14} />}
           />
-          <Box mah={280} style={{ overflowY: 'auto' }}>
+          <ScrollArea.Autosize mah={280}>
             {filtered.length === 0 ? (
-              <Text size="sm" c="dimmed" p="xs">No connections found</Text>
+              <Text size="sm" c="dimmed" p="xs">No Resources found</Text>
             ) : (
               <Stack gap={2}>
                 {filtered.map((conn) => (
@@ -91,7 +91,7 @@ function ConnectionFilter({ value, onChange, connections }) {
                 ))}
               </Stack>
             )}
-          </Box>
+          </ScrollArea.Autosize>
         </Stack>
       </Popover.Dropdown>
     </Popover>

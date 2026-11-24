@@ -1,0 +1,8 @@
+/* A value in the list is a clickable row. */
+.option {
+  cursor: pointer;
+}
+
+.scroll {
+  overflow-y: auto;
+}

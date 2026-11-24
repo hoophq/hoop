@@ -10,6 +10,7 @@ import { useRulepackStore } from '../store'
 import FeatureFlagGate from '../FeatureFlagGate'
 import ConfigurationTab from './ConfigurationTab'
 import RolesTab from './RolesTab'
+import Button from '@/components/Button'
 
 const FREE_LICENSE_MESSAGE =
   'Applying rulepacks to connections is an Enterprise feature. Upgrade to bundle and roll out guardrails and data masking rules across many connections at once.'
@@ -17,16 +18,15 @@ const FREE_LICENSE_MESSAGE =
 function DetailHeader({ rulepack, onBack }) {
   return (
     <Stack gap="md">
-      <Group
-        gap={4}
-        align="center"
-        c="dimmed"
+      <Button
+        variant="transparent"
+        color="gray"
+        leftSection={<ArrowLeft size={16} />}
         onClick={onBack}
-        style={{ cursor: 'pointer', width: 'fit-content' }}
+        w="fit-content"
       >
-        <ArrowLeft size={16} />
-        <Text size="sm">Rulepacks</Text>
-      </Group>
+        Rulepacks
+      </Button>
       <Title order={1}>{rulepack.display_name || ''}</Title>
       {rulepack.description && (
         <Text size="md" c="dimmed">

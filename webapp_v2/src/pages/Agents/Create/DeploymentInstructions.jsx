@@ -5,6 +5,8 @@ import Table from '@/components/Table';
 import CodeSnippet from '@/components/CodeSnippet';
 import DocsBtnCallOut from '@/components/DocsBtnCallOut';
 import { docsUrl } from '@/utils/docsUrl';
+import Paper from '@/components/Paper';
+import classes from './DeploymentInstructions.module.css';
 
 const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/';
 
@@ -29,7 +31,7 @@ export function DockerDeployment({ hoopKey }) {
         <Text size="sm" fw={700}>
           Docker image repository
         </Text>
-        <Box p="md" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 12 }}>
+        <Paper withBorder p="md">
           <Flex gap="xs" align="center">
             <img src="/images/docker-blue.svg" alt="Docker" height={24} />
             <Text size="xs" flex={1}>
@@ -37,7 +39,7 @@ export function DockerDeployment({ hoopKey }) {
             </Text>
             <InlineCopy value={dockerImage} />
           </Flex>
-        </Box>
+        </Paper>
       </Stack>
 
       <Stack gap="sm">
@@ -63,7 +65,7 @@ export function DockerDeployment({ hoopKey }) {
               </Table.Td>
               <Table.Td>
                 <Flex gap="sm" align="center">
-                  <Text size="xs" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                  <Text size="xs" ff="monospace" className={classes.breakAll}>
                     {hoopKey}
                   </Text>
                   <InlineCopy value={hoopKey} />

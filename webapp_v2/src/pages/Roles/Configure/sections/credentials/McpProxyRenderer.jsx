@@ -42,6 +42,7 @@ import {
 import { useCredentialsStore, useFormState } from '@/pages/Roles/Configure/sections/credentials/store'
 import { connectionsService } from '@/services/connections'
 import { showSnackbar } from '@/utils/snackbar'
+import classes from './McpProxyRenderer.module.css'
 
 // MCP Gateway (mcpproxy) connection editor — the protocol-aware MCP type
 // (ADR-0004), as opposed to the legacy `mcp` subtype that relays MCP as opaque
@@ -696,7 +697,7 @@ export default function McpProxyRenderer({
                 <Text size="sm" c="dimmed">
                   Users set this header in their MCP client configuration:
                 </Text>
-                <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                <Text size="xs" c="dimmed" ff="monospace" className={classes.breakAll}>
                   X-Hoop-Upstream-Authorization: Bearer &lt;their token&gt;
                 </Text>
               </Stack>
@@ -798,7 +799,7 @@ export default function McpProxyRenderer({
                       in, and stores the resulting access token. Register the
                       callback below as the redirect URI of your OAuth app.
                     </Text>
-                    <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                    <Text size="xs" c="dimmed" ff="monospace" className={classes.breakAll}>
                       {`${window.location.origin}/api/mcp-oauth/callback`}
                     </Text>
                     {authError && (
