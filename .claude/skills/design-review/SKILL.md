@@ -31,6 +31,11 @@ Linear unless the person asks.
 | No input | `git diff origin/main...HEAD`, plus uncommitted changes |
 | Screenshot | Read the image. Find the code it shows if the repo has it (search the visible text). |
 
+The rules must be there before you review. If
+`.claude/skills/hoop-ui/references/webapp.md` or `terminal.md` does not
+exist in this checkout, stop. Say "The hoop-ui rules are missing, so I
+cannot review" and do not review from memory.
+
 Then find the scope and read the rules:
 
 | Files changed | Rules (read all of it) |
