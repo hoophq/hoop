@@ -24,8 +24,8 @@ github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f h1:uZY3C1JwxF+7/Fne
 github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRnv1AqDSPsC98tnTx2nNhNLtYxBL8=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
-github.com/hoophq/libhoop v0.0.0-20261124185841-da994687e0f2 h1:rPkV+f6U8+OhJNDpj7ipIvBvMmQAuxapEurcxiv+R/k=
-github.com/hoophq/libhoop v0.0.0-20261124185841-da994687e0f2/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261124191330-061ec6cf4483 h1:9yFUVp/0Ap1oz6sNtaap8jI2RQIXK4m3MpFZ5ddFjOw=
+github.com/hoophq/libhoop v0.0.0-20261124191330-061ec6cf4483/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/hoophq/mcpproxy v0.2.0 h1:q+mYWb24o1FNSLWEOSQqfPB4WMecD5j65JMI41y3c84=
