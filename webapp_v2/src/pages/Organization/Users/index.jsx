@@ -434,6 +434,7 @@ export default function Users() {
           )
         ) : (
           <>
+            <Text size="sm" c="dimmed">{`${total} ${total === 1 ? 'member' : 'members'}`}</Text>
             <Table>
               <Table.Thead>
                 <Table.Tr>

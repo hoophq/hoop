@@ -275,6 +275,7 @@ export default function AuditLogs() {
         />
       ) : (
         <>
+          <Text size="sm" c="dimmed">{`Showing ${logs.length} of ${pagination.total} logs`}</Text>
           <Table>
             <Table.Thead>
               <Table.Tr>

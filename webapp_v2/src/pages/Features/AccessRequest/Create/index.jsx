@@ -65,7 +65,7 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
       <Group gap="md" align="center" wrap="nowrap" p="md">
         <Checkbox.Indicator size="sm" disabled={disabled} />
         {Icon && (
-          <ThemeIcon size="lg" variant="default" className={classes.typeCardIcon}>
+          <ThemeIcon size="lg" variant="default">
             <Icon size={20} aria-hidden="true" />
           </ThemeIcon>
         )}
