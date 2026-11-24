@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -30,7 +34,7 @@ import (
 //	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request				body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarSessionEventsResponse
-//	@Failure		400,401,403,412,413,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,403,412,413,422,500,503	{object}	openapi.HTTPError
 //	@Router			/sidecars/events [post]
 func PostEvents(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -51,8 +55,23 @@ func PostEvents(c *gin.Context) {
 		answerBatchTooLarge(c)
 		return
 	}
+	release, ok := services.AdmitSidecarEvents(c.Request.Context(), eventsAdmitWait)
+	if !ok {
+		// net/http reads an unread body before it answers.
+		setEventsReadDeadline(c, eventsDrainWait)
+		// A 5xx: a released sidecar drops a batch answered 429.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "the control plane is behind on session events; resend later"})
+		return
+	}
+	defer release()
+	// A slow upload must not hold the slot.
+	setEventsReadDeadline(c, eventsReadTimeout)
 	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": fmt.Sprintf("the body took over %s; resend later", eventsReadTimeout)})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("reading the body: %v", err)})
 		return
@@ -89,6 +108,25 @@ func PostEvents(c *gin.Context) {
 		Accepted:   result.Accepted,
 		Duplicates: result.Duplicates,
 	})
+}
+
+// eventsAdmitWait is how long a batch waits for an ingest slot before the
+// 503, eventsReadTimeout how long its body may take to arrive, and
+// eventsDrainWait how long a refused body may take to finish arriving.
+var (
+	eventsAdmitWait = time.Second
+	// The sidecar's request timeout (controlPlaneTimeout): it gives up first.
+	eventsReadTimeout = 15 * time.Second
+	eventsDrainWait   = 100 * time.Millisecond
+	readDeadlineUnset sync.Once
+)
+
+func setEventsReadDeadline(c *gin.Context, d time.Duration) {
+	if err := http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(d)); err != nil {
+		readDeadlineUnset.Do(func() {
+			log.Warnf("sidecar session events: a slow body can hold an ingest slot or a 503, the read deadline failed: %v", err)
+		})
+	}
 }
 
 func answerBatchTooLarge(c *gin.Context) {

@@ -19,7 +19,7 @@ require (
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261118232638-e8475457b355 // indirect
+	github.com/hoophq/libhoop v0.0.0-20261124185841-da994687e0f2 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect

@@ -30,7 +30,7 @@ func TestHealthListenerServesOnlyProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serveHealth(ctx, addr, healthState{endpoints: []endpointServer{lane}, endpointNames: []string{"desktops"}}, slog.New(slog.DiscardHandler))
+		done <- serveHealth(ctx, addr, healthState{lanes: &laneSet{lanes: []runningLane{{name: "desktops", endpoint: lane}}}}, slog.New(slog.DiscardHandler))
 	}()
 
 	base := "http://" + addr
@@ -82,7 +82,7 @@ func TestHealthListenerReturnsBindFailure(t *testing.T) {
 	}
 	defer held.Close()
 
-	err = serveHealth(context.Background(), held.Addr().String(), healthState{}, slog.New(slog.DiscardHandler))
+	err = serveHealth(context.Background(), held.Addr().String(), healthState{lanes: &laneSet{}}, slog.New(slog.DiscardHandler))
 	if err == nil || !strings.Contains(err.Error(), HealthListenEnv) {
 		t.Fatalf("serveHealth on a held port = %v, want an error naming %s", err, HealthListenEnv)
 	}
@@ -145,7 +145,7 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 	defer cancel()
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
-	go serveAdmin(ctx, addr, apiAddr, nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
+	go serveAdmin(ctx, addr, apiAddr, &laneSet{}, view, auditChain{}, nil, nil, nil, nil,
 		slog.New(slog.DiscardHandler), false)
 
 	admin, api := "http://"+addr, "http://"+apiAddr
@@ -189,7 +189,7 @@ func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
 	view.Store(&laneState{})
 	done := make(chan error, 1)
 	go func() {
-		done <- serveAdmin(context.Background(), addr, held.Addr().String(), nil, nil, nil, nil, view, auditChain{},
+		done <- serveAdmin(context.Background(), addr, held.Addr().String(), &laneSet{}, view, auditChain{},
 			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false)
 	}()
 	select {
@@ -237,7 +237,7 @@ func TestAdminListenerAloneSaysWhereTheReadRoutesWent(t *testing.T) {
 	defer cancel()
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
-	go serveAdmin(ctx, addr, "", nil, nil, nil, nil, view, auditChain{}, nil, nil, nil, nil,
+	go serveAdmin(ctx, addr, "", &laneSet{}, view, auditChain{}, nil, nil, nil, nil,
 		slog.New(slog.DiscardHandler), false)
 
 	base := "http://" + addr

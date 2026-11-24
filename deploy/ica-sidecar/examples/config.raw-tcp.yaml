@@ -1,0 +1,23 @@
+# Diagnostic bypass: no decoding, OCR, NER, masking or traffic recording.
+# Merge raw_tcp into the EXISTING configuration, preserving CPU/GPU assets,
+# policy, source CIDRs and VDA routing. Restart to enable AND to disable.
+log_level: info
+admin:
+  listen: 127.0.0.1:19000
+  api_listen: 127.0.0.1:19001
+audit:
+  file: '-'
+  fail_open: false
+ica:
+  max_sessions: 2
+  raw_tcp:
+    enable: true
+listeners:
+  - name: citrix
+    protocol: ica
+    listen: 0.0.0.0:2598
+    upstream: 10.77.0.32:2598 # EDIT: assigned VDA.
+    ica:
+      tenant_id: lab
+      source_cidrs: [10.20.1.10/32] # EDIT: actual Gateway source.
+      edt: false

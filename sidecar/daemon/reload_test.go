@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
 )
@@ -139,17 +140,6 @@ func TestATopologyDriftKeepsTheRestartPath(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "restart to apply it") {
 		t.Errorf("no restart log line:\n%s", buf)
-	}
-}
-
-// An added listener is topology, not rules: sockets would have to bind.
-func TestAnAddedListenerKeepsTheRestartPath(t *testing.T) {
-	rl, buf := testReloader(t, reloadBase)
-
-	drifted := editJSON(t, reloadBase, `"listeners": [{`,
-		`"listeners": [{"name": "second", "protocol": "postgres", "listen": "127.0.0.1:1", "upstream": "h2:5432"}, {`)
-	if got := applyWith(rl, buf, drifted); got != reloadRestart {
-		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
 	}
 }
 
@@ -484,8 +474,11 @@ func TestAGRPCDescriptorsEditKeepsTheRestartPath(t *testing.T) {
 	if got := handleWith(rl, buf, drifted); got != reloadRestart {
 		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
 	}
-	if !strings.Contains(buf.String(), "beyond the rules; restart to apply it") {
+	if !strings.Contains(buf.String(), "restart to apply it") {
 		t.Errorf("no restart log line:\n%s", buf)
+	}
+	if !strings.Contains(rl.lastReason, `changed listener "g" beyond its rules`) {
+		t.Errorf("reason = %q", rl.lastReason)
 	}
 	if rl.gen != 0 {
 		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
@@ -759,6 +752,7 @@ func TestADiskModeLicenseRemovalDropsToTheFreeTier(t *testing.T) {
 func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
 	rl, buf := testReloader(t, reloadBase)
 	rl.diskMode = true
+	rl.ac = &analyzerDeps{}
 
 	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
 	if got := applyWith(rl, buf, drifted); got != reloadApplied {
@@ -767,8 +761,56 @@ func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
 	if rl.diskMode {
 		t.Error("the mode did not flip to plane-owned")
 	}
-	if !strings.Contains(buf.String(), "took ownership") {
+	if !strings.Contains(buf.String(), LogPlaneOwnsConfig) {
 		t.Errorf("no ownership log line:\n%s", buf)
+	}
+	// The plane's lanes keep its approvers: a demo listener's holds no
+	// longer go to the terminal (filesLocally).
+	if !rl.ac.lanesFromPlane {
+		t.Error("the takeover left the analyzer filing holds as if the file served")
+	}
+}
+
+// A takeover that leaves the demo lane's rules as they are still rebuilds it:
+// a kept lane keeps its reviewer, and the terminal would keep approving what
+// the plane's approvers now decide.
+func TestAPlaneTakeoverRebuildsADemoLaneWithUnchangedRules(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.ac = &analyzerDeps{localFirst: []string{"appdb"},
+		local: func(string) analyzer.Reviewer { return &localReviewer{} }}
+
+	if got := applyWith(rl, buf, reloadBase); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "swapped=1") {
+		t.Errorf("the demo lane was kept with its terminal reviewer; log:\n%s", buf)
+	}
+
+	// The plane hands the configuration back to the file: the demo lane is
+	// rebuilt again, and files at the terminal once more.
+	file := writeConfig(t, reloadBase)
+	rl.configPath, rl.load = file, LoadConfig
+	buf.Reset()
+	if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadApplied {
+		t.Fatalf("handover outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if rl.ac.lanesFromPlane || !rl.ac.filesLocally("appdb") {
+		t.Error("after the handover the demo lane did not file at the terminal again")
+	}
+	if !strings.Contains(buf.String(), "swapped=1") {
+		t.Errorf("the handover kept the demo lane on the plane's reviewer; log:\n%s", buf)
+	}
+
+	// Without a demo lane, an unchanged lane is kept as before.
+	rl2, buf2 := testReloader(t, reloadBase)
+	rl2.diskMode = true
+	rl2.ac = &analyzerDeps{}
+	if got := applyWith(rl2, buf2, reloadBase); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf2)
+	}
+	if !strings.Contains(buf2.String(), "kept=1") {
+		t.Errorf("a takeover rebuilt a lane no demo names; log:\n%s", buf2)
 	}
 }
 

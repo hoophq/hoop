@@ -207,6 +207,13 @@ func (c *Config) ControlPlane() (planeURL, source string, ok bool) {
 	return c.cp.url, c.cp.urlSource, true
 }
 
+// LanesFromFile reports that the listeners come from the local file: no
+// control plane, or one that answered load_from_disk. Only then does
+// WithLocalReviewerFirst apply.
+func (c *Config) LanesFromFile() bool {
+	return c.cp == nil || c.cp.diskMode
+}
+
 // WithControlPlaneURL supplies the Control Plane URL from the caller, which
 // outranks HOOP_CONTROL_PLANE_URL and the config file's key. It exists so an
 // entry point can connect for one call without setting a process-wide

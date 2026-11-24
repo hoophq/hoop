@@ -733,12 +733,6 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		return e.applyHandoff(ctx, stmt, ec, notes, level, c, d)
 	}
 
-	if action == ActionRequireReview && stmt.Protocol == inspect.MCP {
-		// Before the rule turn: requestApproval refuses this hold anyway,
-		// so no model call is spent and no AI rule is recorded for it.
-		return e.deny(notes, mcpHoldRefusal)
-	}
-
 	if e.ruleLevels[level] != nil {
 		// The rule turn runs before the hold, so an AI guardrail that
 		// matches ends the statement with nothing filed, and an AI mask
@@ -778,19 +772,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	return v
 }
 
-// mcpHoldRefusal is the denial of a hold on an mcp tool call (ENG-967).
-const mcpHoldRefusal = "call refused because an mcp lane cannot hold a call for approval yet"
-
 // requestApproval holds a statement under its approver: the approval agent
 // with agentPrompt, a person who approves the level (human), or a person
 // under the lane's approval rule (""). handoff marks a hold the hand-off
 // agent selected, and pin is what its filing pins.
 func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalContext, notes map[string]string,
 	level RiskLevel, c classified, approver Approver, agentPrompt string, handoff bool, pin pinRef) policy.Verdict {
-	if stmt.Protocol == inspect.MCP {
-		// ENG-967: the mcp lane cannot hold a tool call yet, so no approver sees it.
-		return e.deny(notes, mcpHoldRefusal)
-	}
 	ctx := withHoldDetail(connContext(ec), HoldDetail{
 		Rule:        e.cfg.Rule,
 		RiskLevel:   level,
@@ -1045,13 +1032,16 @@ func (e *Evaluator) classify(
 // would rather pass traffic than lose a database to a model vendor's outage;
 // it was never an answer about a statement a human was supposed to see, and
 // reading it as one would turn every outage into a bypass of the approval.
+//
+// UnavailableMessage starts every such denial, so a client (the CLI demo's
+// tour) can tell it from a rule's.
 func (e *Evaluator) failure(err error) policy.Verdict {
 	if e.cfg.FailOpen && !e.holds {
 		return policy.Verdict{Err: err}
 	}
-	msg := "risk analysis unavailable; denying"
+	msg := UnavailableMessage + "; denying"
 	if e.holds {
-		msg = "risk analysis unavailable and this lane holds statements for " +
+		msg = UnavailableMessage + " and this lane holds statements for " +
 			"approval; denying"
 	}
 	return policy.Verdict{

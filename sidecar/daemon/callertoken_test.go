@@ -486,7 +486,7 @@ func TestWatchCallerTokensPollsUntilStopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		watchCallerTokens(ctx, slog.New(slog.DiscardHandler), files, 5*time.Millisecond)
+		watchCallerTokens(ctx, slog.New(slog.DiscardHandler), &tokenWatch{files: files}, 5*time.Millisecond)
 		close(done)
 	}()
 

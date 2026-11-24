@@ -269,26 +269,17 @@ RUN set -eu; \
     chmod -R a+rX /opt/alcatraz/models
 
 # --- Stage: fetch ONNX Runtime -----------------------------------------------
-# Dockerfile.agent's `ort` stage, unchanged. BUILDPLATFORM for the same
-# reason as `models`: curl, not QEMU, picks the archive, keyed on TARGETARCH.
-# Microsoft publishes linux-x64 and linux-aarch64; nothing else is built
-# here. The -alcatraz flavours, the ica flavour and the assets bundle all
-# copy from it.
+# Same verified Microsoft NuGet CPU package and extraction as Dockerfile.agent
+# and the real-model NER test. BUILDPLATFORM avoids QEMU for downloads; the
+# helper selects linux-x64 or linux-arm64 by TARGETARCH. The -alcatraz flavours,
+# the ica flavour and the assets bundle all copy the same library layout.
 FROM --platform=${BUILDPLATFORM} ${CURL_IMAGE} AS ort
 ARG ORT_VERSION
 ARG TARGETARCH
 USER root
 WORKDIR /opt/ort
-RUN set -eu; \
-    case "${TARGETARCH}" in \
-      amd64) ort=linux-x64 ;; \
-      arm64) ort=linux-aarch64 ;; \
-      *) echo "no onnxruntime release for ${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-${ort}-${ORT_VERSION}.tgz" \
-      | tar -xz -C /opt/ort --strip-components=1; \
-    test -f /opt/ort/lib/libonnxruntime.so; \
-    chmod -R a+rX /opt/ort
+COPY deploy/onnxruntime/fetch.sh deploy/onnxruntime/manifest.env /opt/hoop-ort-download/
+RUN ORT_VERSION="${ORT_VERSION}" sh /opt/hoop-ort-download/fetch.sh /opt/ort "${TARGETARCH}"
 
 # --- Flavour: distroless -----------------------------------------------------
 # The cc rootfs already ships the CA bundle, which this process needs for

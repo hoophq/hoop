@@ -308,6 +308,26 @@ const (
 	reviewPoll = 5 * time.Second
 )
 
+type holdDeadlineKey struct{}
+
+// WithHoldDeadline ends every hold on ctx by t, so a lane whose caller ends
+// the request at a known time answers with the approval id first. One
+// deadline covers all the holds of a request: a later hold gets what is left.
+func WithHoldDeadline(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, holdDeadlineKey{}, t)
+}
+
+// holdBudget is the wait of a hold on ctx, and whether a lane's deadline
+// set it.
+func (e *Evaluator) holdBudget(ctx context.Context) (time.Duration, bool) {
+	if t, ok := ctx.Value(holdDeadlineKey{}).(time.Time); ok {
+		if left := time.Until(t); left < e.reviewWait {
+			return max(left, 0), true
+		}
+	}
+	return e.reviewWait, false
+}
+
 // requestHold hands the hold to the Chain that owns ec, which runs it after
 // every evaluator placed after this one allowed (ADR-0030). Holding here
 // would file and spend the approval before a decide-phase OPA could deny.
@@ -460,8 +480,9 @@ func reviewText(stmt inspect.Statement, ignore []MatchIgnore) (string, int, erro
 // at the deadline may already have spent the approval, so its answer is
 // honored.
 func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]string) policy.Verdict {
-	deadline := time.Now().Add(e.reviewWait)
-	timer := time.NewTimer(e.reviewPoll)
+	budget, laneLimit := e.holdBudget(ctx)
+	deadline := time.Now().Add(budget)
+	timer := time.NewTimer(min(e.reviewPoll, budget))
 	defer timer.Stop()
 	for {
 		select {
@@ -492,9 +513,12 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 
 		left := time.Until(deadline)
 		if left <= 0 {
-			return e.denyHold(notes, reviewID, reviewPending, fmt.Sprintf(
-				"still waiting for approval after %s; run the statement again once it is approved",
-				e.reviewWait))
+			waited := "after " + budget.String()
+			if laneLimit {
+				waited = "at the request's time limit"
+			}
+			return e.denyHold(notes, reviewID, reviewPending,
+				"still waiting for approval "+waited+"; run the statement again once it is approved")
 		}
 		timer.Reset(min(e.reviewPoll, left))
 	}
@@ -630,6 +654,10 @@ func operatorMessage(operator string) string {
 	return operator
 }
 
+// RejectedReason starts the denial of a statement a person rejected, so a
+// client (the CLI demo's tour) can tell a rejection from an expiry.
+const RejectedReason = "the approval request was rejected"
+
 // reviewReason turns a review's status into the clause a developer reads.
 //
 // The distinction that matters to them is whether waiting will help. Pending
@@ -642,7 +670,7 @@ func (e *Evaluator) reviewReason(res ReviewResult) string {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
-		const rejected = "the approval request was rejected"
+		const rejected = RejectedReason
 		// The reason takes only the room the operator's message and the
 		// approval id leave, so it never pushes the id out of the error.
 		room := maxDenialBytes - len(holdMessage(e.cfg.Message, res.ID, rejected+": "))

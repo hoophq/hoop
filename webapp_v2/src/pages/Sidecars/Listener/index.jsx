@@ -43,7 +43,7 @@ function FeatureSettings({ sidecar, listener }) {
   if (listener) return <FeatureRules sidecar={sidecar} listener={listener} editable={!usesConfigFile(sidecar)} />
   return (
     <Stack gap="md">
-      <FeatureAccordions config={sidecar.configuration} boundRules={[]} />
+      <FeatureAccordions config={sidecar.configuration} boundRules={[]} defaultsOnly />
       <Callout icon={Info} tone="info">
         <Text size="sm">
           This listener inherits the global feature configuration. You can override it per listener after creation.

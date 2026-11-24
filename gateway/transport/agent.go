@@ -103,6 +103,11 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		if proxyStream == nil {
 			continue
 		}
+		if proxyStream.PluginContext().OrgID != pctx.OrgID {
+			log.With("sid", pctx.SID, "agent", stream.AgentName()).
+				Warnf("dropping packet %v, the session belongs to another org", pkt.Type)
+			continue
+		}
 		extContext := transportext.Context{
 			OrgID:                               pctx.OrgID,
 			SID:                                 pctx.SID,
@@ -275,7 +280,7 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 		log.With("sid", pctx.SID).Errorf("unable to save analyzer metrics packet, reason=%v", err)
 	}
 
-	if err := models.IncrementSessionAnalyzedMetrics(models.DB, pctx.SID, data); err != nil {
+	if err := models.IncrementSessionAnalyzedMetrics(models.DB, pctx.OrgID, pctx.SID, data); err != nil {
 		log.With("sid", pctx.SID).Errorf("unable to increment analyzed metrics, reason=%v", err)
 	}
 
@@ -302,7 +307,7 @@ func handleAgentLogsPacket(stream *streamclient.AgentStream, pkt *pb.Packet) {
 
 func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
 	if strings.HasPrefix(pkt.Type, "Sys") {
-		if err := transportsystem.Send(pkt.Type, pctx.SID, pkt.Payload); err != nil {
+		if err := transportsystem.Send(pctx.OrgID, pkt.Type, pctx.SID, pkt.Payload); err != nil {
 			log.With("sid", pctx.SID).Warnf("unable to send system packet, type=%v, reason=%v", pkt.Type, err)
 		}
 		return true

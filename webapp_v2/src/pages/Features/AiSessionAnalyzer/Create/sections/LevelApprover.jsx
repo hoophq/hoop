@@ -1,11 +1,11 @@
-import { Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core'
+import { Group, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core'
 import { Bot, FileCheck2, User } from 'lucide-react'
 import Radio from '@/components/Radio'
 import { APPROVER_AI, APPROVER_HUMAN, APPROVERS } from '@/pages/sidecarRuleVocabulary'
-import CardConnector from '../../components/CardConnector'
+import CardStack from '../../components/CardStack'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
-import { APPROVER_RULE } from '../useSidecarAiAnalyzerEditor'
+import { APPROVER_RULE, approverConfigured } from '../useSidecarAiAnalyzerEditor'
 import ApprovalRouting from './ApprovalRouting'
 
 const APPROVER_ICONS = { [APPROVER_AI]: Bot, [APPROVER_HUMAN]: User }
@@ -39,7 +39,7 @@ function ApproverOption({ value, label, description, selected, onSelect }) {
 // Who approves one level's hold: an AI agent with an optional prompt, or the
 // members of some groups, static or AI-routed. A bare hold from an imported
 // file names its rule.
-function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChange }) {
+function WhoApproves({ approval, approvalRule, groupOptions, groupsLoaded, onApprover, onChange }) {
   if (approval.approver === APPROVER_RULE) {
     return (
       <Text size="sm" c="dimmed">
@@ -71,16 +71,17 @@ function WhoApproves({ approval, approvalRule, groupOptions, onApprover, onChang
         />
       )}
       {approval.approver === APPROVER_HUMAN && (
-        <ApprovalRouting approval={approval} groupOptions={groupOptions} onChange={onChange} />
+        <ApprovalRouting approval={approval} groupOptions={groupOptions} groupsLoaded={groupsLoaded} onChange={onChange} />
       )}
     </Stack>
   )
 }
 
-// The "Approver" card: who approves a held statement.
-export function ApproverCard(props) {
+// The "Approver" card: who approves a held statement. `card` is its open
+// state from the level's CardStack.
+export function ApproverCard({ card, ...props }) {
   return (
-    <SettingsCard icon={FileCheck2} title="Approver" subtitle="Select who approves requests in this risk level.">
+    <SettingsCard icon={FileCheck2} title="Approver" subtitle="Select who approves requests in this risk level." {...card}>
       <WhoApproves {...props} />
     </SettingsCard>
   )
@@ -90,11 +91,10 @@ export function ApproverCard(props) {
 // settings card (`policy`) first, since its rules apply before the approval
 // (f20), then the Approver card.
 export default function LevelApprover({ policy, ...props }) {
-  return (
-    <Paper withBorder radius="lg" p="md">
-      {policy}
-      <CardConnector />
-      <ApproverCard {...props} />
-    </Paper>
-  )
+  const approver = {
+    key: 'approver',
+    configured: approverConfigured(props.approval),
+    render: (card) => <ApproverCard card={card} {...props} />,
+  }
+  return <CardStack cards={[policy, approver].filter(Boolean)} />
 }

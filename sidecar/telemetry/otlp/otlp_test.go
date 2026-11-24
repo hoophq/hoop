@@ -424,3 +424,21 @@ func TestTracesOffCostsNoSpan(t *testing.T) {
 }
 
 type ctxKey struct{}
+
+// A reload asks for a lane's recorder again and gets the same one. A name
+// that comes back under another protocol (a listener removed, then added
+// again) must not keep reporting the old protocol.
+func TestALaneRecorderFollowsItsProtocol(t *testing.T) {
+	rcv := newReceiver(t)
+	exp := mustNew(t, httpConfig(rcv.srv.URL))
+	defer shutdown(t, exp)
+
+	first := exp.Lane("reports", "postgres")
+	if again := exp.Lane("reports", "postgres"); again != first {
+		t.Error("the same lane got a second recorder; its counters would restart")
+	}
+	moved, ok := exp.Lane("reports", "mysql").(*lane)
+	if !ok || moved.protocol != "mysql" {
+		t.Fatalf("recorder for the re-added lane = %+v, want protocol mysql", moved)
+	}
+}

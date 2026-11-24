@@ -34,7 +34,7 @@ require (
 	github.com/hoophq/hoop/sidecar/mcpgateway v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261118232638-e8475457b355
+	github.com/hoophq/libhoop v0.0.0-20261124185841-da994687e0f2
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
@@ -157,7 +157,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop-ica v0.11.2 // indirect
+	github.com/hoophq/libhoop-ica v0.13.0 // indirect
 	github.com/hoophq/mcpproxy v0.2.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

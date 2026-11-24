@@ -4,7 +4,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import { maskingAgentBlockers } from '@/utils/ruleSupport'
 import { DEFAULT_KEEP_LAST, MASK_STRATEGIES, SSH_ONLY_STRATEGY } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
-import { normalizeEntityName, scoreToPercent, targetProtocols } from '../helpers'
+import { normalizeEntityName, rulesToSave, scoreToPercent, targetProtocols } from '../helpers'
 
 const newKey = () => Math.random().toString(36).slice(2)
 
@@ -121,18 +121,14 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
 
   const save = async () => {
     if (!canSubmit) return false
-    const spec = rulesToSpec(rules, sshBound)
-    if (spec.rules.length === 0) {
-      showSnackbar({ level: 'error', text: 'Give every rule a name, or remove it.' })
+    const checked = rulesToSave(rules, customEntities)
+    if (checked.error) {
+      showSnackbar({ level: 'error', text: checked.error })
       return false
     }
-    const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
-    if (half !== -1) {
-      showSnackbar({ level: 'error', text: `Custom entity ${half + 1} needs a name and a regex, or remove it.` })
-      return false
-    }
+    const named = checked.rules
+    const spec = rulesToSpec(named, sshBound)
     const custom = customEntities.filter((c) => c.name.trim() !== '' && c.regex.trim() !== '')
-    const named = rules.filter((r) => r.name.trim() !== '')
     const payload = {
       name: name.trim(),
       description,

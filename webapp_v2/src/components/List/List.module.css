@@ -1,0 +1,16 @@
+/* The outer border, the corners and the line between rows. A row draws
+   none of them. `overflow: clip` keeps a row's background and an expanded
+   panel inside the corners, whatever --hoop-list-radius is. */
+.root {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hoop-list-border);
+  border-radius: var(--hoop-list-radius);
+  overflow: clip;
+  background-color: var(--mantine-color-body);
+}
+
+.root > * + * {
+  border-top: 1px solid var(--hoop-list-border);
+}
