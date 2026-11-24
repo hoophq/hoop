@@ -43,7 +43,7 @@ require (
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e
-	github.com/hoophq/mcpproxy v0.2.0
+	github.com/hoophq/mcpproxy v0.2.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
