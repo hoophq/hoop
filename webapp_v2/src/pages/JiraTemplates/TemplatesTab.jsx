@@ -55,11 +55,11 @@ export default function TemplatesTab({ onGoConfiguration }) {
   if (!integration) {
     return (
       <EmptyState
-        title="No Jira integration configured in your Organization yet."
+        title="No Jira integration yet"
         description="Configure your Jira instance to start creating Jira Templates."
         action={{ label: 'Configure Jira integration', onClick: onGoConfiguration }}
         docsUrl={docsUrl.integrations.jira}
-        docsLabel="Jira templates documentation"
+        docsLabel="Jira Templates documentation"
       />
     )
   }
@@ -71,10 +71,11 @@ export default function TemplatesTab({ onGoConfiguration }) {
           <FreeLicenseCallout message={FREE_LICENSE_INFO_MESSAGE} variant="info" />
         )}
         <EmptyState
-          title="No Jira template configured in your Organization yet."
+          title="No Jira Templates yet"
+          description="Create a template to set the fields of the Jira issues Hoop opens."
           action={{ label: 'Create a new Jira template', onClick: goCreate }}
           docsUrl={docsUrl.integrations.jira}
-          docsLabel="Jira templates documentation"
+          docsLabel="Jira Templates documentation"
         />
       </Stack>
     )

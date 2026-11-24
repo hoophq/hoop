@@ -12,6 +12,7 @@ import Modal from '@/components/Modal'
 import Tooltip from '@/components/Tooltip'
 import { apiKeysService } from '@/services/apiKeys'
 import { truncateKey } from '@/utils/maskedKey'
+import { docsUrl } from '@/utils/docsUrl'
 
 function formatDate(dateStr) {
   if (!dateStr) return '—'
@@ -87,9 +88,11 @@ export default function ApiKeys() {
 
       {keys.length === 0 ? (
         <EmptyState
-          title="No API keys yet"
-          description="Create an API key to authenticate programmatic access to Hoop."
+          title="No API Keys yet"
+          description="Create a key to call the Hoop API from scripts and tools."
           action={{ label: 'Create new API key', onClick: () => navigate('/settings/api-keys/new') }}
+          docsUrl={docsUrl.setup.apis.apiKeys}
+          docsLabel="API Keys documentation"
         />
       ) : (
         <Table>

@@ -29,15 +29,15 @@ function ListEmpty({ isAdmin }) {
     <EmptyState
       title={
         isAdmin
-          ? 'Get started by setting up your environment resources in your Organization'
+          ? 'No Resources yet'
           : 'Discover the resources your organization can connect to securely through Hoop'
       }
       action={{
-        label: isAdmin ? 'Setup new Resource' : 'Explore Resource Catalog',
+        label: isAdmin ? 'Set up a new Resource' : 'Explore the Resource catalog',
         onClick: () => navigate('/resource-catalog'),
       }}
       docsUrl={GETTING_STARTED_URL}
-      docsLabel="getting started documentation"
+      docsLabel="Resources documentation"
     />
   )
 }

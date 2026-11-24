@@ -156,7 +156,7 @@ data, not a preview switch.
 | State | Use |
 | --- | --- |
 | Loading | `<PageLoader h={300} />` (a part of a page: `Skeleton`) |
-| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. One create button per view: in the empty state (center) while the list is empty, in the header (top right) once it has items. Never both, never neither. A create menu (`NewRuleButton`) goes in `action` as an element. |
+| Empty, no data | `<EmptyState title description action />`. `action` only when the user can create. One create button per view: in the empty state (center) while the list is empty, in the header (top right) once it has items. Never both, never neither. A create menu (`NewRuleButton`) goes in `action` as an element. Same shape on every page: title "No <things> yet", one `description` line on what to do, then `docsUrl` and `docsLabel="<Feature> documentation"` (it renders "Need more information? Check out our ..."). Not `compact`: that is for filters that match nothing. |
 | Empty, filters match nothing | `<EmptyState compact title="No Guardrails match your filters" description="Try clearing the filter above." />` |
 | Error | `<PageLoader error h={300} message="Failed to load Guardrails." />`, or `Alert color="red"` with a retry button |
 

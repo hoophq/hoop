@@ -23,6 +23,7 @@ import { AGENT_DLP_REQUIRED } from './helpers'
 import GuardrailListItem from './components/GuardrailListItem'
 import GuardrailsPromotion from './components/GuardrailsPromotion'
 import List from '@/components/List'
+import { docsUrl } from '@/utils/docsUrl'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
@@ -198,10 +199,11 @@ export default function Guardrails() {
 
       {list.length === 0 ? (
         <EmptyState
-          compact
           title="No Guardrails yet"
           description="Create one for your Resource Roles or Sidecar listeners."
           action={{ label: 'Create new rule', onClick: goCreate }}
+          docsUrl={docsUrl.features.guardrails}
+          docsLabel="Guardrails documentation"
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState

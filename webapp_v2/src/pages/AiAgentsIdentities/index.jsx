@@ -12,6 +12,7 @@ import Modal from '@/components/Modal'
 import Tooltip from '@/components/Tooltip'
 import { aiAgentsService } from '@/services/aiAgents'
 import { truncateKey } from '@/utils/maskedKey'
+import { docsUrl } from '@/utils/docsUrl'
 
 const LIST_PATH = '/ai-agents-identities'
 const NEW_PATH = '/ai-agents-identities/new'
@@ -90,9 +91,11 @@ export default function AiAgentsIdentities() {
 
       {agents.length === 0 ? (
         <EmptyState
-          title="No AI agents yet"
-          description="Create an AI Agent identity to give programmatic, auditable access to Hoop from your AI tools."
+          title="No AI Agent Identities yet"
+          description="Create one to give your AI tools scoped, auditable access to Hoop."
           action={{ label: 'Create new AI Agent', onClick: () => navigate(NEW_PATH) }}
+          docsUrl={docsUrl.features.mcpServer}
+          docsLabel="AI Agent Identities documentation"
         />
       ) : (
         <Table>

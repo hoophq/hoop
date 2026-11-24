@@ -23,6 +23,7 @@ import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
 import { RULE_DRIVEN_PROVIDERS } from './helpers'
 import List from '@/components/List'
+import { docsUrl } from '@/utils/docsUrl'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
@@ -190,10 +191,11 @@ export default function DataMasking() {
 
       {list.length === 0 ? (
         <EmptyState
-          compact
           title="No Data Masking rules yet"
           description="Create one for your Resource Roles or Sidecar listeners."
           action={{ label: 'Create new rule', onClick: goCreate }}
+          docsUrl={docsUrl.sidecar.dataMasking}
+          docsLabel="Data Masking documentation"
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState

@@ -426,8 +426,10 @@ export default function Users() {
           ) : (
             <EmptyState
               title="No users yet"
-              description="Add your first user to get started."
+              description="Add a user to give them access to Hoop."
               action={{ label: 'Add user', onClick: handleAdd }}
+              docsUrl={docsUrl.clients.webApp.userManagement}
+              docsLabel="Users documentation"
             />
           )
         ) : (
@@ -485,14 +487,14 @@ export default function Users() {
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite users and setup team-based permissions and approval workflows for secure resource access
+                    Invite users and set up team permissions and approvals for Resource access.
                   </Text>
                   <Button onClick={handleAdd}>Invite users</Button>
                 </Stack>
                 <Text mt="auto" size="sm" c="dimmed" ta="center">
-                  {'Need more information? Check out '}
+                  {'Need more information? Check out our '}
                   <Anchor href={docsUrl.clients.webApp.userManagement} target="_blank" size="sm">
-                    User Management documentation
+                    Users documentation
                   </Anchor>
                   {'.'}
                 </Text>

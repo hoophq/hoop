@@ -246,13 +246,15 @@ function Agents() {
 
         {agents.length === 0 ? (
           <EmptyState
-            title="No agents yet"
-            description="Create a new Agent to your Organization to show it here"
+            title="No Agents yet"
+            description="Set up an Agent to connect your Resources to Hoop."
             action={
               isAdmin
                 ? { label: 'Set up a new Agent', onClick: () => navigate('/agents/new') }
                 : null
             }
+            docsUrl={docsUrl.setup.agents}
+            docsLabel="Agents documentation"
           />
         ) : (
           <Stack gap="md">

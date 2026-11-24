@@ -70,7 +70,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
   if (list.length === 0 && mixed) {
     return (
       <EmptyState
-        title="No rules in your organization yet"
+        title="No AI Analyzer rules yet"
         description={newRuleHint(newTraffics)}
         action={
           <NewRuleButton
@@ -81,7 +81,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
           </NewRuleButton>
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Analyzer Configuration"
+        docsLabel="AI Analyzer documentation"
       />
     )
   }
@@ -93,8 +93,8 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
       <EmptyState
         title={
           providerConfigured
-            ? 'No rules in your organization yet'
-            : 'No configurations in your organization yet'
+            ? 'No AI Analyzer rules yet'
+            : 'AI Analyzer is not configured yet'
         }
         action={
           providerConfigured
@@ -102,7 +102,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
             : { label: 'Configure AI Analyzer', onClick: onGoConfigure }
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Analyzer Configuration"
+        docsLabel="AI Analyzer documentation"
       />
     )
   }

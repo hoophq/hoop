@@ -157,7 +157,8 @@ export default function Attributes() {
 
       {attributes.length === 0 ? (
         <EmptyState
-          title="No Attributes configured in your Organization yet"
+          title="No Attributes yet"
+          description="Create an Attribute to group Resource Roles and apply features to them."
           action={{ label: 'Create a new Attribute', onClick: () => navigate('/settings/attributes/new') }}
           docsUrl={docsUrl.features.attributes}
           docsLabel="Attributes documentation"

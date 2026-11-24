@@ -136,6 +136,7 @@ export default function AccessRequest() {
       {rules.length === 0 ? (
         <EmptyState
           title="No Approval rules yet"
+          description="Create a rule to require an approval before access."
           action={{ label: CREATE_LABEL, onClick: goCreate }}
           docsUrl={docsUrl.features.accessRequests}
           docsLabel="Approval rules documentation"

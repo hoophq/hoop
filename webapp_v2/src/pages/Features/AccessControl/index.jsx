@@ -152,10 +152,11 @@ export default function AccessControl() {
 
       {groupNames.length === 0 ? (
         <EmptyState
-          title="No Access Control Groups available to manage yet"
+          title="No Access Control groups yet"
+          description="Create a group to choose who can access each Resource Role."
           action={{ label: 'Create group', onClick: goCreate }}
           docsUrl={docsUrl.features.accessControl}
-          docsLabel="access control documentation"
+          docsLabel="Access Control documentation"
         />
       ) : (
         <>
