@@ -4298,6 +4298,8 @@ upstream, such as a GitHub or Stripe key, in that header:
 
 Claude Code sends it with
 `claude mcp add --transport http github http://127.0.0.1:<port>/mcp --header "X-Hoop-Upstream-Authorization: Bearer <token>"`.
+The Cursor CLI (2026.11.22) sends a header value in `mcp.json` as written:
+`${env:GITHUB_PAT}` reaches the lane as that text, not the token.
 
 For a server that needs a token the caller does not hold, or OAuth: run
 the MCP server yourself with its credential, or run a proxy on loopback
