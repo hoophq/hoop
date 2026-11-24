@@ -27,7 +27,7 @@ export default function SidecarLicenseNotice() {
 
   return (
     <>
-      <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+      <Alert color="blue" variant="light" icon={<Info size={16} />}>
         <Group gap="xs" align="center" wrap="wrap">
           <Text size="sm" component="span">
             {MESSAGE}

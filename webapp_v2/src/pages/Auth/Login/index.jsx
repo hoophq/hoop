@@ -41,7 +41,7 @@ function AuthCard({ children }) {
   return (
     <Center mih="100vh" bg="var(--hoop-surface-muted)">
       <Box w="90%" maw={400}>
-        <Paper shadow="sm" p={40} radius="lg">
+        <Paper shadow="sm" p={40}>
           <Box
             component="img"
             src="/images/hoop-branding/SVG/hoop-symbol_black.svg"

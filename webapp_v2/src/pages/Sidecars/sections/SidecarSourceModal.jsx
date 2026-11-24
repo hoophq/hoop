@@ -42,7 +42,7 @@ export default function SidecarSourceModal({
       <Stack>
         {toConfigFile ? (
           <>
-            <Alert color="red" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+            <Alert color="red" variant="light" icon={<TriangleAlert size={16} />}>
               <Stack gap={4}>
                 <Text size="sm" fw={600}>
                   This deletes the rules stored in Hoop.
@@ -73,7 +73,7 @@ export default function SidecarSourceModal({
           </>
         ) : (
           <>
-            <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+            <Alert color="amber" variant="light" icon={<TriangleAlert size={16} />}>
               <Text size="sm" fw={600}>
                 After this step, the Sidecar ignores its local configuration file.
               </Text>

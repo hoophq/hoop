@@ -47,7 +47,7 @@ export default function AiAgentsIdentitiesCreated() {
       <Box maw={552} w="100%">
         <Stack gap="xl">
           <Flex direction="column" align="center" gap="sm">
-            <ThemeIcon size={72} radius="xl" color="indigo" variant="light">
+            <ThemeIcon size={72} color="indigo" variant="light">
               <Bot size={32} />
             </ThemeIcon>
             <Title order={2} ta="center">

@@ -33,7 +33,7 @@ function Section({ icon, title, description, rules }) {
   return (
     <Stack gap="md">
       <Group gap="md" align="center">
-        <ThemeIcon variant="light" color="gray" size={40} radius="lg">
+        <ThemeIcon variant="light" color="gray" size={40}>
           <Icon size={16} />
         </ThemeIcon>
         <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>

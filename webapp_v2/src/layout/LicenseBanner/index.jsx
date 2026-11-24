@@ -78,7 +78,6 @@ export default function LicenseBanner() {
     <Alert
       color={notice.color}
       variant="light"
-      radius={0}
       py="sm"
       icon={<TriangleAlert size={18} />}
       withCloseButton={!!notice.dismissKey}

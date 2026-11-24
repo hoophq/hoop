@@ -86,7 +86,7 @@ function Signup() {
 
   return (
     <Container size={420} my={40}>
-      <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+      <Paper withBorder shadow="md" p={30} mt={30}>
         <Stack align="center" mb="lg">
           <Title order={2} ta="center">
             Welcome to hoop.dev

@@ -28,7 +28,7 @@ export default function InformationTab({ resource, name, saving, onNameChange })
   return (
     <Stack gap="xxxlAlt">
       <Row title="Resource type" description="The kind of system this resource connects to.">
-        <Paper withBorder radius="lg" p="md" h={110} bg="var(--hoop-surface-raised)">
+        <Paper withBorder p="md" h={110} bg="var(--hoop-surface-raised)">
           <Stack h="100%" justify="space-between">
             <Image src={iconFor(resource)} alt="" w={24} h={24} fit="contain" />
             <Text fw={700}>{capitalize(resource.type)}</Text>

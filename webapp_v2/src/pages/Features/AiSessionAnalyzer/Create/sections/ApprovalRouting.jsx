@@ -141,7 +141,7 @@ function NotifyRow({ integration, integrated, route, channels, onChange }) {
     <Stack gap="sm" p="md">
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <Group gap="sm" wrap="nowrap" align="flex-start">
-          <ThemeIcon size={28} radius="sm" variant="default">
+          <ThemeIcon size={28} variant="default">
             {INTEGRATION_ICONS[key]}
           </ThemeIcon>
           <Stack gap={2}>
@@ -225,7 +225,7 @@ function Notify({ routing, onRoute }) {
         Notify
       </Text>
       <Stack gap={6}>
-        <Paper withBorder radius="lg" className={classes.clipped}>
+        <Paper withBorder className={classes.clipped}>
           {body}
           {(loaded || status === 'error') && <KeptEntries entries={kept} />}
         </Paper>
@@ -265,7 +265,7 @@ export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, 
       />
       {ai ? (
         <>
-          <Paper radius="md" px="sm" py={8} bg="var(--hoop-tint-indigo)">
+          <Paper px="sm" py={8} bg="var(--hoop-tint-indigo)">
             <Group gap="xs" wrap="nowrap">
               <Sparkles size={14} aria-hidden="true" color="var(--mantine-primary-color-filled)" />
               <Text size="xs" c="indigo">

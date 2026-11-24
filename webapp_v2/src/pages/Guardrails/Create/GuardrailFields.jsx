@@ -46,7 +46,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
   const scope = type?.scope ?? operations
 
   return (
-    <Paper p="md" radius="md" withBorder>
+    <Paper p="md" withBorder>
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Text size="xs" fw={600} c="dimmed" tt="uppercase">

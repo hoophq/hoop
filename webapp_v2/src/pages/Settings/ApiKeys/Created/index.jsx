@@ -13,7 +13,7 @@ export default function ApiKeysCreated() {
       <Box maw={520} w="100%">
         <Stack gap="xl">
           <Flex direction="column" align="center" gap="sm">
-            <ThemeIcon variant="light" color="green" size={72} radius={72}>
+            <ThemeIcon variant="light" color="green" size={72}>
               <CheckCircle size={40} />
             </ThemeIcon>
             <Title order={2} ta="center">

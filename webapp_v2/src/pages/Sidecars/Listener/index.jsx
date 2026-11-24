@@ -122,7 +122,7 @@ function Editor({ sidecar, index, onDone, onLeave }) {
 
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
 
-        <Paper withBorder radius="md" p="lg">
+        <Paper withBorder p="lg">
           <ListenerForm
             form={form}
             setField={setField}

@@ -32,7 +32,7 @@ export default function AccessRequestOverlap({
 
   if (failed) {
     return (
-      <Alert color="yellow" variant="light" icon={<TriangleAlert size={16} />} radius="md">
+      <Alert color="yellow" variant="light" icon={<TriangleAlert size={16} />}>
         Could not check whether an Access Request rule also covers these resource roles.
       </Alert>
     )
@@ -48,7 +48,6 @@ export default function AccessRequestOverlap({
       color="yellow"
       variant="light"
       icon={<TriangleAlert size={16} />}
-      radius="md"
       title="An Access Request rule also covers these resource roles"
       data-testid="access-request-overlap"
     >

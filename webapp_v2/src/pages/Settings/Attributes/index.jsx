@@ -178,7 +178,7 @@ export default function Attributes() {
               {`No attributes match connection '${filterConn}'.`}
             </Text>
           ) : (
-            <Paper withBorder radius="md">
+            <Paper withBorder>
               {filtered.map((attr, idx) => (
                 <div key={attr.name}>
                   {idx > 0 && <Divider />}

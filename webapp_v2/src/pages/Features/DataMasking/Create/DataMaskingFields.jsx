@@ -53,7 +53,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
   const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
   return (
-    <Paper p="md" radius="md" withBorder>
+    <Paper p="md" withBorder>
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Text size="xs" fw={600} c="dimmed" tt="uppercase">

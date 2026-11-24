@@ -12,7 +12,7 @@ export default function SettingsCard({ icon: Icon, title, subtitle, badge, done,
   let status
   if (!open && done) {
     status = (
-      <ThemeIcon size={22} radius="xl" variant="light" color="green" aria-label="Configured">
+      <ThemeIcon size={22} variant="light" color="green" aria-label="Configured">
         <Check size={12} aria-hidden="true" />
       </ThemeIcon>
     )
@@ -20,7 +20,7 @@ export default function SettingsCard({ icon: Icon, title, subtitle, badge, done,
     status = <Box w={22} h={22} bdrs="xl" bg={open ? 'var(--mantine-color-body)' : 'var(--hoop-surface-strong)'} />
   }
   return (
-    <Paper withBorder radius="lg" className={classes.clipped}>
+    <Paper withBorder className={classes.clipped}>
       <UnstyledButton
         w="100%"
         p="md"
@@ -29,7 +29,7 @@ export default function SettingsCard({ icon: Icon, title, subtitle, badge, done,
         aria-expanded={open}
       >
         <Group wrap="nowrap" gap="md">
-          <ThemeIcon size={40} radius="md" variant="light" color="gray">
+          <ThemeIcon size={40} variant="light" color="gray">
             <Icon size={18} aria-hidden="true" />
           </ThemeIcon>
           <Stack gap={2} flex={1}>
@@ -51,7 +51,7 @@ export default function SettingsCard({ icon: Icon, title, subtitle, badge, done,
         <Divider />
         <Box p="md">
           {panel ? (
-            <Paper withBorder radius="lg" p="lg">
+            <Paper withBorder p="lg">
               {children}
             </Paper>
           ) : (

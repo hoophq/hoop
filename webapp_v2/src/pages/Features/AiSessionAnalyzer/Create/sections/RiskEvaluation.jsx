@@ -65,11 +65,11 @@ function RiskLevelSection({ level, tier, onChange, accessRequestRules, rulesFail
 
         {tier.action === REQUIRE_ACCESS_REQUEST &&
           (rulesFailed ? (
-            <Alert color="red" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="red" variant="light" icon={<Info size={16} />}>
               Failed to load access request rules. Refresh and try again.
             </Alert>
           ) : ruleOptions.length === 0 ? (
-            <Alert color="yellow" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="yellow" variant="light" icon={<Info size={16} />}>
               No access request rules are configured. Create one in Access Control
               before selecting this action.
             </Alert>
@@ -110,7 +110,7 @@ export default function RiskEvaluation({
         <Text size="sm" c="dimmed">
           Define policies by risk level and define actions at session time.
         </Text>
-        <Alert color="indigo" variant="light" icon={<Info size={16} />} radius="md" mt="xs">
+        <Alert color="indigo" variant="light" icon={<Info size={16} />} mt="xs">
           {"Recommended policies are calibrated to the session's risk profile"}
         </Alert>
       </Stack>

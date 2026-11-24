@@ -45,7 +45,7 @@ function TargetRunbookCard({ sub }) {
     <Card padding="sm" withBorder>
       <Group justify="space-between" align="center" wrap="nowrap">
         <Group gap="md" align="center" wrap="nowrap">
-          <ThemeIcon variant="light" color="gray" size={36} radius="sm">
+          <ThemeIcon variant="light" color="gray" size={36}>
             <BookUp2 size={16} />
           </ThemeIcon>
           <Stack gap={2}>

@@ -242,7 +242,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               value={form.customPrompt}
               onChange={(e) => setField({ customPrompt: e.currentTarget.value })}
             />
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="blue" variant="light" icon={<Info size={16} />}>
               Hoop prepends a fixed system prompt before your instructions so the
               analyzer always returns a structured low/medium/high grade. This is what
               keeps the actions above reliable.
@@ -261,7 +261,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               onChange={(e) => setField({ agentic: e.currentTarget.checked })}
               label="Agentic analysis (investigate past sessions & resource metadata before classifying)"
             />
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="blue" variant="light" icon={<Info size={16} />}>
               {"When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, approver-facing analysis."}
             </Alert>
           </Stack>

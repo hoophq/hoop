@@ -224,7 +224,7 @@ export default function McpRenderer({
         />
       </Stack>
 
-      <Paper withBorder radius="md" p="md">
+      <Paper withBorder p="md">
         <Stack gap="md">
           <Stack gap={4}>
             <Title order={5}>MCP Authorization</Title>

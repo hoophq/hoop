@@ -21,7 +21,7 @@ function PrintControlRow({ control }) {
       />
       <Stack gap={2}>
         <Group gap="xs" wrap="nowrap">
-          <Badge variant="outline" color="blue" size="sm" radius="sm" tt="none">
+          <Badge variant="outline" color="blue" size="sm" tt="none">
             {control.id}
           </Badge>
           <Text fw={600}>{control.title}</Text>

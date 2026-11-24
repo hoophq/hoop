@@ -15,7 +15,7 @@ const RIGHT_SECTION_WIDTH = 112
 // pencil while editing.
 function LeadingIcon({ color, children }) {
   return (
-    <ThemeIcon size="sm" radius="xl" variant="light" color={color}>
+    <ThemeIcon size="sm" variant="light" color={color}>
       {children}
     </ThemeIcon>
   )

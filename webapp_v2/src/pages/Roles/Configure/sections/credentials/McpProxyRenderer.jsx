@@ -652,7 +652,7 @@ export default function McpProxyRenderer({
       {/* Authorization — remote transports only. A stdio child authenticates
           through its own environment and never sees an HTTP header. */}
       {!stdio && (
-        <Paper withBorder radius="md" p="md">
+        <Paper withBorder p="md">
           <Stack gap="md">
             <Stack gap={4}>
               <Title order={5}>MCP Authorization</Title>

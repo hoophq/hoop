@@ -52,18 +52,18 @@ function ReportSkeleton() {
       </Group>
       <Grid gutter="lgAlt">
         <Grid.Col span={{ base: 12, md: 4 }}>
-          <Skeleton h={280} radius="md" />
+          <Skeleton h={280} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 8 }}>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lgAlt">
             {[...Array(6)].map((_, i) => (
-              <Skeleton key={i} h={128} radius="md" />
+              <Skeleton key={i} h={128} />
             ))}
           </SimpleGrid>
         </Grid.Col>
       </Grid>
-      <Skeleton h={220} radius="md" />
-      <Skeleton h={400} radius="md" />
+      <Skeleton h={220} />
+      <Skeleton h={400} />
     </Stack>
   )
 }
@@ -115,7 +115,7 @@ function CategoryCard({ category }) {
         <Group justify="space-between" align="center" wrap="nowrap">
           <Text size="sm" fw={600}>{category.title}</Text>
           {Icon && (
-            <ThemeIcon variant="light" color={color} size="lg" radius="md">
+            <ThemeIcon variant="light" color={color} size="lg">
               <Icon size={18} />
             </ThemeIcon>
           )}
@@ -127,7 +127,7 @@ function CategoryCard({ category }) {
               /{category.total}
             </Text>
           </Group>
-          <Progress value={pct} color={color} size={4} radius="xl" />
+          <Progress value={pct} color={color} size={4} />
           <Text fz="xs" c="dimmed" lineClamp={1}>
             {CATEGORY_SUBTITLES[category.id] ?? ''}
           </Text>
@@ -170,7 +170,6 @@ function ActionRequiredItem({ item, categoryTitle, onNavigate }) {
             variant="light"
             color={CATEGORY_COLORS[item.category] ?? 'gray'}
             size="sm"
-            radius="sm"
             tt="none"
           >
             {categoryTitle ?? item.category.replaceAll('_', ' ')}
@@ -356,7 +355,6 @@ function ComplianceReport() {
               <ActionIcon
                 variant="default"
                 size="xs"
-                radius="sm"
                 aria-label="Previous actions"
                 disabled={!canScroll.prev}
                 onClick={() => embla?.scrollPrev()}
@@ -366,7 +364,6 @@ function ComplianceReport() {
               <ActionIcon
                 variant="default"
                 size="xs"
-                radius="sm"
                 aria-label="Next actions"
                 disabled={!canScroll.next}
                 onClick={() => embla?.scrollNext()}

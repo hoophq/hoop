@@ -67,7 +67,6 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
   return (
     <Checkbox.Card
       className={classes.typeCard}
-      radius="lg"
       checked={checked}
       disabled={disabled}
       onChange={onToggle}
@@ -80,7 +79,7 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
           disabled={disabled}
         />
         {Icon && (
-          <ThemeIcon size="lg" radius="md" variant="default" className={classes.typeCardIcon}>
+          <ThemeIcon size="lg" variant="default" className={classes.typeCardIcon}>
             <Icon size={20} aria-hidden="true" />
           </ThemeIcon>
         )}
@@ -352,7 +351,7 @@ function RuleFormFields({ rule, isEdit }) {
             />
           )}
           {managed && (
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="blue" variant="light" icon={<Info size={16} />}>
               {MANAGED_RULE_MESSAGE}
             </Alert>
           )}

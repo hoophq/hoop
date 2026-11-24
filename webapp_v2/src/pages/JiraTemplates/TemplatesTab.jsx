@@ -88,7 +88,7 @@ export default function TemplatesTab({ onGoConfiguration }) {
         <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
       )}
 
-      <Card padding={0} withBorder radius="md">
+      <Card padding={0} withBorder>
         {list.map((template, idx) => (
           <Fragment key={template.id}>
             {idx > 0 && <Divider />}

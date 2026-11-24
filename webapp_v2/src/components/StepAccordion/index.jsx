@@ -18,7 +18,7 @@ function StepTrigger({ icon, title, subtitle, done }) {
         </Text>
       </Box>
       {done &&
-        <Avatar size="sm" color="green" variant="light" radius="xl" mr="xs">
+        <Avatar size="sm" color="green" variant="light" mr="xs">
           <Check size={12} />
         </Avatar>}
     </Flex>
