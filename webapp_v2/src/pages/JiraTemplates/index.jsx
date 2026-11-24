@@ -90,7 +90,7 @@ export default function JiraTemplates() {
         <Stack gap="sm">
           <Title order={1}>Jira Templates</Title>
           <Text size="md" c="dimmed">
-            Optimize and automate workflows with Jira integration.
+            Set the fields of the Jira issues that Hoop opens for sessions.
           </Text>
         </Stack>
         {showCreate && (

@@ -27,14 +27,14 @@ function PluginConnectionsList({ plugin, connections, mutating, onToggle, render
   return (
     <Stack gap="md">
       <TextInput
-        placeholder="Search connections"
+        placeholder="Search Resources"
         leftSection={<Search size={16} />}
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}
       />
       {filtered.length === 0 ? (
         <Text size="sm" c="dimmed" fs="italic">
-          {search.trim() ? 'No connections match your search.' : `You don't have any connections`}
+          {search.trim() ? 'No Resources match your search.' : 'No Resources yet.'}
         </Text>
       ) : (
         <Stack gap={0}>

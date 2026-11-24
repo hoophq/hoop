@@ -383,7 +383,6 @@ export default function EventRoutingDetail() {
             {sub.status === "active" ? "Pause" : "Resume"}
           </Button>
           <Button
-            variant="solid"
             leftSection={<Pencil size={14} />}
             onClick={() => navigate(`/features/event-routing/${sub.id}/edit`)}
           >

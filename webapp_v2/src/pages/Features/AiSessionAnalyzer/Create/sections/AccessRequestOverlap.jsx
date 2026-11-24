@@ -33,7 +33,7 @@ export default function AccessRequestOverlap({
   if (failed) {
     return (
       <Alert color="yellow" variant="light" icon={<TriangleAlert size={16} />}>
-        Could not check whether an Access Request rule also covers these resource roles.
+        Could not check whether an Approval rule also covers these Resource Roles.
       </Alert>
     )
   }
@@ -48,13 +48,13 @@ export default function AccessRequestOverlap({
       color="yellow"
       variant="light"
       icon={<TriangleAlert size={16} />}
-      title="An Access Request rule also covers these resource roles"
+      title="An Approval rule also covers these Resource Roles"
       data-testid="access-request-overlap"
     >
       <Text size="sm" mb="xs">
-        Access Request rules run before the AI Analyzer. Commands on these roles
+        Approval rules run before the AI Analyzer. Commands on these roles
         can wait for approval whatever the risk level. To let the analyzer decide, remove
-        the role, or the shared attribute, from the Access Request rule.
+        the role, or the shared attribute, from the Approval rule.
       </Text>
       <List size="sm" spacing={4}>
         {overlap.map(({ connectionName, rules }) => (

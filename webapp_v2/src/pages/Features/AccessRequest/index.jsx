@@ -25,7 +25,7 @@ import AccessRequestPromotion from './components/AccessRequestPromotion'
 import RuleListItem from './components/RuleListItem'
 import List from '@/components/List'
 
-const CREATE_LABEL = 'Create new Access Request rule'
+const CREATE_LABEL = 'Create Approval rule'
 
 export default function AccessRequest() {
   const navigate = useNavigate()
@@ -135,10 +135,10 @@ export default function AccessRequest() {
 
       {rules.length === 0 ? (
         <EmptyState
-          title="No Access Request rules configured in your Organization yet"
+          title="No Approval rules yet"
           action={{ label: CREATE_LABEL, onClick: goCreate }}
           docsUrl={docsUrl.features.accessRequests}
-          docsLabel="Access Request documentation"
+          docsLabel="Approval rules documentation"
         />
       ) : (
         <>
@@ -171,7 +171,7 @@ export default function AccessRequest() {
           {filteredRules.length === 0 ? (
             <EmptyState
               compact
-              title="No Access Request rules match your filters"
+              title="No Approval rules match your filters"
               description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
             />
           ) : (

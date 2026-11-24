@@ -237,8 +237,8 @@ function RuleFormFields({ rule, isEdit }) {
       showSnackbar({
         level: 'success',
         text: isEdit
-          ? `Access Request rule "${rule.name}" updated.`
-          : `Access Request rule "${name}" created.`,
+          ? `Approval rule "${rule.name}" updated.`
+          : `Approval rule "${name}" created.`,
       })
       navigate(LIST_PATH)
       return
@@ -261,7 +261,7 @@ function RuleFormFields({ rule, isEdit }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: `Access Request rule "${rule.name}" deleted.`,
+        text: `Approval rule "${rule.name}" deleted.`,
       })
       navigate(LIST_PATH)
       return
@@ -314,7 +314,7 @@ function RuleFormFields({ rule, isEdit }) {
           data-scrolled={!headerInView || undefined}
         >
           <Title order={2} lts="-0.00625em">
-            {isEdit ? 'Edit Access Request rule' : 'Create new Access Request rule'}
+            {isEdit ? 'Edit Approval rule' : 'Create Approval rule'}
           </Title>
           <Group gap="sm">
             {isEdit && !managed && (
@@ -351,7 +351,7 @@ function RuleFormFields({ rule, isEdit }) {
         <Stack gap="xxlAlt" className={classes.form}>
           <SectionRow
             title="Set new rule information"
-            description="Used to identify your Access Request rule in your resources."
+            description="Used to identify this Approval rule."
           >
             <Stack gap="lg">
               {/* The name is the rule's identifier on the gateway and there is
