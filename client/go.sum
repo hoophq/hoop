@@ -346,8 +346,8 @@ github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRn
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e h1:HTPuuf+8TZ4U0JgwdB13v7HRT9V0yPlKMTUogvYS1Sc=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
-github.com/hoophq/libhoop v0.0.0-20261124191330-061ec6cf4483 h1:9yFUVp/0Ap1oz6sNtaap8jI2RQIXK4m3MpFZ5ddFjOw=
-github.com/hoophq/libhoop v0.0.0-20261124191330-061ec6cf4483/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3 h1:2J5tTs2djQhFtzraWQl2XAiK5b+JvSfW3CJdIB8KnbQ=
+github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop-ica v0.11.2 h1:PW7n16UxkuCqkjMeTgxTqv41q3AC9/Wm52yjlmn4HFA=
 github.com/hoophq/libhoop-ica v0.11.2/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/libhoop-ica v0.12.0 h1:GeNL+ugm0Cg0S0FzNzbdKiVIfhiPm+kfVEQRQ8WH2nc=

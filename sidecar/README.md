@@ -1455,8 +1455,8 @@ small table and high on a large unindexed one.
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
 - Size and indexes are cached 30 s per database, current role and table; a
-  plan per the same scope and full statement text. A lock or timeout error
-  is not cached. The verdict cache key includes the check.
+  plan per the same scope and a hash of the statement text. A lock or
+  timeout error is not cached. The verdict cache key includes the check.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no
@@ -1466,6 +1466,11 @@ small table and high on a large unindexed one.
   `discard` stops cache use until the next check reads the current role.
 - A session with temporary tables keeps its own cache. A temporary table
   that a function creates is seen at the connection's next check.
+- A session that may change a planner setting keeps its own cache, new at
+  each change: `SET` or `RESET` of a setting other than the search path,
+  role, time zone, timeouts, transaction and client settings; `DISCARD`;
+  `set_config`; such a startup parameter. A setting that a function
+  changes is not seen.
 - A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, with the parameter
   types the client sent, on PostgreSQL 12 or later.
