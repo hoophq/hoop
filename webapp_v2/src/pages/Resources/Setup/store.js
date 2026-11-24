@@ -12,6 +12,7 @@ import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { showSnackbar } from '@/utils/snackbar'
 import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { buildFederationConfig } from '@/pages/Roles/Configure/utils/federation'
+import { setupConfigForResource } from './catalog'
 import { buildCreatePayload } from './payload'
 import { createRoleCredentialsStore } from './roleCredentials'
 
@@ -46,6 +47,30 @@ async function rollBack(resourceName, roleNames) {
     return []
   } catch {
     return [resourceName]
+  }
+}
+
+// Add role: POST /connections, then the federation config. A role whose
+// federation save fails is deleted again, so the admin can add it later.
+async function createRole(role, body) {
+  let created
+  try {
+    created = await connectionsService.create(body)
+  } catch (error) {
+    return { name: body.name, error: errorText(error) }
+  }
+  if (role.method !== CONNECTION_METHODS.IAM_FEDERATION) return { name: body.name, created }
+  try {
+    await federationService.save(body.name, buildFederationConfig(role.credentials.getState().federation.form))
+    return { name: body.name, created }
+  } catch (error) {
+    const reason = `IAM Federation setup failed: ${errorText(error)}`
+    try {
+      await connectionsService.deleteConnection(body.name)
+      return { name: body.name, error: reason }
+    } catch {
+      return { name: body.name, error: `${reason} Could not delete the role: delete it before you try again.` }
+    }
   }
 }
 
@@ -92,8 +117,14 @@ const initialState = {
   roleOptions: 'idle',
   submitting: false,
   createdRoles: [],
+  // Add role: the roles that failed, each { name, error }.
+  failedRoles: [],
+  // Add role: the resource the run adds roles to.
+  resource: null,
   activation: null,
 }
+
+const NO_TARGET = { name: null, status: 'idle', resource: null, error: null }
 
 // Every wizard run starts from start(setup): nothing carries over from an
 // earlier run or from the CLJS wizard.
@@ -116,8 +147,44 @@ export const useResourceSetupStore = create((set, get) => {
     ...initialState,
     run: 0,
     requests: {},
+    // Add role: GET /resources/:name, read by the route switch and the page.
+    // status: 'idle', 'loading', 'ready', 'not-found', 'error'.
+    target: NO_TARGET,
 
     start: (setup) => set((state) => ({ ...initialState, setup, run: state.run + 1 })),
+
+    loadTarget: async (name) => {
+      const current = latest('target')
+      set({ target: { ...NO_TARGET, name, status: 'loading' } })
+      try {
+        const { data } = await resourcesService.get(name)
+        if (current()) set({ target: { ...NO_TARGET, name, status: 'ready', resource: data } })
+      } catch (error) {
+        if (!current()) return
+        const status = error?.response?.status === 404 ? 'not-found' : 'error'
+        set({ target: { ...NO_TARGET, name, status, error: errorText(error) } })
+      }
+    },
+
+    clearTarget: () => {
+      latest('target')
+      set({ target: NO_TARGET })
+    },
+
+    // The roles step of an existing resource: its name and agent, one role.
+    startAddRole: (resource) => {
+      const setup = setupConfigForResource(resource)
+      set((state) => ({
+        ...initialState,
+        setup,
+        resource,
+        name: resource.name,
+        agentId: resource.agent_id,
+        step: 'roles',
+        roles: [newRole(setup, resource.name)],
+        run: state.run + 1,
+      }))
+    },
 
     setStep: (step) => set({ step }),
 
@@ -342,6 +409,54 @@ export const useResourceSetupStore = create((set, get) => {
         })
       }
       set({ submitting: false, createdRoles: payload.roles, step: 'success' })
+    },
+
+    // Add role: one POST /connections per role, in parallel, each with the
+    // body POST /resources would carry. The success step shows only when a
+    // role was created, and names the ones that failed.
+    addRoles: async (connections) => {
+      const { name, setup, agentId, roles, profile, roleOptions } = get()
+      if (roleOptions !== 'ready') return
+      const bodies = buildCreatePayload({
+        name,
+        setup,
+        agentId,
+        roles,
+        connections,
+        profileAttribute: profile?.attribute_name ?? null,
+      }).roles.map((body) => ({ ...body, resource_name: name }))
+      const current = latest('submit')
+      set({ submitting: true })
+      const results = await Promise.all(bodies.map((body, i) => createRole(roles[i], body)))
+      if (!current()) return
+      const created = results.filter((result) => result.created)
+      const failed = results.filter((result) => result.error).map(({ name, error }) => ({ name, error }))
+      failed.forEach((role) =>
+        showSnackbar({ level: 'error', text: `Failed to create role: ${role.name}`, description: role.error }),
+      )
+      showSnackbar({
+        level: failed.length > 0 ? 'warning' : 'success',
+        text: `${created.length} role(s) created${failed.length > 0 ? `, ${failed.length} failed` : ''}`,
+      })
+      const warned = created.filter((result) => result.created?.mcp_oauth_warning)
+      if (warned.length > 0) {
+        showSnackbar({
+          level: 'warning',
+          text: `MCP OAuth login not attached to ${warned.map((result) => result.name).join(', ')}`,
+          description: warned[0].created.mcp_oauth_warning,
+        })
+      }
+      if (created.length === 0) {
+        set({ submitting: false })
+        return
+      }
+      const createdNames = new Set(created.map((result) => result.name))
+      set({
+        submitting: false,
+        createdRoles: bodies.filter((body) => createdNames.has(body.name)),
+        failedRoles: failed,
+        step: 'success',
+      })
     },
 
     // The activation cards: the org's rules per feature, whether the AI

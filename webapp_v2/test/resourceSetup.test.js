@@ -7,7 +7,7 @@ const { connections } = fixture('metadata')
 
 const agentsService = { list: vi.fn(), create: vi.fn() }
 const resourcesService = { get: vi.fn(), create: vi.fn(), remove: vi.fn() }
-const connectionsService = { list: vi.fn(), deleteConnection: vi.fn() }
+const connectionsService = { list: vi.fn(), create: vi.fn(), deleteConnection: vi.fn() }
 const federationService = { save: vi.fn(), test: vi.fn() }
 const showSnackbar = vi.fn()
 
@@ -28,7 +28,7 @@ vi.mock('@/services/aiSessionAnalyzer', () => ({
 }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar }))
 
-const { setupConfigFor, isReactSetup, metadataForSubtype, hiddenByFlags } = await import(
+const { setupConfigFor, setupConfigForResource, isReactSetup, metadataForSubtype, hiddenByFlags } = await import(
   '@/pages/Resources/Setup/catalog'
 )
 const { defaultAuthMode } = await import('@/pages/Roles/Configure/utils/mcpGateway')
@@ -801,6 +801,219 @@ describe('BigQuery create: federation save and rollback', () => {
     await store().submit(connections)
     expect(federationService.save).not.toHaveBeenCalled()
     expect(store().step).toBe('success')
+  })
+})
+
+// Fixtures recorded from the CLJS add-role page on origin/main for the same input.
+describe('/resources/:name/add-role', () => {
+  const agentId = 'b09d0134-4125-5c2f-83b8-e85300706509'
+  const resource = (name, type, subtype) => ({ name, type, subtype, agent_id: agentId })
+  const PG = resource('ar-pg', 'database', 'postgres')
+  const BQ = resource('ar-bq', 'custom', 'bigquery')
+  const SA = '{"type":"service_account","client_email":"admin@p1.iam.gserviceaccount.com"}'
+  const reader = { HOST: 'pg.internal', USER: 'reader', PASS: 'pw', PORT: '5432', DB: 'app' }
+  const calls = []
+
+  function startOn(target) {
+    store().startAddRole(target)
+    useResourceSetupStore.setState({ roleOptions: 'ready', profile: null })
+  }
+  const fill = (index, values) => Object.entries(values).forEach(([env, value]) => type(index, env, value))
+  const posted = () => connectionsService.create.mock.calls.map(([body]) => body)
+  const gatewayError = (message) => ({ response: { data: { message } } })
+
+  beforeEach(() => {
+    calls.length = 0
+    connectionsService.create.mockImplementation(async (body) => {
+      calls.push(`POST ${body.name}`)
+      return { name: body.name }
+    })
+    federationService.save.mockImplementation(async (name) => {
+      calls.push(`PUT ${name}`)
+      return { data: {} }
+    })
+    connectionsService.deleteConnection.mockImplementation(async (name) => {
+      calls.push(`DELETE ${name}`)
+    })
+  })
+
+  it('creates roles of the resource type; Linux VM keeps its command', () => {
+    expect(setupConfigForResource(PG)).toEqual({ type: 'database', subtype: 'postgres', command: null })
+    expect(setupConfigForResource(resource('vm', 'custom', 'linux-vm'))).toEqual({
+      type: 'custom',
+      subtype: 'linux-vm',
+      command: ['bash'],
+    })
+  })
+
+  it.each([
+    ['postgres', true],
+    ['bigquery', true],
+    ['ssh', true],
+    ['web-application', false],
+  ])('renders React for a %s resource: %s', (subtype, react) => {
+    expect(isReactSetup(setupConfigForResource(resource('r', 'custom', subtype)))).toBe(react)
+  })
+
+  it('starts on the roles step with the resource name, its agent and one role', () => {
+    store().startAddRole(PG)
+    expect(store()).toMatchObject({ step: 'roles', name: 'ar-pg', agentId, resource: PG })
+    expect(store().roles).toHaveLength(1)
+    expect(role(0).name).toMatch(/^ar-pg-role-\d{4}$/)
+  })
+
+  it('postgres, two roles: one POST /connections each, with resource_name', async () => {
+    startOn(PG)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    store().setRoleName(role(1).id, 'ar-pg-write')
+    fill(0, reader)
+    fill(1, { ...reader, USER: 'writer' })
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-postgres-two'))
+    expect(store().step).toBe('success')
+    expect(store().createdRoles.map((r) => r.name)).toEqual(['ar-pg-read', 'ar-pg-write'])
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'success', text: '2 role(s) created' })
+  })
+
+  it('ssh, password', async () => {
+    startOn(resource('ar-ssh', 'application', 'ssh'))
+    store().setRoleName(role(0).id, 'ar-ssh-ops')
+    typeKey(0, 'envvar:HOST', 'ssh.internal')
+    typeKey(0, 'envvar:PORT', '2222')
+    typeKey(0, 'envvar:USER', 'ubuntu')
+    typeKey(0, 'envvar:PASS', 'pw')
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-ssh-password'))
+  })
+
+  it('bigquery, Manual', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-manual')
+    fill(0, { GOOGLE_APPLICATION_CREDENTIALS: SA, CLOUDSDK_CORE_PROJECT: 'p1' })
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-bigquery-manual'))
+    expect(federationService.save).not.toHaveBeenCalled()
+  })
+
+  it('a federation role sends the fallback secret, then saves its config (Q12)', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    await store().addRoles(connections)
+    expect(calls).toEqual(['POST ar-bq-fed', 'PUT ar-bq-fed'])
+    expect(decoded(posted()[0].secret)).toEqual({
+      'envvar:CLOUDSDK_CORE_PROJECT': 'p1',
+      'filesystem:GOOGLE_APPLICATION_CREDENTIALS': SA,
+    })
+    expect(federationService.save.mock.calls[0][1]).toMatchObject({
+      builtin_provider: 'gcp_iam',
+      admin_credentials_json: SA,
+      extra_config: { project_id: 'p1' },
+    })
+    expect(store().step).toBe('success')
+  })
+
+  it('a failed federation save deletes that role only and names it (Q12, Q13)', async () => {
+    startOn(BQ)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    store().setRoleName(role(1).id, 'ar-bq-manual')
+    federate(0, { json: SA, project: 'p1' })
+    fill(1, { CLOUDSDK_CORE_PROJECT: 'p2' })
+    federationService.save.mockRejectedValueOnce(gatewayError('bad template'))
+    await store().addRoles(connections)
+    expect(calls).toEqual(['POST ar-bq-fed', 'POST ar-bq-manual', 'DELETE ar-bq-fed'])
+    expect(resourcesService.remove).not.toHaveBeenCalled()
+    expect(store()).toMatchObject({
+      step: 'success',
+      failedRoles: [{ name: 'ar-bq-fed', error: 'IAM Federation setup failed: bad template' }],
+    })
+    expect(store().createdRoles.map((r) => r.name)).toEqual(['ar-bq-manual'])
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-bq-fed',
+      description: 'IAM Federation setup failed: bad template',
+    })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '1 role(s) created, 1 failed' })
+  })
+
+  it('says so when the role it could not configure is still there', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    federationService.save.mockRejectedValueOnce(gatewayError('bad template'))
+    connectionsService.deleteConnection.mockRejectedValueOnce(new Error('offline'))
+    await store().addRoles(connections)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-bq-fed',
+      description:
+        'IAM Federation setup failed: bad template Could not delete the role: delete it before you try again.',
+    })
+  })
+
+  it('stays on the roles step when no role was created (Q13)', async () => {
+    startOn(PG)
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    fill(0, reader)
+    connectionsService.create.mockRejectedValueOnce(gatewayError('connection already exists'))
+    await store().addRoles(connections)
+    expect(store()).toMatchObject({ step: 'roles', submitting: false, createdRoles: [] })
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-pg-read',
+      description: 'connection already exists',
+    })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '0 role(s) created, 1 failed' })
+  })
+
+  it('warns about an MCP OAuth login the gateway did not attach', async () => {
+    startOn(PG)
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    connectionsService.create.mockResolvedValueOnce({ name: 'ar-pg-read', mcp_oauth_warning: 'flow expired' })
+    await store().addRoles(connections)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'warning',
+      text: 'MCP OAuth login not attached to ar-pg-read',
+      description: 'flow expired',
+    })
+  })
+
+  it('drops a save that answers after a new run started', async () => {
+    let answer
+    connectionsService.create.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    startOn(PG)
+    const saving = store().addRoles(connections)
+    startOn(BQ)
+    answer({ name: 'x' })
+    await saving
+    expect(store()).toMatchObject({ name: 'ar-bq', step: 'roles', createdRoles: [] })
+    expect(showSnackbar).not.toHaveBeenCalled()
+  })
+
+  it('reads the resource: found, not found (Q8), or an error', async () => {
+    resourcesService.get.mockResolvedValueOnce({ data: PG })
+    await store().loadTarget('ar-pg')
+    expect(store().target).toMatchObject({ name: 'ar-pg', status: 'ready', resource: PG })
+
+    resourcesService.get.mockRejectedValueOnce({ response: { status: 404 } })
+    await store().loadTarget('nope')
+    expect(store().target).toMatchObject({ name: 'nope', status: 'not-found', resource: null })
+
+    resourcesService.get.mockRejectedValueOnce({ response: { status: 500, data: { message: 'boom' } } })
+    await store().loadTarget('ar-pg')
+    expect(store().target).toMatchObject({ status: 'error', error: 'boom' })
+  })
+
+  it('drops a resource read once the page is left', async () => {
+    let answer
+    resourcesService.get.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const loading = store().loadTarget('ar-pg')
+    store().clearTarget()
+    answer({ data: PG })
+    await loading
+    expect(store().target.status).toBe('idle')
   })
 })
 

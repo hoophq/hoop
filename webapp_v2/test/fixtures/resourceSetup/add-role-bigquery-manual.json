@@ -1,0 +1,28 @@
+[
+  {
+    "resource_name": "ar-bq",
+    "name": "ar-bq-manual",
+    "access_mode_runbooks": "enabled",
+    "command": [
+      "bq",
+      "query",
+      "--use_legacy_sql=false",
+      "--format=prettyjson",
+      "--project_id=$CLOUDSDK_CORE_PROJECT"
+    ],
+    "type": "custom",
+    "secret": {
+      "envvar:CLOUDSDK_CORE_PROJECT": "cDE=",
+      "filesystem:GOOGLE_APPLICATION_CREDENTIALS": "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwiY2xpZW50X2VtYWlsIjoiYWRtaW5AcDEuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20ifQ=="
+    },
+    "access_mode_connect": "enabled",
+    "redact_types": [],
+    "access_mode_exec": "enabled",
+    "redact_enabled": false,
+    "agent_id": "b09d0134-4125-5c2f-83b8-e85300706509",
+    "access_schema": "enabled",
+    "attributes": [],
+    "reviewers": [],
+    "subtype": "bigquery"
+  }
+]
