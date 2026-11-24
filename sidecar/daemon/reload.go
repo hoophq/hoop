@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -222,7 +223,17 @@ type reloader struct {
 	// must never read a refusal as convergence (ADR-0022).
 	lastOutcome reloadOutcome
 	lastReason  string
-	gen         int
+	// startFailed names the listener the last document could not start,
+	// empty otherwise. A port another process holds or a file that is not
+	// mounted yet is a fact about the host, not about the document, and
+	// may clear. So once runs the same bytes again while it is set, and
+	// applyOwned starts that listener first.
+	startFailed string
+	// stagedPII and stagedDet keep the detector a document built before
+	// its listener failed to start, so a retry does not build it again.
+	stagedPII json.RawMessage
+	stagedDet Plugin
+	gen       int
 	// planeOwned reports a control plane owns the running config. The
 	// heartbeat is then the goroutine that owns this struct, and watchFile
 	// touches nothing but this flag.
@@ -383,10 +394,13 @@ func (r *reloader) handleAnswer(log *slog.Logger, raw []byte, managed bool) relo
 }
 
 // once is the dedupe both sources share: a document already handled is
-// dropped, a terminal outcome is remembered, a retryable one is not.
+// dropped, a terminal outcome is remembered, a retryable one is not. A
+// document refused because a listener could not start runs again: see
+// startFailed.
 func (r *reloader) once(log *slog.Logger, raw []byte,
 	apply func(*slog.Logger, []byte) reloadOutcome) reloadOutcome {
-	if bytes.Equal(raw, r.lastHandled) {
+	repeat := bytes.Equal(raw, r.lastHandled)
+	if repeat && r.startFailed == "" {
 		// Still refused, still restart-bound: say so again rather than
 		// "unchanged", which the heartbeat would report as convergence.
 		if r.lastOutcome == reloadRefused || r.lastOutcome == reloadRestart {
@@ -394,15 +408,19 @@ func (r *reloader) once(log *slog.Logger, raw []byte,
 		}
 		return reloadUnchanged
 	}
+	if !repeat {
+		r.startFailed, r.stagedPII, r.stagedDet = "", nil, nil
+	}
 	r.lastReason = ""
 	out := apply(log, raw)
 	if out != reloadRetry {
 		r.lastHandled = raw
 		r.lastOutcome = out
 	}
-	if out != reloadApplied {
-		// applyOwned reports the applied case itself, where it still holds
-		// the generation's lanes for the shape properties.
+	// applyOwned reports the applied case itself, where it still holds the
+	// generation's lanes for the shape properties. A retry that fails to
+	// start the same listener is the refusal already reported.
+	if out != reloadApplied && !(repeat && out == reloadRefused && r.startFailed != "") {
 		r.tel.trackReload(reloadReport{outcome: out, gen: r.gen})
 	}
 	return out
@@ -486,7 +504,7 @@ func (r *reloader) hangup(log *slog.Logger) {
 		// Forced: the dedupe is dropped so the document runs even when
 		// its bytes did not move.
 		r.lastHandled = nil
-		r.filePending = r.reloadFile(log) == reloadRetry
+		r.filePending = r.reloadFile(log) == reloadRetry || r.startFailed != ""
 	}
 	if path := strings.TrimSpace(r.licenseFile().Value); path != "" {
 		log.Info("SIGHUP received; re-reading the license file", "path", path)
@@ -513,7 +531,7 @@ func (r *reloader) pollFile(log *slog.Logger) {
 		return
 	}
 	r.fileSize, r.fileMod = st.Size(), st.ModTime()
-	r.filePending = r.reloadFile(log) == reloadRetry
+	r.filePending = r.reloadFile(log) == reloadRetry || r.startFailed != ""
 }
 
 // reloadFile reads the config file and runs it through the reload. A file
@@ -726,6 +744,10 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 	if fromPlane {
 		from = "control plane"
 	}
+	// What the last try of this document left: consumed here, and set
+	// again only if a listener fails to start again.
+	failedBefore, stagedPII, stagedDet := r.startFailed, r.stagedPII, r.stagedDet
+	r.startFailed, r.stagedPII, r.stagedDet = "", nil, nil
 	newCfg, err := LoadConfigBytes(raw)
 	if err != nil {
 		log.Warn("the "+from+" sent a config this build refuses; keeping the running rules",
@@ -769,7 +791,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 			log.Warn(msg)
 			return r.keep(reloadRestart, msg)
 		}
-		det, err = r.build(newCfg.PII)
+		if stagedPII != nil && bytes.Equal(bytes.TrimSpace(stagedPII), bytes.TrimSpace(newCfg.PII)) {
+			det = stagedDet
+		} else {
+			det, err = r.build(newCfg.PII)
+		}
 		if err != nil {
 			log.Warn("detector rebuild failed; keeping the running rules", "error", err)
 			return r.keep(reloadRefused, fmt.Sprintf("detector rebuild failed: %v", err))
@@ -941,11 +967,21 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 	// listener and the error, whether a port another process holds, a
 	// socket path the process cannot write, or an engine that will not
 	// start.
-	started := make(map[string]runningLane, len(topo.added))
+	//
+	// The listener that failed on the last try starts first, so a retry
+	// that fails again starts and stops no other lane.
+	added := make([]int, 0, len(topo.added))
 	for i := range lanes {
-		if !topo.added[lanes[i].name] {
-			continue
+		switch {
+		case !topo.added[lanes[i].name]:
+		case lanes[i].name == failedBefore:
+			added = slices.Insert(added, 0, i)
+		default:
+			added = append(added, i)
 		}
+	}
+	started := make(map[string]runningLane, len(added))
+	for _, i := range added {
 		rl, serr := r.rt.build(&lanes[i])
 		if serr == nil {
 			serr = r.rt.startBound(rl)
@@ -954,10 +990,23 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 			for name := range started {
 				r.rt.stop(name)
 			}
-			log.Warn("the "+from+" added a listener this process could not start; keeping the running lanes",
-				"listener", lanes[i].name, "error", serr,
-				"hint", "fix it and save the configuration again")
-			return r.keep(reloadRefused, fmt.Sprintf("listener %q could not start: %v", lanes[i].name, serr))
+			name := lanes[i].name
+			// An engine that did not bind in time may never do so, and
+			// each try waits bindWait under the reload lock: not retried.
+			if !errors.Is(serr, errNoBind) {
+				r.startFailed = name
+				if detChanged {
+					r.stagedPII, r.stagedDet = newCfg.PII, det
+				}
+			}
+			// Logged once per listener: a retry that fails again says
+			// nothing new.
+			if name != failedBefore {
+				log.Warn("the "+from+" added a listener this process could not start; keeping the running lanes",
+					"listener", name, "error", serr,
+					"hint", "free the address or change the listener; the sidecar tries again on its next tick, and a restart stops on the same listener")
+			}
+			return r.keep(reloadRefused, fmt.Sprintf("listener %q could not start%s: %v", name, onHost(), serr))
 		}
 		started[rl.name] = rl
 	}
@@ -1106,6 +1155,17 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 	return reloadApplied
 }
 
+// onHost names this host in a reason the control plane shows. One sidecar
+// row stands for every pod of a deployment, and a listener that could not
+// start is a fact about one of them.
+func onHost() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return ""
+	}
+	return " on " + host
+}
+
 // nonRuleDoc renders everything a hot swap cannot change: the config with
 // every rule-bearing section removed. Two configs with equal documents
 // differ in rules alone.
@@ -1192,7 +1252,7 @@ type topology struct {
 
 // diffTopology compares a document's listeners against the running ones and
 // returns what to start and stop, or the reason the document is
-// restart-bound instead. Five things keep it on the restart path:
+// restart-bound instead. Six things keep it on the restart path:
 //
 //   - a running listener whose address, upstream, protocol, TLS or any
 //     other non-rule field moved: ADR-0014 rejected rebinding under live
@@ -1201,6 +1261,9 @@ type topology struct {
 //     name, so it could stop only one of them;
 //   - an added ica listener: its engine loads the runtime for minutes
 //     before it binds, and a reload does not wait that long for a bind;
+//   - a listener added to a process that runs an ica lane: /readyz and
+//     the drain of such a process need it to serve ica alone, so the
+//     operator applies the change with a restart, as before;
 //   - a listener without a name while the set changed: unnamed lanes are
 //     keyed listener[i], so an insert renames every lane after it, and the
 //     diff would close live lanes to reopen them;
@@ -1217,6 +1280,8 @@ func (r *reloader) diffTopology(newCfg *Config, listeners map[string][]byte) (to
 			return topology{}, fmt.Sprintf("added two listeners named %q; give each its own name, or restart to apply it", name)
 		case !running && isICA(lc):
 			return topology{}, fmt.Sprintf("added ica listener %q; restart to apply it", name)
+		case !running && slices.ContainsFunc(r.running.Listeners, isICA):
+			return topology{}, fmt.Sprintf("added listener %q to a process that runs an ica lane; restart to apply it", name)
 		case !running:
 			t.added[name] = true
 		case !bytes.Equal(old, listeners[name]):

@@ -23,7 +23,8 @@ on the other lanes stays open. This overlay shows that on the base stack.
 The demo sends `SIGHUP` after each edit so it does not wait for the
 ten-second stat tick. Under a control plane the heartbeat delivers the same
 document and reaches the same outcome; the plane's sidecar page shows
-`refused` with the reason for the bind conflict.
+`refused` with the reason for the bind conflict. The sidecar tries a
+refused listener again on each tick, so it starts once its address is free.
 
 ## The directory mount
 

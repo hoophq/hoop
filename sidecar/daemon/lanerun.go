@@ -31,6 +31,9 @@ import (
 // binding, so the reload does not hang with it.
 const bindWait = 10 * time.Second
 
+// errNoBind is startBound's deadline: the engine did not bind in bindWait.
+var errNoBind = errors.New("did not bind")
+
 // runningLane is one lane as the process runs it: the server, how a reload
 // swaps its rules, and the facts the stats zip and the usage event read.
 type runningLane struct {
@@ -379,7 +382,7 @@ func (rt *laneRuntime) startBound(rl runningLane) error {
 			// stop closes the lane and cancels its context. The
 			// reload does not wait for a Serve that ignores both.
 			rt.stop(rl.name)
-			return fmt.Errorf("%s: did not bind within %s", rl.name, bindWait)
+			return fmt.Errorf("%s: %w within %s", rl.name, errNoBind, bindWait)
 		}
 	}
 	go rt.watch(rl, served)

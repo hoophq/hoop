@@ -247,12 +247,18 @@ Added lanes bind before anything else in the document moves, so a listener
 that cannot bind (a port another process holds, a socket path the process
 cannot write) refuses the whole document: no lane starts, no rule swaps,
 the running lanes keep serving, and the log names the listener and the
-error. Fix it and save the file again. Five edits to the listener set stay
+error. The sidecar tries the same document again on each tick, so the
+lane starts once the address is free or the file it needs is mounted; a
+restart does not help, because startup stops on the same listener. A
+listener whose engine did not bind within ten seconds is the exception and
+is not tried again. Six edits to the listener set stay
 restart-bound, and the log names the listener: editing a running
 listener's own fields (address, upstream, protocol, TLS, a grpc lane's
 `descriptors`); renaming one, which is a remove and an add on one address;
 adding an `ica` listener, because its engine loads the runtime for minutes
-before it binds; adding or changing listeners that share one `name`,
+before it binds; adding any listener to a process that runs an `ica` lane,
+because `/readyz` and the drain of such a process need it to serve `ica`
+alone; adding or changing listeners that share one `name`,
 because a lane is started and stopped by its name; and adding or removing a
 listener while any listener has no `name`, because unnamed lanes are keyed
 by position and an insert would rename the ones after it.
@@ -510,7 +516,14 @@ boundary as a file edit: rule-only drift swaps in place, a listener added
 or removed starts or stops in place, both logged as `configuration applied`
 with a generation number; drift beyond that logs `restart to apply it`. A
 listener that cannot bind refuses the document, and the sidecar page shows
-`refused` with the reason. A failed heartbeat changes nothing, because
+`refused` with the reason, which names the host: one sidecar row stands
+for every pod, and the address may be held on one of them only. That pod
+keeps its last rules and tries the document again on each heartbeat until
+the listener starts or the configuration changes. Each pod applies an edit
+on its own heartbeat, so pods of one deployment can differ for about a
+minute. `applied` says the sidecar bound the listener; the Service, Envoy
+or network policy that routes to its port is outside the sidecar. A failed
+heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 

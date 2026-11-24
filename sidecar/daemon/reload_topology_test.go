@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -662,5 +663,132 @@ func TestUsageCountsARemovedLanesLastWindow(t *testing.T) {
 	}
 	if row, ok := window(); ok {
 		t.Fatalf("a protocol with no lane left still reports %+v", row)
+	}
+}
+
+// A listener that could not start is a fact about the host, and it may
+// clear: the same document runs again on the next heartbeat and the lane
+// starts once the port is free. The reason names the host, because one
+// sidecar row stands for every pod.
+func TestAListenerThatCouldNotStartIsTriedAgain(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	rl, buf, rt := testRunningReloader(t, reloadBase)
+	drifted := editJSON(t, reloadBase, `"listeners": [{`,
+		fmt.Sprintf(`"listeners": [{"name": "second", "protocol": "postgres", "listen": %q, "upstream": "h2:5432"}, {`, held.Addr().String()))
+
+	for range 2 {
+		if got := handleWith(rl, buf, drifted); got != reloadRefused {
+			t.Fatalf("outcome = %v, want refused while the port is held; log:\n%s", got, buf)
+		}
+	}
+	if host, _ := os.Hostname(); host != "" && !strings.Contains(rl.lastReason, " on "+host+": ") {
+		t.Errorf("reason %q does not name the host %q", rl.lastReason, host)
+	}
+	if n := strings.Count(buf.String(), "could not start"); n != 1 {
+		t.Errorf("the refusal was logged %d times, want once; log:\n%s", n, buf)
+	}
+
+	held.Close()
+	if got := handleWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied once the port is free; log:\n%s", got, buf)
+	}
+	if names := laneNames(rt); len(names) != 2 {
+		t.Errorf("running lanes = %v, want appdb and second", names)
+	}
+	if got := handleWith(rl, buf, drifted); got != reloadUnchanged {
+		t.Errorf("outcome after the apply = %v, want unchanged", got)
+	}
+}
+
+// A retry must not build the detector again: a real one loads a model.
+func TestARetriedDocumentKeepsItsStagedDetector(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	rl, buf, _ := testRunningReloader(t, reloadBase)
+	builds := 0
+	det := &stubPlugin{entities: []string{"US_SSN"}}
+	rl.build = func(json.RawMessage) (Plugin, error) { builds++; return det, nil }
+
+	drifted := editJSON(t, reloadBase, `"listeners": [{`,
+		fmt.Sprintf(`"listeners": [{"name": "second", "protocol": "postgres", "listen": %q, "upstream": "h2:5432"}, {`, held.Addr().String()))
+	drifted = editJSON(t, drifted, `"audit"`, `"pii": {"entities": ["US_SSN"]}, "audit"`)
+	for range 3 {
+		if got := handleWith(rl, buf, drifted); got != reloadRefused {
+			t.Fatalf("outcome = %v, want refused; log:\n%s", got, buf)
+		}
+	}
+	if builds != 1 {
+		t.Errorf("the detector was built %d times over three tries, want 1", builds)
+	}
+	if rl.det != nil {
+		t.Error("a refused document committed its detector")
+	}
+
+	held.Close()
+	if got := handleWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if builds != 1 || rl.det != Plugin(det) {
+		t.Errorf("builds = %d, committed detector = %v; want the staged one, built once", builds, rl.det)
+	}
+}
+
+// The config file is the other owner: a tick re-reads the file while a
+// listener of its document waits to start, with no new edit.
+func TestAStandaloneListenerThatCouldNotStartIsTriedOnTheNextTick(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	rl, path, buf := testFileReloader(t, reloadBase)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	rt := &laneRuntime{cfg: rl.running, log: slog.New(slog.DiscardHandler), set: &laneSet{}, tokens: &tokenWatch{},
+		ctx: ctx, wg: &wg, fail: func(err error) { panic("listener failed: " + err.Error()) }}
+	t.Cleanup(func() { cancel(); rt.set.closeAll(rt.log); wg.Wait() })
+	rl.rt = rt
+
+	editFile(t, path, editJSON(t, reloadBase, `"listeners": [{`,
+		fmt.Sprintf(`"listeners": [{"name": "second", "protocol": "postgres", "listen": %q, "upstream": "h2:5432"}, {`, held.Addr().String())))
+	pollWith(rl, buf)
+	if rl.gen != 0 || rl.lastOutcome != reloadRefused {
+		t.Fatalf("generation = %d, outcome = %v; want the document refused; log:\n%s", rl.gen, rl.lastOutcome, buf)
+	}
+	held.Close()
+	pollWith(rl, buf)
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d, want 1 on the tick after the port is free; log:\n%s", rl.gen, buf)
+	}
+	if names := laneNames(rt); len(names) != 1 || names[0] != "second" {
+		t.Errorf("running lanes = %v, want [second]", names)
+	}
+}
+
+// /readyz and the drain of a process that runs an ica lane need it to serve
+// ica alone. A lane added in place would turn every pod not ready within a
+// heartbeat, so the add waits for a restart, as it did before.
+func TestAListenerAddedToAnICAProcessKeepsTheRestartPath(t *testing.T) {
+	withICAEngine(t, func(ICARuntime, ICALane) (ICAServer, error) { return &fakeICAServer{}, nil })
+	base := `{"listeners":[` + strings.Replace(icaSingle, "127.0.0.1:2598", "127.0.0.1:0", 1) + `]}`
+	rl, buf, rt := testRunningReloader(t, base)
+
+	drifted := strings.Replace(base, `"listeners":[`,
+		fmt.Sprintf(`"listeners":[{"name":"pg","protocol":"postgres","listen":%q,"upstream":"h:5432"},`, freeTCPAddr(t)), 1)
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(rl.lastReason, `added listener "pg" to a process that runs an ica lane`) {
+		t.Errorf("reason = %q", rl.lastReason)
+	}
+	if names := laneNames(rt); len(names) != 1 {
+		t.Errorf("running lanes = %v, want only vdi", names)
 	}
 }
