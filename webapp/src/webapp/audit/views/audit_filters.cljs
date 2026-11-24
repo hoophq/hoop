@@ -138,7 +138,8 @@
             live? (and (= (get filters "status") "open")
                        (= (get filters "verb") "connect"))]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
-         [:> TextField.Root {:class "relative w-[310px] h-[40px] rounded-lg"
+         [:> TextField.Root {:class "relative w-[310px] h-[40px] rounded-none"
+                             :radius "none"
                              :placeholder "Search by IDs (separated by comma)"
                              :value @session-id-search
                              :onChange (fn [e]
@@ -159,7 +160,8 @@
          [:> Tooltip {:content (str "Searches the query or script of sessions run from the "
                                     "Web Terminal, Runbooks or hoop exec. Native client "
                                     "sessions are not searched. Use % as a wildcard.")}
-          [:> TextField.Root {:class "w-[280px] h-[40px] rounded-lg"
+          [:> TextField.Root {:class "w-[280px] h-[40px] rounded-none"
+                              :radius "none"
                               :placeholder "Search query text, e.g. delete%orders"
                               :aria-label "Search sessions by query text"
                               ;; The gateway rejects a longer filter.
@@ -181,6 +183,7 @@
                [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]]])]]
 
          [:> Button {:size "3"
+                     :radius "none"
                      :variant (if live? "soft" "surface")
                      :color "gray"
                      :aria-pressed live?
@@ -196,6 +199,7 @@
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
            [:> Button {:size "3"
+                       :radius "none"
                        :variant (if (get filters "user") "soft" "surface")
                        :color "gray"
                        :on-click (fn []
@@ -251,6 +255,7 @@
           [:> Popover.Root
            [:> Popover.Trigger {:asChild true}
             [:> Button {:size "3"
+                        :radius "none"
                         :variant (if (get filters "connection") "soft" "surface")
                         :color "gray"}
              [:> hero-micro-icon/ArrowsRightLeftIcon {:class "w-4 h-4"}]
@@ -339,6 +344,7 @@
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
            [:> Button {:size "3"
+                       :radius "none"
                        :variant (if (get filters "type") "soft" "surface")
                        :color "gray"
                        :on-click (fn []
@@ -394,6 +400,7 @@
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
            [:> Button {:size "3"
+                       :radius "none"
                        :variant (if (get filters "review.status") "soft" "surface")
                        :color "gray"}
             [:> ListFilter {:size 16}]
@@ -430,7 +437,7 @@
                          :separator "-"
                          :displayFormat "DD/MM/YYYY"
                          :containerClassName "relative w-56 text-gray-700"
-                         :toggleClassName (str "absolute rounded-l-lg "
+                         :toggleClassName (str "absolute rounded-none "
                                                "text-gray-500 "
                                                "left-0 h-full px-3 "
                                                "focus:outline-none disabled:opacity-40 "
@@ -438,7 +445,7 @@
                          :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
                                                 " border-gray-300 "
                                                 " border-gray-400 ")
-                                              "pl-10 py-2 w-full rounded-lg text-gray-600 "
+                                              "pl-10 py-2 w-full rounded-none text-gray-600 "
                                               "font-semibold text-sm focus:ring-0 "
                                               "border h-[40px] "
                                               "placeholder:text-gray-500 "
@@ -455,7 +462,7 @@
            [:img {:src (str config/webapp-url "/icons/icon-jira-gray.svg")
                   :class "w-4 h-4"}]]
           [:input {:type "text"
-                   :class (str "pl-10 pr-8 py-2 w-full rounded-lg text-gray-600 "
+                   :class (str "pl-10 pr-8 py-2 w-full rounded-none text-gray-600 "
                                "font-semibold text-sm focus:ring-0 "
                                "border h-[40px] "
                                "placeholder:text-gray-500 "
@@ -475,6 +482,7 @@
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
            [:> Button {:size "3"
+                       :radius "none"
                        :variant "surface"
                        :color "gray"
                        :on-click #(reset! workflow-correlation-id "")}
