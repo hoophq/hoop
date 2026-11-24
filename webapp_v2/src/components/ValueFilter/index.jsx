@@ -44,10 +44,8 @@ export default function ValueFilter({
           in the filter bar. */}
       <Popover.Target>
         <Button
-          variant={hasSelected ? 'light' : 'default'}
-          color="gray"
-          fz="sm"
-          c="dimmed"
+          variant="field"
+          data-filled={hasSelected || undefined}
           onClick={() => setOpen((value) => !value)}
           leftSection={<Icon size={16} />}
           rightSection={

@@ -15,7 +15,7 @@ function LoadingRows() {
   return (
     <Stack gap="xs" px="md">
       {Array.from({ length: 6 }, (_, i) => (
-        <Skeleton key={i} h={56} radius="sm" />
+        <Skeleton key={i} h={56} />
       ))}
     </Stack>
   )
@@ -25,7 +25,7 @@ function EmptyBlock({ icon, title, description, children }) {
   return (
     <Center px="md" py="xl">
       <Stack gap="sm" align="center" maw={360}>
-        <ThemeIcon variant="light" color="gray" size={40} radius="xl">
+        <ThemeIcon variant="light" color="gray" size={40}>
           {icon}
         </ThemeIcon>
         <Text fz="sm" fw={600} ta="center">

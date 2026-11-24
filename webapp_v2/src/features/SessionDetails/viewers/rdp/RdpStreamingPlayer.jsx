@@ -321,7 +321,6 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
       ref={containerRef}
       withBorder
       variant="outline"
-      radius="md"
       className={classes.player}
       data-fullscreen={fullscreen || undefined}
     >
@@ -355,7 +354,7 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
         onFullscreen={toggleFullscreen}
       />
       {moreError && (
-        <Alert color="red" radius={0}>
+        <Alert color="red">
           <Group justify="space-between" wrap="nowrap">
             <Text size="sm">{`Failed to load more frames: ${moreError}`}</Text>
             <Button size="xs" variant="light" color="red" onClick={retryMore}>

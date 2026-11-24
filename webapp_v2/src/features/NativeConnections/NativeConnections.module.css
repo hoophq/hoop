@@ -8,7 +8,7 @@
    the rows. Overflow clips the first/last row corners to the radius. */
 .accordionRoot {
   border: 1px solid var(--hoop-border-subtle);
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--hoop-list-radius);
   overflow: hidden;
 }
 
@@ -122,7 +122,7 @@
 .rowAvatar {
   width: 40px;
   height: 40px;
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--hoop-icon-radius);
   background-color: var(--hoop-overlay-faint);
   display: flex;
   align-items: center;

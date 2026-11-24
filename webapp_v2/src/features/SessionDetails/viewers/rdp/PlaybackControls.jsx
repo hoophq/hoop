@@ -27,7 +27,7 @@ export default function PlaybackControls({
   const shown = scrub ?? Math.min(time, duration)
 
   return (
-    <Paper variant="muted" radius={0} p="md">
+    <Paper variant="muted" p="md">
       <Stack gap="xs">
         <Slider
           aria-label="Playback position"

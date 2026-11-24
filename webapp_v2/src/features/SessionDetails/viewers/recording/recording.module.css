@@ -3,7 +3,7 @@
   height: 600px;
   overflow: auto;
   padding: var(--mantine-spacing-mdAlt);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   background: var(--hoop-terminal-bg);
   color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);
@@ -16,7 +16,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
 }
 
 /* The Tailwind reset of a ClojureScript route draws svg as a block and hides
@@ -55,7 +55,7 @@
 .rowContent {
   margin: 0 var(--mantine-spacing-mdAlt) var(--mantine-spacing-mdAlt);
   padding: var(--mantine-spacing-mdAlt);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   background: var(--hoop-terminal-bg);
   color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);

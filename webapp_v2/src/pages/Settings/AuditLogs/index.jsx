@@ -105,8 +105,8 @@ function UserFilter({ value, onChange, users }) {
     <Popover opened={opened} onChange={setOpened} width={320} position="bottom-start" withinPortal>
       <Popover.Target>
         <Button
-          variant={value ? 'light' : 'outline'}
-          color="gray"
+          variant="field"
+          data-filled={value ? true : undefined}
           leftSection={<User size={14} />}
           onClick={() => { setSearch(''); setOpened((o) => !o) }}
         >

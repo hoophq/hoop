@@ -8,7 +8,7 @@ import { humanizeSize } from '../viewers/exec/output'
 // downloads are disabled.
 export default function PreviewUnavailable({ title = 'Session Output', size, message, onDownload }) {
   return (
-    <Paper variant="muted" radius="md" p="lgAlt">
+    <Paper variant="muted" p="lgAlt">
       <Stack gap="md">
         <Group gap="xs">
           <FileDown size={20} aria-hidden />
@@ -25,7 +25,7 @@ export default function PreviewUnavailable({ title = 'Session Output', size, mes
           </Stack>
         )}
         <Group gap="sm" wrap="nowrap" align="stretch">
-          <Paper variant="strong" radius="sm" px="smAlt" py="xsAlt" flex={1}>
+          <Paper variant="strong" px="smAlt" py="xsAlt" flex={1}>
             <Group gap="xs" wrap="nowrap">
               <Info size={16} aria-hidden />
               <Text size="sm">{message}</Text>
