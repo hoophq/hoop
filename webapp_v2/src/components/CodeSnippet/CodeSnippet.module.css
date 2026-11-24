@@ -1,5 +1,5 @@
 .root {
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--hoop-card-radius);
 }
 
 .root[data-variant='black'] {
@@ -12,7 +12,7 @@
 
 .scroll {
   overflow-x: auto;
-  padding-right: 28px;
+  padding-right: calc(var(--mantine-spacing-xxxlAlt) + var(--mantine-spacing-smAlt));
 }
 
 .pre {
@@ -32,16 +32,13 @@
   color: var(--mantine-color-text);
 }
 
-.copyBtn {
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.copyBtn[data-visible] {
-  opacity: 1;
-}
-
-/* The gray icon disappears on the dark ground: paint it like the code text. */
-.root[data-variant='black'] .copyIcon:not([data-copied]) {
+/* The copy button: an icon and the word Copy, always shown. The gray
+   disappears on the dark ground: paint it like the code text. */
+.root[data-variant='black'] .copyBtn:not([data-copied]) {
   color: var(--mantine-color-gray-2);
+}
+
+/* On the gray ground, the copy button reads like secondary text. */
+.root[data-variant='gray'] .copyBtn:not([data-copied]) {
+  color: var(--mantine-color-dimmed);
 }

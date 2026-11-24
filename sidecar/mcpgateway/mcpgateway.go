@@ -255,6 +255,13 @@ func (s *server) Serve(ctx context.Context) error {
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
 	s.mu.Lock()
+	if s.closed {
+		// Close ran before the bind: a lane a reload gave up on must not
+		// hold the port.
+		s.mu.Unlock()
+		_ = ln.Close()
+		return nil
+	}
 	s.ln, s.srv = ln, srv
 	s.mu.Unlock()
 	s.log.Info("mcp lane listening", "listen", ln.Addr().String(), "upstream", s.lane.Upstream, "transport", s.lane.Transport)
@@ -373,14 +380,15 @@ func (s *server) Close() error {
 	return nil
 }
 
+// Addr is the bound address, nil until Serve has bound: the daemon reads a
+// non-nil address as proof of the bind.
 func (s *server) Addr() net.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ln != nil {
-		return s.ln.Addr()
+	if s.ln == nil {
+		return nil
 	}
-	a, _ := net.ResolveTCPAddr("tcp", s.lane.Listen)
-	return a
+	return s.ln.Addr()
 }
 
 func (s *server) Stats() (active, total, denied int64) {

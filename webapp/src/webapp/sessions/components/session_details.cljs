@@ -121,7 +121,8 @@
             connection-type (:connection_subtype session)
             start-date (:start_date session)
             end-date (:end_date session)
-            user-name (:user_name session)
+            ;; A sidecar session files an email principal in :user only.
+            user-name (or (not-empty (:user_name session)) (:user session) "")
             session-batch-id (:session_batch_id session)
             review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])

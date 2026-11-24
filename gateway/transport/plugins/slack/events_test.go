@@ -112,13 +112,15 @@ func TestPickApprover(t *testing.T) {
 }
 
 // fakeSlack answers users.info from a table and records every ephemeral
-// message, which is how a refused click reaches the Slack user.
+// message, which is how a refused click reaches the Slack user, and the
+// recipient of every posted message.
 type fakeSlack struct {
 	mu         sync.Mutex
 	users      map[string]map[string]any
 	errors     map[string]string
 	broken     map[string]bool
 	ephemerals []string
+	posts      []string
 }
 
 func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +143,11 @@ func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.ephemerals = append(f.ephemerals, r.Form.Get("text"))
 		f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "message_ts": "1"})
+	case strings.HasSuffix(r.URL.Path, "/chat.postMessage"):
+		f.mu.Lock()
+		f.posts = append(f.posts, r.Form.Get("channel"))
+		f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "channel": r.Form.Get("channel"), "ts": "1"})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}

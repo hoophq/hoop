@@ -13,16 +13,16 @@ function MethodCard({ method, selected, onSelect }) {
         <Avatar
           size="md"
           variant="soft"
-          color={selected ? 'blue' : 'gray'}
-          radius="sm"
-          src={selected ? method.iconLight : method.iconDark}
+          color={selected ? 'indigo' : 'gray'}
+          radius="var(--hoop-icon-radius)"
+          src={method.iconDark}
           alt={method.label}
         />
         <Box>
-          <Text size="sm" fw={500} c={selected ? 'white' : undefined}>
+          <Text size="sm" fw={500}>
             {method.label}
           </Text>
-          <Text size="xs" c={selected ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
+          <Text size="xs" c="dimmed">
             {method.description}
           </Text>
         </Box>

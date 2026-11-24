@@ -1,6 +1,6 @@
 .surface {
-  border: 1px solid var(--mantine-color-gray-2);
-  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--hoop-list-border);
+  border-radius: var(--hoop-list-radius);
   overflow: hidden;
 }
 

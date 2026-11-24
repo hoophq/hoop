@@ -231,15 +231,44 @@ touches rules (guardrails, masking, pii, OPA, a listener's analyzer block,
 the `license` key) is applied in place, logged as `config file configuration
 applied` with a generation number. Connections already open drain under the
 rules they were accepted with; new connections run the new rules, and
-nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
-log_level, the top-level analyzer section, adding `control_plane_url`) logs
-`restart to apply it` once and the process keeps serving what it had; a file
-that does not load keeps the running rules, is retried on the next tick, and
-warns once until it loads again. gRPC, Spanner and SSH lanes swap rules the
-same way, per RPC or per connection; turning masking on or off on one of them
-is the exception and logs `restart to apply it`, because it is a server option
-fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
-applies the same one.
+nothing rebinds or drops. gRPC, Spanner and SSH lanes swap rules the same
+way, per RPC or per connection; turning masking on or off on one of them is
+the exception and logs `restart to apply it`, because it is a server option
+fixed at build.
+
+The sidecar starts a listener added to the file in place: the socket binds,
+the log says `listener started`, and `/stats` lists it. It stops a listener
+whose name is gone: the socket closes and every connection on it with it,
+and the log says `listener stopped`. The other lanes keep their sockets and
+connections. Every lane kind but `ica` starts this way and every lane kind
+stops this way, unix sockets included (the sidecar binds the path on add
+and unlinks it on remove).
+Added lanes bind before anything else in the document moves, so a listener
+that cannot bind (a port another process holds, a socket path the process
+cannot write) refuses the whole document: no lane starts, no rule swaps,
+the running lanes keep serving, and the log names the listener and the
+error. The sidecar tries the same document again on each tick, so the
+lane starts once the address is free or the file it needs is mounted; a
+restart does not help, because startup stops on the same listener. A
+listener whose engine did not bind within ten seconds is the exception and
+is not tried again. Six edits to the listener set stay
+restart-bound, and the log names the listener: editing a running
+listener's own fields (address, upstream, protocol, TLS, a grpc lane's
+`descriptors`); renaming one, which is a remove and an add on one address;
+adding an `ica` listener, because its engine loads the runtime for minutes
+before it binds; adding any listener to a process that runs an `ica` lane,
+because `/readyz` and the drain of such a process need it to serve `ica`
+alone; adding or changing listeners that share one `name`,
+because a lane is started and stopped by its name; and adding or removing a
+listener while any listener has no `name`, because unnamed lanes are keyed
+by position and an insert would rename the ones after it.
+
+An edit beyond that (audit, admin, log_level, the top-level analyzer
+section, adding `control_plane_url`) logs `restart to apply it` once and
+the process keeps serving what it had; a file that does not load keeps the
+running rules, is retried on the next tick, and warns once until it loads
+again. ADR-0014 records the boundary; the control plane's heartbeat applies
+the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
 move. It also re-reads the license file, which is watched on the same ten
@@ -483,9 +512,18 @@ Once running, a heartbeat repeats the handshake about every minute (each
 wait is drawn from 48 to 72 seconds, so a fleet started together does not
 stay in step). It keeps the
 plane's last-seen fresh and picks up edits, applying them under the same
-boundary as a file edit: rule-only drift swaps in place, logged as
-`configuration applied` with a generation number; drift beyond the rules
-logs `restart to apply it`. A failed heartbeat changes nothing, because
+boundary as a file edit: rule-only drift swaps in place, a listener added
+or removed starts or stops in place, both logged as `configuration applied`
+with a generation number; drift beyond that logs `restart to apply it`. A
+listener that cannot bind refuses the document, and the sidecar page shows
+`refused` with the reason, which names the host: one sidecar row stands
+for every pod, and the address may be held on one of them only. That pod
+keeps its last rules and tries the document again on each heartbeat until
+the listener starts or the configuration changes. Each pod applies an edit
+on its own heartbeat, so pods of one deployment can differ for about a
+minute. `applied` says the sidecar bound the listener; the Service, Envoy
+or network policy that routes to its port is outside the sidecar. A failed
+heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
@@ -568,7 +606,7 @@ prompt, no token, no listener or upstream address — the same line
 |---|---|---|
 | `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up, how many times the page was opened |
 | `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
-| `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed (`guardrails`, `opa`, `mask`, `analyzer`, `pii`, `license`, `listeners`), lanes swapped, kept, added and removed |
 | `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls, failures and rate-limited statements, audit write failures, per protocol |
 | `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
@@ -2051,7 +2089,12 @@ request, and an approval request nobody decided expires after the 30-minute
 wait. A control plane,
 when one is configured, always wins: its approvers decide, and the
 terminal never releases a statement the plane governs. An embedder offers the
-same with `daemon.WithLocalReviewer`.
+same with `daemon.WithLocalReviewer`. One exception: the CLI's built-in demo
+(the `hoop start sidecar` setup screen's Demo) passes
+`daemon.WithLocalReviewerFirst` for the listener that fronts hoop's demo
+database or the CLI's invented API, so its AI step is approved at the
+terminal while the free plan runs logged in. It applies only while the lanes
+come from the local file; a plane that serves the lanes keeps its approvers.
 
 **The approval runs last.** The lane files the approval request only after
 every other evaluator allowed the statement, the decide-phase OPA call
@@ -2539,10 +2582,10 @@ to the audit trail.
 
 | `provider` | Model | Credential | Extra keys |
 |---|---|---|---|
-| `anthropic` | Claude | Anthropic API key | |
+| `anthropic` | Claude | Anthropic API key | `effort` |
 | `openai` | any Chat Completions endpoint | API key | |
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
-| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
+| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: anthropic`, also `effort`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
 **The model Hoop hosts.** Analysis works without an LLM of your own: Hoop
 hosts a small model. Statement text, which can contain PII, is then sent to
@@ -2632,7 +2675,7 @@ analyzer:
   top_p: 0.9
   top_k: 40
   seed: 7
-  max_output_tokens: 1024        # the default
+  max_output_tokens: 1024        # the default; 4096 for Claude
   max_retries: 2
   timeout_sec: 15
 ```
@@ -2649,6 +2692,14 @@ Setting both keys is refused, because Google rejects a request with both.
 Both apply to `provider: gemini` and to `provider: vertex` with `publisher:
 google`; any other publisher refuses them.
 
+Claude Sonnet 5.5 and Opus 5.5 think by default, and `max_output_tokens`
+covers the thinking as well as the tool call, which is why the Claude
+default is 4096. `effort` (`low`, `medium`, `high`, `xhigh`, `max`) is sent
+as `output_config.effort`; `low` is the usual setting for one tool call.
+A Claude model without effort answers a set value with a 400. It applies to
+`provider: anthropic` and to `provider: vertex` with `publisher: anthropic`;
+any other publisher refuses it.
+
 **Sampling.** `temperature` (0 to 2), `top_p` (0 to 1), `top_k` (1 or more)
 and `seed` go to whichever API the provider speaks, under that API's own
 field name. A provider whose API has no field for one refuses it at startup
@@ -2663,14 +2714,19 @@ rather than send a setting that does nothing:
 Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
 ignore them; Google steers determinism to `thinking_level` instead. That is
 not checked, because the model name is the only signal and it changes with
-every release. Some Claude models refuse `temperature` and `top_p` together;
-that answer comes from the API.
+every release. Claude Sonnet 5.5 and Opus 5.5 refuse `temperature`, `top_p`
+and `top_k`, and some earlier Claude models refuse `temperature` and `top_p`
+together; that answer comes from the API. Anthropic says to omit the three
+on Haiku 5.5 too.
 
 These narrow a model's answer; they do not make two calls agree. The verdict
 cache does: two statements of one shape share one verdict for `ttl_sec`,
-with no second call. Structured output is already fixed: every provider is
-forced to call one of three risk tools, so the verdict is an enum.
-`max_output_tokens` caps the length of that tool call, not its shape.
+with no second call. Structured output is already fixed: every provider
+offers three risk tools and reads the verdict only from which one the model
+called, so the verdict is an enum. Claude is told to call one, not forced
+(`tool_choice: auto`), because Claude Sonnet 5.5 and Opus 5.5 refuse a
+forced call; a reply without a call fails as "called no risk tool".
+`max_output_tokens` caps the length of that reply, not its shape.
 
 **Retries.** `max_retries` re-sends a classification after a 408, 429, 500,
 502, 503 or 504, waiting about 250 ms, then twice as long each time (at most

@@ -61,7 +61,8 @@
      "Live"]]])
 
 (defn session-item [session]
-  (let [user-name (:user_name session)
+  (let [;; A sidecar session files an email principal in :user only.
+        user-name (if (string/blank? (:user_name session)) (:user session) (:user_name session))
         review (:review session)
         correlation-id (:correlation_id session)
         has-workflow? (and correlation-id

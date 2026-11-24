@@ -1,16 +1,10 @@
-import { Divider, Group, Stack, Text } from '@mantine/core'
-import { Info } from 'lucide-react'
-import Alert from '@/components/Alert'
-import DocsBtnCallOut from '@/components/DocsBtnCallOut'
-import MultiSelect from '@/components/MultiSelect'
+import { Divider, Group, Stack, Text, Title } from '@mantine/core'
 import NumberInput from '@/components/NumberInput'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
-import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
-import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked, laneFeatureBlocked } from '@/pages/Sidecars/config'
 import {
   REVIEW_MODE_HOLD,
@@ -20,10 +14,11 @@ import {
   isHoldAction,
 } from '@/pages/sidecarRuleVocabulary'
 import AIPolicyCard from '../components/AIPolicyCard'
+import CardStack from '../components/CardStack'
 import OptionalLabel from '../components/OptionalLabel'
 import LevelApprover from './sections/LevelApprover'
 import LevelHandoff from './sections/LevelHandoff'
-import TriggerItemsInput from './sections/TriggerItemsInput'
+import { aiPolicyConfigured } from './useSidecarAiAnalyzerEditor'
 
 // Provider, model and credential are not here: they live in the sidecar's own
 // analyzer section, a file path the control plane cannot supply.
@@ -60,6 +55,9 @@ const renderAction = ({ option }) => (
   </Group>
 )
 
+// The form's section headings carry the design's weight.
+const TITLE_FW = 600
+
 export default function SidecarAiAnalyzerFields({ editor }) {
   const {
     isEdit,
@@ -77,6 +75,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     setAllowed,
     setApprover,
     groupOptionsFor,
+    groupsStatus,
     ruleLibraryStatus,
     aiRuleOptionsFor,
     setAIFeature,
@@ -87,36 +86,48 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     editApprovalMinutes,
     waits,
     humanHold,
-    isHTTP,
-    operations,
     actions,
-    noTrigger,
   } = editor
 
   // The AI policy settings card of a level whose action applies AI rules:
   // Allow, Warn, Hold for approval and Hand off (not Block, not Defer, and
-  // not an unset level, which shows no card).
+  // not an unset level, which shows no card). A CardStack entry, so the
+  // level's stack opens one card at a time.
   const policyCard = (level) => {
     const action = form[level]
     if (action === '' || !appliesAIRules(action)) return null
     let helper
     if (isHoldAction(action)) helper = 'Rules apply before the approval.'
     else if (isHandoffAction(action)) helper = 'Rules apply when the agent does not block.'
-    return (
-      <AIPolicyCard
-        ai={form.ai[level]}
-        status={ruleLibraryStatus}
-        optionsFor={(key) => aiRuleOptionsFor(level, key)}
-        onFeature={(key, patch) => setAIFeature(level, key, patch)}
-        onToggleRule={(key, name) => toggleAIRule(level, key, name)}
-        helper={helper}
-      />
-    )
+    return {
+      key: 'policy',
+      configured: aiPolicyConfigured(form.ai[level]),
+      render: (card) => (
+        <AIPolicyCard
+          ai={form.ai[level]}
+          status={ruleLibraryStatus}
+          optionsFor={(key) => aiRuleOptionsFor(level, key)}
+          onFeature={(key, patch) => setAIFeature(level, key, patch)}
+          onToggleRule={(key, name) => toggleAIRule(level, key, name)}
+          helper={helper}
+          card={card}
+        />
+      ),
+    }
+  }
+  // A level that neither holds nor hands off shows the policy card alone.
+  const policyOnly = (level) => {
+    const policy = policyCard(level)
+    return policy ? <CardStack cards={[policy]} /> : null
   }
 
   return (
     <Stack gap="xxlAlt">
-      <SectionRow title="Set rule information" description="Used to identify this analysis across the fleet.">
+      <SectionRow
+        title="Set rule information"
+        titleFw={TITLE_FW}
+        description="Used to identify this analysis across the fleet."
+      >
         <Stack gap="md">
           <TextInput
             label="Name"
@@ -139,91 +150,28 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
       <SectionRow
         title="Distribute to listeners"
+        titleFw={TITLE_FW}
         description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} listenerBlocked={listenerBlocked} />
       </SectionRow>
 
-      <SectionRow
-        title="What gets classified"
-        description="This is the only check that leaves the process and costs money per statement. Narrow it."
-        callout={
-          <DocsBtnCallOut
-            text="See our docs for triggers and costs"
-            href={docsUrl.sidecar.riskAnalysis}
-            variant="indigo"
-          />
-        }
-      >
-        <Stack gap="md">
-          {isHTTP ? (
-            <TagsInput
-              label="Resources"
-              placeholder="/orders/**"
-              value={form.trigger_resources}
-              onChange={(v) => set({ trigger_resources: v })}
-            />
-          ) : (
-            <>
-              <MultiSelect
-                label="Operations"
-                placeholder="Select operations..."
-                data={operations}
-                value={form.trigger_operations}
-                onChange={(v) => set({ trigger_operations: v })}
-                searchable
-                clearable
-              />
-              <TagsInput
-                label={<OptionalLabel>Tables</OptionalLabel>}
-                placeholder="customers"
-                value={form.trigger_tables}
-                onChange={(v) => set({ trigger_tables: v })}
-              />
-            </>
-          )}
-          <TriggerItemsInput
-            label={<OptionalLabel>Combined conditions</OptionalLabel>}
-            description="Classify a statement that matches every field of one condition."
-            addLabel="Add condition"
-            value={form.trigger_any}
-            onChange={(v) => set({ trigger_any: v })}
-            operations={operations}
-            isHTTP={isHTTP}
-          />
-          <TriggerItemsInput
-            label={<OptionalLabel>Exclusions</OptionalLabel>}
-            description="Never classify a statement that matches every field of one exclusion."
-            addLabel="Add exclusion"
-            value={form.trigger_exclude}
-            onChange={(v) => set({ trigger_exclude: v })}
-            operations={operations}
-            isHTTP={isHTTP}
-          />
-          {noTrigger && (
-            <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
-              {form.trigger_exclude.length > 0
-                ? 'With no trigger, every statement on this listener except the excluded ones is sent to the model.'
-                : 'With no trigger, every statement on this listener is sent to the model.'}
-            </Alert>
-          )}
-          <NumberInput
-            label={<OptionalLabel>Call budget</OptionalLabel>}
-            placeholder="Inherit the sidecar’s"
-            value={form.max_calls}
-            onChange={(v) => set({ max_calls: v })}
-            min={0}
-          />
-        </Stack>
-      </SectionRow>
-
       <Divider />
 
       <Stack gap="xl">
+        <Stack gap="xs">
+          <Title order={4} fw={TITLE_FW}>
+            Risk evaluation
+          </Title>
+          <Text size="sm" c="dimmed">
+            Select an action for each risk level. A level with no action allows. Hold for approval waits up to 30
+            minutes. For each held level, select an AI agent or a human to approve.
+          </Text>
+        </Stack>
         {LEVELS.map(({ level, title, description }) => (
-          <SectionRow key={level} title={title} description={description}>
+          <SectionRow key={level} title={title} titleFw={TITLE_FW} description={description}>
             <Stack gap="md">
-              {/* An unset level allows: it shows the placeholder, and clearing returns to it. */}
+              {/* An unset level allows: it shows the placeholder, and picking the set action again returns to it. */}
               <Select
                 label="Action"
                 placeholder="Select action"
@@ -231,7 +179,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                 renderOption={renderAction}
                 value={form[level] || null}
                 onChange={(v) => setLevelAction(level, v ?? '')}
-                clearable
+                maxDropdownHeight={280}
               />
               {isHoldAction(form[level]) && (
                 <LevelApprover
@@ -239,6 +187,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
+                  groupsLoaded={groupsStatus === 'success'}
                   onApprover={(approver) => setApprover(level, approver)}
                   onChange={(patch) => setApproval(level, patch)}
                 />
@@ -249,6 +198,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
+                  groupsLoaded={groupsStatus === 'success'}
                   policy={policyCard(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
@@ -256,7 +206,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   onApproval={(patch) => setApproval(level, patch)}
                 />
               )}
-              {!isHoldAction(form[level]) && !isHandoffAction(form[level]) && policyCard(level)}
+              {!isHoldAction(form[level]) && !isHandoffAction(form[level]) && policyOnly(level)}
             </Stack>
           </SectionRow>
         ))}
@@ -265,6 +215,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
       {waits && (
         <SectionRow
           title="While held for approval"
+          titleFw={TITLE_FW}
           description="A person has up to 30 minutes to decide, 4 on an MCP listener, unless a time limit ends it sooner. A client that times out first ends the wait; running the statement again after approval lets it through. On an SSH listener, drop the shell capability first."
         >
           <Stack gap="md">
@@ -309,6 +260,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
       <Stack gap="xl">
         <SectionRow
           title="Denial message"
+          titleFw={TITLE_FW}
           description="Shown to the user when a statement is blocked or rejected. Applies to all risk levels."
         >
           <TextInput
@@ -321,6 +273,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
         <SectionRow
           title="Custom analysis prompt"
+          titleFw={TITLE_FW}
           description="Replaces the default risk guidance for this listener. It sets the risk level, not the approval."
         >
           <Textarea

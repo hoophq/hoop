@@ -951,3 +951,35 @@ func TestARefusedRequestClosesItsConnection(t *testing.T) {
 		t.Fatalf("the connection stayed open after a refusal: %v", err)
 	}
 }
+
+// The daemon reads a non-nil Addr as proof of the bind, and closes a lane a
+// reload gave up on: Addr is nil until Serve binds, and a Serve that runs
+// after Close binds nothing.
+func TestALaneClosedBeforeServeDoesNotBind(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := probe.Addr().String()
+	probe.Close()
+
+	srv, err := mcpgateway.Build(daemon.MCPGatewayLane{Name: "u", Listen: addr,
+		Upstream: "http://127.0.0.1:1/mcp", Transport: daemon.MCPTransportStreamableHTTP})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := srv.Addr(); a != nil {
+		t.Fatalf("Addr = %v before Serve bound", a)
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Serve(context.Background()); err != nil {
+		t.Fatalf("Serve after Close = %v, want nil", err)
+	}
+	held, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("the closed lane holds its port: %v", err)
+	}
+	held.Close()
+}
