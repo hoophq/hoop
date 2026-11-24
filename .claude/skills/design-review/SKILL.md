@@ -29,7 +29,7 @@ Linear unless the person asks.
 | PR number | `gh pr diff <N>` and `gh pr view <N> --json title,body,files` |
 | Branch | `git diff origin/main...<branch>` |
 | No input | `git diff origin/main...HEAD`, plus uncommitted changes |
-| Screenshot | Read the image. Find the code it shows if the repo has it (search the visible text). |
+| Screenshot | Read the image, then follow "A screenshot" below. |
 
 The rules must be there before you review. If
 `.claude/skills/hoop-ui/references/webapp.md` or `terminal.md` does not
@@ -64,8 +64,9 @@ symbols.
 
 Do not copy their rules into a report. Cite them like any other source. When
 a session does not have them, write "Brand skills: not loaded" in the report
-and review with `hoop-ui` only. When a brand skill loads but its
-`references/` files are missing, use the rules in its `SKILL.md` only and
+and review with `hoop-ui` only. To check, list the `references/`
+folder in the base directory that the Skill tool names. When a brand skill
+loads but its `references/` files are missing, use the rules in its `SKILL.md` only and
 write "Brand skills: top level only".
 
 Some rules disagree. Use this order, first wins:
@@ -90,6 +91,36 @@ and how severe each break is.
 Only review what the change adds or edits. Old code next to the change is
 not an issue. When new code copies, moves or reuses an old pattern that
 breaks a rule, flag it once and name the old place.
+
+### A screenshot
+
+A screenshot has no change, so review the whole screen, by today's rules.
+If the person says which part is new, review that part only.
+
+1. **Find the code.** Search a sentence the team wrote (a page
+   description, a callout, a placeholder, a button), not the data
+   (`pg-prod`, a date). Open the file it hits, then follow its imports until
+   every part of the screen has a file. Write the route and the files in
+   the report.
+2. **No hit, or many.** Not in the repo: review from the image only, and
+   say so. In many files (a component two pages share): name them all.
+3. **Compare.** Check a few visible details against the code on main
+   (corners, colors, a label). When they differ, the screenshot is from an
+   older build. Judge by the code on main, do not flag what main already
+   fixed, and say so under "Questions for design".
+4. **Checks.** There is no diff. Run the script on the whole files, as if
+   every line were new:
+
+   ```bash
+   for f in <files>; do git diff --no-index /dev/null "$f"; done \
+     | python3 .claude/skills/design-review/scripts/check_diff.py
+   ```
+
+   Write "script on whole files" in the "Checks" line.
+5. **Not app code** in the image (a browser bar, a chat button, an
+   extension): do not review it. Name it once under "Not checked".
+6. **States.** The image shows one state. List the others (loading,
+   empty, error) under "Not checked", with the file that draws each one.
 
 ## 2. Run the checks
 
@@ -167,9 +198,11 @@ Each Must fix and Should fix item gets one image: the spot marked, and the
 fix next to it when you can show it. Nits and questions get no image. An
 issue with nothing to see (an error shown only in a toast, a missing
 `aria-label`) gets no image: write "No image: nothing to see on the screen"
-in its place. Save
-the images in `~/design-review/<PR number or branch>/`, named
-`<item number>-<short-name>.png`.
+in its place. A code-only break on a visible element (a token passed as a
+prop) also gets no image. Save the images in
+`$HOME/design-review/<PR number, branch, or screenshot-<page>>/`, named
+`<item number>-<short-name>.png`. In the report, write the full path
+(`/Users/<you>/design-review/...`): `~` does not open in Markdown.
 
 | Scope | You have | Do |
 | --- | --- | --- |
@@ -215,8 +248,9 @@ For a PR, run the stack from the PR's code (the `../pr-<N>` folder of step
 2). A fix the page cannot show (a new empty state, an aria-label) gets the
 "before" only.
 
-**Web app, PR images only.** Find the box of the spot in the image's pixels
-and mark it:
+**Web app, PR images or a screenshot.** Find the box of the spot in the
+image's pixels: crop the area with ffmpeg and look at it, then read the box
+from the crop and add the crop's corner. Mark it:
 
 ```bash
 scripts/mark.sh shot.png <x> <y> <w> <h> ~/design-review/<N>/02-status-dot.png [pad]
@@ -229,18 +263,20 @@ Look at every image before you use it: the box must sit on the issue.
 Use this format. Most severe first. Each item names its file.
 
 ```markdown
-## Design review: <PR or branch>
+## Design review: <PR, branch, or "screenshot of <page>">
 
 - **Scope:** web app | terminal | both
-- **Checks:** script <n> FAIL, <n> WARN, <n> MOVED · color test passed | failed | not run | n/a (no web app change)
-- **Rules from:** hoop-ui · design-webapp-md · design-md (or "Brand skills: not loaded")
-- **Reviewed from:** the running screen | code and PR images (not run)
+- **Code:** (a screenshot only) the route and the files that draw it
+- **Checks:** script <n> FAIL, <n> WARN, <n> MOVED (on the diff | on whole files) · color test passed | failed | not run | n/a (no web app change)
+- **Rules from:** hoop-ui · design-webapp-md · design-md. Mark each brand skill "loaded", "top level only" or "not loaded".
+- **Reviewed from:** the running screen | code and PR images (not run) | a screenshot and the code on main (not run)
 
 ### Must fix
+None. (Write "None." when a section is empty. Keep the heading.)
 1. `webapp_v2/src/pages/Foo/index.jsx:42`: two filled indigo buttons in one view.
    Rule: hoop-ui webapp.md, 4. Page structure ("One primary button per view").
    Fix: make "Cancel" `variant="subtle"`.
-   ![1](~/design-review/<N>/01-two-primary.png)
+   ![1](/Users/<you>/design-review/<N>/01-two-primary.png)
 
 ### Should fix
 ...
@@ -252,7 +288,7 @@ Use this format. Most severe first. Each item names its file.
 - Where hoop-ui, the repo and the design file disagree.
 
 ### Not checked
-- Rules you could not see without running it.
+- Rules you could not see without running it, and the states the input does not show.
 
 ### Looks good
 - One line for each rule the change follows well. Two to four lines.

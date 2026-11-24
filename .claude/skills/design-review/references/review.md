@@ -84,6 +84,7 @@ the product.
 | `radius`, `style={{}}`, `transition` or `transform` written on a page | A new amber or pink |
 | An icon-only button with no `Tooltip` | A destructive action with no `--yes` |
 | "Learn more", "successfully", "OK", "Submit" | Emoji, or a symbol not in the set |
+| A `c` on a Badge, or a `--hoop-*` token passed as a prop (also when the theme hides it today) | |
 
 **Nit**: taste. Add at most three. Leave them out when there are Must fix
 items.
