@@ -27,7 +27,7 @@ export default function AiSessionAnalyzerPromotion({ onConfigure }) {
       featureName="AI Analyzer"
       mode="empty-state"
       image="ai-session-analyzer-promotion.png"
-      description="Monitor terminal sessions and resource usage in real time."
+      description="Score session risk with AI and block or route risky commands."
       featureItems={FEATURE_ITEMS}
       onPrimaryClick={onConfigure}
       primaryText="Configure AI Analyzer"

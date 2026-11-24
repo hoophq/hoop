@@ -90,7 +90,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
         <Stack gap="sm">
           <Title order={1}>AI Analyzer</Title>
           <Text size="md" c="dimmed">
-            Monitor terminal sessions and resource usage in real time.
+            Score session risk with AI and block or route risky commands.
           </Text>
         </Stack>
         {tab === 'rules' && list.length > 0 && (
