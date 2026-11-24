@@ -4381,7 +4381,7 @@ pasted mcpproxy key the block does not map, such as `allowed_tools` (an
 Which part of MCP each feature reads. A part marked no passes through
 unread.
 
-| Feature | Arguments | Descriptions | `content[].text` | `structuredContent` | Resources | Prompts |
+| Feature | Args | Descriptions | Text | Structured | Resources | Prompts |
 |---|---|---|---|---|---|---|
 | Guardrails | judged | judged | no | no | no | no |
 | OPA | judged | judged | no | no | no | no |
@@ -4391,11 +4391,13 @@ unread.
 | Approvals | held | no | no | no | no | no |
 | Audit | recorded | recorded | counted | counted | counted | no |
 
-- Arguments are the arguments of a `tools/call`. SQL rules read the SQL in
+- Args are the arguments of a `tools/call`. SQL rules read the SQL in
   an `mcp_gateway.sql` argument.
 - Descriptions are the `tools/list` result, after `overrides`. A guardrail
   hit or an OPA deny there ends the session. `opa: {responses: false}`
   keeps them from OPA.
+- Text is a result's `content[].text`; Structured is its
+  `structuredContent`.
 - Resources are `resources/read` results: the text is masked, a `blob` is
   not.
 - Recorded: one statement per call and one per list. Counted: a `masked`
