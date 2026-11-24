@@ -27,6 +27,29 @@ to flag, how severe a break is, and what to look for first in a screenshot.
   decide.
 - **The legacy app** (`webapp/`). It is out of scope.
 
+## Known differences
+
+The brand skills are older than the theme in these places. The repo wins:
+follow the "Repo" column, and never flag a change that follows it. Each row
+is a known update for the brand skills (DES-252), not a question.
+
+| What | `design-md` / `design-webapp-md` say | Repo says (`theme.js`) |
+| --- | --- | --- |
+| Single-line field (TextInput, Select, PasswordInput, NumberInput) | Pill | Square, `--hoop-field-radius` 0 |
+| Checkbox | Not set | Square, `--hoop-field-radius` 0 |
+| Badge | Square bar | Pill, `--hoop-badge-radius` |
+| Chip (`Pill`) | Square bar | Pill, `--hoop-badge-radius` |
+| Avatar | Square | Round (Mantine) |
+| Page numbers (`Pagination`) | Not set | Round, `--hoop-button-radius` |
+| Button next to a field | Pill | Square, `variant="field"` |
+
+Same in both, so a break is an issue: buttons and icon buttons are pills;
+cards, tables, rows, modals, tabs, callouts, toasts and icon tiles are
+square (radius 0); multiline fields are square.
+
+When you find a new difference, add it to the report under "Questions for
+design", so design can add a row here.
+
 ## Severity
 
 **Must fix**: the person cannot read it, it misleads them, or it breaks a

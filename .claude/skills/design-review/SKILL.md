@@ -10,8 +10,9 @@ Two skills, one set of rules:
 - `hoop-ui` is **before**: an agent loads it to build UI.
 - `design-review` is **after**: it checks built work against the same rules.
 
-The rules live in `hoop-ui` only. This skill does not copy them. It says how
-to review, how severe each break is, and how to show it.
+The rules live in `hoop-ui` and in the brand skills (`design-webapp-md`,
+`design-md`). This skill does not copy them. It says which one wins, how to
+review, how severe each break is, and how to show it.
 
 Input: a PR number, a branch, a diff, or a screenshot of the web app or the
 terminal. Output: a list of issues. Each issue says where it is, which rule
@@ -39,8 +40,31 @@ Then find the scope and read the rules:
 | Both | Both |
 | Neither (only Go logic, tests, docs) | Say "No design surface in this change" and stop. |
 
-Then read `references/review.md`: what not to flag, and how severe each
-break is.
+Then load the brand skills, when this session has them (they come with the
+Hoop account, not with the repo):
+
+| Skill | Use it for |
+| --- | --- |
+| `design-webapp-md` | Web app screens: the screen types, the rules that never change, its checks |
+| `design-md` | The brand: palette meaning, voice and copy, the bar and the pill |
+
+Do not copy their rules into a report. Cite them like any other source. When
+a session does not have them, write "Brand skills: not loaded" in the report
+and review with `hoop-ui` only.
+
+Some rules disagree. Use this order, first wins:
+
+1. The repo: `theme.js`, the tests, `CLAUDE.md`, `COMPONENTS.md`.
+2. `hoop-ui`.
+3. `design-webapp-md`.
+4. `design-md`.
+
+A break of a lower source that a higher source allows is not an issue. Put
+it under "Questions for design" only when it is not in the "Known
+differences" table of `references/review.md`.
+
+Then read `references/review.md`: what not to flag, the known differences,
+and how severe each break is.
 
 Only review what the change adds or edits. Old code next to the change is
 not an issue. When new code copies, moves or reuses an old pattern that
@@ -161,6 +185,7 @@ Use this format. Most severe first. Each item names its file.
 
 - **Scope:** web app | terminal | both
 - **Checks:** script <n> FAIL, <n> WARN · color test passed | failed | not run
+- **Rules from:** hoop-ui · design-webapp-md · design-md (or "Brand skills: not loaded")
 - **Reviewed from:** the running screen | code and PR images (not run)
 
 ### Must fix
