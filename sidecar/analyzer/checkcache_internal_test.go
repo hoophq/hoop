@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"crypto/sha256"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +21,23 @@ func TestTheCheckCacheEvictsTheOldestPastItsSize(t *testing.T) {
 	}
 	if v, ok := c.get("c"); !ok || v != 4 {
 		t.Fatalf("c = %d, %v", v, ok)
+	}
+}
+
+func TestThePlanKeyDoesNotGrowWithTheStatement(t *testing.T) {
+	big := "SELECT * FROM t WHERE id IN (" + strings.Repeat("1,", 50_000) + "1)"
+	key := planKey("db\x00role", big, nil, nil)
+	if key == "" || len(key) > len("db\x00role")+1+sha256.Size {
+		t.Fatalf("key is %d bytes for a %d-byte statement", len(key), len(big))
+	}
+	if planKey("db\x00role", big, nil, nil) != key {
+		t.Fatal("the same statement got two keys")
+	}
+	if planKey("db\x00role", big+" ", nil, nil) == key {
+		t.Fatal("two statements got one key")
+	}
+	if planKey("db\x00other", big, nil, nil) == key {
+		t.Fatal("two scopes got one key")
 	}
 }
 

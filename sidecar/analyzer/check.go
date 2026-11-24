@@ -3,6 +3,7 @@ package analyzer
 import (
 	"container/list"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -147,7 +148,8 @@ func planKey(scope, text string, tables []string, facts map[string]inspect.Table
 			return ""
 		}
 	}
-	return checkKey(scope, text)
+	sum := sha256.Sum256([]byte(text))
+	return checkKey(scope, string(sum[:]))
 }
 
 func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, error) {
