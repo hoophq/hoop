@@ -1,16 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  Box,
-  Checkbox,
-  Grid,
-  Group,
-  SimpleGrid,
-  Stack,
-  Text,
-  ThemeIcon,
-  Title,
-} from '@mantine/core'
+import { Box, Grid, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import Checkbox from '@/components/Checkbox'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft, ClockArrowUp, CodeXml, Info } from 'lucide-react'
 import Alert from '@/components/Alert'

@@ -1,11 +1,11 @@
-import { Stack, Text, Anchor, Title, Grid, Box, Flex, ActionIcon } from '@mantine/core';
+import { Stack, Text, Anchor, Title, Grid, Box, Flex, Paper } from '@mantine/core';
+import ActionIcon from '@/components/ActionIcon';
 import { CopyButton } from '@mantine/core';
 import { Copy } from 'lucide-react';
 import Table from '@/components/Table';
 import CodeSnippet from '@/components/CodeSnippet';
 import DocsBtnCallOut from '@/components/DocsBtnCallOut';
 import { docsUrl } from '@/utils/docsUrl';
-import Paper from '@/components/Paper';
 import classes from './DeploymentInstructions.module.css';
 
 const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/';

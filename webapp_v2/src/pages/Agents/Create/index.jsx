@@ -1,4 +1,6 @@
-import { Title, TextInput, Button, Stack, Text, Grid } from '@mantine/core'
+import { Title, Stack, Text, Grid } from '@mantine/core'
+import TextInput from '@/components/TextInput'
+import Button from '@/components/Button'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Info, ListOrdered } from 'lucide-react'

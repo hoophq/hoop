@@ -1,4 +1,5 @@
-import { Stack, Text, Button, Image, Anchor } from '@mantine/core'
+import { Stack, Text, Image, Anchor } from '@mantine/core'
+import Button from '@/components/Button'
 
 // Two densities. The default owns the whole viewport — it is the only thing on
 // screen when a feature has no data yet. `compact` is for an empty result that

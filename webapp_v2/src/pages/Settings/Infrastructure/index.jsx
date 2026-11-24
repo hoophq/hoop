@@ -1,13 +1,7 @@
 import { useState, useEffect } from 'react'
-import {
-  Button,
-  Grid,
-  Group,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
+import { Grid, Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
 import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'

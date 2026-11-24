@@ -1,18 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Paper,
-  Title,
-  TextInput,
-  PasswordInput,
-  Button,
-  Text,
-  Anchor,
-  Stack,
-  Alert,
-  Center,
-  Box,
-} from '@mantine/core'
+import { Paper, Title, PasswordInput, Text, Anchor, Stack, Center, Box } from '@mantine/core'
+import TextInput from '@/components/TextInput'
+import Button from '@/components/Button'
+import Alert from '@/components/Alert'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'

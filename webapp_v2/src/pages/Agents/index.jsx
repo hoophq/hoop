@@ -1,15 +1,5 @@
-import {
-  Title,
-  Button,
-  Group,
-  Text,
-  Badge,
-  Stack,
-  Modal,
-  Card,
-  Box,
-  Flex,
-} from '@mantine/core'
+import { Title, Group, Text, Badge, Stack, Modal, Card, Box, Flex } from '@mantine/core'
+import Button from '@/components/Button'
 import { useDisclosure } from '@mantine/hooks'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'

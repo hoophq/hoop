@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Group, Stack, Switch, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import Switch from '@/components/Switch'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'

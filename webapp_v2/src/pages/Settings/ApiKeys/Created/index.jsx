@@ -1,5 +1,8 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Box, Button, Flex, Group, Stack, Text, TextInput, Title, ThemeIcon } from '@mantine/core'
+import { Box, Flex, Group, Stack, Text, Title, ThemeIcon } from '@mantine/core'
+import Alert from '@/components/Alert'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
 import { CheckCircle, Info } from 'lucide-react'
 import CopyButton from '@/components/CopyButton'
 

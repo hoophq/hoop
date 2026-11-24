@@ -1,15 +1,8 @@
 import { useState, useEffect } from 'react'
-import {
-  Alert,
-  Anchor,
-  Button,
-  Group,
-  JsonInput,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
+import { Anchor, Group, JsonInput, Stack, Text, Title } from '@mantine/core'
+import Alert from '@/components/Alert'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
 import { AlertCircle } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'

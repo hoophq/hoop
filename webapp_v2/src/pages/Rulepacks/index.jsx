@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Box,
-  Card,
-  Flex,
-  Group,
-  Stack,
-  Text,
-  Title,
-  Button,
-} from '@mantine/core'
+import { Box, Card, Flex, Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { ArrowRight, EyeOff, Search, Shield, Sparkles } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Button, Divider, Group, Image, Paper, Popover, ScrollArea, Stack, Text, Title } from '@mantine/core'
+import { Box, Divider, Group, Image, Paper, Popover, ScrollArea, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { Check, Rotate3d, Search, X } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'

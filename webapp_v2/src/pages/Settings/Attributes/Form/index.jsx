@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Button, Grid, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { useDisclosure } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'

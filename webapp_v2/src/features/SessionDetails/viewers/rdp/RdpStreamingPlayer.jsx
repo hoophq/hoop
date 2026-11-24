@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Group, Loader, Paper, Text } from '@mantine/core'
+import { Box, Group, Loader, Paper, Text } from '@mantine/core'
+import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { sessionsService } from '@/services/sessions'

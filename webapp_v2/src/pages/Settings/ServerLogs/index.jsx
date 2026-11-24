@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Group, Stack, Text, Title, Button, Indicator } from '@mantine/core'
+import { Group, Stack, Text, Title, Indicator } from '@mantine/core'
+import Button from '@/components/Button'
 import { Pause, Play, Trash2, Download } from 'lucide-react'
 import Select from '@/components/Select'
 import { serverLogsService } from '@/services/serverLogs'

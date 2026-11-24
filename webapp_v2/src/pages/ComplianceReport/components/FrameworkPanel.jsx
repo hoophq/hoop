@@ -1,4 +1,5 @@
-import { Accordion, Card, Divider, Group, Progress, Stack, Text, Title } from '@mantine/core'
+import { Card, Divider, Group, Progress, Stack, Text, Title } from '@mantine/core'
+import Accordion from '@/components/Accordion'
 import { LEVEL_META } from '../constants'
 import styles from '../ComplianceReport.module.css'
 import { ControlRow } from './ControlBits'

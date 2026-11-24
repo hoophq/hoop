@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom'
-import { Badge, Button, Group, Stack, Text, ThemeIcon, Tooltip } from '@mantine/core'
+import { Group, Stack, Text, ThemeIcon } from '@mantine/core'
+import Badge from '@/components/Badge'
+import Button from '@/components/Button'
+import Tooltip from '@/components/Tooltip'
 import { STATUS_META, catalogDocsUrl } from '../constants'
 import styles from '../ComplianceReport.module.css'
 

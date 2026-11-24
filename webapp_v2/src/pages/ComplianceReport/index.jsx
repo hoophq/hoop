@@ -1,26 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  ActionIcon,
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Center,
-  Divider,
-  Grid,
-  Group,
-  Progress,
-  RingProgress,
-  SimpleGrid,
-  Skeleton,
-  Stack,
-  Tabs,
-  Text,
-  ThemeIcon,
-  Title,
-  UnstyledButton,
-} from '@mantine/core'
+import { Card, Center, Divider, Grid, Group, Progress, RingProgress, SimpleGrid, Skeleton, Stack, Tabs, Text, ThemeIcon, Title, UnstyledButton } from '@mantine/core'
+import ActionIcon from '@/components/ActionIcon'
+import Alert from '@/components/Alert'
+import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import { Carousel } from '@mantine/carousel'
 import { AlertCircle, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
 import { reportsService } from '@/services/reports'

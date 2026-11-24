@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Box,
-  Card,
-  Checkbox,
-  Group,
-  Stack,
-  Text,
-} from '@mantine/core'
+import { Box, Card, Group, Stack, Text } from '@mantine/core'
+import Checkbox from '@/components/Checkbox'
 import { ListVideo, Rotate3d, Search, Shapes } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
