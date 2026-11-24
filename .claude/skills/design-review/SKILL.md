@@ -42,8 +42,13 @@ Then find the scope and read the rules:
 | --- | --- |
 | `webapp_v2/src/` | `.claude/skills/hoop-ui/references/webapp.md`, and the repo files its section 1 names |
 | `client/` output a person reads (`fmt.Print*`, `styles.`, `lipgloss`, cobra `Short`/`Long`/flag help, `sidecartui/`) | `.claude/skills/hoop-ui/references/terminal.md` |
+| Text a person reads in another place: the feature flag `Description` in `common/featureflag/featureflag.go` (shown at Settings, Experimental) | `webapp.md`, 8. Copy: the same words as the web app and the CLI |
 | Both | Both |
 | Neither (only Go logic, tests, docs) | Say "No design surface in this change" and stop. |
+
+A merged PR: its code may already be in this checkout. Check with
+`git diff <merge commit> HEAD -- <its files>`. When that is empty, build and
+run from here, with no separate folder.
 
 Then load the brand skills, when this session has them (they come with the
 Hoop account, not with the repo):
@@ -52,6 +57,10 @@ Hoop account, not with the repo):
 | --- | --- |
 | `design-webapp-md` | Web app screens: the screen types, the rules that never change, its checks |
 | `design-md` | The brand: palette meaning, voice and copy, the bar and the pill |
+
+For the terminal, use the brand skills for voice and copy only. They have
+no terminal rules: `hoop-ui` terminal.md decides color, layout and
+symbols.
 
 Do not copy their rules into a report. Cite them like any other source. When
 a session does not have them, write "Brand skills: not loaded" in the report
@@ -119,10 +128,21 @@ sections for what the list does not cover.
 When the change has a screen or terminal output you can see, look at it:
 
 - Web app: the PR's "Testing" images, or run it (`cd webapp_v2 && npm run dev`).
-- Terminal: the PR's images, or build and run the command
-  (`make build-dev-client`, then `$HOME/.hoop/bin/hoop <command>`). Look at
-  it in a dark and a light terminal theme, and once with `NO_COLOR=1` and
-  piped through `| cat`.
+- Terminal: the PR's images, or build and run the command. Build into a
+  scratch folder and run it with a throwaway `HOME`, so the person's own
+  `hoop` and its config stay as they are. Never `make build-dev-client`: it
+  replaces `$HOME/.hoop/bin/hoop`.
+
+  ```bash
+  go build -o "$SCRATCH/hoop" ./client          # about 20 seconds
+  HOME="$SCRATCH/home" "$SCRATCH/hoop" context list
+  ```
+
+  Look at it in a dark and a light terminal theme (`term.sh ... light`), and
+  once with `NO_COLOR=1` and piped through `| cat`. When the command prints
+  no color, one theme is enough: say so in "Not checked". To reach an error
+  from the gateway with no gateway, point the command at a small local
+  server that answers the error (for example a 502).
 
 If you cannot run it, use the PR's images and the code. Say so in the
 report's "Reviewed from" line. A GIF or video reads better as frames:
@@ -160,13 +180,19 @@ the images in `~/design-review/<PR number or branch>/`, named
 
 The scripts are in `scripts/`. Each one prints the file it wrote.
 
-**Terminal.** Save what the command prints, colors included, then write the
-"after" text by hand from the fix:
+**Terminal.** Save what the command prints, colors and errors included
+(errors go to stderr, so add `2>&1`). Then write the "after" text by hand
+from the fix, with the same data as the "before": the same names and URLs,
+so only the fix changes. `term.sh` wraps lines at 80 columns:
 
 ```bash
-CLICOLOR_FORCE=1 hoop context list > before.txt   # or copy the PR's output
-scripts/term.sh before.txt after.txt ~/design-review/2108/02-table.png
+CLICOLOR_FORCE=1 hoop context list > before.txt 2>&1   # or copy the PR's output
+scripts/term.sh before.txt after.txt ~/design-review/<N>/02-table.png v        # dark
+scripts/term.sh before.txt after.txt ~/design-review/<N>/02-table-light.png v light
 ```
+
+If `CLICOLOR_FORCE` gives no colors, run the command in a real terminal
+with `script -q before.txt <command>`.
 
 **Web app, running.** `shot.mjs` opens the page, draws a red "BEFORE" box on
 the element, applies the fix in the page (not in the code), and draws a
@@ -206,7 +232,7 @@ Use this format. Most severe first. Each item names its file.
 ## Design review: <PR or branch>
 
 - **Scope:** web app | terminal | both
-- **Checks:** script <n> FAIL, <n> WARN · color test passed | failed | not run
+- **Checks:** script <n> FAIL, <n> WARN, <n> MOVED · color test passed | failed | not run | n/a (no web app change)
 - **Rules from:** hoop-ui · design-webapp-md · design-md (or "Brand skills: not loaded")
 - **Reviewed from:** the running screen | code and PR images (not run)
 

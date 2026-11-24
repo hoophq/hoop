@@ -19,6 +19,9 @@ CLI = re.compile(r"^client/.*\.go$")
 # Files that own colors: the theme and the style files.
 WEB_OWNERS = re.compile(r"^webapp_v2/src/(components/|theme\.js$)")
 CLI_OWNERS = re.compile(r"^client/cmd/(styles/|sidecartui/styles\.go$)")
+# Text a person reads that lives outside webapp_v2/ and client/: the feature
+# flag descriptions show at Settings, Experimental. Copy checks only.
+COPY_ONLY = re.compile(r"^common/featureflag/featureflag\.go$")
 
 EM_DASH = re.compile(r"\u2014")
 BUZZ = re.compile(r"\b(seamless(ly)?|cutting-edge|revolutionary|next-generation|robust|holistic|leverage|utilize|supercharge|effortless(ly)?|empower|unlock the power)\b", re.I)
@@ -214,13 +217,33 @@ def check_cli(path, text):
             out.append(("WARN", "help Short starts in lower case: use sentence case (hoop-ui terminal.md, 3. Text)"))
     if re.search(r'Printf?\([^)]*%\+v', text):
         out.append(("WARN", "%+v printed to the person: put details in the debug log (hoop-ui terminal.md, 3. Text)"))
-    if re.search(r"body=%|string\(body\)|string\(respBody\)", text) and re.search(r"Errorf|Printf|Println|Exit", text):
-        out.append(("WARN", "HTTP body in a message: the person may see an HTML page; log it at debug (hoop-ui terminal.md, 3. Text)"))
+    # The body goes into a message: fmt.Sprintf("... body=%s", e.Body) in an
+    # Error() method is the usual shape, as well as Errorf and Printf.
+    if re.search(r"(?i)\b(sprintf|errorf|printf|println|print)\(.*(\bbody=%|string\((resp)?body\)|\.body\b)", text):
+        out.append(("WARN", "HTTP body in a message: the person may see a whole HTML page; log it at debug (hoop-ui terminal.md, 3. Text)"))
+    if re.search(r"(?i)print[^\n]*\b(tls_?ca|ca_?cert|cert(ificate)?|private_?key)\w*\b\s*[=:]\s*%[sv]", text):
+        out.append(("WARN", "a long value (a certificate or key) may be printed: print yes or no (hoop-ui terminal.md, 3. Text)"))
     if re.search(r"\[(Y/N|y/n|yes/no)\]", text):
         out.append(("WARN", "prompt choices: show the default in capitals, [y/N] or [Y/n] (hoop-ui terminal.md, 5. Prompts)"))
     if re.search(r"(?i)print[^\n]*\b(token|password|secret|api_?key)\b\s*[=:]\s*%", text):
         out.append(("WARN", "a secret may be printed: print OMITTED (hoop-ui terminal.md, 3. Text)"))
     text_checks(text, GO_STRING, out)
+    return out
+
+
+def missing_examples(lines):
+    """A new cobra command that runs something and has no Example field.
+
+    lines: (line number, text) of the added lines of one Go file, in order.
+    A command block runs from `cobra.Command{` to the next one.
+    """
+    out = []
+    starts = [i for i, (_, t) in enumerate(lines) if "cobra.Command{" in t]
+    for k, i in enumerate(starts):
+        block = [t for _, t in lines[i:starts[k + 1] if k + 1 < len(starts) else len(lines)]]
+        runs = any(re.search(r"\b(RunE?|PreRunE?)\s*:", t) for t in block)
+        if runs and not any(re.search(r"\bExample\s*:", t) for t in block):
+            out.append((lines[i][0], "new command with no Example: add a real command with invented names (hoop-ui terminal.md, 3. Text)"))
     return out
 
 
@@ -251,8 +274,11 @@ def main():
     fails = warns = moves = 0
     sidebar = sidebar_labels(repo_root())
     badges = {}
+    go_lines = {}
     report = []
     for path, num, text in added_lines(diff):
+        if CLI.match(path) and not path.endswith("_test.go"):
+            go_lines.setdefault(path, []).append((num, text))
         # Badges count even on moved lines: the pair can be one old, one new.
         m = BADGE_COLOR.search(text)
         if m and WEB.match(path):
@@ -263,6 +289,9 @@ def main():
             found = check_web(path, text, wrapped, sidebar)
         elif CLI.match(path) and not path.endswith("_test.go"):
             found = check_cli(path, text)
+        elif COPY_ONLY.match(path):
+            found = []
+            text_checks(text, GO_STRING, found)
         else:
             continue
         # A moved line keeps its finding: the review flags it once, in its new place.
@@ -270,6 +299,8 @@ def main():
         report += [(path, num, "MOVED" if was_moved else level, msg) for level, msg in found]
     for path, items in badges.items():
         report += [(path, num, "WARN", msg) for num, msg in badge_swaps(items)]
+    for path, lines in go_lines.items():
+        report += [(path, num, "WARN", msg) for num, msg in missing_examples(lines)]
     for path, num, level, msg in sorted(report, key=lambda r: (r[0], r[1])):
         print(f"{level} {path}:{num}: {msg}")
         fails += level == "FAIL"

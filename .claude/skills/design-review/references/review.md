@@ -24,7 +24,9 @@ to flag, how severe a break is, and what to look for first in a screenshot.
 - **A pattern from a newer command.** When new code follows a newer command
   that does the same thing (for example `hoop versions` for a new
   subcommand), do not flag it. List it once under the report, so design can
-  decide.
+  decide. "Newer" is the file's last change:
+  `git log -1 --format=%cs -- <file>`. When the code copies an older
+  command that breaks a rule, flag it once and name the old place.
 - **The legacy app** (`webapp/`). It is out of scope.
 
 ## Known differences
@@ -43,6 +45,7 @@ is a known update for the brand skills (DES-252), not a question.
 | Page numbers (`Pagination`) | Not set | Round, `--hoop-button-radius` |
 | Button next to a field | Pill | Square, `variant="field"` |
 | Mantine's own round parts (`Switch`, `Radio`, `Stepper` icons) and a status dot | "Nothing else is round" | Round, as Mantine draws them |
+| Terminal table headers | "No all-caps labels" (`design-md`) | UPPERCASE (`NAME`, `STATUS`), as `hoop-ui` terminal.md, 4. Layout |
 
 Same in both, so a break is an issue: buttons and icon buttons are pills;
 cards, tables, rows, modals, tabs, `SegmentedControl`, callouts, toasts and
