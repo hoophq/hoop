@@ -22,6 +22,7 @@ import { useDataMaskingStore } from './store'
 import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
 import { RULE_DRIVEN_PROVIDERS } from './helpers'
+import List from '@/components/List'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Live Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
@@ -198,14 +199,12 @@ export default function DataMasking() {
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredRules.map((rule, idx) => (
+        <List>
+          {filteredRules.map((rule) => (
             <RuleListItem
               key={rule.id}
               rule={rule}
               traffic={traffic.trafficOf(rule)}
-              isFirst={idx === 0}
-              isLast={idx === filteredRules.length - 1}
               onConfigure={(id) =>
                 navigate(`/features/data-masking/edit/${id}`)
               }
@@ -214,7 +213,7 @@ export default function DataMasking() {
               }
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

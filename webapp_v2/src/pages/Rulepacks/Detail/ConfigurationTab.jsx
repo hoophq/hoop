@@ -36,7 +36,7 @@ function Section({ icon, title, description, rules }) {
         <ThemeIcon variant="light" color="gray" size={40}>
           <Icon size={16} />
         </ThemeIcon>
-        <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+        <Stack gap={0} flex={1} miw={0}>
           <Title order={4}>{`${title} • ${rules.length} ${ruleLabel}`}</Title>
           {description && (
             <Text size="sm" c="dimmed">

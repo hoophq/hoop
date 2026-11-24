@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Button from '@/components/Button'
 import Code from '@/components/Code'
 import StatusBadge from './StatusBadge'
+import classes from '../EventRouting.module.css'
 
 function Meta({ label, children }) {
   return (
@@ -22,7 +23,7 @@ export default function SubscriptionCard({ sub }) {
     <Card padding="md" withBorder>
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
-          <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+          <Stack gap={2} flex={1} miw={0}>
             <Group gap="sm" align="center" wrap="nowrap">
               <Text size="md" fw={600} truncate>{sub.name}</Text>
               <StatusBadge status={sub.status} />
@@ -31,7 +32,7 @@ export default function SubscriptionCard({ sub }) {
                   w={8}
                   h={8}
                   bg="red"
-                  style={{ borderRadius: '50%' }}
+                  className={classes.failureDot}
                   aria-label="Has recent failures"
                 />
               )}

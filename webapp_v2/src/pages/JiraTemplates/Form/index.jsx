@@ -25,6 +25,7 @@ import PresetMappingTable from './sections/PresetMappingTable'
 import AutomatedMappingTable from './sections/AutomatedMappingTable'
 import PromptsTable from './sections/PromptsTable'
 import CmdbTable from './sections/CmdbTable'
+import classes from './Form.module.css'
 
 const FREE_LICENSE_INFO_MESSAGE =
   'Organizations with Free plan have limited automation. Upgrade to Enterprise to have unlimited access to Jira Templates.'
@@ -165,12 +166,8 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
         mb="xl"
         mx={-PAGE_PADDING}
         px={PAGE_PADDING}
-        style={{
-          zIndex: 10,
-          borderBottom: headerInView
-            ? '1px solid transparent'
-            : '1px solid var(--mantine-color-default-border)',
-        }}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
         <Title order={2}>
           {isEdit ? 'Configure JIRA Template' : 'Create a new JIRA Template'}

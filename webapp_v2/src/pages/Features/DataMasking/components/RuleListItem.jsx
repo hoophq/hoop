@@ -7,8 +7,7 @@ import RuleTrafficBadge from '@/components/RuleTrafficBadge'
 import { connectionsService } from '@/services/connections'
 import { getConnectionIcon } from '@/utils/connectionIcons'
 import { ruleEntityBadges } from '../helpers'
-
-const BORDER = '1px solid var(--mantine-color-default-border)'
+import classes from './RuleListItem.module.css'
 
 function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
   return (
@@ -16,14 +15,10 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
       px="lg"
       py="md"
       bg="white"
-      style={{
-        borderTop: BORDER,
-        borderBottomLeftRadius: 'var(--mantine-radius-md)',
-        borderBottomRightRadius: 'var(--mantine-radius-md)',
-      }}
+      className={classes.panel}
     >
       <Group align="flex-start" gap="xl" wrap="nowrap">
-        <Stack gap={2} w={220} style={{ flexShrink: 0 }}>
+        <Stack gap={2} w={220} className={classes.panelLabel}>
           <Text fw={500}>Connected Resources</Text>
           <Text size="sm" c="dimmed">
             Resource Roles that are using this Live Data Masking rule.
@@ -31,7 +26,7 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
         </Stack>
         <Box
           flex={1}
-          style={{ border: BORDER, borderRadius: 'var(--mantine-radius-md)' }}
+          className={classes.connections}
         >
           {loading ? (
             <Flex p="md" align="center" justify="center">
@@ -40,21 +35,17 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
           ) : connections.length === 0 ? (
             <Flex p="md" align="center" justify="center">
               <Text size="sm" c="dimmed">
-                No connections found for this rule
+                No Resource Roles use this rule.
               </Text>
             </Flex>
           ) : (
-            connections.map((connection, idx) => (
+            connections.map((connection) => (
               <Flex
                 key={connection.id ?? connection.name}
                 p="sm"
                 align="center"
                 justify="space-between"
-                style={
-                  idx === connections.length - 1
-                    ? undefined
-                    : { borderBottom: BORDER }
-                }
+                className={classes.connection}
               >
                 <Group gap="xs" align="center" wrap="nowrap" miw={0}>
                   <Image
@@ -87,8 +78,6 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
 export default function RuleListItem({
   rule,
   traffic,
-  isFirst,
-  isLast,
   onConfigure,
   onConfigureConnection,
 }) {
@@ -112,16 +101,6 @@ export default function RuleListItem({
 
   return (
     <Box
-      style={{
-        borderLeft: BORDER,
-        borderRight: BORDER,
-        borderTop: isFirst ? BORDER : undefined,
-        borderBottom: BORDER,
-        borderTopLeftRadius: isFirst ? 'var(--mantine-radius-md)' : undefined,
-        borderTopRightRadius: isFirst ? 'var(--mantine-radius-md)' : undefined,
-        borderBottomLeftRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
-        borderBottomRightRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
-      }}
       bg={showConnections ? 'var(--hoop-surface-muted)' : undefined}
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">

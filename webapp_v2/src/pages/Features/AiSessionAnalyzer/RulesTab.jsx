@@ -15,6 +15,7 @@ import { docsUrl } from '@/utils/docsUrl'
 import { RULE_KIND_ANALYZER, newRuleHint, newRulePath } from '@/utils/ruleTraffic'
 import { useAiSessionAnalyzerStore } from './store'
 import RuleListItem from './components/RuleListItem'
+import List from '@/components/List'
 
 // A sidecar rule reaches listeners, never a resource role, so each traffic has
 // its own filter.
@@ -134,14 +135,12 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredRules.map((rule, idx) => (
+        <List>
+          {filteredRules.map((rule) => (
             <RuleListItem
               key={rule.id ?? rule.name}
               rule={rule}
               traffic={traffic.trafficOf(rule)}
-              isFirst={idx === 0}
-              isLast={idx === filteredRules.length - 1}
               onConfigure={(name) =>
                 navigate(
                   `/features/ai-session-analyzer/rules/edit/${encodeURIComponent(name)}`,
@@ -149,7 +148,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
               }
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

@@ -125,7 +125,7 @@ export default function RolesTab() {
   return (
     <Stack gap="md">
       <Group gap="xs" align="flex-start" wrap="wrap">
-        <Box style={{ flex: 1, minWidth: 240 }}>
+        <Box flex={1} miw={240}>
           <TextInput
             placeholder="Search roles"
             value={search}

@@ -209,7 +209,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <FeatureRules flush sidecar={sidecar} listener={listener} editable={editable} />
+                      <FeatureRules sidecar={sidecar} listener={listener} editable={editable} />
                     </Table.Td>
                   </Table.Tr>
                 ),

@@ -89,7 +89,7 @@ function AgentsCreate() {
               onChange={(e) => setName(e.currentTarget.value)}
               required
               disabled={created}
-              style={{ width: 320 }}
+              w={320}
             />
           </form>
           <Stack gap="xs" w="100%">

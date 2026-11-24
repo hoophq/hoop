@@ -119,7 +119,6 @@ export default function FeatureAccordions({
   config,
   boundRules,
   defaultsOnly = false,
-  flush = false,
   actions,
 }) {
   const features = featureList(listener, config, boundRules, { defaultsOnly })

@@ -12,6 +12,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import { useResourcesStore } from '@/pages/Resources/store'
 import { hasMoreRoles, useConfigureResourceStore } from '@/pages/Resources/Configure/store'
 import RoleSummary from '@/pages/Resources/components/RoleSummary'
+import List from '@/components/List'
 import classes from '@/pages/Resources/List.module.css'
 
 function RoleActions({ role, testing, onDelete, onTest }) {
@@ -86,7 +87,7 @@ export default function RolesTab() {
 
   return (
     <Stack gap="md">
-      <ul className={classes.list}>
+      <List component="ul">
         {roles.items.map((role) => (
           <li key={role.id} className={classes.row}>
             <RoleSummary role={role} iconSrc={iconFor(role)} iconAlt="" />
@@ -98,7 +99,7 @@ export default function RolesTab() {
             />
           </li>
         ))}
-      </ul>
+      </List>
       {more && <div ref={sentinel} />}
       {roles.loading && (
         <Center>

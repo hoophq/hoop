@@ -22,6 +22,7 @@ import { useGuardrailsStore } from './store'
 import { AGENT_DLP_REQUIRED } from './helpers'
 import GuardrailListItem from './components/GuardrailListItem'
 import GuardrailsPromotion from './components/GuardrailsPromotion'
+import List from '@/components/List'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
@@ -206,18 +207,16 @@ export default function Guardrails() {
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredGuardrails.map((guardrail, idx) => (
+        <List>
+          {filteredGuardrails.map((guardrail) => (
             <GuardrailListItem
               key={guardrail.id}
               guardrail={guardrail}
               traffic={traffic.trafficOf(guardrail)}
-              isFirst={idx === 0}
-              isLast={idx === filteredGuardrails.length - 1}
               onConfigure={(id) => navigate(`/guardrails/edit/${id}`)}
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

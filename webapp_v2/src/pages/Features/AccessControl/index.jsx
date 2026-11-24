@@ -23,6 +23,7 @@ import {
 } from './helpers'
 import AccessControlPromotion from './components/AccessControlPromotion'
 import GroupListItem from './components/GroupListItem'
+import List from '@/components/List'
 
 export default function AccessControl() {
   const navigate = useNavigate()
@@ -189,13 +190,11 @@ export default function AccessControl() {
             />
           ) : (
             <Stack gap="md">
-              <Box>
-                {visibleGroups.map((group, idx) => (
+              <List>
+                {visibleGroups.map((group) => (
                   <GroupListItem
                     key={group.name}
                     group={group}
-                    isFirst={idx === 0}
-                    isLast={idx === visibleGroups.length - 1}
                     usersFailed={usersStatus === 'error'}
                     getIconUrl={getIconUrl}
                     onShowConnections={fetchConnections}
@@ -209,7 +208,7 @@ export default function AccessControl() {
                     }
                   />
                 ))}
-              </Box>
+              </List>
               {groupPages > 1 && (
                 <Pagination total={groupPages} value={page} onChange={setPage} />
               )}

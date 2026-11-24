@@ -140,7 +140,7 @@ function AgentRow({ agent, isAdmin, isLast, onDelete, onEditTags }) {
       style={isLast ? undefined : { borderBottom: '1px solid var(--mantine-color-default-border)' }}
     >
       <Flex align="center">
-        <Box style={{ flex: 1 }}>
+        <Box flex={1}>
           <Text size="lg" fw={700}>{agent.name}</Text>
           <Text size="xs" c="dimmed">Version: {agent.version}</Text>
           <Text size="xs" c="dimmed">ID: {agent.id}</Text>

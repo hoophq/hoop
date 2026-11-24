@@ -32,7 +32,7 @@ export function DockerDeployment({ hoopKey }) {
         <Box p="md" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 12 }}>
           <Flex gap="xs" align="center">
             <img src="/images/docker-blue.svg" alt="Docker" height={24} />
-            <Text size="xs" style={{ flex: 1 }}>
+            <Text size="xs" flex={1}>
               {dockerImage}
             </Text>
             <InlineCopy value={dockerImage} />

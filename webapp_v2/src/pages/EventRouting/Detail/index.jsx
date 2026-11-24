@@ -26,6 +26,7 @@ import { useEventRoutingStore } from "../store"
 import StatusBadge from "../components/StatusBadge"
 import DispatchBadge from "../components/DispatchBadge"
 import ReplayDispatchModal from "../components/ReplayDispatchModal"
+import classes from "../EventRouting.module.css"
 
 function SectionHeader({ title, subtitle }) {
   return (
@@ -90,16 +91,14 @@ function MappingTable({ mapping }) {
           wrap="nowrap"
           gap="md"
           bg="var(--hoop-surface-muted)"
-          style={{
-            borderBottom: "1px solid var(--mantine-color-default-border)",
-          }}
+          className={classes.row}
         >
           <Text
             size="xs"
             fw={600}
             c="dimmed"
             tt="uppercase"
-            style={{ width: "40%" }}
+            w="40%"
           >
             Runbook parameter
           </Text>
@@ -109,7 +108,7 @@ function MappingTable({ mapping }) {
             fw={600}
             c="dimmed"
             tt="uppercase"
-            style={{ flex: 1 }}
+            flex={1}
           >
             Event payload field
           </Text>
@@ -126,17 +125,15 @@ function MappingTable({ mapping }) {
               py="sm"
               wrap="nowrap"
               gap="md"
-              style={{
-                borderBottom: "1px solid var(--mantine-color-default-border)",
-              }}
+              className={classes.row}
             >
-              <Box style={{ width: "40%" }}>
+              <Box w="40%">
                 <Code>{param}</Code>
               </Box>
-              <Box w={16} style={{ textAlign: "center" }}>
+              <Box w={16} ta="center">
                 <ArrowRight size={14} color="var(--mantine-color-dimmed)" />
               </Box>
-              <Box style={{ flex: 1, minWidth: 0 }}>
+              <Box flex={1} miw={0}>
                 <Code>{source}</Code>
               </Box>
             </Group>
@@ -189,15 +186,13 @@ function DispatchHistory({ subId }) {
       <Group
         px="sm"
         py="xs"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
+        className={classes.row}
         wrap="nowrap"
       >
         <Text size="xs" fw={600} c="dimmed" w={170}>
           Timestamp
         </Text>
-        <Text size="xs" fw={600} c="dimmed" style={{ flex: 1 }}>
+        <Text size="xs" fw={600} c="dimmed" flex={1}>
           Event type
         </Text>
         <Text size="xs" fw={600} c="dimmed" w={120}>
@@ -216,16 +211,14 @@ function DispatchHistory({ subId }) {
           px="sm"
           py="sm"
           wrap="nowrap"
-          style={{
-            borderBottom: "1px solid var(--mantine-color-default-border)",
-          }}
+          className={classes.row}
         >
           <Text size="xs" c="dimmed" w={170} ff="monospace" truncate>
             {(d.dispatchedAt || d.createdAt || "")
               .replace("T", " ")
               .slice(0, 19) || "—"}
           </Text>
-          <Box style={{ flex: 1, minWidth: 0 }}>
+          <Box flex={1} miw={0}>
             <Code variant="accent">
               {d.eventType}
             </Code>
@@ -367,7 +360,7 @@ export default function EventRoutingDetail() {
         gap="md"
         wrap="nowrap"
       >
-        <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
+        <Stack gap="xs" flex={1} miw={0}>
           <Group gap="sm" align="center">
             <Title order={1}>{sub.name}</Title>
             <StatusBadge status={sub.status} />

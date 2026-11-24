@@ -244,9 +244,9 @@ function ClojureApp() {
 
   if (error) {
     return (
-      <Center style={{ height: '60vh' }}>
+      <Center h="60vh">
         <Stack align="center" maw={480}>
-          <Alert color="red" title="ClojureScript bundle not available" style={{ width: '100%' }}>
+          <Alert color="red" title="ClojureScript bundle not available" w="100%">
             <Text size="sm" mb="xs">
               The ClojureScript dev server is not running. Start it with:
             </Text>

@@ -162,8 +162,6 @@ function UsersSection({ users, usersFailed }) {
 // reveals the resource roles the group can reach and the users in it.
 export default function GroupListItem({
   group,
-  isFirst,
-  isLast,
   usersFailed,
   getIconUrl,
   onShowConnections,
@@ -176,8 +174,6 @@ export default function GroupListItem({
   return (
     <Box
       className={classes.row}
-      data-first={isFirst || undefined}
-      data-last={isLast || undefined}
       data-expanded={expanded || undefined}
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">

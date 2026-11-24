@@ -23,6 +23,7 @@ import {
 } from './constants'
 import AccessRequestPromotion from './components/AccessRequestPromotion'
 import RuleListItem from './components/RuleListItem'
+import List from '@/components/List'
 
 const CREATE_LABEL = 'Create new Access Request rule'
 
@@ -174,19 +175,17 @@ export default function AccessRequest() {
               description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
             />
           ) : (
-            <Box>
-              {filteredRules.map((rule, idx) => (
+            <List>
+              {filteredRules.map((rule) => (
                 <RuleListItem
                   key={rule.name}
                   rule={rule}
-                  isFirst={idx === 0}
-                  isLast={idx === filteredRules.length - 1}
                   onConfigure={(name) =>
                     navigate(`${EDIT_PATH}/${encodeURIComponent(name)}`)
                   }
                 />
               ))}
-            </Box>
+            </List>
           )}
         </>
       )}

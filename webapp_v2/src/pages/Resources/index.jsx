@@ -18,7 +18,7 @@ import HoopCliModal from '@/pages/Resources/sections/HoopCliModal'
 import ResourceRow from '@/pages/Resources/sections/ResourceRow'
 import RoleRow from '@/pages/Resources/sections/RoleRow'
 import ViewTabs from '@/pages/Resources/sections/ViewTabs'
-import classes from '@/pages/Resources/List.module.css'
+import List from '@/components/List'
 import pageClasses from './Resources.module.css'
 
 const GETTING_STARTED_URL = 'https://hoop.dev/docs/introduction/getting-started'
@@ -67,7 +67,7 @@ function ListPanel({ tab, children }) {
 
   return (
     <Stack gap="md">
-      <ul className={classes.list}>{children(list.items)}</ul>
+      <List component="ul">{children(list.items)}</List>
       {more && <div ref={sentinel} />}
       {list.loading && (
         <Center>
