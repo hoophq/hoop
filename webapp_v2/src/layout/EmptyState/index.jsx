@@ -31,7 +31,7 @@ export default function EmptyState({
           w={320}
           fit="contain"
         />
-        <Stack align="center" gap="xs" maw={400}>
+        <Stack align="center" gap="xs">
           <Text fw={600} c="dimmed" ta="center">{title}</Text>
           {description && (
             <Text size="sm" c="dimmed" ta="center">{description}</Text>

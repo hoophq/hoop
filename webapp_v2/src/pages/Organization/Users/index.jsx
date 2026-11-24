@@ -486,7 +486,7 @@ export default function Users() {
             {orgTotal === 1 && (
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
-                  <Text size="sm" c="dimmed" ta="center" maw={400}>
+                  <Text size="sm" c="dimmed" ta="center">
                     Invite users and set up team permissions and approvals for Resource access.
                   </Text>
                   <Button onClick={handleAdd}>Invite users</Button>

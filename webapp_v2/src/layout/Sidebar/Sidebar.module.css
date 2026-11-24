@@ -307,22 +307,8 @@
 
 /* ── Groups (Runbooks, AI Analyzer, Settings) ─────────────── */
 
-.navLink[data-expanded] {
-  color: var(--mantine-color-text);
-}
-
-.navLink[data-expanded] .navLinkLabel {
-  font-weight: 700;
-}
-
-/* A nested group (Settings › Integrations) keeps its regular weight. */
-.navLinkChildren .navLink[data-expanded]:not(:hover) {
-  color: var(--mantine-color-dimmed);
-}
-
-.navLinkChildren .navLink[data-expanded] .navLinkLabel {
-  font-weight: 500;
-}
+/* An open group keeps the weight and color of every other item: only the
+   current page is bold (.navLink[data-active]). The chevron shows it is open. */
 
 /* The chevron points down while closed and up while open. It turns alone, so
    the count beside it stays upright. */
