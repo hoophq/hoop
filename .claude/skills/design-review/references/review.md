@@ -42,10 +42,11 @@ is a known update for the brand skills (DES-252), not a question.
 | Avatar | Square | Round (Mantine) |
 | Page numbers (`Pagination`) | Not set | Round, `--hoop-button-radius` |
 | Button next to a field | Pill | Square, `variant="field"` |
+| Mantine's own round parts (`Switch`, `Radio`, `Stepper` icons) and a status dot | "Nothing else is round" | Round, as Mantine draws them |
 
 Same in both, so a break is an issue: buttons and icon buttons are pills;
-cards, tables, rows, modals, tabs, callouts, toasts and icon tiles are
-square (radius 0); multiline fields are square.
+cards, tables, rows, modals, tabs, `SegmentedControl`, callouts, toasts and
+icon tiles are square (radius 0); multiline fields are square.
 
 When you find a new difference, add it to the report under "Questions for
 design", so design can add a row here.
@@ -63,7 +64,7 @@ rule the repo enforces (test, lint, `CLAUDE.md`).
 | Text under 12px, or text no one can read | A secret printed |
 | A delete with no `ConfirmDialog` | A raw HTTP body or `%+v` in an error |
 | A wrapped primitive imported from `@mantine/core` | `-o json` with text on stdout |
-| A field with no visible label | A prompt that waits when stdin is not a TTY |
+| A field with no visible label (a visible name not linked to its control is a Should fix) | A prompt that waits when stdin is not a TTY |
 
 **Should fix**: it works, but it does not look or read like the rest of
 the product.

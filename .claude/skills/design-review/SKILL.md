@@ -55,7 +55,9 @@ Hoop account, not with the repo):
 
 Do not copy their rules into a report. Cite them like any other source. When
 a session does not have them, write "Brand skills: not loaded" in the report
-and review with `hoop-ui` only.
+and review with `hoop-ui` only. When a brand skill loads but its
+`references/` files are missing, use the rules in its `SKILL.md` only and
+write "Brand skills: top level only".
 
 Some rules disagree. Use this order, first wins:
 
@@ -67,6 +69,11 @@ Some rules disagree. Use this order, first wins:
 A break of a lower source that a higher source allows is not an issue. Put
 it under "Questions for design" only when it is not in the "Known
 differences" table of `references/review.md`.
+
+Judge by today's rules: the `hoop-ui` of this checkout, also for an older or
+merged PR. When the PR's own theme does not have a token that a rule names
+yet, the issue and the fix stay. Add one line to the fix: "The theme does
+this once <token> is on main."
 
 Then read `references/review.md`: what not to flag, the known differences,
 and how severe each break is.
@@ -82,9 +89,12 @@ gh pr diff <N> | python3 .claude/skills/design-review/scripts/check_diff.py
 git diff origin/main...HEAD | python3 .claude/skills/design-review/scripts/check_diff.py
 ```
 
-It reads a unified diff and reports FAIL and WARN on added lines only. FAIL
-is a rule break. WARN means look again: it can be correct. The script finds
-patterns. It does not see the screen: step 3 is still necessary.
+It reads a unified diff and reports on added lines only. FAIL is a rule
+break. WARN means look again: it can be correct. MOVED is old code that the
+change moved to a new place: flag it once, as step 1 says. The script finds
+patterns. It does not see the screen, and it does not see layout (a card in
+a card, a field error shown only in a toast, a switch whose visible name is
+not its label): step 3 is still necessary.
 
 For a web app change, also run the tests that guard the theme. They read the
 files on disk, not the diff. For a PR, put its code in a separate folder
@@ -95,8 +105,10 @@ git fetch origin pull/<N>/head && git worktree add ../pr-<N> FETCH_HEAD
 cd ../pr-<N>/webapp_v2 && npm ci && npx vitest run test/themeColors.test.js
 ```
 
-Remove the folder after (`git worktree remove ../pr-<N>`). If you cannot
-run it, write "Color test: not run" in the report.
+Remove the folder after (`git worktree remove ../pr-<N>`). `npm ci` takes
+minutes. If you cannot wait or cannot run it, write "Color test: not run" in
+the report, and read the added lines for a hex, an `rgb()` or a
+`--mantine-color-<name>-<n>` shade instead.
 
 ## 3. Read and look
 
@@ -119,6 +131,9 @@ report's "Reviewed from" line. A GIF or video reads better as frames:
 ffmpeg -loglevel error -i in.gif -vf "fps=1/2,scale=1200:-1" frame-%02d.png
 ```
 
+That makes small frames to read. For `mark.sh`, take the frame you need again
+at full size (drop `,scale=1200:-1`), so the small text stays readable.
+
 Some rules need the running screen (hover, focus ring, 44px touch target,
 390px width). When you could not see it, list those rules under "Not
 checked".
@@ -129,7 +144,10 @@ do not pick: write it as a question for design.
 ## 4. Show each issue
 
 Each Must fix and Should fix item gets one image: the spot marked, and the
-fix next to it when you can show it. Nits and questions get no image. Save
+fix next to it when you can show it. Nits and questions get no image. An
+issue with nothing to see (an error shown only in a toast, a missing
+`aria-label`) gets no image: write "No image: nothing to see on the screen"
+in its place. Save
 the images in `~/design-review/<PR number or branch>/`, named
 `<item number>-<short-name>.png`.
 
@@ -138,7 +156,7 @@ the images in `~/design-review/<PR number or branch>/`, named
 | Terminal | anything | `term.sh` |
 | Web app | the screen running | `shot.mjs`, then `pair.sh` |
 | Web app | only the PR's images | `mark.sh` (the spot, no "after") |
-| Web app | an issue that shows only across steps | a GIF with `../evidence/rec.mjs` |
+| Web app | an issue that shows only across steps | a GIF with `.claude/skills/evidence/rec.mjs` |
 
 The scripts are in `scripts/`. Each one prints the file it wrote.
 
@@ -160,12 +178,11 @@ scripts/dev/run-sandbox.sh start
 (source "${TMPDIR:-/tmp}/hoop-sandbox/env" && printf %s "$HOOP_TOKEN" > /tmp/hoop-dev-token)
 # The web UI: `cd webapp_v2 && npm run dev:full` (http://localhost:5173).
 
-node scripts/shot.mjs http://localhost:5173 /features/ai-session-analyzer/rules/new \
-  "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Select All')" \
-  "el.textContent = 'Select all'" ~/design-review/2162 --name 03-select-all --pad 160 \
-  --token /tmp/hoop-dev-token \
-  --steps "document.querySelector('input[placeholder=\"Select action\"]').click(); await sleep(600)"
-scripts/pair.sh ~/design-review/2162/03-select-all-{before,after}.png ~/design-review/2162/03-select-all.png
+node scripts/shot.mjs http://localhost:5173 /sessions \
+  "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear Filters')" \
+  "el.textContent = 'Clear filters'" ~/design-review/<N> --name 03-clear-filters --pad 160 \
+  --token /tmp/hoop-dev-token
+scripts/pair.sh ~/design-review/<N>/03-clear-filters-{before,after}.png ~/design-review/<N>/03-clear-filters.png
 ```
 
 For a PR, run the stack from the PR's code (the `../pr-<N>` folder of step
@@ -176,7 +193,7 @@ For a PR, run the stack from the PR's code (the `../pr-<N>` folder of step
 and mark it:
 
 ```bash
-scripts/mark.sh shot.png <x> <y> <w> <h> ~/design-review/2162/02-status-dot.png [pad]
+scripts/mark.sh shot.png <x> <y> <w> <h> ~/design-review/<N>/02-status-dot.png [pad]
 ```
 
 Look at every image before you use it: the box must sit on the issue.
@@ -197,10 +214,13 @@ Use this format. Most severe first. Each item names its file.
 1. `webapp_v2/src/pages/Foo/index.jsx:42`: two filled indigo buttons in one view.
    Rule: hoop-ui webapp.md, 4. Page structure ("One primary button per view").
    Fix: make "Cancel" `variant="subtle"`.
-   ![1](~/design-review/2162/01-two-primary.png)
+   ![1](~/design-review/<N>/01-two-primary.png)
 
 ### Should fix
 ...
+
+### Nits
+- At most three. Leave this section out when there are Must fix items.
 
 ### Questions for design
 - Where hoop-ui, the repo and the design file disagree.
@@ -216,6 +236,8 @@ Rules for each issue:
 
 - One location (`path:line`), one rule, one fix. The fix is code or exact
   text the engineer can paste.
+- The same break in many places is one item: give the first location, then
+  list the others in the item ("Also at: `a.jsx:15`, `b.jsx:20`").
 - Name the rule with its `hoop-ui` file and section, so the engineer can
   read why.
 - Write for an engineer with no design background: say what the person
@@ -227,8 +249,8 @@ Rules for each issue:
 
 An image path on your machine is for the person who asked. To post the
 report on a PR, publish the images first
-(`../evidence/publish.sh <TICKET-ID> <files>`) and use those links. Only
-post when the person asks.
+(`.claude/skills/evidence/publish.sh <TICKET-ID> <files>`) and use those
+links. Only post when the person asks.
 
 No issues: say "No design issues found", list what you checked, and stop.
 

@@ -65,6 +65,16 @@ def wrapped_components(root):
     }
 
 
+def sidebar_labels(root):
+    """The sidebar labels: page names keep their capitals, like product words."""
+    path = os.path.join(root, "webapp_v2", "src", "layout", "Sidebar", "gatewayNav.js")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return set()
+    return set(re.findall(r"""label:\s*['"]([^'"]+)['"]""", text))
+
+
 def removed_texts(diff):
     """The stripped text of every removed line, to skip lines that only moved."""
     return {
@@ -109,7 +119,7 @@ def text_checks(text, pattern, out):
             out.append(("WARN", "exclamation mark in user text"))
 
 
-def check_web(path, text, wrapped):
+def check_web(path, text, wrapped, sidebar=frozenset()):
     out = []
     m = re.search(r"import\s*{([^}]*)}\s*from\s*['\"]@mantine/core['\"]", text)
     if m:
@@ -133,7 +143,10 @@ def check_web(path, text, wrapped):
         label = next(g for g in m.groups() if g)
         words = label.split()
         # Product words keep their capitals; the other words must not.
-        rest = PRODUCT.sub(" ", label).split()
+        named = label
+        for name in sorted(sidebar, key=len, reverse=True):
+            named = named.replace(name, " ")
+        rest = PRODUCT.sub(" ", named).split()
         if len(words) >= 2 and all(w[:1].isupper() for w in words) and len(rest) >= 1 and all(w[:1].isupper() for w in rest[1:] or rest) and not (len(rest) == 1 and words[0] == rest[0]):
             out.append(("WARN", f"'{label}' is in Title Case: use sentence case (hoop-ui webapp.md, 8. Copy)"))
     if re.search(r"""\bclassName=["'][^"']*\b(flex|p-\d|m-\d|text-|bg-|w-\d)""", text):
@@ -143,6 +156,14 @@ def check_web(path, text, wrapped):
     if re.search(r"Oops|Something went wrong", text):
         out.append(("FAIL", "error text that does not say what failed (hoop-ui webapp.md, 8. Copy)"))
     if not WEB_OWNERS.match(path):
+        if re.search(r"""\bbdrs=["'{]""", text):
+            out.append(("WARN", "bdrs (a radius by style prop): the theme sets every shape (hoop-ui webapp.md, 3. Shape)"))
+        if re.search(r"""\b(bg|c|color|bd)=["']var\(--hoop-""", text):
+            out.append(("WARN", "a --hoop-* role token passed as a prop: use it in a CSS Module, or a Paper variant (hoop-ui webapp.md, 2. Color)"))
+        if re.search(r"""<Badge\b[^>]*\bcolor=["']indigo["']""", text):
+            out.append(("WARN", "indigo Badge: if it shows a state or a count, use gray; indigo is the action (hoop-ui webapp.md, 2. Color)"))
+        if re.search(r"""<(Text|Group|Box)\b[^>]*\bc=["']indigo["']""", text):
+            out.append(("WARN", "indigo text: if this is a note, use Paper variant=\"info\" and no color (hoop-ui webapp.md, 2. Color)"))
         if re.search(r"""\bradius=["'{]""", text):
             out.append(("WARN", "radius on a component: the theme sets every shape (hoop-ui webapp.md, 3. Shape)"))
         if re.search(r"""\bsize=["']xl["']""", text):
@@ -227,7 +248,8 @@ def main():
         return 2
     wrapped = wrapped_components(repo_root())
     moved = removed_texts(diff)
-    fails = warns = 0
+    fails = warns = moves = 0
+    sidebar = sidebar_labels(repo_root())
     badges = {}
     report = []
     for path, num, text in added_lines(diff):
@@ -235,22 +257,25 @@ def main():
         m = BADGE_COLOR.search(text)
         if m and WEB.match(path):
             badges.setdefault(path, []).append((num, m.group(1)))
-        if text.lstrip().startswith(("//", "*", "/*")) or text.strip() in moved:
+        if text.lstrip().startswith(("//", "*", "/*")):
             continue
         if WEB.match(path) and ".test." not in path:
-            found = check_web(path, text, wrapped)
+            found = check_web(path, text, wrapped, sidebar)
         elif CLI.match(path) and not path.endswith("_test.go"):
             found = check_cli(path, text)
         else:
             continue
-        report += [(path, num, level, msg) for level, msg in found]
+        # A moved line keeps its finding: the review flags it once, in its new place.
+        was_moved = text.strip() in moved
+        report += [(path, num, "MOVED" if was_moved else level, msg) for level, msg in found]
     for path, items in badges.items():
         report += [(path, num, "WARN", msg) for num, msg in badge_swaps(items)]
     for path, num, level, msg in sorted(report, key=lambda r: (r[0], r[1])):
         print(f"{level} {path}:{num}: {msg}")
         fails += level == "FAIL"
         warns += level == "WARN"
-    print(f"\n{fails} FAIL, {warns} WARN")
+        moves += level == "MOVED"
+    print(f"\n{fails} FAIL, {warns} WARN, {moves} MOVED (old code in a new place: flag once)")
     return 1 if fails else 0
 
 
