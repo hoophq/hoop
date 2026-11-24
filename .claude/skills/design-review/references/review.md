@@ -80,7 +80,7 @@ the product.
 | A word not in the copy table, or one feature with two names | An error with no next step |
 | Title Case on a label or a button | `Short` with a period, over 60 characters or in lower case |
 | A missing empty or error state | No `Example` on a command a person runs |
-| A card around form fields, or a card in a card | A line wider than 80 columns |
+| A card around form fields, or a card in a card | Our text wider than 80 columns, or the person's data cut to fit |
 | `radius`, `style={{}}`, `transition` or `transform` written on a page | A new amber or pink |
 | An icon-only button with no `Tooltip` | A destructive action with no `--yes` |
 | "Learn more", "successfully", "OK", "Submit" | Emoji, or a symbol not in the set |
