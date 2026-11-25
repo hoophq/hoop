@@ -1183,7 +1183,7 @@ func TestMongoDBDenyFrameUsesRequestID(t *testing.T) {
 		Protocol:  inspect.MongoDB,
 		Direction: inspect.FromClient,
 		Metadata:  map[string]string{"mongodb.request_id": "-42"},
-	}, "destructive commands are not permitted", nil)
+	}, "destructive commands are not permitted", "", nil)
 	if len(frame) < 21 {
 		t.Fatalf("MongoDB denial frame is %d bytes", len(frame))
 	}

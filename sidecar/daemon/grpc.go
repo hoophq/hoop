@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/descriptors"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 	telem "github.com/hoophq/hoop/sidecar/telemetry"
@@ -932,7 +933,8 @@ func grpcDeniedStatus(d gate.Decision) *codecgrpc.Status {
 	if d.Review != nil {
 		trailers = proxy.ReviewHeaders(*d.Review)
 	}
-	return &codecgrpc.Status{Code: grpcPermissionDenied, Message: d.Message, Trailers: trailers}
+	return &codecgrpc.Status{Code: grpcPermissionDenied, Message: policy.DenialText(d.Message, d.Detail),
+		Trailers: trailers}
 }
 
 // grpcPeerSubject names the caller from a verified client certificate, the

@@ -420,6 +420,10 @@ type Decision struct {
 	// into a support ticket.
 	Message string
 
+	// Detail reaches the end user after Message. The audit trail and the
+	// log never carry it.
+	Detail string
+
 	// Rule identifies the policy rule that denied.
 	Rule string
 
@@ -1033,6 +1037,7 @@ func (g *Gate) EndOfStream() Decision {
 		if j.denied {
 			d.Allowed = false
 			d.Message = j.message
+			d.Detail = j.detail
 			d.Rule = j.rule
 			d.Review = j.review
 			denied := stmt
@@ -1367,6 +1372,7 @@ func (g *Gate) joinJudgment(ctx context.Context, d *Decision, stmt inspect.State
 	}
 	d.Allowed = false
 	d.Message = j.message
+	d.Detail = j.detail
 	d.Rule = j.rule
 	d.Review = j.review
 	denied := stmt
@@ -1381,6 +1387,7 @@ type judgment struct {
 	denied  bool
 	rule    string
 	message string
+	detail  string
 	review  *policy.Review
 
 	// err carries the non-fatal failures (a failed audit write under
@@ -1490,6 +1497,7 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement, requests int) 
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
+		detail:  verdict.Detail,
 		review:  verdict.Review,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
@@ -1562,6 +1570,7 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 	d := Decision{Allowed: !j.denied, Statements: stmts, Err: j.err}
 	if j.denied {
 		d.Message = j.message
+		d.Detail = j.detail
 		d.Rule = j.rule
 		d.Review = j.review
 		denied := stmt

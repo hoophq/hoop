@@ -454,6 +454,7 @@ func (e *Evaluator) resolveHandoff(stmt inspect.Statement, ec *policy.EvalContex
 	if d.cause != nil {
 		v := e.deny(notes, msg+": "+d.reason+", so the statement is blocked")
 		v.Err = d.cause
+		v.Detail = e.blockDetail(c.res)
 		return v
 	}
 	const blocked = "the hand-off agent blocked the statement"
@@ -462,7 +463,9 @@ func (e *Evaluator) resolveHandoff(stmt inspect.Statement, ec *policy.EvalContex
 	if q := rejectionReason(reason, min(maxReasonBytes, room)); q != "" {
 		denial = blocked + ": " + q
 	}
-	return e.deny(notes, msg+": "+denial)
+	v := e.deny(notes, msg+": "+denial)
+	v.Detail = e.blockDetail(c.res)
+	return v
 }
 
 // recordReason is the hand-off or rule agent's prose as the record may keep

@@ -61,9 +61,9 @@ type DenyWriter interface {
 // statementDenyWriter renders protocols whose native error must be correlated
 // with the denied request, or that carry the review a denial waits on. Kept
 // optional so existing DenyWriter implementations remain source-compatible.
-// review is nil unless the denial named one.
+// detail is empty and review is nil unless the denial carries one.
 type statementDenyWriter interface {
-	DenyStatement(statement inspect.Statement, message string, review *policy.Review) []byte
+	DenyStatement(statement inspect.Statement, message, detail string, review *policy.Review) []byte
 }
 
 // Config configures a Server.
@@ -362,15 +362,16 @@ func NewServer(cfg Config) (*Server, error) {
 // knows its own error frame, and the writer knows only the shipped
 // protocols by name.
 func (s *Server) writeDenyFrame(g *gate.Gate, target net.Conn, dir inspect.Direction, d gate.Decision, log *slog.Logger) {
-	frame, _ := g.DenyFrame(dir, d.Message)
+	text := policy.DenialText(d.Message, d.Detail)
+	frame, _ := g.DenyFrame(dir, text)
 	if len(frame) == 0 && s.cfg.DenyWriter != nil {
 		if d.DeniedStatement != nil {
 			if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
-				frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
+				frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Detail, d.Review)
 			}
 		}
 		if len(frame) == 0 {
-			frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
+			frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, text)
 		}
 	}
 	writeBeforeClose(target, frame, "deny frame", dir, log)

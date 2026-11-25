@@ -247,7 +247,9 @@ type MCPCaller struct {
 type MCPVerdict struct {
 	Allowed bool
 	Message string
-	Rule    string
+	// Detail goes to the client only, never to an audit record.
+	Detail string
+	Rule   string
 	// Held is a refusal that waits on an approval Message names: the same
 	// call runs once it is approved.
 	Held bool
@@ -593,7 +595,7 @@ func (s *mcpLaneSession) evaluate(ctx context.Context, stmts ...inspect.Statemen
 		if d.Err != nil {
 			s.log.Warn("mcp statement evaluation reported an error", "allowed", d.Allowed, "error", d.Err)
 		}
-		v = MCPVerdict{Allowed: d.Allowed, Message: d.Message, Rule: d.Rule,
+		v = MCPVerdict{Allowed: d.Allowed, Message: d.Message, Detail: d.Detail, Rule: d.Rule,
 			Held: d.Review != nil && ReviewNext(d.Review.Status) == ReviewNextWait}
 		if !v.Allowed {
 			break
