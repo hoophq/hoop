@@ -59,7 +59,7 @@ function ConfigurationForm({ integration }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: isCreate ? 'Jira integration created!' : 'Jira integration updated!',
+        text: isCreate ? 'Jira integration created.' : 'Jira integration updated.',
       })
     } else {
       showSnackbar({
@@ -77,7 +77,7 @@ function ConfigurationForm({ integration }) {
 
       <SectionRow
         title="Configure integration"
-        description="Boost productivity by linking your resource roles with Jira."
+        description="Boost productivity by linking your Resource Roles with Jira."
       >
         <form onSubmit={handleSubmit}>
           <Stack gap="lg">
@@ -114,14 +114,14 @@ function ConfigurationForm({ integration }) {
               <Group gap="xs" align="center" wrap="nowrap">
                 <Info size={16} color="var(--mantine-color-dimmed)" />
                 <Text size="sm" c="dimmed">
-                  {'For more information about how to find your User API token, '}
+                  {'To find your User API token, '}
                   <Anchor
                     href={ATLASSIAN_TOKEN_DOCS_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     size="sm"
                   >
-                    click here
+                    read the Atlassian API token docs
                   </Anchor>
                   {'.'}
                 </Text>

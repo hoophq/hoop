@@ -46,7 +46,7 @@ export default function FiltersBar() {
     <Group gap="xs" wrap="nowrap">
       {hasFilters(filters) && (
         <Button variant="light" color="gray" size="sm" onClick={onClear}>
-          Clear Filters
+          Clear filters
         </Button>
       )}
       <TextInput

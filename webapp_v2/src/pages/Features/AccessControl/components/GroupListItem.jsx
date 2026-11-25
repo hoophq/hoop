@@ -56,11 +56,11 @@ function ConnectionsSection({ connections, getIconUrl, onShowConnections, onConf
   return (
     <PanelSection
       title="Resources"
-      description="These resource roles can be accessed by this user group."
+      description="These Resource Roles can be accessed by this user group."
     >
       {connections.length === 0 ? (
         <Text size="sm" c="dimmed">
-          No resource roles in this group
+          No Resource Roles in this group
         </Text>
       ) : (
         <PagedList
@@ -162,8 +162,6 @@ function UsersSection({ users, usersFailed }) {
 // reveals the resource roles the group can reach and the users in it.
 export default function GroupListItem({
   group,
-  isFirst,
-  isLast,
   usersFailed,
   getIconUrl,
   onShowConnections,
@@ -176,8 +174,6 @@ export default function GroupListItem({
   return (
     <Box
       className={classes.row}
-      data-first={isFirst || undefined}
-      data-last={isLast || undefined}
       data-expanded={expanded || undefined}
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">
@@ -193,7 +189,7 @@ export default function GroupListItem({
             onClick={() => setExpanded((value) => !value)}
             rightSection={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           >
-            {`${plural(group.connections.length, 'resource role')} · ${usersLabel}`}
+            {`${plural(group.connections.length, 'Resource Role')} · ${usersLabel}`}
           </Button>
 
           <Button variant="default" onClick={() => onConfigure(group.name)}>

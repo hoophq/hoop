@@ -1,4 +1,5 @@
-import { Box, Flex, Avatar, Text } from '@mantine/core'
+import { Box, Flex, Text } from '@mantine/core'
+import Avatar from '@/components/Avatar'
 import classes from './MethodCard.module.css'
 
 function MethodCard({ method, selected, onSelect }) {
@@ -14,7 +15,7 @@ function MethodCard({ method, selected, onSelect }) {
           size="md"
           variant="soft"
           color={selected ? 'indigo' : 'gray'}
-          radius="var(--hoop-icon-radius)"
+          tile
           src={method.iconDark}
           alt={method.label}
         />

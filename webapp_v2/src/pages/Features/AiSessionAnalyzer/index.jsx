@@ -63,7 +63,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
   }
 
   if (listStatus === 'error' || providerStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
+    return <PageLoader error h={300} message="Failed to load AI Analyzer." />
   }
 
   // The promotion replaces the whole page, not just the empty state — an admin
@@ -90,10 +90,10 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
         <Stack gap="sm">
           <Title order={1}>AI Analyzer</Title>
           <Text size="md" c="dimmed">
-            Monitor terminal sessions and resource usage in real time.
+            Score session risk with AI and block or route risky commands.
           </Text>
         </Stack>
-        {tab === 'rules' && (list.length > 0 || mixed) && (
+        {tab === 'rules' && list.length > 0 && (
           <NewRuleButton
             traffics={newTraffics}
             onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}
@@ -113,13 +113,7 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
 
       {tab === 'configure' ? (
         <Box>
-          {mixed && (
-            <Text size="sm" c="dimmed" mb="lg">
-              This provider analyzes agent sessions. Each sidecar uses the provider in its own
-              configuration.
-            </Text>
-          )}
-          <ConfigureTab onSaved={() => setTab('rules')} />
+          <ConfigureTab onSaved={() => setTab('rules')} mixed={mixed} />
           <SidecarAnalyzers />
         </Box>
       ) : (

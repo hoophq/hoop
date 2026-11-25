@@ -22,9 +22,11 @@ import { useDataMaskingStore } from './store'
 import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
 import { RULE_DRIVEN_PROVIDERS } from './helpers'
+import List from '@/components/List'
+import { docsUrl } from '@/utils/docsUrl'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
-  'Your organization has reached Live Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
+  'Your organization has reached Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
 const AGENT_PROVIDER_REQUIRED =
   'Masking rules for agent resources need a DLP provider. Sidecars mask without one.'
@@ -105,7 +107,7 @@ export default function DataMasking() {
 
   if (listStatus === 'error') {
     return (
-      <PageLoader error h={300} message="Failed to load Live Data Masking rules." />
+      <PageLoader error h={300} message="Failed to load Data Masking rules." />
     )
   }
 
@@ -125,14 +127,16 @@ export default function DataMasking() {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
-          <Title order={1}>Live Data Masking</Title>
+          <Title order={1}>Data Masking</Title>
           <Text size="md" c="dimmed">
-            Automatically mask sensitive data in real-time at the protocol layer
+            Mask sensitive data in real time at the protocol layer.
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
-          Create new rule
-        </Button>
+        {list.length > 0 && (
+          <Button onClick={goCreate} disabled={atFreeLimit}>
+            Create new rule
+          </Button>
+        )}
       </Group>
 
       {atFreeLimit && (
@@ -160,7 +164,7 @@ export default function DataMasking() {
               <AsyncValueFilter
                 icon={Rotate3d}
                 label="Resource Role"
-                placeholder="Search resource roles"
+                placeholder="Search Resource Roles"
                 selected={selectedRole}
                 onSelect={setSelectedRole}
                 onClear={() => setSelectedRole(null)}
@@ -187,25 +191,25 @@ export default function DataMasking() {
 
       {list.length === 0 ? (
         <EmptyState
-          compact
-          title="No Live Data Masking rules yet"
-          description="Create one for your resource roles or sidecar listeners."
+          title="No Data Masking rules yet"
+          description="Create one for your Resource Roles or Sidecar listeners."
+          action={{ label: 'Create new rule', onClick: goCreate }}
+          docsUrl={docsUrl.sidecar.dataMasking}
+          docsLabel="Data Masking documentation"
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState
           compact
-          title="No Live Data Masking rules match your filters"
+          title="No Data Masking rules match your filters"
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredRules.map((rule, idx) => (
+        <List>
+          {filteredRules.map((rule) => (
             <RuleListItem
               key={rule.id}
               rule={rule}
               traffic={traffic.trafficOf(rule)}
-              isFirst={idx === 0}
-              isLast={idx === filteredRules.length - 1}
               onConfigure={(id) =>
                 navigate(`/features/data-masking/edit/${id}`)
               }
@@ -214,7 +218,7 @@ export default function DataMasking() {
               }
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

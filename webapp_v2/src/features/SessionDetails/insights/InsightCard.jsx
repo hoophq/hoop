@@ -22,7 +22,7 @@ export default function InsightCard({ title, summary, aside, variant = 'subtle',
   const [open, setOpen] = useState(false)
   const toggle = () => setOpen((v) => !v)
   return (
-    <Paper variant={variant} withBorder={variant === 'subtle'} radius="md" p="sm">
+    <Paper variant={variant} withBorder={variant === 'subtle'} p="sm">
       <Group wrap="nowrap" gap="md">
         <UnstyledButton className={classes.header} flex={1} onClick={toggle} aria-expanded={open}>
           <Group justify="space-between" wrap="nowrap" gap="md">

@@ -86,7 +86,7 @@
                 "Specify the gRPC endpoint URL for establishing secure connections between Hoop agents and your gateway infrastructure."]
 
                [callout-link/main {:href (get-in config/docs-url [:clients :command-line :managing-configuration])
-                                   :text "Learn more about gRPC"}]]
+                                   :text "Read the gRPC docs"}]]
 
               [:> Box {:grid-column "span 5 / span 5"}
                [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}

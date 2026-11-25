@@ -222,6 +222,9 @@ type EvalContext struct {
 	// nothing itself, it is measured from outside.
 	Telemetry telemetry.StageRecorder
 
+	// ResourceCheck is nil when the lane's codec has no check.
+	ResourceCheck ResourceChecker
+
 	// review is the hold a producer asked for, run by the outermost Chain
 	// after every evaluator allowed (ADR-0030). depth is how many Chains
 	// are evaluating on this context; only the outermost runs the review,

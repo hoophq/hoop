@@ -1,4 +1,5 @@
-import { Badge, Group, Text } from '@mantine/core';
+import { Group, Text } from '@mantine/core';
+import Badge from '@/components/Badge';
 import classes from './Sidebar.module.css';
 
 export function ItemBadge({ badge, count, shortcut }) {

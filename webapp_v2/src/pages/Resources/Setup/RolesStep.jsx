@@ -43,7 +43,7 @@ export default function RolesStep() {
       <Grid columns={7} gutter="xl">
         <Grid.Col span={{ base: 7, sm: 4 }} offset={{ base: 0, sm: 3 }}>
           <Button size="sm" variant="light" leftSection={<Plus size={16} />} onClick={addRole}>
-            Add New Role
+            Add Resource Role
           </Button>
         </Grid.Col>
       </Grid>

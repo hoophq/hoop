@@ -98,7 +98,7 @@ export default function ConfigureResource() {
   const save = async () => {
     try {
       if (!(await rename(name))) return
-      showSnackbar({ level: 'success', text: 'Resource name updated successfully!' })
+      showSnackbar({ level: 'success', text: 'Resource name updated.' })
       navigate('/resources/configure/' + encodeURIComponent(name), { replace: true })
     } catch (err) {
       showSnackbar({
@@ -113,7 +113,7 @@ export default function ConfigureResource() {
     setDeleting(true)
     try {
       if (!(await deleteResource())) return
-      showSnackbar({ level: 'success', text: 'Resource deleted successfully!' })
+      showSnackbar({ level: 'success', text: 'Resource deleted.' })
       navigate('/resources?tab=resources')
     } catch (err) {
       setDeleting(false)
@@ -148,18 +148,18 @@ export default function ConfigureResource() {
       <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
         <Group justify="space-between" align="flex-start">
           <Stack gap="xs">
-            <Title order={2}>Configure Resource</Title>
+            <Title order={1}>Configure Resource</Title>
             <Group gap="sm" align="center">
               <Image src={iconFor(resource)} w={20} h={20} alt="" />
               <Text>{resource.name}</Text>
             </Group>
           </Stack>
           <Button
-            size="sm"
+            variant="default"
             leftSection={<Plus size={16} />}
             onClick={() => navigate('/resources/' + encodeURIComponent(resource.name) + '/add-role')}
           >
-            Add New Role
+            Add Resource Role
           </Button>
         </Group>
 

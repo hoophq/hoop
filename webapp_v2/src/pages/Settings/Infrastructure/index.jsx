@@ -1,13 +1,7 @@
 import { useState, useEffect } from 'react'
-import {
-  Button,
-  Grid,
-  Group,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
+import { Grid, Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
 import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
@@ -127,7 +121,7 @@ function SettingsInfrastructure() {
       })
       showSnackbar({
         level: 'success',
-        text: 'Infrastructure configuration saved successfully!',
+        text: 'Infrastructure settings saved.',
       })
     } catch {
       showSnackbar({
@@ -142,7 +136,12 @@ function SettingsInfrastructure() {
   return (
     <>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
-        <Title order={1}>Infrastructure</Title>
+        <Stack gap="sm">
+          <Title order={1}>Infrastructure</Title>
+          <Text size="md" c="dimmed">
+            Set how your gateway shares usage data and which ports its proxies use.
+          </Text>
+        </Stack>
         <Button loading={saving} onClick={handleSave}>
           Save
         </Button>
@@ -183,7 +182,7 @@ function SettingsInfrastructure() {
           description="Specify the gRPC endpoint URL for establishing secure connections between Hoop agents and your gateway infrastructure."
           callout={
             <DocsBtnCallOut
-              text="Learn more about gRPC"
+              text="Read the gRPC docs"
               href={docsUrl.clients.commandLine.managingConfiguration}
             />
           }

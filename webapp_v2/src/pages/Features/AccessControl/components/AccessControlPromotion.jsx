@@ -14,9 +14,9 @@ const FEATURE_ITEMS = [
   },
   {
     icon: <Settings2 size={20} />,
-    title: 'Connection-Level Permissions',
+    title: 'Resource Role Permissions',
     description:
-      'Group-based access management with customizable access levels per connection.',
+      'Group-based access management with customizable access levels per Resource Role.',
   },
   {
     icon: <UserRoundCheck size={20} />,
@@ -53,7 +53,7 @@ export default function AccessControlPromotion({ onActivate, activating }) {
         <Stack gap="lg">
           <Text size="sm">
             By activating this feature users will have their accesses blocked until a
-            connection permission is set.
+            Resource Role permission is set.
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={modal.close}>

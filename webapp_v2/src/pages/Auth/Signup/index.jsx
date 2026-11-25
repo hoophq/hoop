@@ -1,17 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Container,
-  Paper,
-  Title,
-  TextInput,
-  Button,
-  Text,
-  Anchor,
-  Stack,
-  Alert,
-  Box,
-} from '@mantine/core'
+import { Container, Paper, Title, Text, Anchor, Stack, Box } from '@mantine/core'
+import TextInput from '@/components/TextInput'
+import Button from '@/components/Button'
+import Alert from '@/components/Alert'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
@@ -19,7 +11,7 @@ import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
   code_exchange_failure:
-    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+    'Failed to sign up. Try again. If the error continues, talk to your account administrator.',
   pending_review: 'The organization administrator must approve your access first',
   unregistered:
     'Your user is not registered. Try to signup or talk to the account administrator',
@@ -86,7 +78,7 @@ function Signup() {
 
   return (
     <Container size={420} my={40}>
-      <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+      <Paper withBorder p={30} mt={30}>
         <Stack align="center" mb="lg">
           <Title order={2} ta="center">
             Welcome to hoop.dev
@@ -111,7 +103,8 @@ function Signup() {
         <form onSubmit={handleSubmit}>
           <Stack>
             <TextInput
-              placeholder="Dunder Mifflin Inc"
+              label="Organization name"
+              placeholder="Acme Inc"
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
               required
@@ -121,7 +114,7 @@ function Signup() {
             {!currentUser?.name && (
               <TextInput
                 label="Your name"
-                placeholder="Michael Scott"
+                placeholder="Jane Doe"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 required

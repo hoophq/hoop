@@ -16,14 +16,14 @@ const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 function FeatureIcon({ card }) {
   if (card.enabled) {
     return (
-      <Avatar size="lg" radius="md" color="green" variant="light">
+      <Avatar size="lg" tile color="green" variant="light">
         <Check size={20} aria-hidden="true" />
       </Avatar>
     )
   }
   if (card.feature === 'ai-analyzer') {
     return (
-      <Avatar size="lg" radius="md" color="gray" variant="light">
+      <Avatar size="lg" tile color="gray" variant="light">
         <Image src="/icons/ai-analyser-icon.svg" alt="" w={15} h={15} />
       </Avatar>
     )
@@ -31,7 +31,7 @@ function FeatureIcon({ card }) {
   const Icon = card.feature === 'guardrails' ? ShieldCheck : VenetianMask
   const color = card.locked ? 'gray' : card.feature === 'guardrails' ? 'indigo' : 'violet'
   return (
-    <Avatar size="lg" radius="md" color={color} variant={card.locked ? 'light' : 'filled'}>
+    <Avatar size="lg" tile color={color} variant={card.locked ? 'light' : 'filled'}>
       <Icon size={20} aria-hidden="true" />
     </Avatar>
   )
@@ -105,7 +105,7 @@ export default function ActivationCards() {
   return (
     <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
       {cards.map((card) => (
-        <Paper key={card.feature} withBorder radius="md" p="lg">
+        <Paper key={card.feature} withBorder p="lg">
           <Stack gap="md" h="100%">
             <Group justify="space-between" align="flex-start">
               <FeatureIcon card={card} />

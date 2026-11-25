@@ -1,4 +1,5 @@
-import { Accordion, Card, Divider, Group, Progress, Stack, Text, Title } from '@mantine/core'
+import { Card, Divider, Group, Progress, Stack, Text, Title } from '@mantine/core'
+import Accordion from '@/components/Accordion'
 import { LEVEL_META } from '../constants'
 import styles from '../ComplianceReport.module.css'
 import { ControlRow } from './ControlBits'
@@ -20,7 +21,7 @@ export function FrameworkScoreCard({ framework }) {
           </Stack>
           <Title order={2}>{framework.score_percent}%</Title>
         </Group>
-        <Progress value={framework.score_percent} color={level.color} size="lg" radius="xl" />
+        <Progress value={framework.score_percent} color={level.color} size="lg" />
         <Group justify="space-between">
           <Text size="xs" c="dimmed" tt="uppercase">
             Low
@@ -53,7 +54,6 @@ export default function FrameworkPanel({ framework }) {
         multiple
         defaultValue={groups.map((g) => g.id)}
         variant="separated"
-        radius="md"
       >
         {groups.map((group) => (
           <Accordion.Item key={group.id} value={group.id}>

@@ -135,7 +135,7 @@ export default function SidecarsTable({ sidecars }) {
                 <SidecarStatusBadge sidecar={sidecar} />
               </Table.Td>
               <Table.Td miw={140}>
-                <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
+                <Badge variant="light" color="gray" fullLabel>
                   {usesConfigFile(sidecar) ? 'Config file' : 'Hoop'}
                 </Badge>
               </Table.Td>

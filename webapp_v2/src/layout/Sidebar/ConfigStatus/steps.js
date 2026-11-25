@@ -30,7 +30,7 @@ export const STEP_DEFS = [
     subItems: [
       { checkKey: 'guardrails_explored', label: 'Explore Guardrails', to: '/guardrails' },
       { checkKey: 'data_masking_explored', label: 'Explore AI Data Masking', to: '/features/data-masking' },
-      { checkKey: 'ai_analyzer_enabled', label: 'Explore AI Session Analyzer', to: '/features/ai-session-analyzer' },
+      { checkKey: 'ai_analyzer_enabled', label: 'Explore AI Analyzer', to: '/features/ai-session-analyzer' },
       {
         checkKey: 'protection_level_set',
         label: 'Set Protection Level',

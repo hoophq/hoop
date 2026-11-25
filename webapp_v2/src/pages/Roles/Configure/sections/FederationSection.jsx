@@ -27,7 +27,7 @@ const PROVIDER_OPTIONS = [
 
 const FALLBACK_OPTIONS = [
   { value: 'deny', label: 'Deny the session' },
-  { value: 'static', label: "Use the connection's static credentials" },
+  { value: 'static', label: "Use the Resource Role's static credentials" },
 ]
 
 function Section({ title, help, children }) {
@@ -128,8 +128,8 @@ function OAuthConsent() {
   )
   if (!savedAsOAuth) {
     return (
-      <Alert color="blue" variant="light" icon={<Info size={16} />}>
-        Save the role with GCP OAuth first. Then each user — including you — connects their own
+      <Alert color="indigo" variant="light" icon={<Info size={16} />}>
+        Save the role with GCP OAuth first. Then each user, you included, connects their own
         Google account from this screen before running a session.
       </Alert>
     )
@@ -208,7 +208,7 @@ function OAuthConsentControls() {
       <Group gap="sm">
         <Tooltip label="Save your changes first: connecting leaves this page." disabled={!dirty}>
           <Box component="span" display="inline-block">
-            <Button onClick={connect} loading={connecting} disabled={dirty}>
+            <Button variant="default" onClick={connect} loading={connecting} disabled={dirty}>
               Connect Google account
             </Button>
           </Box>
@@ -299,7 +299,7 @@ export default function FederationSection({ agentId: wizardAgentId }) {
 
       <Select
         label="Federation provider"
-        description="GCP IAM impersonates a service account at session time. GCP OAuth mints session tokens from each user's own Google account — no service accounts, but every user must connect their account once."
+        description="GCP IAM impersonates a service account at session time. GCP OAuth mints session tokens from each user's own Google account. It needs no service accounts, but each user must connect their account once."
         data={PROVIDER_OPTIONS}
         value={form.builtin_provider}
         onChange={(v) => v && setFederationProvider(v)}

@@ -90,7 +90,7 @@ export default function RawEvents({ session, largeOutput, showDenials = true }) 
         value={search}
         onChange={(event) => setSearch(event.currentTarget.value)}
       />
-      <Paper withBorder radius="md">
+      <Paper withBorder>
         {visible.length ? (
           visible.map((row) => <RawRow key={row.key} row={row} />)
         ) : (

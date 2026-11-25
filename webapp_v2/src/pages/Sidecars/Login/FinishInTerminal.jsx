@@ -48,10 +48,10 @@ export default function FinishInTerminal({ sidecar }) {
   }, [running, refresh])
 
   return (
-    <Paper variant="muted" radius="xl" p="lg">
+    <Paper variant="muted" p="lg">
       <Stack gap="md">
         <Group gap="sm" wrap="nowrap">
-          <ThemeIcon size={32} radius="xl" color="green" variant="light">
+          <ThemeIcon size={32} color="green" variant="light">
             <Check size={18} aria-hidden="true" />
           </ThemeIcon>
           <Text fw={600}>{`"${sidecar.name}" is approved`}</Text>
@@ -77,7 +77,7 @@ export default function FinishInTerminal({ sidecar }) {
         {running ? (
           <Group justify="space-between" wrap="wrap">
             <Group gap="xs">
-              <ThemeIcon size={20} radius="xl" color="green" variant="light">
+              <ThemeIcon size={20} color="green" variant="light">
                 <Check size={12} aria-hidden="true" />
               </ThemeIcon>
               <Text size="sm">Running. It checked in a moment ago.</Text>

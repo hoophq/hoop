@@ -1,17 +1,12 @@
 import { Box, Flex, Group, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
 import RuleTrafficBadge from '@/components/RuleTrafficBadge'
-import classes from './RuleListItem.module.css'
 
 // One row of the rules list. Rows stack into a single bordered block, so only
 // the first and last ones carry the outer corners.
-export default function RuleListItem({ rule, traffic, isFirst, isLast, onConfigure }) {
+export default function RuleListItem({ rule, traffic, onConfigure }) {
   return (
-    <Box
-      className={classes.row}
-      data-first={isFirst || undefined}
-      data-last={isLast || undefined}
-    >
+    <Box>
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
           <Group gap="sm">

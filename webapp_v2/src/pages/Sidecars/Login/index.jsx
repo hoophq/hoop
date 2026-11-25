@@ -84,7 +84,7 @@ function LoginDecision({ code }) {
   const pending = login.status === 'pending'
 
   return (
-    <Paper variant="muted" radius="xl" p="lg">
+    <Paper variant="muted" p="lg">
       <Stack gap="md">
         <Group gap="xs">
           <Terminal size={16} aria-hidden="true" />
@@ -139,7 +139,7 @@ export default function SidecarLogin() {
     <Stack gap="xl" maw={560}>
       <Stack gap="sm">
         <Title order={1}>Connect a Sidecar</Title>
-        <Text size="lg" c="dimmed">
+        <Text size="md" c="dimmed">
           A sidecar started with hoop start sidecar asks to join your organization.
         </Text>
       </Stack>
@@ -147,7 +147,7 @@ export default function SidecarLogin() {
       {code ? (
         <LoginDecision key={code} code={code} />
       ) : (
-        <Paper variant="muted" radius="xl" p="lg">
+        <Paper variant="muted" p="lg">
           <Stack gap="md">
             <TextInput
               label="Code"

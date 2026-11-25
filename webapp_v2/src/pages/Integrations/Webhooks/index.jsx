@@ -15,7 +15,9 @@ function IntegrationsWebhooks() {
     <Stack gap="xl">
       <Stack gap="xs">
         <Title order={1}>Webhooks</Title>
-        <Text c="dimmed">Enable webhook events for your connections.</Text>
+        <Text size="md" c="dimmed">
+          Enable webhook events for your Resources.
+        </Text>
       </Stack>
 
       <PluginConnectionsList

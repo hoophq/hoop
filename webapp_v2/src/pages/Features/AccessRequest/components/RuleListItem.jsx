@@ -1,16 +1,11 @@
 import { Box, Flex, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
-import classes from './RuleListItem.module.css'
 
 // One row of the access request list. Rows stack into a single bordered block,
 // so only the first and last ones carry the outer corners.
-export default function RuleListItem({ rule, isFirst, isLast, onConfigure }) {
+export default function RuleListItem({ rule, onConfigure }) {
   return (
-    <Box
-      className={classes.row}
-      data-first={isFirst || undefined}
-      data-last={isLast || undefined}
-    >
+    <Box>
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
           <Text fw={500} fz="lg">

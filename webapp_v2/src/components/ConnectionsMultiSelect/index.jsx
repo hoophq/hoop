@@ -23,7 +23,7 @@ export default function ConnectionsMultiSelect({
   value = [],
   onChange,
   label = 'Resource Roles',
-  placeholder = 'Select resource roles...',
+  placeholder = 'Select Resource Roles...',
   required = false,
   disabled = false,
 }) {

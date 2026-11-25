@@ -88,7 +88,7 @@ export default function HoopCliModal({ connectionName, onClose }) {
               </Button>
               {os !== 'windows' && (
                 <Button variant="subtle" color="gray" component="a" href={DOCS[os]} target="_blank">
-                  Hoop CLI Docs
+                  Read the Hoop CLI docs
                 </Button>
               )}
             </Group>

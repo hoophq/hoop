@@ -104,7 +104,7 @@ export default function InfoModule({ session }) {
     </InfoRow>,
     <InfoRow key="user" icon={CircleUser} label="Created by">
       <Group gap="xs" wrap="nowrap">
-        <Avatar size={24} radius="xl" color="blue" variant="filled">
+        <Avatar size={24} color="blue" variant="filled">
           {initialsOf(creator)}
         </Avatar>
         <Text size="sm" fw={500}>
@@ -153,7 +153,7 @@ export default function InfoModule({ session }) {
       </InfoRow>
     ),
     aiAction && (
-      <InfoRow key="ai" icon={Sparkles} label="AI Session Analyzer">
+      <InfoRow key="ai" icon={Sparkles} label="AI Analyzer">
         <Badge color={AI_ACTIONS[aiAction]?.color || 'gray'} variant="light" chip>
           {AI_ACTIONS[aiAction]?.label || aiAction}
         </Badge>

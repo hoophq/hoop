@@ -61,7 +61,12 @@ export default function AwsConnect() {
 
   return (
     <Stack gap="xl">
-      <Title order={1}>AWS Connect</Title>
+      <Stack gap="sm">
+        <Title order={1}>Resource Discovery</Title>
+        <Text size="md" c="dimmed">
+          Find the databases in your AWS account and create Resource Roles for them.
+        </Text>
+      </Stack>
 
       {isFreeLicense && (
         <FreeLicenseCallout variant={limit ? 'limit' : 'info'} message={limit ? LIMIT_MESSAGE : INFO_MESSAGE} />
@@ -72,16 +77,15 @@ export default function AwsConnect() {
           <Group gap="xs">
             <Cloud size={24} color="var(--mantine-primary-color-filled)" aria-hidden />
             <Title order={2} size="h3">
-              Automatic AWS Database Discovery
+              Automatic AWS Resource Discovery
             </Title>
           </Group>
           <Text size="sm">
-            Connect to your AWS environment to automatically discover and configure your database resources. This
-            automated process will scan your AWS account for database instances and create resource roles in Hoop,
-            saving you time and ensuring proper configuration.
+            Connect your AWS account to find its database instances. Hoop creates a Resource Role for each one you
+            select.
           </Text>
           <Button disabled={limit} onClick={() => navigate(SETUP_PATH)}>
-            Discover AWS Databases
+            Discover AWS Resources
           </Button>
         </Stack>
       </Paper>
@@ -95,8 +99,8 @@ export default function AwsConnect() {
             {running && (
               <Group gap="xs" role="status">
                 <Loader size="xs" />
-                <Text size="sm" c="indigo">
-                  Resource role creation in progress
+                <Text size="sm" c="amber">
+                  Resource Role creation in progress
                 </Text>
               </Group>
             )}
@@ -116,7 +120,7 @@ export default function AwsConnect() {
           <TreeTable
             columns={COLUMNS}
             rows={rows}
-            empty="No database discovery processes found. Start a new AWS connection to automatically discover and configure your database resources."
+            empty="No discovery processes yet. Discover AWS Resources to create Resource Roles for your databases."
           />
         ) : (
           <PageLoader h={240} />

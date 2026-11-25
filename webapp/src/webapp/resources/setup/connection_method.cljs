@@ -112,11 +112,9 @@
                             [:img {:role "aws-icon"
                                    :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
                                    :class "w-full h-full"
-                                   :alt "AWS"}]])
-                 icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+                                   :alt "AWS"}]])]
              [selection-card
               {:icon aws-icon
-               :icon-class icon-class
                :title "AWS IAM Role"
                :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
                :selected? (= connection-method "aws-iam-role")

@@ -8,7 +8,7 @@ import classes from './NativeConnections.module.css'
 /** Shown whenever the connection is open, bounded or not. */
 function OpenIndicator() {
   return (
-    <ThemeIcon size={24} radius="xl" className={classes.activeIndicator}>
+    <ThemeIcon size={24} className={classes.activeIndicator}>
       <Radio size={12} aria-hidden="true" />
       <VisuallyHidden>Connected</VisuallyHidden>
     </ThemeIcon>
@@ -49,17 +49,17 @@ export function RoleRowStatus({ state, active }) {
     // theme palette at all — it was silently falling back to Mantine's stock
     // blue and sitting outside the product's colour identity.
     case ROW_STATE.PENDING_REVIEW:
-      return <Badge variant="light" color="amber" radius="xl">Pending approval</Badge>
+      return <Badge variant="light" color="amber">Pending approval</Badge>
 
     case ROW_STATE.OFFLINE:
       return (
-        <Badge variant="inactive" radius="xl" leftSection={<WifiOff size={12} aria-hidden="true" />}>
+        <Badge variant="inactive" leftSection={<WifiOff size={12} aria-hidden="true" />}>
           Offline
         </Badge>
       )
 
     case ROW_STATE.ACCESS_REVOKED:
-      return <Badge variant="danger" radius="xl">Access revoked</Badge>
+      return <Badge variant="danger">Access revoked</Badge>
 
     // IDLE and NEEDS_REVIEW carry their affordance in the action button.
     default:

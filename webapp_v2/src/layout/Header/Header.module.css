@@ -24,7 +24,7 @@
   display: flex;
   align-items: center;
   padding: var(--mantine-spacing-xs);
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--hoop-nav-radius);
   color: var(--mantine-color-text);
 }
 

@@ -14,7 +14,7 @@ export const STATUS = {
 // APPROVED is released and waiting for the sidecar to retry; EXECUTED already ran.
 const STATUS_LABEL = {
   [STATUS.PENDING]: { label: 'Pending', color: 'yellow' },
-  [STATUS.APPROVED]: { label: 'Approved', color: 'blue' },
+  [STATUS.APPROVED]: { label: 'Approved', color: 'green' },
   [STATUS.EXECUTED]: { label: 'Released', color: 'green' },
   [STATUS.REJECTED]: { label: 'Rejected', color: 'red' },
   [STATUS.REVOKED]: { label: 'Revoked', color: 'red' },

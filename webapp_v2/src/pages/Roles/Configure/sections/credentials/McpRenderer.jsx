@@ -132,7 +132,7 @@ export default function McpRenderer({
       }
       setBusy(false)
       setAuthError(null)
-      showSnackbar({ level: 'success', text: 'MCP connection authorized' })
+      showSnackbar({ level: 'success', text: 'MCP login authorized.' })
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to redeem token')
     }
@@ -224,7 +224,7 @@ export default function McpRenderer({
         />
       </Stack>
 
-      <Paper withBorder radius="md" p="md">
+      <Paper withBorder p="md">
         <Stack gap="md">
           <Stack gap={4}>
             <Title order={5}>MCP Authorization</Title>
@@ -253,7 +253,7 @@ export default function McpRenderer({
               <Group gap={6} align="center">
                 <Check size={16} color="var(--mantine-color-green-filled)" />
                 <Text size="sm" fw={500} c="green">
-                  {'Authorized — access token stored'}
+                  {'Authorized. Access token stored.'}
                 </Text>
               </Group>
               <Group gap="sm">

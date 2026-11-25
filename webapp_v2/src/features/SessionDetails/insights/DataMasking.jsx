@@ -45,7 +45,7 @@ function AccentIcon({ icon: Icon }) {
 // Matrix I08: masking is not configured and the session holds no masking data.
 function UnlockCallout() {
   return (
-    <Paper variant="accent" radius="md" p="sm">
+    <Paper variant="accent" p="sm">
       <Group gap="sm" align="flex-start" wrap="nowrap">
         <AccentIcon icon={Sparkles} />
         <Stack gap="xs">
@@ -70,7 +70,7 @@ function UnlockCallout() {
 
 function Tile({ icon: Icon, label, value }) {
   return (
-    <Paper variant="accent-strong" radius="md" p="sm" flex={1}>
+    <Paper variant="accent-strong" p="sm" flex={1}>
       <Stack gap={4} align="center">
         <AccentIcon icon={Icon} />
         <Text size="sm" ta="center">

@@ -13,7 +13,7 @@ function NumberedBlock({ n, title, children }) {
   return (
     <Group align="flex-start" gap="md" wrap="nowrap">
       {/* A bordered icon is a pill, like ActionIcon: 100px caps at a circle. */}
-      <ThemeIcon size={32} radius="100px" variant="default">
+      <ThemeIcon size={32} variant="default">
         <Text size="sm" fw={700}>
           {n}
         </Text>

@@ -9,9 +9,9 @@
    [webapp.config :as config]
    [webapp.integrations.authentication.views.providers.form-fields :as provider-forms]))
 
-(defn icon-component [icon-path selected?]
+(defn icon-component [icon-path _selected?]
   (r/as-element [:figure {:class "w-5"}
-                 [:img {:class (when selected? "invert")
+                 [:img {:alt ""
                         :src (str config/webapp-url icon-path)}]]))
 
 (defn identity-provider-grid []
@@ -53,7 +53,7 @@
         "Choose how to authenticate and manage users."]
 
        [callout-link/main {:href (get-in config/docs-url [:setup :configuration :identity-providers])
-                           :text "Learn more about IDPs"}]]
+                           :text "Read the identity provider docs"}]]
 
       [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5"}
        ;; Local authentication card

@@ -2,7 +2,7 @@
    box, virtualized. */
 .terminal {
   position: relative;
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--hoop-card-radius);
   background-color: var(--hoop-terminal-bg);
   color: var(--hoop-terminal-text);
   font-family: var(--mantine-font-family-monospace);

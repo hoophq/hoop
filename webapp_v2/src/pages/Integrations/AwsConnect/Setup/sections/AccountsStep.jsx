@@ -68,7 +68,7 @@ export default function AccountsStep() {
           checked={skipConnected}
           onChange={(e) => update({ skipConnected: e.currentTarget.checked })}
           label="Skip Connected Resources"
-          description="Automatically ignore resources already used in existing resource roles."
+          description="Automatically ignore resources already used in existing Resource Roles."
         />
       </Stack>
     </Stack>

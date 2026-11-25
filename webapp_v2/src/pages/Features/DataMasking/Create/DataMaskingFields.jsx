@@ -14,6 +14,7 @@ import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
+import Tooltip from '@/components/Tooltip'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
@@ -53,16 +54,18 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
   const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
   return (
-    <Paper p="md" radius="md" withBorder>
+    <Paper p="md" withBorder>
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Text size="xs" fw={600} c="dimmed" tt="uppercase">
             {`Rule ${index + 1}`}
           </Text>
           {removable && (
-            <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
-              <Trash2 size={16} />
-            </ActionIcon>
+            <Tooltip label="Remove rule">
+              <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
+                <Trash2 size={16} />
+              </ActionIcon>
+            </Tooltip>
           )}
         </Group>
 
@@ -184,9 +187,11 @@ function CustomEntityRow({ entity, onChange, onRemove }) {
         onChange={(e) => set({ regex: e.currentTarget.value })}
         flex={1}
       />
-      <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove custom entity" mb={4}>
-        <Trash2 size={16} />
-      </ActionIcon>
+      <Tooltip label="Remove custom entity">
+        <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove custom entity" mb={4}>
+          <Trash2 size={16} />
+        </ActionIcon>
+      </Tooltip>
     </Group>
   )
 }
@@ -267,7 +272,7 @@ export default function DataMaskingFields({ editor }) {
       <SectionRow
         title="Resource Role configuration"
         description={
-          agentReady ? 'Agent traffic. Select the resource roles where this rule applies.' : AGENT_PROVIDER_REQUIRED
+          agentReady ? 'Agent traffic. Select the Resource Roles where this rule applies.' : AGENT_PROVIDER_REQUIRED
         }
       >
         <ConnectionsMultiSelect value={connectionIds} onChange={setConnectionIds} disabled={!agentReady} />

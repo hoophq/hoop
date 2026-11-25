@@ -7,6 +7,7 @@ import TextInput from '@/components/TextInput'
 import { useEventRoutingStore, filterCatalog } from '../store'
 import CategoryBadge from './CategoryBadge'
 import EventDescription from './EventDescription'
+import classes from '../EventRouting.module.css'
 
 export default function EventCatalogTab() {
   const {
@@ -28,7 +29,7 @@ export default function EventCatalogTab() {
           value={catalogSearch}
           onChange={(e) => setCatalogSearch(e.currentTarget.value)}
           leftSection={<Search size={16} />}
-          style={{ flex: 1 }}
+          flex={1}
         />
         <Select
           value={catalogFilter}
@@ -54,8 +55,8 @@ export default function EventCatalogTab() {
       ) : (
         <Card padding={0} withBorder>
           <Stack gap={0}>
-            <Group px="sm" py="xs" wrap="nowrap" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
-              <Text size="xs" fw={600} c="dimmed" style={{ flex: 1 }}>Event type</Text>
+            <Group px="sm" py="xs" wrap="nowrap" className={classes.row}>
+              <Text size="xs" fw={600} c="dimmed" flex={1}>Event type</Text>
               <Text size="xs" fw={600} c="dimmed" w={120}>Category</Text>
               <Text size="xs" fw={600} c="dimmed" w={140} ta="right">Actions</Text>
             </Group>
@@ -65,9 +66,9 @@ export default function EventCatalogTab() {
                 px="sm"
                 py="sm"
                 wrap="nowrap"
-                style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+                className={classes.row}
               >
-                <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                <Stack gap={2} flex={1} miw={0}>
                   <Code variant="accent">{e.name}</Code>
                   <EventDescription text={e.description} size="xs" c="dimmed" />
                 </Stack>

@@ -5,7 +5,6 @@
   gap: var(--mantine-spacing-xs);
   width: 100%;
   padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-smAlt);
-  border-radius: var(--mantine-radius-sm);
 }
 
 .option:hover,

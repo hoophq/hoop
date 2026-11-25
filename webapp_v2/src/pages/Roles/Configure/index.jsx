@@ -106,13 +106,13 @@ export default function ConfigureRolePage() {
       await save()
       showSnackbar({
         level: 'success',
-        text: 'Role ' + connection.name + ' updated!',
+        text: `Resource Role "${connection.name}" updated.`,
       })
       navigate('/resources?tab=roles')
     } catch (err) {
       showSnackbar({
         level: 'error',
-        text: err?.response?.data?.message || err?.message || 'Failed to save connection.',
+        text: err?.response?.data?.message || err?.message || 'Failed to save Resource Role.',
       })
     }
   }
@@ -121,12 +121,12 @@ export default function ConfigureRolePage() {
     try {
       await deleteConnection()
       close()
-      showSnackbar({ level: 'success', text: 'Connection deleted.' })
+      showSnackbar({ level: 'success', text: 'Resource Role deleted.' })
       navigate('/resources?tab=roles')
     } catch (err) {
       showSnackbar({
         level: 'error',
-        text: err?.response?.data?.message || err?.message || 'Failed to delete connection.',
+        text: err?.response?.data?.message || err?.message || 'Failed to delete Resource Role.',
       })
     }
   }

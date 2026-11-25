@@ -138,7 +138,7 @@ function Setup() {
       goAfterAuth(navigate, POST_SETUP_PATH, { replace: true })
     } catch (err) {
       setError(
-        err.response?.data?.message || 'Something went wrong. Please try again.'
+        err.response?.data?.message || 'Failed to finish setup. Try again.'
       )
     } finally {
       setLoading(false)
@@ -159,7 +159,7 @@ function Setup() {
             Set up your instance
           </Title>
           <Text size="sm" c="dimmed" mb="lg">
-            Takes less than a minute. Add a connection right after.
+            Takes less than a minute. Add a Resource right after.
           </Text>
 
           <form onSubmit={handleSubmit}>

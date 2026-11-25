@@ -88,7 +88,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: isEdit ? 'Rule updated successfully!' : 'Rule created successfully!',
+        text: isEdit ? 'Rule updated.' : 'Rule created.',
       })
       navigate(LIST_PATH)
     } else {
@@ -104,7 +104,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     const { ok, error } = await deleteRule(ruleName)
     deleteModal.close()
     if (ok) {
-      showSnackbar({ level: 'success', text: 'Rule deleted successfully!' })
+      showSnackbar({ level: 'success', text: 'Rule deleted.' })
       navigate(LIST_PATH)
     } else {
       showSnackbar({
@@ -152,7 +152,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
         data-scrolled={!headerInView || undefined}
       >
         <Title order={2} lts="-0.00625em">
-          {isEdit ? 'Edit AI Session Analyzer rule' : 'Create new AI Session Analyzer rule'}
+          {isEdit ? 'Edit AI Analyzer rule' : 'Create new AI Analyzer rule'}
         </Title>
         <Group gap="sm">
           {isEdit && (
@@ -186,7 +186,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
       <Stack gap="xxlAlt">
         <SectionRow
           title="Define details"
-          description="Used to identify your AI Session Analyzer rule in your resources."
+          description="Used to identify your AI Analyzer rule in your Resources."
         >
           <Stack gap="md">
             <TextInput
@@ -242,7 +242,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               value={form.customPrompt}
               onChange={(e) => setField({ customPrompt: e.currentTarget.value })}
             />
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="indigo" variant="light" icon={<Info size={16} />}>
               Hoop prepends a fixed system prompt before your instructions so the
               analyzer always returns a structured low/medium/high grade. This is what
               keeps the actions above reliable.
@@ -261,7 +261,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               onChange={(e) => setField({ agentic: e.currentTarget.checked })}
               label="Agentic analysis (investigate past sessions & resource metadata before classifying)"
             />
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="indigo" variant="light" icon={<Info size={16} />}>
               {"When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, approver-facing analysis."}
             </Alert>
           </Stack>

@@ -35,7 +35,7 @@ export default function Sidecars() {
 
   // First load only: a revisit renders the cached list while it refreshes.
   if (loading && sidecars.length === 0) return <PageLoader h={400} />
-  if (error) return <Text c="red">{error}</Text>
+  if (error) return <PageLoader error h={300} message="Failed to load Sidecars." description={error} />
 
   const count = sidecars.length
   // The free plan holds FREE_SIDECAR_SEATS sidecars; the API refuses one more.
@@ -49,7 +49,7 @@ export default function Sidecars() {
         <Group justify="space-between" align="flex-start">
           <Stack gap="sm">
             <Title order={1}>Sidecars</Title>
-            <Text size="lg" c="dimmed">
+            <Text size="md" c="dimmed">
               Connect your existing sidecars, or create a new one.
             </Text>
           </Stack>

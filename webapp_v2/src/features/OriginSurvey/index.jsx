@@ -88,7 +88,6 @@ function OriginSurvey() {
       {expanded && (
         <Paper
           shadow="md"
-          radius="md"
           p="md"
           w={CARD_WIDTH}
           className={classes.card}
@@ -156,7 +155,6 @@ function OriginSurvey() {
       <Indicator color="red" size={PENDING_DOT_SIZE} offset={4} withBorder disabled={answered}>
         <ActionIcon
           variant="default"
-          radius="xl"
           size="lg"
           className={classes.launcher}
           onClick={handleToggle}

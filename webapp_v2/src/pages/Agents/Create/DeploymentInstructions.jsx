@@ -1,20 +1,25 @@
-import { Stack, Text, Anchor, Title, Grid, Box, Flex, ActionIcon } from '@mantine/core';
+import { Stack, Text, Anchor, Title, Grid, Box, Flex, Paper } from '@mantine/core';
+import ActionIcon from '@/components/ActionIcon';
+import Tooltip from '@/components/Tooltip';
 import { CopyButton } from '@mantine/core';
 import { Copy } from 'lucide-react';
 import Table from '@/components/Table';
 import CodeSnippet from '@/components/CodeSnippet';
 import DocsBtnCallOut from '@/components/DocsBtnCallOut';
 import { docsUrl } from '@/utils/docsUrl';
+import classes from './DeploymentInstructions.module.css';
 
 const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/';
 
 function InlineCopy({ value }) {
   return (
     <CopyButton value={value}>
-      {({ copy }) =>
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy}>
-          <Copy size={12} />
-        </ActionIcon>}
+      {({ copied, copy }) =>
+        <Tooltip label={copied ? 'Copied' : 'Copy'}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy} aria-label={copied ? 'Copied' : 'Copy'}>
+            <Copy size={12} />
+          </ActionIcon>
+        </Tooltip>}
     </CopyButton>
   );
 }
@@ -29,15 +34,15 @@ export function DockerDeployment({ hoopKey }) {
         <Text size="sm" fw={700}>
           Docker image repository
         </Text>
-        <Box p="md" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 12 }}>
+        <Paper withBorder p="md">
           <Flex gap="xs" align="center">
             <img src="/images/docker-blue.svg" alt="Docker" height={24} />
-            <Text size="xs" style={{ flex: 1 }}>
+            <Text size="xs" flex={1}>
               {dockerImage}
             </Text>
             <InlineCopy value={dockerImage} />
           </Flex>
-        </Box>
+        </Paper>
       </Stack>
 
       <Stack gap="sm">
@@ -63,7 +68,7 @@ export function DockerDeployment({ hoopKey }) {
               </Table.Td>
               <Table.Td>
                 <Flex gap="sm" align="center">
-                  <Text size="xs" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                  <Text size="xs" ff="monospace" className={classes.breakAll}>
                     {hoopKey}
                   </Text>
                   <InlineCopy value={hoopKey} />
@@ -197,7 +202,7 @@ export function DeploymentMain({ installMethod, hoopKey }) {
               Setup your Agent in your infrastructure.
             </Text>
           </Stack>
-          <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
+          <DocsBtnCallOut text="Read the Agents docs" href={docsUrl.setup.agents} />
         </Stack>
       </Grid.Col>
       <Grid.Col span={9}>

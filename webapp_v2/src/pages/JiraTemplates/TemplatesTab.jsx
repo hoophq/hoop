@@ -55,11 +55,11 @@ export default function TemplatesTab({ onGoConfiguration }) {
   if (!integration) {
     return (
       <EmptyState
-        title="No Jira integration configured in your Organization yet."
+        title="No Jira integration yet"
         description="Configure your Jira instance to start creating Jira Templates."
-        action={{ label: 'Configure Jira Integration', onClick: onGoConfiguration }}
+        action={{ label: 'Configure Jira integration', onClick: onGoConfiguration }}
         docsUrl={docsUrl.integrations.jira}
-        docsLabel="Jira templates documentation"
+        docsLabel="Jira Templates documentation"
       />
     )
   }
@@ -71,10 +71,11 @@ export default function TemplatesTab({ onGoConfiguration }) {
           <FreeLicenseCallout message={FREE_LICENSE_INFO_MESSAGE} variant="info" />
         )}
         <EmptyState
-          title="No Jira template configured in your Organization yet."
-          action={{ label: 'Create a new JIRA Template', onClick: goCreate }}
+          title="No Jira Templates yet"
+          description="Create a template to set the fields of the Jira issues Hoop opens."
+          action={{ label: 'Create a new Jira template', onClick: goCreate }}
           docsUrl={docsUrl.integrations.jira}
-          docsLabel="Jira templates documentation"
+          docsLabel="Jira Templates documentation"
         />
       </Stack>
     )
@@ -88,7 +89,7 @@ export default function TemplatesTab({ onGoConfiguration }) {
         <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
       )}
 
-      <Card padding={0} withBorder radius="md">
+      <Card padding={0} withBorder>
         {list.map((template, idx) => (
           <Fragment key={template.id}>
             {idx > 0 && <Divider />}

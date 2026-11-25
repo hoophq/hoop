@@ -33,6 +33,14 @@ type (
 	Column        = codectypes.Column
 	HTTPDetail    = codectypes.HTTPDetail
 	SQLAnalysis   = codectypes.SQLAnalysis
+
+	ResourceCheck = codectypes.ResourceCheck
+	CheckResponse = codectypes.CheckResponse
+	CheckWant     = codectypes.CheckWant
+	CheckResult   = codectypes.CheckResult
+	TableFacts    = codectypes.TableFacts
+	IndexFacts    = codectypes.IndexFacts
+	PlanNode      = codectypes.PlanNode
 )
 
 const (

@@ -738,7 +738,7 @@ describe('BigQuery create: federation save and rollback', () => {
       admin_credentials_json: OAUTH,
       extra_config: { project_id: 'p2' },
     })
-    expect(showSnackbar).toHaveBeenCalledWith({ level: 'success', text: 'Resource created successfully!' })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'success', text: 'Resource created.' })
     expect(store().step).toBe('success')
   })
 
