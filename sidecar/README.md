@@ -1498,9 +1498,11 @@ so `DELETE /orders/1` can rate high on an open order and low on a closed one.
 - It goes on a new upstream connection, closed after it, within 500 ms. The
   client never sees it.
 - The sidecar reads at most 4 KiB of the body. Before the body reaches the
-  prompt, it loses the values of `Authorization`, `Proxy-Authorization` and
-  `Cookie`, of headers outside `http.headers`, and of sensitive query
-  parameters; then `send` redaction runs on the block. An encoded or binary
+  prompt, every value the lane hides becomes `[redacted]`: `Authorization`,
+  `Proxy-Authorization`, `Cookie`, the identity or caller-token header,
+  headers outside `http.headers` and sensitive query parameters. A value
+  shorter than 8 bytes is replaced where it stands alone, not inside a
+  longer word. Then `send` redaction runs on the block. An encoded or binary
   body is not read.
 - The prompt block keeps 2 KiB. A check needs room in `max_calls` and
   `rate_limit` but spends neither. A failed check classifies as without it
@@ -5132,10 +5134,10 @@ and PII](#masking-and-pii). Before this, every http lane cut a response at
 
 **An idle upstream that closes is dialed again.** The lane dials the
 upstream when a client connects. When the upstream closes that connection
-before the first request reaches it, for example at its read-header
-timeout while the analyzer judges the request, the lane dials once more and
-sends the request there. A close after a request ends the client's
-connection, as before.
+before either side sent a byte, for example at its read-header timeout
+while the analyzer judges the request, the lane dials once more and sends
+the request there. An upstream that answers first (a 408) or closes after a
+request ends the client's connection, as before.
 
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug

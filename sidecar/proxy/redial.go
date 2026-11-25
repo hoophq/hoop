@@ -10,14 +10,14 @@ import (
 )
 
 // redialConn is an http lane's upstream. When the upstream closes the
-// connection before the relay sent it a byte, the next Write dials a new
-// one, so a slow verdict does not cost the client its request.
+// connection before either side sent a byte, the next Write dials a new one,
+// so a slow verdict does not cost the client its request.
 type redialConn struct {
 	dial func() (net.Conn, error)
 
 	mu           sync.Mutex
 	conn         net.Conn
-	sent         bool
+	used         bool
 	lost         bool
 	closed       bool
 	swapped      chan struct{}
@@ -41,11 +41,16 @@ func (r *redialConn) Read(b []byte) (int, error) {
 			continue
 		}
 		n, err := c.Read(b)
+		if n > 0 {
+			r.mu.Lock()
+			r.used = true
+			r.mu.Unlock()
+		}
 		if n > 0 || err == nil || !closedByPeer(err) {
 			return n, err
 		}
 		r.mu.Lock()
-		if r.sent || r.closed || r.conn != c {
+		if r.used || r.closed || r.conn != c {
 			r.mu.Unlock()
 			return n, err
 		}
@@ -60,7 +65,7 @@ func (r *redialConn) Write(b []byte) (int, error) {
 	r.mu.Lock()
 	c, lost, closed := r.conn, r.lost, r.closed
 	if !lost {
-		r.sent = true
+		r.used = true
 	}
 	r.mu.Unlock()
 	if closed {
@@ -80,7 +85,7 @@ func (r *redialConn) Write(b []byte) (int, error) {
 		if !r.readDeadline.IsZero() {
 			_ = nc.SetReadDeadline(r.readDeadline)
 		}
-		r.conn, r.lost, r.sent = nc, false, true
+		r.conn, r.lost, r.used = nc, false, true
 		close(r.swapped)
 		r.swapped = make(chan struct{})
 		r.mu.Unlock()
