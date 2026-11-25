@@ -87,6 +87,16 @@ const (
 	maxSidecarAIRuleDefinitionNest = 8
 )
 
+// Bounds of the model prose and the resource check an entry stores. The
+// sidecar sends a title under 256 bytes, reasoning under 1 KiB and a check
+// under 2 KiB.
+const (
+	maxSidecarAITitleChars       = 256
+	maxSidecarResourceCheckChars = 4096
+	maxSidecarCheckReasonChars   = 512
+	maxSidecarCheckMillis        = 60_000
+)
+
 // maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
 // read; metrics.truncated marks it.
 const maxSidecarSessionStreamBytes = sessionwal.DefaultMaxRead
@@ -406,6 +416,20 @@ type sidecarAIDecision struct {
 	AIRuleInvalid []sidecarAIRuleInvalid `json:"ai_rule_invalid,omitempty"`
 	// AIRulesError is why the rule turn applied no rule.
 	AIRulesError string `json:"ai_rules_error,omitempty"`
+	// Title and Explanation are the model's. A sidecar that redacts
+	// statements does not send them.
+	Title         string                `json:"title,omitempty"`
+	Explanation   string                `json:"explanation,omitempty"`
+	ResourceCheck *sidecarResourceCheck `json:"resource_check,omitempty"`
+}
+
+// sidecarResourceCheck is the resource check behind a decision: the text the
+// model read, or why the check did not run.
+type sidecarResourceCheck struct {
+	Status     string `json:"status"`
+	Text       string `json:"text,omitempty"`
+	DurationMS *int64 `json:"duration_ms,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // sidecarAIRule is one rule the AI applied: an existing rule by name, or the
@@ -459,7 +483,28 @@ func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
 	d.AIRules = sidecarAIRulesFor(md[analyzer.MetadataAIRules])
 	d.AIRuleInvalid = sidecarAIRuleInvalidFor(md[analyzer.MetadataAIRuleInvalid])
 	d.AIRulesError = truncateChars(pgText(md[analyzer.MetadataAIRulesError]), maxSidecarAIRulesErrorChars)
+	d.Title = truncateChars(pgText(md[analyzer.MetadataAITitle]), maxSidecarAITitleChars)
+	d.Explanation = truncateChars(pgText(md[analyzer.MetadataAIExplanation]), maxSidecarAIDecisionReasonChars)
+	d.ResourceCheck = sidecarResourceCheckFor(md)
 	return d, true
+}
+
+// sidecarResourceCheckFor reads the check metadata. A status outside the
+// sidecar's vocabulary stores no check.
+func sidecarResourceCheckFor(md map[string]string) *sidecarResourceCheck {
+	status := md[analyzer.MetadataResourceCheckStatus]
+	if !analyzer.CheckStatus(status).Valid() {
+		return nil
+	}
+	c := &sidecarResourceCheck{
+		Status: status,
+		Text:   truncateChars(pgText(md[analyzer.MetadataResourceCheck]), maxSidecarResourceCheckChars),
+		Reason: truncateChars(pgText(md[analyzer.MetadataResourceCheckReason]), maxSidecarCheckReasonChars),
+	}
+	if ms, err := strconv.ParseInt(md[analyzer.MetadataResourceCheckMS], 10, 64); err == nil && ms >= 0 && ms <= maxSidecarCheckMillis {
+		c.DurationMS = &ms
+	}
+	return c
 }
 
 // sidecarAIRulesFor reads the ai_rules metadata: at most maxSidecarAIRules

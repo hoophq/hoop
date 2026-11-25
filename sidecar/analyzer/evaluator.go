@@ -711,10 +711,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// verdict, and a session whose risk only ever showed up on denials
 	// would report clean right up until something got blocked.
 	//
-	// Title and explanation stay OUT of the trail: they are model prose,
-	// audit redaction does not reach Metadata, and a model that quotes the
-	// statement back would write the value into the record verbatim.
+	// Title and explanation are model prose that can quote the statement: a
+	// sink that redacts statements drops them (audit.SinkOptions).
 	notes := e.notes(trail, string(level), string(action))
+	if keepsLevel(ec, level) {
+		e.record(notes, c)
+	}
 
 	if action == ActionHandoff {
 		// risk_action stays ai-handoff; the decision and its reason ride
@@ -894,6 +896,29 @@ func (e *Evaluator) notes(status, level, action string) map[string]string {
 	return notes
 }
 
+const maxTitleBytes = 256
+
+// record adds the model's title and reasoning and the resource check.
+func (e *Evaluator) record(notes map[string]string, c classified) {
+	if c.res.Title != "" {
+		notes[MetadataAITitle] = Truncate(c.res.Title, maxTitleBytes)
+	}
+	if c.res.Explanation != "" {
+		notes[MetadataAIExplanation] = Truncate(c.res.Explanation, maxAgentReasonBytes)
+	}
+	c.check.write(notes)
+}
+
+// keepsLevel reports whether level replaces the risk level already on the
+// statement, by the rule of policy.mergeAnnotations, so the title and check
+// in the trail belong to the level beside them.
+func keepsLevel(ec *policy.EvalContext, level RiskLevel) bool {
+	if ec == nil {
+		return true
+	}
+	return level.rank() > RiskLevel(ec.Annotations[MetadataRiskLevel]).rank()
+}
+
 // wanted reports whether this statement should be classified.
 //
 // A gate-phase policy that named this source overrides the configured trigger
@@ -921,6 +946,8 @@ type classified struct {
 	// key is the cache key of an ok or cached classification. The
 	// hand-off decisions live on its entry.
 	key string
+
+	check checkRecord
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
@@ -974,12 +1001,13 @@ func (e *Evaluator) classify(
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
-	if block := e.resourceBlock(ctx, stmt, ec); block != "" {
+	block, check := e.resourceBlock(ctx, stmt, ec)
+	if block != "" {
 		text += "\n\n" + block
 		cacheKey += ":" + fingerprint(block)
 	}
 	if cached, hit := e.cache.get(cacheKey); hit {
-		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, check: check}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//
@@ -1018,7 +1046,7 @@ func (e *Evaluator) classify(
 	}
 
 	e.cache.put(cacheKey, *res)
-	return classified{res: *res, text: text, status: StatusOK, key: cacheKey}
+	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, check: check}
 }
 
 // failure renders a classification error according to the fail mode.

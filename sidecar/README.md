@@ -2609,6 +2609,16 @@ merges as a unit with `risk_level`, so the name always belongs to the level
 shown. All three field names are unchanged from the rule-form era, so
 dashboards and policies keyed on them keep working.
 
+`metadata.ai_title` and `metadata.ai_explanation` hold the model's title and
+reasoning, from the analyzer whose level the record shows. A sink with
+`audit.redact_statements` drops both: the model can quote the statement.
+On a lane with `resource_check`, `metadata.resource_check` holds the block the
+model read, after `send`. `resource_check_status` is `ran`, `partial`,
+`cancelled`, `failed`, `cached` or `skipped`, `resource_check_ms` is the
+check query's time, and `resource_check_reason` says why it did not run or
+ran in part. An index definition that is not plain names is withheld from
+the record.
+
 `ai_status` and `ai_rule` are the analyzer's OWN audit vocabulary, not the
 finding it publishes to policy. The trail keeps the specific word, because an
 operator tuning `max_calls`, one tuning `rate_limit` and one tuning

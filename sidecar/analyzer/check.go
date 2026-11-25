@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,6 +51,95 @@ type ResourceCheckEvent struct {
 	PlanErr   string
 }
 
+// CheckStatus is what happened to a statement's resource check.
+type CheckStatus string
+
+const (
+	// CheckRan: a check query ran and every part answered.
+	CheckRan CheckStatus = "ran"
+	// CheckPartial: a check query ran and the database refused a part.
+	CheckPartial CheckStatus = "partial"
+	// CheckCancelled: a check query passed its deadline and was cancelled.
+	CheckCancelled CheckStatus = "cancelled"
+	// CheckFailed: a check query failed.
+	CheckFailed CheckStatus = "failed"
+	// CheckCached: no query was needed; the cache held the facts and plan.
+	CheckCached CheckStatus = "cached"
+	// CheckSkipped: no query was sent.
+	CheckSkipped CheckStatus = "skipped"
+)
+
+func (s CheckStatus) Valid() bool {
+	switch s {
+	case CheckRan, CheckPartial, CheckCancelled, CheckFailed, CheckCached, CheckSkipped:
+		return true
+	}
+	return false
+}
+
+// checkRecord is what the trail keeps of one statement's resource check.
+// Reasons are fixed text: an I/O error can name hosts, and the process log
+// has it.
+type checkRecord struct {
+	status   CheckStatus
+	reason   string
+	ran      bool
+	duration time.Duration
+	text     string
+}
+
+func (r checkRecord) write(notes map[string]string) {
+	if r.status == "" {
+		return
+	}
+	notes[MetadataResourceCheckStatus] = string(r.status)
+	if r.text != "" {
+		notes[MetadataResourceCheck] = r.text
+	}
+	if r.reason != "" {
+		notes[MetadataResourceCheckReason] = r.reason
+	}
+	if r.ran {
+		notes[MetadataResourceCheckMS] = strconv.FormatInt(r.duration.Milliseconds(), 10)
+	}
+}
+
+func skipped(reason string) checkRecord {
+	return checkRecord{status: CheckSkipped, reason: reason}
+}
+
+func ranRecord(res inspect.CheckResult, err error, d time.Duration) checkRecord {
+	rec := checkRecord{status: CheckRan, ran: true, duration: d}
+	switch {
+	case errors.Is(err, policy.ErrCheckNotReady):
+		return skipped("the connection was busy; cached facts only")
+	case errors.Is(err, policy.ErrCheckCancelled):
+		rec.status = CheckCancelled
+		rec.reason = joinReasons("cancelled after "+CheckTimeout.String(), res)
+	case err != nil:
+		rec.status = CheckFailed
+		rec.reason = "the check failed; classified without it"
+	case res.TablesErr != "" || res.PlanErr != "":
+		rec.status = CheckPartial
+		rec.reason = joinReasons("", res)
+	}
+	return rec
+}
+
+func joinReasons(first string, res inspect.CheckResult) string {
+	var parts []string
+	if first != "" {
+		parts = append(parts, first)
+	}
+	if res.TablesErr != "" {
+		parts = append(parts, "tables: "+res.TablesErr)
+	}
+	if res.PlanErr != "" {
+		parts = append(parts, "plan: "+res.PlanErr)
+	}
+	return strings.Join(parts, "; ")
+}
+
 func checkable(op inspect.Operation) bool {
 	switch op {
 	case inspect.OpSelect, inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete:
@@ -65,14 +155,20 @@ type planEntry struct {
 	err   string
 }
 
-func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext) string {
-	if !e.cfg.ResourceCheck || ec == nil || ec.ResourceCheck == nil || !checkable(stmt.Operation) {
-		return ""
+func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext) (string, checkRecord) {
+	if !e.cfg.ResourceCheck || ec == nil || ec.ResourceCheck == nil {
+		return "", checkRecord{}
+	}
+	if !checkable(stmt.Operation) {
+		return "", skipped("only select, insert, update and delete are checked")
 	}
 	rc := ec.ResourceCheck
 	tables := checkTables(stmt)
-	if len(tables) == 0 || rc.Skips(stmt) {
-		return ""
+	if len(tables) == 0 {
+		return "", skipped("the statement names no table")
+	}
+	if rc.Skips(stmt) {
+		return "", skipped("the statement can change the role or a setting")
 	}
 	facts := make(map[string]inspect.TableFacts, len(tables))
 	var missing []string
@@ -90,9 +186,15 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		plan, havePlan = e.plans.get(key)
 	}
 
-	if (len(missing) > 0 || !havePlan) && e.budget.available(e.cfg.MaxCalls, e.cfg.RateLimit) {
+	rec := checkRecord{status: CheckCached}
+	switch {
+	case len(missing) == 0 && havePlan:
+	case !e.budget.available(e.cfg.MaxCalls, e.cfg.RateLimit):
+		rec = skipped("no room in the lane's max_calls or rate_limit; cached facts only")
+	default:
 		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
-		res, err := e.runCheck(ctx, rc, stmt, want, ec)
+		res, took, err := e.runCheck(ctx, rc, stmt, want, ec)
+		rec = ranRecord(res, err, took)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
 			scope := rc.Scope()
 			if res.TablesErr == "" {
@@ -123,14 +225,61 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		nodes = plan.nodes
 	}
 	block := renderCheckBlock(known, nodes)
-	if block == "" || e.cfg.Redact == nil {
-		return block
+	trail := block
+	if plain, withheld := plainDefinitions(known); withheld {
+		trail = renderCheckBlock(plain, nodes)
 	}
-	if block = e.cfg.Redact(block); block == RefuseSentinel {
-		e.reportCheck(ResourceCheckEvent{Rule: e.cfg.Rule, Err: errors.New("the redactor refused the check block; classified without it")})
-		return ""
+	if block != "" && e.cfg.Redact != nil {
+		sent := e.cfg.Redact(block)
+		if sent == RefuseSentinel {
+			e.reportCheck(ResourceCheckEvent{Rule: e.cfg.Rule, Err: errors.New("the redactor refused the check block; classified without it")})
+			rec.reason = "the redactor refused the check block; classified without it"
+			return "", rec
+		}
+		if trail == block {
+			trail = sent
+		} else if trail = e.cfg.Redact(trail); trail == RefuseSentinel {
+			trail = ""
+		}
+		block = sent
 	}
-	return block
+	rec.text = strings.TrimPrefix(trail, checkHeader+"\n")
+	return block, rec
+}
+
+const withheldDefinition = "definition withheld"
+
+// plainDefinitions keeps an index definition in the trail only when it is
+// identifiers, as the Postgres check writes it ("btree (a, expression)
+// partial"). Anything else could carry a literal.
+func plainDefinitions(tables []inspect.TableFacts) ([]inspect.TableFacts, bool) {
+	var out []inspect.TableFacts
+	for i, t := range tables {
+		if !slices.ContainsFunc(t.Indexes, func(x inspect.IndexFacts) bool { return !plainDefinition(x.Definition) }) {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(tables)
+		}
+		out[i].Indexes = slices.Clone(t.Indexes)
+		for j := range out[i].Indexes {
+			if !plainDefinition(out[i].Indexes[j].Definition) {
+				out[i].Indexes[j].Definition = withheldDefinition
+			}
+		}
+	}
+	return out, out != nil
+}
+
+func plainDefinition(s string) bool {
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' || r == '(' || r == ')' }) {
+		for i, r := range tok {
+			if r != '_' && !unicode.IsLetter(r) && (i == 0 || !unicode.IsDigit(r)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func checkKey(scope, name string) string {
@@ -152,7 +301,7 @@ func planKey(scope, text string, tables []string, facts map[string]inspect.Table
 	return checkKey(scope, string(sum[:]))
 }
 
-func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, error) {
+func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, time.Duration, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, CheckTimeout)
 	defer cancel()
 	end := func(string, error) {}
@@ -174,7 +323,7 @@ func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stm
 		end(telemetry.OutcomeOK, nil)
 	}
 	e.reportCheck(ev)
-	return res, err
+	return res, ev.Duration, err
 }
 
 func (e *Evaluator) reportCheck(ev ResourceCheckEvent) {

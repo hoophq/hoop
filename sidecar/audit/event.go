@@ -335,6 +335,16 @@ const MetadataSSHEnvValue = "ssh.env_value"
 // because that is where the regulated values live.
 var contentMetadataKeys = []string{MetadataSSHEnvValue}
 
+// MetadataAITitle and MetadataAIExplanation carry the analyzer model's title
+// and reasoning. Model prose can quote the statement, so a sink that redacts
+// statements drops both.
+const (
+	MetadataAITitle       = "ai_title"
+	MetadataAIExplanation = "ai_explanation"
+)
+
+var proseMetadataKeys = []string{MetadataAITitle, MetadataAIExplanation}
+
 // MaskedEvent records that response data was rewritten.
 func MaskedEvent(s *session.Session, entities []string, count int) Event {
 	return Event{
