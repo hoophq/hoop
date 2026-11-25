@@ -32,6 +32,9 @@ type cache struct {
 	hits   uint64
 	misses uint64
 
+	// pinned counts the open prepared statements per key; eviction skips them.
+	pinned map[string]int
+
 	// now is injected so tests can expire entries without sleeping.
 	now func() time.Time
 }
@@ -170,27 +173,57 @@ func (c *cache) put(key string, res Result) {
 	})
 	c.entries[key] = el
 
-	for c.order.Len() > c.size {
-		oldest := c.order.Back()
-		if oldest == nil {
-			break
+	for el := c.order.Back(); el != nil && c.order.Len() > c.size; {
+		prev := el.Prev()
+		if ent := el.Value.(*cacheEntry); c.pinned[ent.key] == 0 {
+			c.order.Remove(el)
+			delete(c.entries, ent.key)
 		}
-		c.order.Remove(oldest)
-		delete(c.entries, oldest.Value.(*cacheEntry).key)
+		el = prev
 	}
+}
+
+// pin keeps key's entry while a prepared statement with its text is open.
+// Past maxPinned open texts, a new one is not kept.
+func (c *cache) pin(key string) {
+	if !c.enabled() {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pinned == nil {
+		c.pinned = map[string]int{}
+	}
+	if c.pinned[key] > 0 || len(c.pinned) < maxPinned {
+		c.pinned[key]++
+	}
+}
+
+func (c *cache) unpin(key string) {
+	if !c.enabled() {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pinned[key] > 1 {
+		c.pinned[key]--
+		return
+	}
+	delete(c.pinned, key)
 }
 
 const (
 	preparedMemoSize = 256
 	// The memo lives as long as its connection.
 	preparedMemoTTL = 100 * 365 * 24 * time.Hour
+	maxPinned       = 1024
 )
 
 // preparedMemo is the connection's memo of prepared statement verdicts, so
 // the text makes one call however often it runs. Nil for other statements.
 func preparedMemo(e *Evaluator, stmt inspect.Statement, ec *policy.EvalContext) *cache {
 	switch stmt.Metadata[inspect.MetadataPrepared] {
-	case inspect.PreparedPrepare, inspect.PreparedRun:
+	case inspect.PreparedPrepare, inspect.PreparedRun, inspect.PreparedRelease:
 	default:
 		return nil
 	}
@@ -200,9 +233,10 @@ func preparedMemo(e *Evaluator, stmt inspect.Statement, ec *policy.EvalContext) 
 	return ec.Conn.Value(e, func() any { return newCache(preparedMemoSize, preparedMemoTTL) }).(*cache)
 }
 
-// textKey keys the memo on the exact prompt text.
-func textKey(promptKey, text string) string {
-	sum := sha256.Sum256([]byte(text))
+// preparedKey keys the memo on what the prompt is built from: the database and
+// the exact text. A close carries both, so it finds the key its prepare pinned.
+func preparedKey(promptKey string, stmt inspect.Statement) string {
+	sum := sha256.Sum256([]byte(stmt.Database + "\x00" + stmt.Text))
 	return promptKey + ":" + hex.EncodeToString(sum[:])
 }
 

@@ -141,11 +141,13 @@ const (
 	MetadataSQLIncomplete = codectypes.MetadataSQLIncomplete
 
 	// MetadataPrepared names a prepared statement's step: PreparedPrepare,
-	// PreparedRun or PreparedRelease, which runs nothing.
+	// PreparedRun, PreparedRelease (a close) or PreparedReset; the last two run
+	// nothing.
 	MetadataPrepared = codectypes.MetadataPrepared
 	PreparedPrepare  = codectypes.PreparedPrepare
 	PreparedRun      = codectypes.PreparedRun
 	PreparedRelease  = codectypes.PreparedRelease
+	PreparedReset    = codectypes.PreparedReset
 
 	// MetadataMySQLConnectAttrPrefix prefixes the metadata key of a MySQL
 	// connection attribute the codec keeps, followed by the attribute name.

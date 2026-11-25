@@ -923,7 +923,7 @@ type classified struct {
 	key string
 
 	// memo is the connection's prepared-statement memo, nil for other
-	// statements. It keys on the exact text, not the shape.
+	// statements. It keys on the database and the exact text, not the shape.
 	memo    *cache
 	textKey string
 }
@@ -950,7 +950,11 @@ func (e *Evaluator) classify(
 	if !ok {
 		return classified{}
 	}
-	if stmt.Metadata[inspect.MetadataPrepared] == inspect.PreparedRelease {
+	switch stmt.Metadata[inspect.MetadataPrepared] {
+	case inspect.PreparedRelease:
+		preparedMemo(e, stmt, ec).unpin(preparedKey(e.promptKey, stmt))
+		return classified{}
+	case inspect.PreparedReset:
 		return classified{}
 	}
 
@@ -982,11 +986,15 @@ func (e *Evaluator) classify(
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
+	memo, textKey := preparedMemo(e, stmt, ec), preparedKey(e.promptKey, stmt)
 	if block := e.resourceBlock(ctx, stmt, ec); block != "" {
 		text += "\n\n" + block
 		cacheKey += ":" + fingerprint(block)
+		memo = nil
 	}
-	memo, textKey := preparedMemo(e, stmt, ec), textKey(e.promptKey, text)
+	if stmt.Metadata[inspect.MetadataPrepared] == inspect.PreparedPrepare {
+		memo.pin(textKey)
+	}
 	if res, hit := memo.get(textKey); hit {
 		return classified{res: res, text: text, status: StatusCached, key: cacheKey, memo: memo, textKey: textKey}
 	}

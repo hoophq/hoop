@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -174,6 +175,51 @@ func TestPreparedMemoKeysOnTheText(t *testing.T) {
 	}
 	if got := p.calls.Load(); got != 2 {
 		t.Fatalf("calls = %d, want one per text", got)
+	}
+}
+
+func myStmt(cmd byte, id uint32, rest ...byte) []byte {
+	return myPacket(0, append(binary.LittleEndian.AppendUint32([]byte{cmd}, id), rest...))
+}
+
+// prepare sends COM_STMT_PREPARE for text and the server's reply naming id,
+// with no columns and no parameters.
+func prepare(t *testing.T, g *gate.Gate, id uint32, text string) {
+	t.Helper()
+	client(t, g, myPacket(0, append([]byte{0x16}, text...)))
+	server(t, g, myPacket(1, append(binary.LittleEndian.AppendUint32([]byte{0x00}, id), 0, 0, 0, 0, 0, 0, 0)))
+}
+
+// An open statement keeps its verdict however many other texts the
+// connection prepares and closes before it runs again. A reset keeps it
+// open; a close lets it go.
+func TestAnOpenPreparedStatementKeepsItsVerdict(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, Actions: analyzer.ActionMap{analyzer.RiskLow: analyzer.ActionAllow}})
+	g := mysqlGate(t, ev, nil)
+	const first = "SELECT name FROM customers WHERE id = ?"
+	others := func(from uint32) {
+		for i := range uint32(300) {
+			prepare(t, g, from+i, "SELECT name FROM customers WHERE id = "+strconv.Itoa(int(from+i)))
+			client(t, g, myStmt(0x19, from+i))
+		}
+	}
+
+	prepare(t, g, 1, first)
+	others(10)
+	client(t, g, myStmt(0x1a, 1))
+	server(t, g, myOK(1))
+	client(t, g, myStmt(0x17, 1, 0x00, 1, 0, 0, 0))
+	server(t, g, myOK(1))
+	if got := p.calls.Load(); got != 301 {
+		t.Fatalf("calls = %d, want 301: the execute after 300 other texts asked the model again", got)
+	}
+
+	client(t, g, myStmt(0x19, 1))
+	others(1000)
+	prepare(t, g, 2, first)
+	if got := p.calls.Load(); got != 602 {
+		t.Fatalf("calls = %d, want 602: a closed text stayed in the memo past its size", got)
 	}
 }
 
