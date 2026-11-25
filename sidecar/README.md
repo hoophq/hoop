@@ -1497,7 +1497,8 @@ unindexed one.
   `SHOWPLAN` changes the session. It reads nothing while
   `IMPLICIT_TRANSACTIONS` is on. Past 500 ms the sidecar sends an attention
   and drains the reply. A temporary table or synonym is named as such,
-  without a size.
+  without a size. A table in another database or on a linked server gets
+  no line: the catalog views are the current database's.
 - On mysql and mssql nothing is cached: the database a name resolves in and
   a temporary table that hides it can change without the sidecar seeing it.
 - A statement that reads the previous result gets no check, and neither do
@@ -1513,7 +1514,7 @@ unindexed one.
 - Every check of a client write runs before its first statement, so a write
   that changes what a later name resolves to gets no check: on mysql, a write
   of more than one statement where one starts with `USE`, `CREATE`, `DROP`,
-  `ALTER`, `RENAME` or `TRUNCATE`; on mssql, a batch with `USE`, `CREATE`,
+  `ALTER`, `RENAME`, `TRUNCATE`, `CALL` or `EXECUTE`; on mssql, a batch with `USE`, `CREATE`,
   `DROP`, `ALTER` or `TRUNCATE` before a select, insert, update, delete,
   merge or `EXEC`.
 - A MySQL prepared statement (`COM_STMT_*`) and an MSSQL RPC request get no
