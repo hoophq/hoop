@@ -18,6 +18,7 @@ export const docsUrl = {
     jitReviews: 'https://hoop.dev/docs/learn/features/reviews/jit-reviews',
     commandReviews: 'https://hoop.dev/docs/learn/features/reviews/command-reviews',
     guardrails: 'https://hoop.dev/docs/learn/features/guardrails',
+    mcpServer: 'https://hoop.dev/docs/learn/features/mcp-server',
   },
   introduction: {
     gettingStarted: 'https://hoop.dev/docs/introduction/getting-started',

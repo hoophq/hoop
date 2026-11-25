@@ -80,13 +80,10 @@ function OnboardingProtectionRules() {
             </Button>
           </Group>
 
-          <Stack gap="xs">
+          <Stack gap="sm">
             <Title order={1}>Protect your resources</Title>
-            <Text size="lg" c="dimmed">
-              Pick how Hoop should guard everything you connect.
-            </Text>
-            <Text size="lg" c="dimmed">
-              We set it all up. You can change any configuration later on.
+            <Text size="md" c="dimmed">
+              Pick how Hoop guards your Resources, then change it any time in Compliance Packs.
             </Text>
           </Stack>
 

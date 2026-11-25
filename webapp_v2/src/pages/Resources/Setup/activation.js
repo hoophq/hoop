@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     feature: 'ai-analyzer',
-    label: 'AI Session Analyzer',
+    label: 'AI Analyzer',
     genericDescription:
       'Reviews every session for suspicious activity. Stops operations that exceed your risk limit.',
     createPath: '/features/ai-session-analyzer/rules/new',
@@ -66,7 +66,7 @@ function buildCard({ feature, label, genericDescription }, templates, ctx) {
       enabled: true,
       badge: { label: 'Enabled', color: 'green' },
       title: label,
-      description: 'Already enabled for this resource role.',
+      description: 'Already enabled for this Resource Role.',
       cta: { kind: 'list', label: `Go to ${label}` },
     }
   }

@@ -21,7 +21,7 @@ export default function SourceMenu({
   const activeLabel = activeOption?.label || SOURCE_LABELS[activeValue] || activeValue
 
   return (
-    <Menu position="bottom-start" shadow="md" withinPortal disabled={disabled}>
+    <Menu position="bottom-start" withinPortal disabled={disabled}>
       <Menu.Target>
         <UnstyledButton
           type="button"

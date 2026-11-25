@@ -6,7 +6,7 @@ import FeaturePromotion from '@/components/FeaturePromotion'
 export default function JiraPromotion({ onConfigure }) {
   return (
     <FeaturePromotion
-      featureName="JIRA Templates"
+      featureName="Jira Templates"
       image="jira-pomotion.png"
       description="Automate change management and security workflows."
       featureItems={[

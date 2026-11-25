@@ -79,9 +79,16 @@ const SystemPrompt = PromptGuidance + promptContract
 // An empty guidance falls back to the default. The contract is appended
 // either way, so no config can remove it.
 func BuildSystemPrompt(guidance string) string {
+	return buildSystemPrompt(guidance, false)
+}
+
+func buildSystemPrompt(guidance string, resourceCheck bool) string {
 	guidance = strings.TrimSpace(guidance)
 	if guidance == "" {
 		guidance = PromptGuidance
+	}
+	if resourceCheck {
+		guidance += resourceCheckPrompt
 	}
 	return guidance + promptContract
 }

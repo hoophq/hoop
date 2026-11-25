@@ -1,10 +1,9 @@
 .row {
   cursor: pointer;
-  border-radius: var(--mantine-radius-sm);
 }
 
 .row:hover {
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-muted);
 }
 
 /* Plain overflow, not ScrollArea: its viewport sizes to the content, so a

@@ -183,7 +183,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
 
   return (
     <>
-      <Paper withBorder radius="md" p="lg">
+      <Paper withBorder p="lg">
         <Stack gap="lg">
           <SourceCallout
             fromFile={fromFile}

@@ -102,6 +102,9 @@ function Editor({ sidecar, index, onDone, onLeave }) {
           <Stack gap="xs">
             <Parent name={sidecar.name} onClick={onDone} />
             <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
+            <Text size="md" c="dimmed">
+              Set the port this Sidecar listens on and where it relays traffic.
+            </Text>
           </Stack>
           <Group gap="sm" wrap="nowrap" flex="0 0 auto">
             {!isNew && (
@@ -122,7 +125,7 @@ function Editor({ sidecar, index, onDone, onLeave }) {
 
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
 
-        <Paper withBorder radius="md" p="lg">
+        <Paper withBorder p="lg">
           <ListenerForm
             form={form}
             setField={setField}

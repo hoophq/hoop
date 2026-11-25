@@ -5,6 +5,7 @@ import TextInput from '@/components/TextInput'
 import Textarea from '@/components/Textarea'
 import SourcedInput from '@/components/SourcedInput'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import InlineAction from '@/pages/Roles/Configure/components/SecretField/InlineAction'
 import { sourceOptionsFor, SECRET_MASK } from '@/pages/Roles/Configure/components/SecretField/util'
 import classes from './SecretField.module.css'
@@ -15,7 +16,7 @@ const RIGHT_SECTION_WIDTH = 112
 // pencil while editing.
 function LeadingIcon({ color, children }) {
   return (
-    <ThemeIcon size="sm" radius="xl" variant="light" color={color}>
+    <ThemeIcon size="sm" variant="light" color={color}>
       {children}
     </ThemeIcon>
   )
@@ -206,14 +207,16 @@ export default function SecretField({
       <Group justify="space-between" align="center">
         <FieldLabel label={label} required={required} />
         {onRemove && (
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            onClick={onRemove}
-            aria-label="Remove field"
-          >
-            <Trash2 size={16} />
-          </ActionIcon>
+          <Tooltip label="Remove field">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              onClick={onRemove}
+              aria-label="Remove field"
+            >
+              <Trash2 size={16} />
+            </ActionIcon>
+          </Tooltip>
         )}
       </Group>
       <SourcedInput

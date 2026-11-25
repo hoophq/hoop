@@ -32,7 +32,7 @@ export const TIME_RANGE_OPTIONS = [
 ]
 
 export const FREE_LICENSE_MESSAGE =
-  'Enable creating unlimited rules and applying to multiple resource roles for Command type requests by upgrading your plan.'
+  'Enable creating unlimited rules and applying to multiple Resource Roles for Command type requests by upgrading your plan.'
 
 export const MANAGED_RULE_MESSAGE =
   'This rule is managed by Hoop as part of your protection profile. Only approval settings and group lists can be changed.'

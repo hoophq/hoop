@@ -38,17 +38,17 @@ function AdditionalConfiguration() {
         checked={createConnection}
         onChange={(e) => update({ createConnection: e.currentTarget.checked })}
         label="Create Resource Role"
-        description="When enabled, resource roles will be automatically created after configuring the resources."
+        description="When enabled, Resource Roles will be automatically created after configuring the resources."
       />
       <Stack gap="sm">
         <Switch
           checked={vaultEnabled}
           onChange={(e) => update({ vaultEnabled: e.currentTarget.checked })}
           label="Enable Vault Secrets Provider"
-          description="Integrate with HashiCorp Vault to dynamically expand environment variables in your resource roles. Currently, only Vault is supported."
+          description="Integrate with HashiCorp Vault to dynamically expand environment variables in your Resource Roles. Currently, only Vault is supported."
         />
         <DocsLink href={docsUrl.setup.configuration.secretsManager}>
-          Learn more about Secrets Manager Configuration
+          Read the Secrets Manager docs
         </DocsLink>
         {vaultEnabled && (
           <TextInput
@@ -96,7 +96,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           <TextInput
             miw={ROLE_NAME_MIN_WIDTH}
             aria-label={`Resource role name for ${row.name}`}
-            placeholder="Enter resource role name"
+            placeholder="Enter Resource Role name"
             value={roleName(row, roleNames)}
             onChange={(e) => setMapValue('roleNames', row.id, e.currentTarget.value)}
           />
@@ -139,10 +139,10 @@ export default function ReviewStep({ validationError, onAgentChange }) {
       <Stack gap="xs" maw={600} w="100%" align="flex-start">
         <Title order={3}>Review Selected Resources</Title>
         <Text size="sm" c="dimmed">
-          Please review your selected AWS database resources and assign an Agent to each resource role before
-          proceeding. You can also customize the resource role names.
+          Review the AWS databases you selected and assign an Agent to each Resource Role before
+          proceeding. You can also customize the Resource Role names.
         </Text>
-        <DocsLink href={docsUrl.concepts.agents}>Learn more about Agents</DocsLink>
+        <DocsLink href={docsUrl.concepts.agents}>Read the Agents docs</DocsLink>
       </Stack>
 
       <AdditionalConfiguration />

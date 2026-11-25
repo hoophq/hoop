@@ -23,8 +23,9 @@ import {
 } from './constants'
 import AccessRequestPromotion from './components/AccessRequestPromotion'
 import RuleListItem from './components/RuleListItem'
+import List from '@/components/List'
 
-const CREATE_LABEL = 'Create new Access Request rule'
+const CREATE_LABEL = 'Create Approval rule'
 
 export default function AccessRequest() {
   const navigate = useNavigate()
@@ -111,9 +112,9 @@ export default function AccessRequest() {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
-          <Title order={1}>Access Request</Title>
+          <Title order={1}>Approval rules</Title>
           <Text size="md" c="dimmed">
-            Create secure access request rules for your resources
+            Choose which Resource Roles need an approval before access.
           </Text>
         </Stack>
         {rules.length > 0 && (
@@ -134,10 +135,11 @@ export default function AccessRequest() {
 
       {rules.length === 0 ? (
         <EmptyState
-          title="No Access Request rules configured in your Organization yet"
+          title="No Approval rules yet"
+          description="Create a rule to require an approval before access."
           action={{ label: CREATE_LABEL, onClick: goCreate }}
           docsUrl={docsUrl.features.accessRequests}
-          docsLabel="Access Request documentation"
+          docsLabel="Approval rules documentation"
         />
       ) : (
         <>
@@ -145,7 +147,7 @@ export default function AccessRequest() {
             <AsyncValueFilter
               icon={Rotate3d}
               label="Resource Role"
-              placeholder="Search resource roles"
+              placeholder="Search Resource Roles"
               selected={selectedRole}
               onSelect={setSelectedRole}
               onClear={() => setSelectedRole(null)}
@@ -170,23 +172,21 @@ export default function AccessRequest() {
           {filteredRules.length === 0 ? (
             <EmptyState
               compact
-              title="No Access Request rules match your filters"
+              title="No Approval rules match your filters"
               description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
             />
           ) : (
-            <Box>
-              {filteredRules.map((rule, idx) => (
+            <List>
+              {filteredRules.map((rule) => (
                 <RuleListItem
                   key={rule.name}
                   rule={rule}
-                  isFirst={idx === 0}
-                  isLast={idx === filteredRules.length - 1}
                   onConfigure={(name) =>
                     navigate(`${EDIT_PATH}/${encodeURIComponent(name)}`)
                   }
                 />
               ))}
-            </Box>
+            </List>
           )}
         </>
       )}

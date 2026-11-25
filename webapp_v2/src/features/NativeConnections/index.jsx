@@ -126,7 +126,6 @@ export default function NativeConnectionsDrawer() {
         position="right"
         size={DRAWER_WIDTH}
         offset={DRAWER_OFFSET}
-        radius="lg"
         padding={0}
         zIndex={DRAWER_Z_INDEX}
         // A dialog stacked over the drawer owns Escape. Both listen on the

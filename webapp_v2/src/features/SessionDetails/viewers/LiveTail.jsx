@@ -224,7 +224,7 @@ export default function LiveTail({ session, largeOutput }) {
   const duration = durationBetween(session.start_date, session.end_date, now)
 
   return (
-    <Paper withBorder variant="outline" radius="md">
+    <Paper withBorder variant="outline">
       <Group justify="space-between" gap="sm" className={classes.header}>
         <Group gap="md">
           <StatusPill state={state} />

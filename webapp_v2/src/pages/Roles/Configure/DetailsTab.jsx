@@ -48,8 +48,8 @@ export default function DetailsTab({ connection }) {
             <Badge size="sm" color="green" variant="filled">NEW</Badge>
           </Group>
           <Text size="sm" c="dimmed">
-            Properties that determine how access policies, guardrails, and
-            other features apply to this resource role. Attributes are
+            Properties that determine how access rules, Guardrails, and
+            other features apply to this Resource Role. Attributes are
             evaluated by rules you configure.
           </Text>
         </Stack>
@@ -72,7 +72,7 @@ export default function DetailsTab({ connection }) {
         <Stack gap="xs">
           <Title order={4}>Tags</Title>
           <Text size="sm" c="dimmed">
-            Labels for filtering, searching, and grouping resource roles in
+            Labels for filtering, searching, and grouping Resource Roles in
             your catalog.
           </Text>
         </Stack>

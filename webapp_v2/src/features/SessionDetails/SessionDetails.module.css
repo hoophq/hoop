@@ -10,7 +10,7 @@
   flex-direction: column;
   max-height: calc(100dvh - 2 * var(--mantine-spacing-lgAlt));
   overflow: hidden;
-  border-radius: calc(2 * var(--mantine-radius-lg));
+  border-radius: var(--hoop-card-radius);
 }
 
 .body {

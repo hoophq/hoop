@@ -23,8 +23,8 @@ export const STATUS_META = {
   non_compliant: { icon: XCircle, color: 'red', label: 'Not implemented' },
   not_applicable: { icon: MinusCircle, color: 'gray', label: 'Not applicable' },
   unable_to_verify: { icon: HelpCircle, color: 'gray', label: 'Unable to verify' },
-  idp_dependent: { icon: Link2, color: 'indigo', label: 'Delegated to IdP' },
-  informational: { icon: Info, color: 'indigo', label: 'Informational' },
+  idp_dependent: { icon: Link2, color: 'gray', label: 'Delegated to IdP' },
+  informational: { icon: Info, color: 'gray', label: 'Informational' },
 }
 
 // Overall score level colors (0-1000: low 0-499, moderate 500-749,

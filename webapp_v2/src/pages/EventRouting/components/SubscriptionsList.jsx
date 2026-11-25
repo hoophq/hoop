@@ -24,7 +24,7 @@ export default function SubscriptionsList() {
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
           leftSection={<Search size={16} />}
-          style={{ flex: 1 }}
+          flex={1}
         />
         <Select
           value={statusFilter}

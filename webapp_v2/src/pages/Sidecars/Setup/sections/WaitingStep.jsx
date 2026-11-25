@@ -104,7 +104,7 @@ export default function WaitingStep({ sidecar, onConnected, onGone, onDelete, on
       <Box className={classes.box} data-connected={connected || undefined} p="md">
         <Group wrap="nowrap" gap="md" align="center">
           {connected ? (
-            <ThemeIcon size={32} radius="xl" color="green" variant="light" flex="0 0 auto">
+            <ThemeIcon size={32} color="green" variant="light" flex="0 0 auto">
               <Check size={18} aria-hidden="true" />
             </ThemeIcon>
           ) : (

@@ -1,8 +1,16 @@
 import { Avatar as MantineAvatar } from '@mantine/core'
 import classes from './Avatar.module.css'
 
-function Avatar({ radius = 'xl', ...props }) {
-  return <MantineAvatar radius={radius} {...props} classNames={{ root: classes.root }} />
+// Round by default. `tile` makes it an icon tile: its corners come from
+// --hoop-icon-radius (theme.js), so a page never passes a radius itself.
+function Avatar({ radius = 'xl', tile = false, ...props }) {
+  return (
+    <MantineAvatar
+      radius={tile ? 'var(--hoop-icon-radius)' : radius}
+      {...props}
+      classNames={{ root: classes.root }}
+    />
+  )
 }
 
 function Group({ spacing = 6, ...props }) {

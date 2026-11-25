@@ -1,4 +1,6 @@
-import { Title, TextInput, Button, Stack, Text, Grid } from '@mantine/core'
+import { Title, Stack, Text, Grid } from '@mantine/core'
+import TextInput from '@/components/TextInput'
+import Button from '@/components/Button'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Info, ListOrdered } from 'lucide-react'
@@ -89,7 +91,7 @@ function AgentsCreate() {
               onChange={(e) => setName(e.currentTarget.value)}
               required
               disabled={created}
-              style={{ width: 320 }}
+              w={320}
             />
           </form>
           <Stack gap="xs" w="100%">
@@ -163,9 +165,9 @@ function AgentsCreate() {
       </Button>
 
       <Stack gap="sm">
-        <Title order={1}>Setup new Agent</Title>
+        <Title order={1}>Set up a new Agent</Title>
         <Text size="md" c="dimmed">
-          Follow the steps below to setup a new Agent in your environment
+          Follow the steps below to set up a new Agent in your environment.
         </Text>
       </Stack>
 

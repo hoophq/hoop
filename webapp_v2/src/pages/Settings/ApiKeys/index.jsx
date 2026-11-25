@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
@@ -11,6 +12,7 @@ import Modal from '@/components/Modal'
 import Tooltip from '@/components/Tooltip'
 import { apiKeysService } from '@/services/apiKeys'
 import { truncateKey } from '@/utils/maskedKey'
+import { docsUrl } from '@/utils/docsUrl'
 
 function formatDate(dateStr) {
   if (!dateStr) return '—'
@@ -68,25 +70,29 @@ export default function ApiKeys() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load API keys." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>API Keys</Title>
-          <Text c="dimmed" size="lg">
-            Create and manage API Keys
+          <Text c="dimmed" size="md">
+            Create and manage the keys that call the Hoop API.
           </Text>
         </Stack>
-        <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>
+        {keys.length > 0 && (
+          <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>
+        )}
       </Group>
 
       {keys.length === 0 ? (
         <EmptyState
-          title="No API keys yet"
-          description="Create an API key to authenticate programmatic access to Hoop."
+          title="No API Keys yet"
+          description="Create a key to call the Hoop API from scripts and tools."
           action={{ label: 'Create new API key', onClick: () => navigate('/settings/api-keys/new') }}
+          docsUrl={docsUrl.setup.apis.apiKeys}
+          docsLabel="API Keys documentation"
         />
       ) : (
         <Table>

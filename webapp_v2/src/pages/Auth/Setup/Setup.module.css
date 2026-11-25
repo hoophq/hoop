@@ -9,7 +9,7 @@
 .leftPanel {
   position: relative;
   overflow: hidden;
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   padding: var(--mantine-spacing-xxlAlt) var(--mantine-spacing-xl);
   min-height: 620px;
   background: linear-gradient(135deg, #0d1729 0%, #182449 35%, #1e2e5a 70%, #243570 100%);
@@ -112,7 +112,7 @@
 
 /* Right-hand form panel */
 .rightPanel {
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   border: 1px solid var(--hoop-border-strong);
   display: flex;
   flex-direction: column;
@@ -130,7 +130,7 @@
   height: 2px;
   border-radius: var(--mantine-radius-xs);
   background: var(--hoop-border-strong);
-  transition: background 150ms ease;
+  transition: background var(--hoop-motion-in) var(--hoop-ease);
 }
 
 .strengthBar[data-active='true'] {

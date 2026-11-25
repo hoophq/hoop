@@ -1,15 +1,6 @@
-import {
-  Title,
-  Button,
-  Group,
-  Text,
-  Badge,
-  Stack,
-  Modal,
-  Card,
-  Box,
-  Flex,
-} from '@mantine/core'
+import { Title, Group, Text, Stack, Card, Box, Flex } from '@mantine/core'
+import Modal from '@/components/Modal'
+import Button from '@/components/Button'
 import { useDisclosure } from '@mantine/hooks'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -21,7 +12,8 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
 import PageLoader from '@/components/PageLoader'
 import TagsEditor from '@/components/TagsEditor'
-import TagBadge from '@/components/Badge'
+import Badge from '@/components/Badge'
+import List from '@/components/List'
 import Tooltip from '@/components/Tooltip'
 import { showSnackbar } from '@/utils/snackbar'
 import { labelForTag, AGENT_TAG_RULES } from '@/utils/tags'
@@ -124,23 +116,20 @@ function AgentTags({ tags }) {
     <Group gap="xs" mt="xs">
       {entries.map(([key, value]) => (
         <Tooltip key={key} label={key}>
-          <TagBadge tag chip variant="light" color="gray">
+          <Badge tag chip variant="light" color="gray">
             {`${labelForTag(key)}: ${value}`}
-          </TagBadge>
+          </Badge>
         </Tooltip>
       ))}
     </Group>
   )
 }
 
-function AgentRow({ agent, isAdmin, isLast, onDelete, onEditTags }) {
+function AgentRow({ agent, isAdmin, onDelete, onEditTags }) {
   return (
-    <Box
-      p="lg"
-      style={isLast ? undefined : { borderBottom: '1px solid var(--mantine-color-default-border)' }}
-    >
+    <Box p="lg">
       <Flex align="center">
-        <Box style={{ flex: 1 }}>
+        <Box flex={1}>
           <Text size="lg" fw={700}>{agent.name}</Text>
           <Text size="xs" c="dimmed">Version: {agent.version}</Text>
           <Text size="xs" c="dimmed">ID: {agent.id}</Text>
@@ -226,7 +215,7 @@ function Agents() {
   }
 
   if (error) {
-    return <Text c="red">{error}</Text>
+    return <PageLoader error h={300} message="Failed to load Agents." description={error} />
   }
 
   return (
@@ -239,31 +228,33 @@ function Agents() {
       />
       <EditTagsModal key={tagsSession} agent={tagsAgent} opened={tagsOpened} onClose={closeTags} />
 
-      <Stack gap="xxl">
+      <Stack gap="xl">
         <Group justify="space-between" align="flex-start">
           <Stack gap="sm">
             <Title order={1}>Agents</Title>
             <Text size="md" c="dimmed">
-              View and manage your Agents for your resource roles
+              View and manage the Agents that run your Resource Roles.
             </Text>
-            <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
+            <DocsBtnCallOut text="Read the Agents docs" href={docsUrl.setup.agents} />
           </Stack>
           {isAdmin && agents.length > 0 && (
             <Button onClick={() => navigate('/agents/new')}>
-              Setup new Agent
+              Set up a new Agent
             </Button>
           )}
         </Group>
 
         {agents.length === 0 ? (
           <EmptyState
-            title="No agents yet"
-            description="Create a new Agent to your Organization to show it here"
+            title="No Agents yet"
+            description="Set up an Agent to connect your Resources to Hoop."
             action={
               isAdmin
-                ? { label: 'Setup new Agent', onClick: () => navigate('/agents/new') }
+                ? { label: 'Set up a new Agent', onClick: () => navigate('/agents/new') }
                 : null
             }
+            docsUrl={docsUrl.setup.agents}
+            docsLabel="Agents documentation"
           />
         ) : (
           <Stack gap="md">
@@ -271,22 +262,21 @@ function Agents() {
             {visibleAgents.length === 0 ? (
               <EmptyState
                 compact
-                title="No agents match your filters"
+                title="No Agents match your filters"
                 description="Try clearing the filters above."
               />
             ) : (
-              <Card padding={0} withBorder>
-                {visibleAgents.map((agent, i) => (
+              <List>
+                {visibleAgents.map((agent) => (
                   <AgentRow
                     key={agent.id}
                     agent={agent}
                     isAdmin={isAdmin}
-                    isLast={i === visibleAgents.length - 1}
                     onDelete={handleDeleteClick}
                     onEditTags={handleEditTagsClick}
                   />
                 ))}
-              </Card>
+              </List>
             )}
           </Stack>
         )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Group, Stack, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
 import { Rotate3d } from 'lucide-react'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import Button from '@/components/Button'
@@ -23,6 +23,7 @@ import {
 } from './helpers'
 import AccessControlPromotion from './components/AccessControlPromotion'
 import GroupListItem from './components/GroupListItem'
+import List from '@/components/List'
 
 export default function AccessControl() {
   const navigate = useNavigate()
@@ -142,24 +143,20 @@ export default function AccessControl() {
       <Group justify="space-between" align="flex-start">
         <Stack gap="sm">
           <Title order={1}>Access Control</Title>
-          <Box>
-            <Text size="md" c="dimmed">
-              Manage which user groups have access to specific resource roles.
-            </Text>
-            <Text size="md" c="dimmed">
-              Control permissions and enhance security for your organization.
-            </Text>
-          </Box>
+          <Text size="md" c="dimmed">
+            Choose which user groups can access each Resource Role.
+          </Text>
         </Stack>
-        {groupNames.length > 0 && <Button onClick={goCreate}>Create Group</Button>}
+        {groupNames.length > 0 && <Button onClick={goCreate}>Create group</Button>}
       </Group>
 
       {groupNames.length === 0 ? (
         <EmptyState
-          title="No Access Control Groups available to manage yet"
-          action={{ label: 'Create Group', onClick: goCreate }}
+          title="No Access Control groups yet"
+          description="Create a group to choose who can access each Resource Role."
+          action={{ label: 'Create group', onClick: goCreate }}
           docsUrl={docsUrl.features.accessControl}
-          docsLabel="access control documentation"
+          docsLabel="Access Control documentation"
         />
       ) : (
         <>
@@ -167,7 +164,7 @@ export default function AccessControl() {
             <AsyncValueFilter
               icon={Rotate3d}
               label="Resource Roles"
-              placeholder="Search resource roles"
+              placeholder="Search Resource Roles"
               selected={selectedRole}
               onSelect={selectRole}
               onClear={() => selectRole(null)}
@@ -189,13 +186,11 @@ export default function AccessControl() {
             />
           ) : (
             <Stack gap="md">
-              <Box>
-                {visibleGroups.map((group, idx) => (
+              <List>
+                {visibleGroups.map((group) => (
                   <GroupListItem
                     key={group.name}
                     group={group}
-                    isFirst={idx === 0}
-                    isLast={idx === visibleGroups.length - 1}
                     usersFailed={usersStatus === 'error'}
                     getIconUrl={getIconUrl}
                     onShowConnections={fetchConnections}
@@ -209,7 +204,7 @@ export default function AccessControl() {
                     }
                   />
                 ))}
-              </Box>
+              </List>
               {groupPages > 1 && (
                 <Pagination total={groupPages} value={page} onChange={setPage} />
               )}

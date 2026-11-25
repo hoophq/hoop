@@ -153,6 +153,16 @@ type Duplex interface {
 	Duplex()
 }
 
+type ResourceChecker interface {
+	NewResourceCheck() inspect.ResourceCheck
+}
+
+// SidePath gives the response to resp, never to the client. cancel goes on a
+// new upstream connection after ctx ends.
+type SidePath interface {
+	Exchange(ctx context.Context, req []byte, resp inspect.CheckResponse, cancel []byte) error
+}
+
 // StreamFilter transforms connection bytes before either inspection or
 // forwarding. It is for negotiation fields that decide every later packet's
 // layout: ClickHouse clamps both advertised revisions here so the peers and
@@ -594,6 +604,10 @@ type Gate struct {
 	respBytes   int
 	// httpOpen counts forwarded http requests with no final response.
 	httpOpen int
+
+	// Both are set before the pumps start.
+	check inspect.ResourceCheck
+	side  SidePath
 }
 
 // New builds a Gate for a session.
@@ -684,6 +698,9 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		g.serverFilter = filter
 	}
 	_, g.holdRequests = clientCodec.(RequestHolder)
+	if rc, ok := clientCodec.(ResourceChecker); ok && policy.UsesResourceCheck(cfg.Policy) {
+		g.check = rc.NewResourceCheck()
+	}
 	// Discover the re-framing capability once, so the data path does not
 	// type-assert per packet. MaskSupported asks the registry's codec for
 	// it at load; this asks the codec actually built, because a
@@ -825,8 +842,17 @@ func (g *Gate) Start(ctx context.Context) error {
 // message leaves with the call that completes it; on any other codec the
 // Payload is the bytes as they arrived.
 func (g *Gate) Request(ctx context.Context, data []byte) Decision {
-	return g.inspect(ctx, inspect.FromClient, data)
+	d := g.inspect(ctx, inspect.FromClient, data)
+	if g.check != nil && d.Allowed && len(d.Reply) == 0 {
+		g.check.Observe(inspect.FromClient, d.Payload)
+	}
+	return d
 }
+
+// AttachSidePath must be called before the first Request.
+func (g *Gate) AttachSidePath(sp SidePath) { g.side = sp }
+
+func (g *Gate) HasResourceCheck() bool { return g.check != nil }
 
 // Response inspects bytes travelling upstream -> client.
 //
@@ -835,6 +861,9 @@ func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 // result set touching a protected column, and the caller must honor the
 // denial instead of forwarding what it already has in hand.
 func (g *Gate) Response(ctx context.Context, data []byte) Decision {
+	if g.check != nil {
+		g.check.Observe(inspect.FromServer, data)
+	}
 	return g.inspect(ctx, inspect.FromServer, data)
 }
 
@@ -1818,6 +1847,9 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) (policy.Ver
 		return g.policy.Evaluate(stmt), nil
 	}
 	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
+	if g.check != nil && g.side != nil {
+		ec.ResourceCheck = resourceCheck{check: g.check, side: g.side}
+	}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)

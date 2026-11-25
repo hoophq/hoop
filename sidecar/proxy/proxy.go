@@ -877,18 +877,23 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// share one upstream clock: the client pump stamps what it forwards,
 	// the server pump reads the stamp when the answer arrives.
 	clock := newUpstreamClock(s.cfg.Protocol, s.cfg.Telemetry)
+	var side *sidePath
+	if g.HasResourceCheck() {
+		side = newSidePath(s, upstream, connCtx, endConn, log)
+		g.AttachSidePath(side)
+	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
 		defer upstream.Close()
-		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, span, log)
+		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, span, nil, log)
 	}()
 	go func() {
 		defer wg.Done()
 		defer client.Close()
-		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, span, log)
+		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, span, side, log)
 	}()
 
 	wg.Wait()
@@ -960,6 +965,7 @@ func (s *Server) pump(
 	dir inspect.Direction,
 	clock *upstreamClock,
 	span *sessionSpan,
+	side *sidePath,
 	log *slog.Logger,
 ) {
 	// A re-framing codec holds rows back until its result set ends. Release
@@ -1038,7 +1044,30 @@ func (s *Server) pump(
 		read = s.reader(src)
 	}
 	for {
+		if side != nil {
+			side.enterRead()
+		}
 		chunk, readErr := read()
+		if side != nil {
+			side.leaveRead()
+			if len(chunk) > 0 {
+				fwd, rest, err := side.divert(chunk)
+				if len(fwd) > 0 {
+					if _, werr := dst.Write(fwd); werr != nil {
+						return
+					}
+				}
+				if err != nil {
+					log.Debug("resource check response unreadable", "error", err)
+					end(errors.New("the upstream sent a resource check response the sidecar could not read"))
+					return
+				}
+				chunk = rest
+			}
+			if readErr != nil {
+				side.abort(endCause(dir, readErr))
+			}
+		}
 		if len(chunk) > 0 {
 			// The server negotiated TLS with US, not with the client, so it
 			// may offer channel binding the client cannot satisfy. Drop that

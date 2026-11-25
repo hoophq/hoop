@@ -6,7 +6,7 @@ import { useAwsConnectSetupStore } from '../store'
 import { statusRows } from '../wizard'
 
 const STATUS = {
-  pending: { color: 'indigo', label: 'Starting...', icon: <Loader size="xs" /> },
+  pending: { color: 'amber', label: 'Starting...', icon: <Loader size="xs" /> },
   success: { color: 'green', label: 'Started', icon: <Check size={18} color="var(--mantine-color-green-filled)" aria-hidden /> },
   failure: { color: 'red', label: 'Failed', icon: <X size={18} color="var(--mantine-color-red-filled)" aria-hidden /> },
 }
@@ -37,11 +37,11 @@ export default function StatusStep() {
       <Stack gap="xs" maw={600} w="100%">
         <Title order={3}>Creating Resource Roles</Title>
         <Text size="sm" c="dimmed">
-          Hoop starts one job for each resource. The jobs run in the background and can take a few minutes. Go to AWS
-          Connect to see when each job completes.
+          Hoop starts one job for each resource. The jobs run in the background and can take a few minutes. Go to
+          Resource Discovery to see when each job completes.
         </Text>
       </Stack>
-      <TreeTable columns={COLUMNS} rows={statusRows(jobs)} empty="No connections are being created" />
+      <TreeTable columns={COLUMNS} rows={statusRows(jobs)} empty="No Resource Roles are being created." />
     </Stack>
   )
 }

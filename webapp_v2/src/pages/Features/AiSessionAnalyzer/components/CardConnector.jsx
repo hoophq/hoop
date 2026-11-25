@@ -14,7 +14,7 @@ export default function CardConnector({ next = false }) {
       {next ? (
         <>
           <Box w={1} h={(HEIGHT - PILL) / 2} bg="var(--hoop-border-strong)" />
-          <Badge variant="light" color="indigo" radius="xl" tag>
+          <Badge variant="light" color="indigo" tag>
             Next
           </Badge>
           <Box w={1} h={(HEIGHT - PILL) / 2} bg="var(--hoop-border-strong)" />

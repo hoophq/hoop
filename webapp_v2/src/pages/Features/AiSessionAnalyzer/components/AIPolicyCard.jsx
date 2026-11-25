@@ -35,7 +35,7 @@ function RuleList({ featureKey, options, rules, create, status, onToggle, onSele
   else if (shown.length === 0) empty = 'No rule matches the search.'
 
   return (
-    <Paper withBorder radius="md" p="md">
+    <Paper withBorder p="md">
       <Stack gap="sm">
         <Text size="sm" fw={500}>
           Rules the AI can use
@@ -107,7 +107,7 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
   const switchId = useId()
   const descriptionId = `${switchId}-description`
   return (
-    <Paper withBorder radius="md" p="md">
+    <Paper withBorder p="md">
       <Stack gap="md">
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
@@ -139,7 +139,7 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
               onSelectAll={() => onChange({ rules: null })}
               onClear={() => onChange({ rules: [] })}
             />
-            <Paper variant="strong" radius="md" p="md">
+            <Paper variant="strong" p="md">
               <Checkbox
                 label={
                   <Text size="sm" fw={600}>
@@ -172,7 +172,7 @@ export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onTogg
   return (
     <SettingsCard
       icon={PackagePlus}
-      title="AI policy settings"
+      title="AI Analyzer settings"
       subtitle="Let the AI choose which rules protect each statement in this risk level"
       panel={false}
       badge={

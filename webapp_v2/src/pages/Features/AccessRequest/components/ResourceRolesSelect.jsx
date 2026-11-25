@@ -44,7 +44,7 @@ export default function ResourceRolesSelect({
   return (
     <PaginatedMultiSelect
       label="Resource Roles"
-      placeholder="Select resource roles..."
+      placeholder="Select Resource Roles..."
       required={required}
       disabled={disabled}
       value={value}
