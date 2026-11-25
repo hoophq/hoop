@@ -1481,8 +1481,35 @@ small table and high on a large unindexed one.
   check failed`, `resource check incomplete` or `resource check cancelled`
   with the SQLSTATE. Every
   statement it sends starts with `/* hoop sidecar resource check */`.
-- Other protocols accept the field and do nothing. A control plane serves it
-  only to a sidecar that reports `analyzer_resource_check`.
+- Lanes other than postgres and http accept the field and do nothing. A
+  control plane serves it only to a sidecar that reports
+  `analyzer_resource_check`.
+
+**On an http lane, `resource_check: true` reads the target first.** Before a
+`PUT`, `PATCH` or `DELETE` that the trigger selects, the sidecar sends a `GET`
+of the same URL and puts its status and the start of its body in the prompt,
+so `DELETE /orders/1` can rate high on an open order and low on a closed one.
+
+- The `GET` carries the client's headers, after the lane's own changes (Via,
+  `origin`, a caller token removed). It drops the body, connection,
+  conditional, `Range`, `Idempotency-Key` and method-override headers, and
+  adds `Accept-Encoding: identity`, `Connection: close` and
+  `Hoop-Resource-Check: 1`.
+- It goes on a new upstream connection, closed after it, within 500 ms. The
+  client never sees it.
+- The sidecar reads at most 4 KiB of the body. Before the body reaches the
+  prompt, it loses the values of `Authorization`, `Proxy-Authorization` and
+  `Cookie`, of headers outside `http.headers`, and of sensitive query
+  parameters; then `send` redaction runs on the block. An encoded or binary
+  body is not read.
+- The prompt block keeps 2 KiB. A check needs room in `max_calls` and
+  `rate_limit` but spends neither. A failed check classifies as without it
+  and logs `resource check failed` or `resource check incomplete`.
+- Nothing is cached but the verdict, whose key includes the block. Other
+  methods, WebSocket messages and SQL read from request bodies are not
+  checked.
+- An API whose `GET` has side effects (a counter, a read receipt) keeps
+  `resource_check` off on that lane.
 
 **A request with no body is still classified.** On a REST API the path is
 the operation: `GET /api/v1/namespaces/prod/secrets/db-root` says what a

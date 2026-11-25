@@ -41,6 +41,8 @@ type (
 	TableFacts    = codectypes.TableFacts
 	IndexFacts    = codectypes.IndexFacts
 	PlanNode      = codectypes.PlanNode
+	TargetFacts   = codectypes.TargetFacts
+	OwnConnection = codectypes.OwnConnection
 )
 
 const (

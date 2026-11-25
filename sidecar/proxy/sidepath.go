@@ -173,6 +173,60 @@ func (p *sidePath) divert(chunk []byte) (forward, rest []byte, err error) {
 	return fwd, nil, nil
 }
 
+// dialSidePath sends each check on a new upstream connection and closes it
+// after the response.
+type dialSidePath struct {
+	s       *Server
+	connCtx context.Context
+}
+
+func (p dialSidePath) Exchange(ctx context.Context, req []byte, resp inspect.CheckResponse, _ []byte) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stop := context.AfterFunc(p.connCtx, func() { cancel(context.Cause(p.connCtx)) })
+	defer stop()
+
+	conn, err := p.s.dialUpstream(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	closeOnEnd := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer closeOnEnd()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	if _, err := conn.Write(req); err != nil {
+		return checkErr(ctx, err)
+	}
+	buf := make([]byte, 32<<10)
+	for {
+		n, rerr := conn.Read(buf)
+		if n > 0 {
+			_, _, done, err := resp.Feed(buf[:n])
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+		}
+		switch {
+		case rerr == io.EOF:
+			return nil
+		case rerr != nil:
+			return checkErr(ctx, rerr)
+		}
+	}
+}
+
+func checkErr(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return err
+}
+
 func (p *sidePath) abort(err error) {
 	p.mu.Lock()
 	d := p.active

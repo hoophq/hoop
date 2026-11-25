@@ -875,7 +875,10 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		})
 	}
 	var side *sidePath
-	if g.HasResourceCheck() {
+	switch {
+	case g.CheckOwnsConnection():
+		g.AttachSidePath(dialSidePath{s: s, connCtx: connCtx})
+	case g.HasResourceCheck():
 		side = newSidePath(s, upstream, connCtx, endConn, log)
 		g.AttachSidePath(side)
 	}

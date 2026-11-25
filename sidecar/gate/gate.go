@@ -854,6 +854,11 @@ func (g *Gate) AttachSidePath(sp SidePath) { g.side = sp }
 
 func (g *Gate) HasResourceCheck() bool { return g.check != nil }
 
+func (g *Gate) CheckOwnsConnection() bool {
+	_, ok := g.check.(inspect.OwnConnection)
+	return ok
+}
+
 // Response inspects bytes travelling upstream -> client.
 //
 // Masking applies here: Decision.Payload may differ from the input. A policy
