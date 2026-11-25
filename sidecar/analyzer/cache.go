@@ -2,6 +2,8 @@ package analyzer
 
 import (
 	"container/list"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"time"
 
@@ -198,10 +200,16 @@ func preparedMemo(e *Evaluator, stmt inspect.Statement, ec *policy.EvalContext) 
 	return ec.Conn.Value(e, func() any { return newCache(preparedMemoSize, preparedMemoTTL) }).(*cache)
 }
 
+// textKey keys the memo on the exact prompt text.
+func textKey(promptKey, text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return promptKey + ":" + hex.EncodeToString(sum[:])
+}
+
 // decision reads an agent decision from the connection's memo, then from
 // the lane's cache.
 func (e *Evaluator) decision(c classified, memoKey string) (agentMemo, bool) {
-	if m, ok := c.memo.decision(c.key, memoKey); ok {
+	if m, ok := c.memo.decision(c.textKey, memoKey); ok {
 		return m, true
 	}
 	return e.cache.decision(c.key, memoKey)
@@ -209,7 +217,7 @@ func (e *Evaluator) decision(c classified, memoKey string) (agentMemo, bool) {
 
 func (e *Evaluator) remember(c classified, memoKey string, m agentMemo) {
 	e.cache.remember(c.key, memoKey, m)
-	c.memo.remember(c.key, memoKey, m)
+	c.memo.remember(c.textKey, memoKey, m)
 }
 
 // stats reports hit and miss counts. An operator reads these to decide

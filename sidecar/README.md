@@ -4581,7 +4581,8 @@ That is the fail-closed direction.
 `COM_STMT_PREPARE` (`ai_status: cached`), with the hand-off and rule agents'
 decisions, and a new hold still runs. `COM_STMT_CLOSE` and `COM_STMT_RESET`
 run nothing and are not classified. Codecs mark these steps with the
-`sql.prepared` metadata key.
+`sql.prepared` metadata key. The connection keeps the last 256 texts, by
+exact text; past that, a text asks the model again.
 
 **Three negotiated features are refused rather than forwarded**, each with
 `ErrStreamUnsafe`, which the gate turns into a denial regardless of policy:

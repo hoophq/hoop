@@ -923,8 +923,9 @@ type classified struct {
 	key string
 
 	// memo is the connection's prepared-statement memo, nil for other
-	// statements.
-	memo *cache
+	// statements. It keys on the exact text, not the shape.
+	memo    *cache
+	textKey string
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
@@ -985,13 +986,13 @@ func (e *Evaluator) classify(
 		text += "\n\n" + block
 		cacheKey += ":" + fingerprint(block)
 	}
-	memo := preparedMemo(e, stmt, ec)
-	if res, hit := memo.get(cacheKey); hit {
-		return classified{res: res, text: text, status: StatusCached, key: cacheKey, memo: memo}
+	memo, textKey := preparedMemo(e, stmt, ec), textKey(e.promptKey, text)
+	if res, hit := memo.get(textKey); hit {
+		return classified{res: res, text: text, status: StatusCached, key: cacheKey, memo: memo, textKey: textKey}
 	}
 	if cached, hit := e.cache.get(cacheKey); hit {
-		memo.put(cacheKey, cached)
-		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, memo: memo}
+		memo.put(textKey, cached)
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, memo: memo, textKey: textKey}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//
@@ -1030,8 +1031,8 @@ func (e *Evaluator) classify(
 	}
 
 	e.cache.put(cacheKey, *res)
-	memo.put(cacheKey, *res)
-	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, memo: memo}
+	memo.put(textKey, *res)
+	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, memo: memo, textKey: textKey}
 }
 
 // failure renders a classification error according to the fail mode.

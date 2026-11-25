@@ -162,6 +162,21 @@ func TestPreparedMemoIsPerConnection(t *testing.T) {
 	}
 }
 
+// The memo keys on the exact text: two texts of one shape each ask the model
+// when the lane has no verdict cache.
+func TestPreparedMemoKeysOnTheText(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, Actions: analyzer.ActionMap{analyzer.RiskLow: analyzer.ActionAllow}})
+	g := mysqlGate(t, ev, nil)
+	for i, text := range []string{"SELECT * FROM t1 WHERE id = ?", "SELECT * FROM t2 WHERE id = ?", "SELECT * FROM t1 WHERE id = ?"} {
+		client(t, g, myPacket(0, append([]byte{0x16}, text...)))
+		server(t, g, myPacket(1, []byte{0x00, byte(i + 1), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}))
+	}
+	if got := p.calls.Load(); got != 2 {
+		t.Fatalf("calls = %d, want one per text", got)
+	}
+}
+
 // The hand-off agent's decision rides with the memo: an execute asks neither
 // the classifier nor the agent again.
 func TestPreparedRunReusesTheHandoffDecision(t *testing.T) {
