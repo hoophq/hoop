@@ -11,8 +11,9 @@ import (
 type resourceCheck struct {
 	check inspect.ResourceCheck
 	side  SidePath
-	// skip: a statement of the same client chunk reads the previous result.
-	// A check runs before every statement of the chunk.
+	// skip: another statement of the same client chunk stops the check
+	// (inspect.ChunkStopper). A check runs before every statement of the
+	// chunk.
 	skip bool
 }
 

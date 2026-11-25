@@ -1441,8 +1441,8 @@ refuses to serve a document that carries it to one.
 **`resource_check: true` gives the model the database's own estimates.** On
 a postgres, mysql or mssql lane, before a select, insert, update or delete
 that the trigger selects, the sidecar reads the size and indexes of each
-table the statement names, on the client's own connection. On postgres and
-mysql it also reads the `EXPLAIN` plan (never `ANALYZE`). The prompt then
+table the statement names, on the client's own connection. On postgres, and
+on mysql for a select, it also reads the `EXPLAIN` plan (never `ANALYZE`). The prompt then
 carries lines such as `Table orders: about 12M rows, 3.1 GB, indexes: ...`
 and the plan, so one SELECT can rate low on a small table and high on a large
 unindexed one.
@@ -1479,10 +1479,12 @@ unindexed one.
 - On mysql, the check runs before a `COM_QUERY` only, when the last OK
   packet shows autocommit on and no open transaction. Sizes come from
   `information_schema.TABLES`, indexes from `information_schema.STATISTICS`.
-  The plan text runs as a prepared statement, so it cannot run a second
-  statement. `lock_wait_timeout` is 1 s during the check and restored after;
-  the catalog read carries `MAX_EXECUTION_TIME` and ignores
-  `sql_select_limit`. MySQL has no cancel, so an upstream that does not
+  During the check `lock_wait_timeout` is 1 s, `transaction_read_only` is on
+  and `max_execution_time` is 400 ms; all three are restored after. The plan
+  is read for a select only, because `EXPLAIN` runs the statement's functions
+  and subqueries; it runs as a prepared statement whose text exists only if
+  both limits hold, so it cannot run a second statement or write. The catalog
+  read ignores `sql_select_limit`. MySQL has no cancel, so an upstream that does not
   answer within 2.5 s has the client connection closed. A temporary table is
   named as such, without a size. The session keeps the check's user
   variables (`@_hoop_chk_*`), set to `NULL`.
@@ -1500,9 +1502,20 @@ unindexed one.
   a temporary table that hides it can change without the sidecar seeing it.
 - A statement that reads the previous result gets no check, and neither do
   the others in the same client write: on mysql `ROW_COUNT()`,
-  `FOUND_ROWS()`, `SHOW WARNINGS`, `SHOW ERRORS` and the other session
-  counters; on mssql `@@ROWCOUNT`, `ROWCOUNT_BIG()`, `@@ERROR`,
-  `@@FETCH_STATUS` and `@@CURSOR_ROWS`.
+  `FOUND_ROWS()`, `@@warning_count`, `@@error_count`, `GET DIAGNOSTICS`,
+  `last_query_cost`, `optimizer_trace`, `profiling`, `session_status`,
+  `status_by_thread`, and `SHOW` with `WARNINGS`, `ERRORS`, `STATUS` or
+  `PROFILE`; on mssql `@@ROWCOUNT`, `ROWCOUNT_BIG()`, `@@ERROR`,
+  `@@FETCH_STATUS` and `@@CURSOR_ROWS`. Words count outside literals, quoted
+  names and comments (inside a mysql `/*!` comment too); a text with an
+  unterminated literal or comment gets no check. A session status counter
+  still counts the check's own statements.
+- Every check of a client write runs before its first statement, so a write
+  that changes what a later name resolves to gets no check: on mysql, a write
+  of more than one statement where one starts with `USE`, `CREATE`, `DROP`,
+  `ALTER`, `RENAME` or `TRUNCATE`; on mssql, a batch with `USE`, `CREATE`,
+  `DROP`, `ALTER` or `TRUNCATE` before a select, insert, update, delete,
+  merge or `EXEC`.
 - A MySQL prepared statement (`COM_STMT_*`) and an MSSQL RPC request get no
   check.
 - The prompt block is capped at 2 KiB. A check needs room in the lane's

@@ -46,4 +46,11 @@ func TestAChunkThatReadsThePreviousResultGetsNoCheck(t *testing.T) {
 	if side.n != 2 {
 		t.Fatalf("%d checks after COM_STMT_CLOSE and a query in one write, want 2", side.n)
 	}
+	server(t, g, myOK(1))
+
+	// The check would read big in the database before the USE.
+	client(t, g, myPacket(0, append([]byte{0x03}, "USE other; SELECT * FROM big WHERE v = 4"...)))
+	if side.n != 2 {
+		t.Fatalf("a chunk that changes the database got a check")
+	}
 }
