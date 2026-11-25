@@ -1140,7 +1140,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		d.Payload = ready
 	}
 	d.Statements = stmts
-	if g.check != nil && dir == inspect.FromClient && slices.ContainsFunc(stmts, g.check.Skips) {
+	if r, ok := g.check.(inspect.PreviousResultReader); ok && dir == inspect.FromClient && slices.ContainsFunc(stmts, r.ReadsPreviousResult) {
 		ctx = context.WithValue(ctx, chunkSkipsKey{}, true)
 	}
 

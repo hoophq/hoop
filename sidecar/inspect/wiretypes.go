@@ -34,14 +34,15 @@ type (
 	HTTPDetail    = codectypes.HTTPDetail
 	SQLAnalysis   = codectypes.SQLAnalysis
 
-	ResourceCheck = codectypes.ResourceCheck
-	CheckResponse = codectypes.CheckResponse
-	InBandCancel  = codectypes.InBandCancel
-	CheckWant     = codectypes.CheckWant
-	CheckResult   = codectypes.CheckResult
-	TableFacts    = codectypes.TableFacts
-	IndexFacts    = codectypes.IndexFacts
-	PlanNode      = codectypes.PlanNode
+	ResourceCheck        = codectypes.ResourceCheck
+	PreviousResultReader = codectypes.PreviousResultReader
+	CheckResponse        = codectypes.CheckResponse
+	InBandCancel         = codectypes.InBandCancel
+	CheckWant            = codectypes.CheckWant
+	CheckResult          = codectypes.CheckResult
+	TableFacts           = codectypes.TableFacts
+	IndexFacts           = codectypes.IndexFacts
+	PlanNode             = codectypes.PlanNode
 )
 
 const (

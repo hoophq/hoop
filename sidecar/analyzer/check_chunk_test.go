@@ -38,4 +38,12 @@ func TestAChunkThatReadsThePreviousResultGetsNoCheck(t *testing.T) {
 	if side.n != 1 {
 		t.Fatalf("a chunk that reads ROW_COUNT() got a check")
 	}
+	server(t, g, myOK(1))
+
+	// COM_STMT_CLOSE has no reply and is never checked, but reads nothing:
+	// the query after it in the same write is checked.
+	client(t, g, append(myPacket(0, []byte{0x19, 7, 0, 0, 0}), myPacket(0, append([]byte{0x03}, "SELECT * FROM big WHERE v = 3"...))...))
+	if side.n != 2 {
+		t.Fatalf("%d checks after COM_STMT_CLOSE and a query in one write, want 2", side.n)
+	}
 }

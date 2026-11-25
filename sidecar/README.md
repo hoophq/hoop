@@ -1481,13 +1481,17 @@ unindexed one.
   `information_schema.TABLES`, indexes from `information_schema.STATISTICS`.
   The plan text runs as a prepared statement, so it cannot run a second
   statement. `lock_wait_timeout` is 1 s during the check and restored after;
-  the catalog read carries `MAX_EXECUTION_TIME`. MySQL has no cancel, so an
-  upstream that does not answer within 2.5 s has the client connection
-  closed. A temporary table is named as such, without a size.
+  the catalog read carries `MAX_EXECUTION_TIME` and ignores
+  `sql_select_limit`. MySQL has no cancel, so an upstream that does not
+  answer within 2.5 s has the client connection closed. A temporary table is
+  named as such, without a size. The session keeps the check's user
+  variables (`@_hoop_chk_*`), set to `NULL`.
 - On mssql, the check is one SQL batch before a SQL batch only: outside a
   transaction (`metadata["mssql.transaction"]` is `0`), with MARS off, on
-  TDS 7.2 or later. Sizes come from `sp_spaceused`, indexes from
-  `sys.indexes`, which needs SQL Server 2017 or later. It reads no plan:
+  TDS 7.2 or later. Sizes come from `sys.partitions` and
+  `sys.allocation_units`, indexes from `sys.indexes`, which needs SQL Server
+  2017 or later. The read runs in `sp_executesql` with `SET ROWCOUNT 0`,
+  which ends with it, and leaves `@@IDENTITY` as it was. It reads no plan:
   `SHOWPLAN` changes the session. It reads nothing while
   `IMPLICIT_TRANSACTIONS` is on. Past 500 ms the sidecar sends an attention
   and drains the reply. A temporary table or synonym is named as such,
