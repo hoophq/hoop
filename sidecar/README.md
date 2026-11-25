@@ -1454,9 +1454,10 @@ small table and high on a large unindexed one.
 - It runs only on an idle connection: no open transaction, nothing in
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
-- Size and indexes are cached 30 s per database, current role and table; a
-  plan per the same scope and a hash of the statement text. A lock or
-  timeout error is not cached. The verdict cache key includes the check.
+- Each lane keeps its own cache. Size and indexes are cached 30 s per
+  database, current role and table; a plan per the same scope and a hash of
+  the statement text. A lock or timeout error is not cached. The verdict
+  cache key includes the check.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no
