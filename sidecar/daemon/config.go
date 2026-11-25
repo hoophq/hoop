@@ -432,8 +432,11 @@ type ListenerConfig struct {
 	// psql; leaving it unset is the safe default.
 	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it (an mcp listener keeps the 30-minute default). A short value breaks interactive sessions."`
 
-	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited." protocols:"!mcp"`
+	// MaxConns bounds the concurrent connections a lane accepts. Unset (0)
+	// is DefaultMaxConns, -1 is unlimited. A server reads connLimit, never
+	// this field. An ica lane ignores it: ica.max_sessions bounds its
+	// sessions across the process.
+	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"Unset or 0 uses 200 per listener. -1 is unlimited. An ica listener ignores it and uses ica.max_sessions." min:"-1" protocols:"!mcp"`
 
 	// Guardrails overrides the top-level default for this listener.
 	//

@@ -421,8 +421,8 @@ func buildGRPCServer(
 	if lc.IdleTimeoutSec > 0 {
 		opts["idle_timeout_sec"] = strconv.Itoa(lc.IdleTimeoutSec)
 	}
-	if lc.MaxConns > 0 {
-		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
+	if n := lc.connLimit(); n > 0 {
+		opts["max_conns"] = strconv.Itoa(n)
 	}
 	// Payload settings need a schema, so a discovering lane's stand-in
 	// server leaves them out until one loads.

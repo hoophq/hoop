@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -175,6 +176,7 @@ type schemaField struct {
 	Enum            []string      `json:"enum,omitempty"`
 	Open            bool          `json:"open,omitempty"`
 	Default         string        `json:"default,omitempty"`
+	Min             *int          `json:"min,omitempty"` // an integer's lowest value; absent is 0
 	Protocols       []string      `json:"protocols,omitempty"`
 	ExceptProtocols []string      `json:"except_protocols,omitempty"`
 	Fields          []schemaField `json:"fields,omitempty"`
@@ -266,6 +268,13 @@ func schemaFieldFor(f jsonField, path string, flags, protocols []string) (schema
 		sf.Type = "boolean"
 	case t.Kind() >= reflect.Int && t.Kind() <= reflect.Uint64:
 		sf.Type = "integer"
+		if raw := f.tag.Get("min"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil {
+				return sf, fmt.Errorf("%s: min %q is not an integer", path, raw)
+			}
+			sf.Min = &n
+		}
 	case t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.String:
 		sf.Type = "list"
 	case t.Kind() == reflect.Map && t.Key().Kind() == reflect.String && t.Elem().Kind() == reflect.String:
@@ -279,6 +288,9 @@ func schemaFieldFor(f jsonField, path string, flags, protocols []string) (schema
 		sf.Fields = children
 	default:
 		return sf, fmt.Errorf(`%s: type %s has no schema type; extend ListenerSchema or tag it ui:"-"`, path, f.typ)
+	}
+	if sf.Min == nil && f.tag.Get("min") != "" {
+		return sf, fmt.Errorf("%s: min applies to an integer field only", path)
 	}
 	return sf, nil
 }

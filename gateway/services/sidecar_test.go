@@ -205,6 +205,31 @@ func TestParseSidecarConfigurationPatchChecksListenerNamesOnlyWhenSent(t *testin
 	}
 }
 
+// The plane refuses a max_conns below -1 on save. -1 (unlimited), unset
+// (the default) and a positive value are accepted.
+func TestCheckSidecarConfigurationRefusesMaxConnsBelowMinusOne(t *testing.T) {
+	doc := func(maxConns string) string {
+		return `{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"` + maxConns + `}]}`
+	}
+	for _, ok := range []string{``, `,"max_conns":-1`, `,"max_conns":400`} {
+		cfg, err := ParseSidecarConfiguration(json.RawMessage(doc(ok)))
+		if err != nil {
+			t.Fatalf("%q: %v", ok, err)
+		}
+		if err := CheckSidecarConfiguration(cfg); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+	cfg, err := ParseSidecarConfiguration(json.RawMessage(doc(`,"max_conns":-2`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invalid ErrSidecarConfigInvalid
+	if err := CheckSidecarConfiguration(cfg); !errors.As(err, &invalid) || !strings.Contains(err.Error(), "pg: max_conns -2 is below -1") {
+		t.Fatalf("max_conns -2: %v, want ErrSidecarConfigInvalid naming the lane", err)
+	}
+}
+
 // TestCheckSidecarConfigurationLimits pins the gateway half of the free-tier
 // caps. The numbers themselves belong to sidecar/daemon/limits.go; what this
 // asserts is that the gateway asks the same question the sidecar asks at boot,

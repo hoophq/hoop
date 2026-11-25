@@ -1563,6 +1563,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if isICA(lc) {
 			ln.notes = append(ln.notes, icaLaneNotes(lc)...)
 		}
+		if n := maxConnsNote(lc); n != "" {
+			ln.notes = append(ln.notes, n)
+		}
 		// Said, not silently skipped: libhoop builds this lane's upstream
 		// pool from file paths, so the trust bundle cannot reach it, and an
 		// operator who added it for this upstream would otherwise learn
@@ -1795,7 +1798,7 @@ func buildServer(
 		Metrics:     ln.metrics,
 		Telemetry:   ln.telemetry,
 		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:    lc.MaxConns,
+		MaxConns:    lc.connLimit(),
 		Logger:      log.With("listener", ln.name),
 	})
 }

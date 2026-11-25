@@ -1065,6 +1065,20 @@ connection to the backend (see [Upstream TLS](#upstream-tls)),
 sessions, since psql idles between keystrokes), and `max_conns` bounds
 concurrency.
 
+`max_conns` is the number of connections a lane holds open at once. Unset or
+0 uses 200 per listener; -1 is unlimited. A relay lane closes a connection
+past it at accept and logs `connection refused, at capacity`; a grpc,
+spanner or ssh lane leaves it in the kernel's accept queue until a slot
+frees. An ica lane ignores it: `ica.max_sessions` (default 32) bounds ICA
+sessions across the process, and an mcp lane refuses a positive value.
+Memory follows open sessions (~0.25 MiB each once it ran a statement), so
+without a limit an overload grows memory until the OOM kill, and the
+restart reconnects every client at once. Older sidecars read unset as
+unlimited: after the upgrade every relay, grpc, spanner and ssh listener
+without `max_conns` takes 200, so set it on a lane that needs more before
+you upgrade. The control plane refuses a value below -1; a sidecar reads one
+as -1 and warns.
+
 `identity_header` names the request header an authenticating proxy in front
 sets from a verified credential, and is valid on `http`, `grpc` and `spanner`
 lanes only. An http lane reads it on EVERY request, because Envoy pools

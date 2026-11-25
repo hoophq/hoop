@@ -1024,6 +1024,12 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, fromPlane bool) relo
 				"listen", rl.addr().String(), "upstream", ln.cfg.Upstream,
 				"enforcing", ln.policy != nil && !ln.observing, "rules", len(ln.rules),
 				"masking", ln.masker != nil)
+			// Startup logs it with the lane's notes. A change to max_conns
+			// on a running lane is restart-bound (diffTopology), so an added
+			// lane is the only reload that brings one.
+			if n := maxConnsNote(ln.cfg); n != "" {
+				log.Warn(n, "listener", ln.name)
+			}
 			continue
 		}
 		if !detChanged && !ownerMoved && bytes.Equal(doc, r.laneDocs[ln.name]) {

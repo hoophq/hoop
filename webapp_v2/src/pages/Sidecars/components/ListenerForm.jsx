@@ -184,7 +184,7 @@ function Field({ field, path, form, setField, errors, capabilities }) {
         />
       )
     case 'integer':
-      return <NumberInput {...hinted} min={0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
+      return <NumberInput {...hinted} min={field.min ?? 0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
     case 'boolean':
       return <Switch {...common} checked={value === true} onChange={(e) => set(e.currentTarget.checked)} />
     case 'list':

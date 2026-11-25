@@ -247,7 +247,8 @@
       "key": "max_conns",
       "type": "integer",
       "label": "Max connections",
-      "help": "0 is unlimited.",
+      "help": "Unset or 0 uses 200 per listener. -1 is unlimited. An ica listener ignores it and uses ica.max_sessions.",
+      "min": -1,
       "except_protocols": [
         "mcp"
       ]
