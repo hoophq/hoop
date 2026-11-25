@@ -4,12 +4,14 @@ import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { attributesService } from '@/services/attributes'
 import { connectionsService } from '@/services/connections'
 import { dataMaskingService } from '@/services/dataMasking'
+import { federationService } from '@/services/federation'
 import { guardrailsService } from '@/services/guardrails'
 import { protectionProfilesService } from '@/services/protectionProfiles'
 import { resourcesService } from '@/services/resources'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { showSnackbar } from '@/utils/snackbar'
 import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
+import { buildFederationConfig } from '@/pages/Roles/Configure/utils/federation'
 import { buildCreatePayload } from './payload'
 import { createRoleCredentialsStore } from './roleCredentials'
 
@@ -17,6 +19,34 @@ export const STEPS = ['name', 'agent', 'roles', 'success']
 
 function errorText(error) {
   return error?.response?.data?.message || error?.message || ''
+}
+
+// One PUT /connections/:role/federation per federation role, all in parallel.
+// Answers the roles whose PUT failed, with the first error.
+async function saveFederations(roles) {
+  const federated = roles.filter((role) => role.method === CONNECTION_METHODS.IAM_FEDERATION)
+  const results = await Promise.allSettled(
+    federated.map((role) =>
+      federationService.save(role.name, buildFederationConfig(role.credentials.getState().federation.form)),
+    ),
+  )
+  const failed = federated.filter((_, i) => results[i].status === 'rejected').map((role) => role.name)
+  const error = results.find((result) => result.status === 'rejected')?.reason
+  return { failed, error }
+}
+
+// The gateway refuses to delete a resource that still has roles, so every
+// role goes first. Answers what could not be deleted.
+async function rollBack(resourceName, roleNames) {
+  const results = await Promise.allSettled(roleNames.map((name) => connectionsService.deleteConnection(name)))
+  const left = roleNames.filter((_, i) => results[i].status === 'rejected')
+  if (left.length > 0) return [...left, resourceName]
+  try {
+    await resourcesService.remove(resourceName)
+    return []
+  } catch {
+    return [resourceName]
+  }
 }
 
 function roleName(resourceName, suffix) {
@@ -283,6 +313,23 @@ export const useResourceSetupStore = create((set, get) => {
         if (!current()) return
         set({ submitting: false })
         showSnackbar({ level: 'error', text: 'Failed to create resource', description: errorText(error) })
+        return
+      }
+      // The resource exists now: a failed federation save rolls it back, even
+      // after the admin left the wizard, so a retry starts clean.
+      const federation = await saveFederations(roles)
+      if (federation.failed.length > 0) {
+        const left = await rollBack(name, payload.roles.map((role) => role.name))
+        if (!current()) return
+        set({ submitting: false })
+        showSnackbar({
+          level: 'error',
+          text:
+            left.length > 0
+              ? `IAM Federation setup failed for ${federation.failed.join(', ')}. Could not delete ${left.join(', ')}: delete them before you try again.`
+              : `IAM Federation setup failed for ${federation.failed.join(', ')}. The resource was not created.`,
+          description: errorText(federation.error),
+        })
         return
       }
       if (!current()) return

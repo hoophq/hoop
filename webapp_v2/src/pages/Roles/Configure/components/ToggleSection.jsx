@@ -19,7 +19,7 @@ export default function ToggleSection({ title, description, checked, disabled, o
           onChange={e => onChange(e.currentTarget.checked)}
           aria-label={title}
         />
-        <Stack gap="xs" flex={1}>
+        <Stack gap="xsAlt" flex={1}>
           <Title order={5} fw={500}>
             {title}
           </Title>
