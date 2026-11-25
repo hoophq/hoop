@@ -207,8 +207,9 @@ type bootRetrier struct {
 	failures int
 }
 
-// newBootRetrier starts the boot's clock. The caller defers the cancel.
-func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, planeURL, logLevel string) (*bootRetrier, context.CancelFunc) {
+// newBootRetrier starts the boot's clock. The caller defers the cancel. out
+// receives the attempt lines; nil falls back to the policy's, then stderr.
+func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, out io.Writer, planeURL, logLevel string) (*bootRetrier, context.CancelFunc) {
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if retry {
@@ -216,7 +217,9 @@ func newBootRetrier(parent context.Context, policy bootRetryPolicy, retry bool, 
 	} else {
 		ctx, cancel = context.WithCancel(parent)
 	}
-	out := policy.out
+	if out == nil {
+		out = policy.out
+	}
 	if out == nil {
 		out = os.Stderr
 	}
@@ -350,6 +353,10 @@ type controlPlane struct {
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
 	imported bool
+	// importUncertain reports that a retried import ended in 409: an
+	// earlier attempt may have landed, or someone else wrote first. This
+	// process cannot tell which; Run says the plane's config is in use.
+	importUncertain bool
 	// fileListeners counts listeners the config file declared while the
 	// plane already held the running config. They are ignored, never
 	// merged; Run warns so an edit to the file that changed nothing is
@@ -484,8 +491,9 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // plane-side facts (see licenseManaged).
 //
 // retry turns the boot retry on (bootRetry); without it every request runs
-// once, for the checks WithoutBootRetry names.
-func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFlag string, retry bool) (*Config, error) {
+// once, for the checks WithoutBootRetry names. bootLog receives the retry's
+// log lines (WithBootLog); nil is stderr.
+func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFlag string, retry bool, bootLog io.Writer) (*Config, error) {
 	if local != nil && local.LoadFromDisk != nil {
 		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
 			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
@@ -538,7 +546,7 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 	if local != nil {
 		logLevel = local.LogLevel
 	}
-	retrier, cancel := newBootRetrier(ctx, bootRetry, retry, planeURL, logLevel)
+	retrier, cancel := newBootRetrier(ctx, bootRetry, retry, bootLog, planeURL, logLevel)
 	defer cancel()
 	var answer handshakeAnswer
 	err = retrier.do("boot handshake", func(ctx context.Context) (ferr error) {
@@ -566,13 +574,13 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 			revision: answer.revision, sessionEvents: answer.sessionEvents}
 		return local, nil
 	}
-	imported := false
+	outcome := importNotRun
 	// A plane with nothing to serve answers 412; an older gateway answers
 	// 200 with a document naming no listeners. Same fact, same move: seed
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
 	if errors.Is(err, ErrPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
-		answer, imported, err = importLocalConfig(planeURL, cred, local, retrier)
+		answer, outcome, err = importLocalConfig(planeURL, cred, local, retrier)
 		raw, managed = answer.raw, answer.managed
 	}
 	if err != nil {
@@ -612,10 +620,11 @@ func resolveConfigSource(ctx context.Context, local *Config, tokenFlag, planeFla
 	// sidecar that reaches its first heartbeat has, by construction, applied
 	// what it reports here.
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, cred: cred,
-		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
+		lastRaw: raw, imported: outcome == importLanded, importUncertain: outcome == importUncertain,
+		license: planeLicense, licenseManaged: managed,
 		revision: answer.revision, outcome: reloadApplied.String(),
 		sessionEvents: answer.sessionEvents}
-	if !imported && local != nil {
+	if (outcome == importNotRun || outcome == importLost) && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
 	return cfg, nil
@@ -825,11 +834,29 @@ func rawDeclaresListeners(raw []byte) bool {
 	return json.Unmarshal(raw, &probe) == nil && len(probe.Listeners) > 0
 }
 
+// importOutcome is what an import tells about who wrote the plane's config.
+type importOutcome int
+
+const (
+	// importNotRun: the plane held a config, so no import was sent.
+	importNotRun importOutcome = iota
+	// importLanded: the PUT answered 200; the file's document runs.
+	importLanded
+	// importLost: the first PUT answered 409; someone else wrote first.
+	importLost
+	// importUncertain: a retried PUT answered 409. An earlier attempt may
+	// have landed while its answer was lost (a 5xx after the commit, a
+	// timeout, a cut body), or someone else wrote in between. The served
+	// document cannot tell them apart: the plane composes rules into it
+	// and ServedForm drops fields, so it is never the bytes pushed.
+	importUncertain
+)
+
 // importLocalConfig seeds a plane that holds no configuration with the local
 // file's document, then returns what the plane serves afterwards, so the
 // running config still round-trips through the plane even on the boot that
-// taught it. pushed reports whether this process's write landed: a
-// concurrent author wins the race and this boot serves their document.
+// taught it. outcome reports who wrote what the plane serves: this process,
+// a concurrent author who won the race, or, after a retry, either one.
 //
 // The pushed document drops control_plane_url and license. The URL is
 // connection metadata this process already resolved, and the license belongs
@@ -840,41 +867,46 @@ func rawDeclaresListeners(raw []byte) bool {
 //
 // retry runs each request under the boot's retry policy; the heartbeat
 // passes nil and each request runs once.
-func importLocalConfig(planeURL string, cred credential, local *Config, retry *bootRetrier) (answer handshakeAnswer, pushed bool, err error) {
+func importLocalConfig(planeURL string, cred credential, local *Config, retry *bootRetrier) (answer handshakeAnswer, outcome importOutcome, err error) {
 	body, err := localReport(local)
 	if err != nil {
-		return handshakeAnswer{}, false, err
+		return handshakeAnswer{}, importNotRun, err
 	}
 	if body == nil {
-		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
+		return handshakeAnswer{}, importNotRun, planeHasNoConfigError{planeURL: planeURL}
 	}
+	attempts := 0
 	switch err := retry.do("configuration import", func(ctx context.Context) error {
+		attempts++
 		return pushControlPlaneConfig(ctx, planeURL, cred, body)
 	}); {
 	case err == nil:
-		pushed = true
+		outcome = importLanded
+	case errors.Is(err, errPlaneAlreadyConfigured) && attempts > 1:
+		outcome = importUncertain
 	case errors.Is(err, errPlaneAlreadyConfigured):
 		// Someone authored a config between the two requests. Their write
 		// wins; the fetch below serves it and Run warns about the file's
 		// ignored listeners.
+		outcome = importLost
 	default:
-		return handshakeAnswer{}, false, err
+		return handshakeAnswer{}, importNotRun, err
 	}
 	err = retry.do("handshake after the configuration import", func(ctx context.Context) (ferr error) {
 		answer, ferr = fetchControlPlaneConfig(ctx, planeURL, cred, handshakeRequest{Version: Version})
 		return ferr
 	})
 	if err != nil {
-		return handshakeAnswer{}, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
+		return handshakeAnswer{}, importNotRun, fmt.Errorf("the handshake after the configuration import failed: %w", err)
 	}
 	// A plane that accepted the import and still answers without listeners
 	// is broken; naming that beats letting the strict decoder blame a
 	// schema mismatch.
 	if !rawDeclaresListeners(answer.raw) {
-		return handshakeAnswer{}, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
+		return handshakeAnswer{}, importNotRun, fmt.Errorf("the configuration was imported but the control plane at %s "+
 			"still answers without listeners; check the plane's logs", planeURL)
 	}
-	return answer, pushed, nil
+	return answer, outcome, nil
 }
 
 // localReport is the file's document as the plane may see it: the import body

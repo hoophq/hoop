@@ -99,6 +99,7 @@ type setupOptions struct {
 	firstRun        FirstRunObserver
 	noBootRetry     bool
 	ctx             context.Context
+	bootLog         io.Writer
 }
 
 // WithoutBootRetry makes a failed first handshake return at once, whatever
@@ -115,6 +116,14 @@ func WithoutBootRetry() Option {
 // context they cancel, so a stop during the retry stops Setup at once.
 func WithContext(ctx context.Context) Option {
 	return func(o *setupOptions) { o.ctx = ctx }
+}
+
+// WithBootLog sends the boot retry's log lines to w instead of stderr. They
+// are written before Run, so an entry point that turns the daemon's JSON log
+// into another format passes the same converter here; each Write is one
+// JSON line. Nil keeps stderr.
+func WithBootLog(w io.Writer) Option {
+	return func(o *setupOptions) { o.bootLog = w }
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -187,7 +196,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cfg, err := resolveConfigSource(ctx, local, o.token, o.planeURL, !o.noBootRetry)
+	cfg, err := resolveConfigSource(ctx, local, o.token, o.planeURL, !o.noBootRetry, o.bootLog)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1203,6 +1212,15 @@ func Run(cfg *Config, det Plugin) error {
 			log.Info("configuration imported into the control plane",
 				"url", cfg.cp.url,
 				"listeners", len(cfg.Listeners))
+		}
+		if cfg.cp.importUncertain {
+			// A retried import answered 409. Its earlier attempt may have
+			// landed, or someone else wrote first; neither is known, so
+			// neither is claimed.
+			log.Warn("an earlier attempt of the configuration import may have landed; the control plane's configuration is in use",
+				"url", cfg.cp.url,
+				"listeners", len(cfg.Listeners),
+				"hint", "edit the configuration in the control plane; the local file no longer holds it")
 		}
 		if cfg.cp.fileListeners > 0 {
 			log.Warn("the config file's listeners are ignored: the control plane owns the running config",

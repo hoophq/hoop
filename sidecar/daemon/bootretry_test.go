@@ -712,3 +712,92 @@ func mustLoad(t *testing.T, body string) *Config {
 	}
 	return cfg
 }
+
+// ENG-1153 (Qodo): the import PUT is retried, and a write can land while its
+// answer is lost (a 5xx after the commit, a timeout, a cut body). The retry
+// then gets 409, as it does when someone else wrote in between. The served
+// document cannot tell the two apart, so a 409 after a retry is uncertain:
+// neither imported nor the file reported as ignored. A 409 on the first
+// attempt stays someone else's write.
+func TestARetriedImportThatEndsIn409IsUncertain(t *testing.T) {
+	landThen := func(answer func(w http.ResponseWriter)) planeRoute {
+		return func(p *fakePlane, n int, w http.ResponseWriter, r *http.Request) {
+			if n == 1 {
+				storeImport(p, n, httptest.NewRecorder(), r)
+				answer(w)
+				return
+			}
+			storeImport(p, n, w, r)
+		}
+	}
+	otherAuthor := func(firstFails bool) planeRoute {
+		return func(p *fakePlane, n int, w http.ResponseWriter, r *http.Request) {
+			if n == 1 {
+				p.mu.Lock()
+				p.stored = planeConfig
+				p.mu.Unlock()
+				if firstFails {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+			}
+			storeImport(p, n, w, r)
+		}
+	}
+	const (
+		uncertain = iota
+		lost
+	)
+	for _, tc := range []struct {
+		name string
+		put  planeRoute
+		want int
+	}{
+		{"the first write landed and answered 503", landThen(func(w http.ResponseWriter) { w.WriteHeader(http.StatusServiceUnavailable) }), uncertain},
+		{"the first write landed and its body was cut", landThen(func(w http.ResponseWriter) { answerCut(w, http.StatusOK) }), uncertain},
+		{"another author wrote while the first attempt failed", otherAuthor(true), uncertain},
+		{"another author wrote before the first attempt", otherAuthor(false), lost},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fastBootRetry(t, time.Minute)
+			plane := newFakePlane(t, serveStored, tc.put)
+			t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+			t.Setenv(SidecarTokenEnv, "hsc_env")
+
+			cfg, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+			if err != nil {
+				t.Fatalf("SetupWith: %v", err)
+			}
+			if cfg.cp.imported {
+				t.Error("imported: a 409 never proves this process's write landed")
+			}
+			if got := cfg.cp.importUncertain; got != (tc.want == uncertain) {
+				t.Errorf("importUncertain = %v, want %v", got, tc.want == uncertain)
+			}
+			if ignored := cfg.cp.fileListeners > 0; ignored != (tc.want == lost) {
+				t.Errorf("file listeners reported ignored = %v, want %v", ignored, tc.want == lost)
+			}
+		})
+	}
+}
+
+// ENG-1153 (Qodo): WithBootLog takes the boot retry's lines, so an entry
+// point that converts the daemon's log format converts these too. Without
+// it they go to stderr (here the policy's buffer).
+func TestWithBootLogTakesTheRetryLines(t *testing.T) {
+	policyOut := fastBootRetry(t, time.Minute)
+	srv, _ := scriptedPlane(t, http.StatusInternalServerError)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_env")
+
+	var boot bytes.Buffer
+	if _, _, err := SetupWith("", nil, nil, WithBootLog(&boot)); err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if lines := attemptLines(t, &boot); len(lines) != 1 || lines[0]["msg"] != "the control plane is unavailable; retrying the boot handshake" {
+		t.Errorf("boot log = %q, want the one retry line", boot.String())
+	}
+	if policyOut.Len() != 0 {
+		t.Errorf("the retry line also went to the default output: %q", policyOut.String())
+	}
+}

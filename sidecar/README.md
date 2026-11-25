@@ -518,7 +518,10 @@ file, and the import requests share the same deadline. A check does not
 retry: `-validate`, `-grpc-discover` and the CLI's Connect page report a
 plane that is down at once. An embedder asks the same with
 `daemon.WithoutBootRetry()`, and stops a retrying boot by cancelling the
-context it passed with `daemon.WithContext(ctx)`.
+context it passed with `daemon.WithContext(ctx)`. The retry's warnings are
+written before `Run`, as JSON on stderr; `daemon.WithBootLog(w)` sends them
+to another writer. `hoop start sidecar` uses it so that the text format and
+the terminal before the dashboard show them as text, like every other line.
 
 Under Kubernetes, a liveness probe on `admin.listen` fails while the process
 retries, since the admin server binds only after the handshake. Give the

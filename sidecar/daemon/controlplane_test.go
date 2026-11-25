@@ -858,7 +858,7 @@ func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(context.Background(), local, "", "", true)
+	cfg, err := resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}
@@ -945,7 +945,7 @@ func TestADiskModeAnswerWithoutAFileStopsStartup(t *testing.T) {
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
 	t.Setenv(SidecarTokenEnv, "hsc_x")
 
-	_, err := resolveConfigSource(context.Background(), nil, "", "", true)
+	_, err := resolveConfigSource(context.Background(), nil, "", "", true, nil)
 	if err == nil {
 		t.Fatal("a disk-mode answer without a file was accepted")
 	}
@@ -965,7 +965,7 @@ func TestADiskModeAnswerNeedsFileListeners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	_, err = resolveConfigSource(context.Background(), local, "", "", true)
+	_, err = resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err == nil {
 		t.Fatal("a disk-mode answer with a listener-less file was accepted")
 	}
@@ -997,7 +997,7 @@ func TestAConfigFileMayNotWriteLoadFromDisk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadConfigBytes: %v", err)
 			}
-			_, err = resolveConfigSource(context.Background(), local, "", "", true)
+			_, err = resolveConfigSource(context.Background(), local, "", "", true, nil)
 			if err == nil {
 				t.Fatal("a file writing load_from_disk was accepted")
 			}
@@ -1031,7 +1031,7 @@ func TestADiskModeAnswerNeverSeedsThePlane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(context.Background(), local, "", "", true)
+	cfg, err := resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}

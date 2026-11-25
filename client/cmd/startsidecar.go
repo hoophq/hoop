@@ -341,6 +341,7 @@ needs a restart.`,
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
 			daemon.WithEntrypoint(analytics.EntrypointCLI),
 			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+			daemon.WithBootLog(bootLogFor(format, os.Stderr)),
 		}
 		if sidecarValidateFlag {
 			// A check, not a boot: report a plane that is down now.
@@ -954,6 +955,17 @@ func stoppedByPerson(err error) bool {
 		return true
 	}
 	return false
+}
+
+// bootLogFor is where the boot retry writes its lines: they come before
+// sidecartui.Run converts the daemon's output, so the text format and the
+// terminal before the dashboard get them as text here. JSON stays JSON (nil:
+// the daemon's own stderr), for a pipe or a container that parses it.
+func bootLogFor(format sidecartui.Format, stderr io.Writer) io.Writer {
+	if format == sidecartui.FormatJSON {
+		return nil
+	}
+	return sidecartui.TextWriter(stderr)
 }
 
 // useSidecarLogin points the run at the plane, exactly as if the person had
