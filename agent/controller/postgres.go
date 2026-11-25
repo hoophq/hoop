@@ -16,6 +16,10 @@ import (
 // definitions that a catalog query reads from system tables.
 const postgresFastMaskingFlag = "experimental.postgres_fast_masking"
 
+// postgresMaskedTypedNullFlag lets libhoop send a masked cell of a non-text
+// column as NULL, so clients that parse values by type can read it (ENG-1233).
+const postgresMaskedTypedNullFlag = "experimental.postgres_masked_typed_null"
+
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
@@ -88,6 +92,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 	a.setPostgresFastMasking(opts)
+	a.setPostgresMaskedTypedNull(opts)
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with postgres server, err=%v", err)
@@ -108,5 +113,13 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 func (a *Agent) setPostgresFastMasking(opts map[string]string) {
 	if a.flags.IsEnabled(postgresFastMaskingFlag) {
 		opts["postgres_fast_masking"] = "true"
+	}
+}
+
+// setPostgresMaskedTypedNull sets the libhoop option when the flag is on. An
+// absent option keeps the masked text in every column.
+func (a *Agent) setPostgresMaskedTypedNull(opts map[string]string) {
+	if a.flags.IsEnabled(postgresMaskedTypedNullFlag) {
+		opts["postgres_null_masked_typed_cells"] = "true"
 	}
 }

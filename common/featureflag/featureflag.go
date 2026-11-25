@@ -82,6 +82,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.postgres_masked_typed_null": {
+		Name:        "experimental.postgres_masked_typed_null",
+		Description: "On Postgres, show masked values of non-text columns (date, timestamp, uuid, number) as NULL. IDEs such as DBeaver cannot read a masked date and show an error.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
