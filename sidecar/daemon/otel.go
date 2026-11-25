@@ -180,7 +180,7 @@ func (o *otelExporter) heartbeat(err error) {
 
 func (o *otelExporter) handshake(kind string, err error) {
 	if o != nil {
-		o.exp.ControlPlaneHandshake(telem.Handshake{Kind: kind, Outcome: handshakeOutcome(err), Err: err})
+		o.exp.ControlPlaneHandshake(telem.Handshake{Kind: kind, Outcome: handshakeOutcome(err)})
 	}
 }
 

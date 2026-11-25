@@ -3158,10 +3158,12 @@ under the same redaction as the statement), each metadata key as
 written under a sampled span carries its trace and span id.
 
 A failed control plane handshake is a log record too, with events on: body
-`control_plane_handshake`, severity `WARN`, and `hoop.handshake.kind`,
-`hoop.outcome` and `hoop.error`. It is not an audit event and is not
-counted in `events_sent`. The plane cannot report its own outage; its
-sidecars can, from the counter above and this record.
+`control_plane_handshake`, severity `WARN`, and `hoop.handshake.kind` and
+`hoop.outcome`, nothing else. The error text stays in the sidecar's own log:
+it can carry the plane's response body or a redirect location. The record
+is not an audit event and is not counted in `events_sent`. The plane cannot
+report its own outage; its sidecars can, from the counter above and this
+record.
 
 The record goes through the same redaction as the audit file and the plane
 copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:

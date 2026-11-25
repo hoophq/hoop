@@ -257,15 +257,15 @@ const (
 	HandshakeError = "error"
 )
 
-// Handshake is one handshake with the control plane.
+// Handshake is one handshake with the control plane. It carries no error
+// text: a failed handshake's message can hold the plane's response body or
+// a redirect Location, which this process does not control. The sidecar's
+// own log keeps the detail; telemetry gets the fixed outcome.
 type Handshake struct {
 	// Kind is HandshakeBoot or HandshakeHeartbeat.
 	Kind string
 	// Outcome is one of the Handshake* outcomes.
 	Outcome string
-	// Err is the failure, nil for HandshakeOK. Its text goes on the log
-	// record, never on the metric.
-	Err error
 }
 
 // LaneStats is one listener's connection counters, as its server reports
@@ -323,8 +323,9 @@ type Exporter interface {
 	AnalyzerOutcome(AnalyzerOutcome)
 
 	// ControlPlaneHandshake counts one handshake with the control plane.
-	// A failure also goes out as a log record, when events are on: the
-	// plane cannot report its own outage, and its fleet can.
+	// A failure also goes out as a log record, when events are on, with
+	// the outcome and no error text: the plane cannot report its own
+	// outage, and its fleet can.
 	ControlPlaneHandshake(Handshake)
 
 	// ObserveProcess registers the callback the gauges read. Called once.

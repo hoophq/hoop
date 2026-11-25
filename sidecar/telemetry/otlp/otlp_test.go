@@ -3,7 +3,6 @@ package otlp
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,15 +158,16 @@ func TestMCPMessagesCountByToolAndDecision(t *testing.T) {
 	}
 }
 
-// Handshakes count by kind and outcome. A failure is a log record with the
-// error when events are on, and only the count when they are off.
+// Handshakes count by kind and outcome. A failure is a log record when
+// events are on, and only the count when they are off. The record holds the
+// kind and the outcome and nothing else: a failed handshake's message can
+// carry the plane's response body or a redirect Location.
 func TestControlPlaneHandshakesCountByKindAndOutcome(t *testing.T) {
-	down := errors.New("the control plane at http://plane answered 503 Service Unavailable: down")
 	send := func(exp telemetry.Exporter) {
 		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeBoot, Outcome: telemetry.HandshakeOK})
 		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeOK})
-		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError, Err: down})
-		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError, Err: down})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError})
 	}
 
 	rcv := newReceiver(t)
@@ -202,8 +202,9 @@ func TestControlPlaneHandshakesCountByKindAndOutcome(t *testing.T) {
 		t.Errorf("severity = %v, want WARN", recs[0].SeverityNumber)
 	}
 	attrs := logAttrs(recs[0])
-	if attrs["hoop.handshake.kind"] != "heartbeat" || attrs["hoop.outcome"] != "error" || attrs["hoop.error"] != down.Error() {
-		t.Errorf("attributes = %v", attrs)
+	if want := map[string]string{"hoop.handshake.kind": "heartbeat", "hoop.outcome": "error"}; len(attrs) != len(want) ||
+		attrs["hoop.handshake.kind"] != "heartbeat" || attrs["hoop.outcome"] != "error" {
+		t.Errorf("attributes = %v, want exactly %v", attrs, want)
 	}
 	if s := exp.Stats(); s.EventsSent != 0 {
 		t.Errorf("EventsSent = %d: a handshake record is not an audit event", s.EventsSent)

@@ -20,6 +20,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -95,6 +97,9 @@ func Start(cfg *appconfig.OTLPExport, version string, db *sql.DB) error {
 		return nil
 	}
 	otel.SetErrorHandler(newRateLimitedHandler(30 * time.Second))
+	// The SDK's internal logger prints whole URLs (a URL it cannot parse,
+	// for one) to stderr. Nothing of it reaches the gateway log.
+	otel.SetLogger(sdkLogger)
 	ctx := context.Background()
 	mexp, err := newMetricExporter(ctx, cfg)
 	if err != nil {
@@ -115,8 +120,10 @@ func Start(cfg *appconfig.OTLPExport, version string, db *sql.DB) error {
 		return err
 	}
 	current.Store(e)
-	log.Infof("telemetry enabled, endpoint=%s, protocol=%s, interval=%s, traces=%v",
-		cfg.Host+cfg.Path, cfg.Protocol, cfg.Interval, cfg.Sampler != "")
+	// The host only: an endpoint path can carry a vendor key, the reason
+	// appconfig keeps the endpoint out of its errors.
+	log.Infof("telemetry enabled, host=%s, protocol=%s, interval=%s, traces=%v",
+		cfg.Host, cfg.Protocol, cfg.Interval, cfg.Sampler != "")
 	return nil
 }
 
@@ -212,12 +219,17 @@ func observePool(m metric.Meter, db *sql.DB) error {
 // Shutdown flushes and stops the export, bounded by ctx. The hooks go back
 // to doing nothing first, so a request in flight does not record into a
 // provider that is shutting down. Safe to call when export never started.
+// Its error is the bounded description of describe, never an exporter's
+// text, so a caller may log it.
 func Shutdown(ctx context.Context) error {
 	e := current.Swap(nil)
 	if e == nil {
 		return nil
 	}
-	return e.shutdown(ctx)
+	if err := e.shutdown(ctx); err != nil {
+		return errors.New(describe(err))
+	}
+	return nil
 }
 
 func (e *exporter) shutdown(ctx context.Context) error {
@@ -302,13 +314,28 @@ func clientTLS(cfg *appconfig.OTLPExport) (*tls.Config, error) {
 // the OTEL_* variables again on their own, and apply
 // OTEL_EXPORTER_OTLP_INSECURE after the endpoint's scheme. Every exporter
 // is therefore handed the full URL and an explicit secure or insecure
-// option, so appconfig's decision is the one that holds.
+// option, so appconfig's decision is the one that holds. net/url builds it,
+// so a path that holds a % stays escaped and the SDK can parse it.
 func endpointURL(cfg *appconfig.OTLPExport, signalPath string) string {
-	scheme := "https"
+	u := url.URL{Scheme: "https", Host: cfg.Host, Path: cfg.Path + signalPath}
 	if cfg.Insecure {
-		scheme = "http"
+		u.Scheme = "http"
 	}
-	return scheme + "://" + cfg.Host + signalPath
+	if signalPath == "" {
+		u.Path = ""
+	}
+	return u.String()
+}
+
+// httpClient is the OTLP/HTTP exporters' client: the TLS choice made here,
+// and a recorder that keeps the status of the last answer, so a failed
+// export can name it without its text. The SDK ignores WithTimeout once it
+// is handed a client, so the client carries OTEL_EXPORTER_OTLP_TIMEOUT.
+func httpClient(tlsCfg *tls.Config, timeout time.Duration) (*http.Client, *statusRecorder) {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = tlsCfg
+	rec := &statusRecorder{next: t}
+	return &http.Client{Transport: rec, Timeout: timeout}, rec
 }
 
 func newMetricExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdkmetric.Exporter, error) {
@@ -317,17 +344,23 @@ func newMetricExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdkmetri
 		return nil, err
 	}
 	if cfg.Protocol == appconfig.OTLPProtocolHTTP {
+		client, rec := httpClient(tlsCfg, cfg.Timeout)
 		opts := []otlpmetrichttp.Option{
-			otlpmetrichttp.WithEndpointURL(endpointURL(cfg, cfg.Path+"/v1/metrics")),
+			otlpmetrichttp.WithEndpointURL(endpointURL(cfg, "/v1/metrics")),
 			otlpmetrichttp.WithHeaders(cfg.Headers),
 			otlpmetrichttp.WithTimeout(cfg.Timeout),
+			otlpmetrichttp.WithHTTPClient(client),
 		}
 		if cfg.Insecure {
 			opts = append(opts, otlpmetrichttp.WithInsecure())
 		} else {
 			opts = append(opts, otlpmetrichttp.WithTLSClientConfig(tlsCfg))
 		}
-		return otlpmetrichttp.New(ctx, opts...)
+		exp, err := otlpmetrichttp.New(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return metricExporter{Exporter: exp, rec: rec}, nil
 	}
 	opts := []otlpmetricgrpc.Option{
 		otlpmetricgrpc.WithEndpointURL(endpointURL(cfg, "")),
@@ -339,7 +372,11 @@ func newMetricExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdkmetri
 	} else {
 		opts = append(opts, otlpmetricgrpc.WithTLSCredentials(credentials.NewTLS(tlsCfg)))
 	}
-	return otlpmetricgrpc.New(ctx, opts...)
+	exp, err := otlpmetricgrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return metricExporter{Exporter: exp}, nil
 }
 
 func newTraceExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdktrace.SpanExporter, error) {
@@ -348,17 +385,23 @@ func newTraceExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdktrace.
 		return nil, err
 	}
 	if cfg.Protocol == appconfig.OTLPProtocolHTTP {
+		client, rec := httpClient(tlsCfg, cfg.Timeout)
 		opts := []otlptracehttp.Option{
-			otlptracehttp.WithEndpointURL(endpointURL(cfg, cfg.Path+"/v1/traces")),
+			otlptracehttp.WithEndpointURL(endpointURL(cfg, "/v1/traces")),
 			otlptracehttp.WithHeaders(cfg.Headers),
 			otlptracehttp.WithTimeout(cfg.Timeout),
+			otlptracehttp.WithHTTPClient(client),
 		}
 		if cfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
 		} else {
 			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsCfg))
 		}
-		return otlptracehttp.New(ctx, opts...)
+		exp, err := otlptracehttp.New(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return spanExporter{SpanExporter: exp, rec: rec}, nil
 	}
 	opts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpointURL(endpointURL(cfg, "")),
@@ -370,12 +413,21 @@ func newTraceExporter(ctx context.Context, cfg *appconfig.OTLPExport) (sdktrace.
 	} else {
 		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsCfg)))
 	}
-	return otlptracegrpc.New(ctx, opts...)
+	exp, err := otlptracegrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return spanExporter{SpanExporter: exp}, nil
 }
 
-// rateLimitedHandler is the SDK's error handler. Export failures arrive
-// once per interval per signal while a collector is down; one log line per
-// distinct message per window keeps the gateway's log readable.
+// warnf is where the error handler writes; a test captures it.
+var warnf = log.Warnf
+
+// rateLimitedHandler is the SDK's error handler. It never prints an error's
+// text, which can hold the endpoint URL or a collector's answer: only the
+// bounded description of describe. Export failures arrive once per
+// interval per signal while a collector is down; one log line per distinct
+// description per window keeps the gateway's log readable.
 type rateLimitedHandler struct {
 	window time.Duration
 	mu     sync.Mutex
@@ -390,7 +442,7 @@ func (h *rateLimitedHandler) Handle(err error) {
 	if err == nil {
 		return
 	}
-	msg := err.Error()
+	msg := describe(err)
 	now := time.Now()
 	h.mu.Lock()
 	if t, ok := h.last[msg]; ok && now.Sub(t) < h.window {
@@ -398,15 +450,6 @@ func (h *rateLimitedHandler) Handle(err error) {
 		return
 	}
 	h.last[msg] = now
-	// A message with a changing detail would grow the map one entry per
-	// failure; expired entries go when it gets big.
-	if len(h.last) > 64 {
-		for k, t := range h.last {
-			if now.Sub(t) >= h.window {
-				delete(h.last, k)
-			}
-		}
-	}
 	h.mu.Unlock()
-	log.Warnf("telemetry: export failed: %v", msg)
+	warnf("telemetry: %s; the collector has the details", msg)
 }

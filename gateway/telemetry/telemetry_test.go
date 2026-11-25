@@ -235,9 +235,9 @@ func TestHTTPServerRecordsTheRouteTemplate(t *testing.T) {
 
 // A pool on a driver that needs no server: the gauges read sql.DBStats.
 func TestDBPoolGauges(t *testing.T) {
-	sql.Register("telemetry-fake", fakeDriver{})
-	db, err := sql.Open("telemetry-fake", "")
-	require.NoError(t, err)
+	// OpenDB, not Register: a driver name registers once per process, and
+	// -count reruns the test.
+	db := sql.OpenDB(fakeDriver{})
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(7)
 	held, err := db.Conn(context.Background())
@@ -319,6 +319,10 @@ func TestSampler(t *testing.T) {
 type fakeDriver struct{}
 
 func (fakeDriver) Open(string) (driver.Conn, error) { return fakeConn{}, nil }
+
+// fakeDriver is also its own connector.
+func (d fakeDriver) Connect(context.Context) (driver.Conn, error) { return fakeConn{}, nil }
+func (d fakeDriver) Driver() driver.Driver                        { return d }
 
 type fakeConn struct{}
 

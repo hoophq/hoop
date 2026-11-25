@@ -77,9 +77,6 @@ func TestTheHeartbeatCountsEachHandshakeByOutcome(t *testing.T) {
 				if h.Kind != telem.HandshakeHeartbeat || h.Outcome != tc.want {
 					t.Errorf("handshake %d = %s/%s, want heartbeat/%s", i, h.Kind, h.Outcome, tc.want)
 				}
-				if (h.Err == nil) != (tc.want == telem.HandshakeOK) {
-					t.Errorf("handshake %d: err = %v with outcome %s", i, h.Err, h.Outcome)
-				}
 			}
 		})
 	}

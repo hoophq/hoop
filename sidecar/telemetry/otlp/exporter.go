@@ -383,17 +383,18 @@ func (e *Exporter) AnalyzerOutcome(o telemetry.AnalyzerOutcome) {
 }
 
 // ControlPlaneHandshake counts one handshake. Rare (one a minute) so the
-// attribute set is built per call. A failure is also a WARN log record
-// carrying the error, sent only when events are on: that is the one signal
-// with a log pipeline, and building one for this record alone would send
-// logs to a collector that may take none.
+// attribute set is built per call. A failure is also a WARN log record,
+// sent only when events are on: that is the one signal with a log
+// pipeline, and building one for this record alone would send logs to a
+// collector that may take none. The record carries the kind and the fixed
+// outcome only, never error text (telemetry.Handshake).
 func (e *Exporter) ControlPlaneHandshake(h telemetry.Handshake) {
 	ctx := context.Background()
 	e.handshakes.Add(ctx, 1, metric.WithAttributeSet(attribute.NewSet(
 		attribute.String(attrHandshake, h.Kind),
 		attribute.String(attrOutcome, h.Outcome),
 	)))
-	if h.Err == nil || e.logger == nil {
+	if h.Outcome == telemetry.HandshakeOK || e.logger == nil {
 		return
 	}
 	var r log.Record
@@ -404,7 +405,6 @@ func (e *Exporter) ControlPlaneHandshake(h telemetry.Handshake) {
 	r.AddAttributes(
 		log.String(attrHandshake, h.Kind),
 		log.String(attrOutcome, h.Outcome),
-		log.String(attrError, h.Err.Error()),
 	)
 	e.logger.Emit(ctx, r)
 }
