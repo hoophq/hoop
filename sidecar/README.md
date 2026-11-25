@@ -3163,7 +3163,12 @@ the file keeps the text under the audit block's own setting. The sink never
 fails a write and never blocks a statement: a bounded queue
 (`events.queue_size`, default 4096) drops the oldest record when the
 collector falls behind, and `GET /stats` reports `telemetry.events_sent`
-and `telemetry.events_dropped`. The audit file stays the record of truth.
+and `telemetry.events_dropped`. `events_sent` counts records handed to the
+queue and `events_dropped` those the full queue evicted before export, so
+`events_sent - events_dropped` is "accepted and not evicted here": it
+includes records still queued and records whose export failed or the
+collector refused. Neither counter shows successful delivery. The audit
+file stays the record of truth.
 
 Alerts live in the backend. Three worth having:
 
