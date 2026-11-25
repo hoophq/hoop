@@ -10,6 +10,9 @@
 //   --token <file>  the hoop session token (a file), set before the page loads
 //   --steps <js>    JS awaited after the page loads and before the photo, to
 //                   reach the state (open a modal, a tab); `sleep(ms)` exists
+//   --ready <js>    a JS expression that is true when --steps can run (the
+//                   control it clicks is on the page). Default: the app has
+//                   drawn. Tried every 0.5 s, up to 30 s
 //   --pad <px>      space kept around the element (default 80)
 //   --name <name>   file prefix (default "issue")
 //
@@ -37,7 +40,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 const [base, path, target, fix, outDir] = pos
 if (!outDir) {
-  console.error('usage: node shot.mjs <baseURL> <path> <target> <fix> <outDir> [--token f] [--steps js] [--pad px] [--name n]')
+  console.error('usage: node shot.mjs <baseURL> <path> <target> <fix> <outDir> [--token f] [--steps js] [--ready js] [--pad px] [--name n]')
   process.exit(1)
 }
 const pad = Number(opt.pad ?? 80)
@@ -128,9 +131,13 @@ try {
     for (const end = Date.now() + 30000; Date.now() < end; await sleep(500)) if (await check()) return true
     return false
   }
-  await waitFor(() => js(`document.readyState === 'complete' && !!document.querySelector('#app, #root')?.children.length`))
+  await waitFor(() => js(`document.readyState === 'complete' && !!document.querySelector('#root')?.children.length`))
   if (opt.steps) {
-    await sleep(1000)
+    // The app draws a loader first: wait until what the steps use is there.
+    const ready = opt.ready ?? 'true'
+    if (!(await waitFor(() => js(`(() => { try { return !!(${ready}) } catch { return false } })()`))))
+      throw new Error(`not ready on ${path} after 30 seconds: ${ready}`)
+    await sleep(300)
     await js(`(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); ${opt.steps} })()`)
   }
   if (!(await waitFor(find))) throw new Error(`target not found on ${path} after 30 seconds: ${target}`)

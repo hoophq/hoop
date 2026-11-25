@@ -167,6 +167,7 @@ When the change has a screen or terminal output you can see, look at it:
   replaces `$HOME/.hoop/bin/hoop`.
 
   ```bash
+  SCRATCH=$(mktemp -d)   # owner-only; the later steps use it too
   go build -o "$SCRATCH/hoop" ./client          # about 20 seconds
   HOME="$SCRATCH/home" "$SCRATCH/hoop" context list
   ```
@@ -218,6 +219,7 @@ Each one prints the file it wrote. From the repository root:
 
 ```bash
 DR=.claude/skills/design-review/scripts
+[ -d "${SCRATCH:-}" ] || SCRATCH=$(mktemp -d)   # from step 3, else a new one
 ```
 
 **Terminal.** Save what the command prints, colors and errors included
@@ -237,7 +239,8 @@ with `script -q before.txt "$SCRATCH/hoop" <args>`.
 
 **Web app, running.** `shot.mjs` opens the page, draws a red "BEFORE" box on
 the element, applies the fix in the page (not in the code), and draws a
-green "AFTER" box. `--steps` reaches a state first (open a card, a modal):
+green "AFTER" box. `--steps` reaches a state first (open a card, a modal), and
+`--ready` waits for the control it clicks:
 
 ```bash
 # A test hoop with a seeded admin, and its login in a file:
