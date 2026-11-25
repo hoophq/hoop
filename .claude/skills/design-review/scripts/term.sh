@@ -31,10 +31,16 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 # "broken" in terminal.md). The fix is gray, as success is gray there.
 draw() {
   # Wrap at 80 here: freeze 0.2.2 --wrap panics on colored text that wraps.
-  # freeze forgets the text color at each new line and each reset (\e[0m or
-  # \e[m), so set it again there.
+  # Count visible characters only: an escape code has no width and is never
+  # cut. freeze forgets the text color at each new line and each reset (\e[0m
+  # or \e[m), so set it again there.
   { printf '%s\n\n' "$2"
-    fold -w 80 "$1" | FG="$fg" perl -pe 's/\e\[0?m/$&$ENV{FG}/g; s/^/$ENV{FG}/'
+    perl -CSD -ne 'chomp; my $n = 0; my $o = "";
+      for my $t (split /(\e\[[0-9;?]*[A-Za-z])/) {
+        if ($t =~ /^\e\[/) { $o .= $t; next }
+        for my $c (split //, $t) { if ($n == 80) { $o .= "\n"; $n = 0 } $o .= $c; $n++ }
+      }
+      print "$o\n"' "$1" | FG="$fg" perl -pe 's/\e\[0?m/$&$ENV{FG}/g; s/^/$ENV{FG}/'
   } > "$tmp/in.txt"
   # freeze reads ANSI colors from the text; it waits on an open stdin.
   freeze "$tmp/in.txt" --language ansi --window --border.radius 8 --padding 24,30 --margin 0 \

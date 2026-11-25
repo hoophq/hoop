@@ -122,12 +122,43 @@ def text_checks(text, pattern, out):
             out.append(("WARN", "exclamation mark in user text"))
 
 
+MANTINE_IMPORT = re.compile(r"import\s*{([^}]*)}\s*from\s*['\"]@mantine/core['\"]")
+
+
+def wrapped_imports(names_text, wrapped):
+    names = {n.strip().split(" as ")[0].strip() for n in names_text.split(",")}
+    return sorted(names & wrapped)
+
+
+def multiline_imports(path, lines, wrapped, moved):
+    """A Mantine import that spans added lines. check_web reads one line at a
+    time, so it sees only the one-line form."""
+    out = []
+    if WEB_OWNERS.match(path):
+        return out
+    nums = [n for n, _ in lines]
+    text = "\n".join(t for _, t in lines)
+    starts = [0]
+    for _, t in lines[:-1]:
+        starts.append(starts[-1] + len(t) + 1)
+    for m in MANTINE_IMPORT.finditer(text):
+        if "\n" not in m.group(0):
+            continue
+        hit = wrapped_imports(m.group(1), wrapped)
+        if not hit:
+            continue
+        i = max(k for k, st in enumerate(starts) if st <= m.start())
+        span = [t.strip() for _, t in lines if t.strip() and t.strip() in m.group(0)]
+        level = "MOVED" if span and all(t in moved for t in span) else "FAIL"
+        out.append((nums[i], level, f"{', '.join(hit)} from @mantine/core: import from @/components/ (webapp_v2/CLAUDE.md, Components)"))
+    return out
+
+
 def check_web(path, text, wrapped, sidebar=frozenset()):
     out = []
-    m = re.search(r"import\s*{([^}]*)}\s*from\s*['\"]@mantine/core['\"]", text)
+    m = MANTINE_IMPORT.search(text)
     if m:
-        names = {n.strip().split(" as ")[0] for n in m.group(1).split(",")}
-        hit = sorted(names & wrapped)
+        hit = wrapped_imports(m.group(1), wrapped)
         if hit and not WEB_OWNERS.match(path):
             out.append(("FAIL", f"{', '.join(hit)} from @mantine/core: import from @/components/ (webapp_v2/CLAUDE.md, Components)"))
     if re.search(r"\bstyle=\{\{", text):
@@ -275,10 +306,13 @@ def main():
     sidebar = sidebar_labels(repo_root())
     badges = {}
     go_lines = {}
+    web_lines = {}
     report = []
     for path, num, text in added_lines(diff):
         if CLI.match(path) and not path.endswith("_test.go"):
             go_lines.setdefault(path, []).append((num, text))
+        if WEB.match(path) and ".test." not in path:
+            web_lines.setdefault(path, []).append((num, text))
         # Badges count even on moved lines: the pair can be one old, one new.
         m = BADGE_COLOR.search(text)
         if m and WEB.match(path):
@@ -299,6 +333,8 @@ def main():
         report += [(path, num, "MOVED" if was_moved else level, msg) for level, msg in found]
     for path, items in badges.items():
         report += [(path, num, "WARN", msg) for num, msg in badge_swaps(items)]
+    for path, lines in web_lines.items():
+        report += [(path, num, level, msg) for num, level, msg in multiline_imports(path, lines, wrapped, moved)]
     for path, lines in go_lines.items():
         report += [(path, num, "WARN", msg) for num, msg in missing_examples(lines)]
     for path, num, level, msg in sorted(report, key=lambda r: (r[0], r[1])):

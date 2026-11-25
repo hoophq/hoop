@@ -121,10 +121,19 @@ try {
     await js(`localStorage.setItem('jwt-token', ${JSON.stringify(readFileSync(opt.token, 'utf8').trim())}); true`)
   }
   await send('Page.navigate', { url: base + path })
-  await sleep(4000)
-  if (opt.steps) await js(`(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); ${opt.steps} })()`)
-  const found = await js(`(() => { window.__dr = (${target}); return !!window.__dr })()`)
-  if (!found) throw new Error(`target not found on ${path}: ${target}`)
+  // Login and API calls take a variable time: look for the target again until
+  // it is there or 30 seconds pass. --steps runs once, when the page is ready.
+  const find = () => js(`(() => { try { window.__dr = (${target}) } catch { window.__dr = null } return !!window.__dr })()`)
+  const waitFor = async (check) => {
+    for (const end = Date.now() + 30000; Date.now() < end; await sleep(500)) if (await check()) return true
+    return false
+  }
+  await waitFor(() => js(`document.readyState === 'complete' && !!document.querySelector('#app, #root')?.children.length`))
+  if (opt.steps) {
+    await sleep(1000)
+    await js(`(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); ${opt.steps} })()`)
+  }
+  if (!(await waitFor(find))) throw new Error(`target not found on ${path} after 30 seconds: ${target}`)
   await sleep(300)
   await shot(await box('#E5484D', '✕ BEFORE'), join(outDir, `${name}-before.png`))
   await js(`(async () => { const el = window.__dr; ${fix} })()`)

@@ -142,10 +142,12 @@ first:
 
 ```bash
 git fetch origin pull/<N>/head && git worktree add ../pr-<N> FETCH_HEAD
-cd ../pr-<N>/webapp_v2 && npm ci && npx vitest run test/themeColors.test.js
+(cd ../pr-<N>/webapp_v2 && npm ci && npx vitest run test/themeColors.test.js)
 ```
 
-Remove the folder after (`git worktree remove ../pr-<N>`). `npm ci` takes
+To run the PR's screen there (step 4), also run `npm ci` in
+`../pr-<N>/webapp`: `dev:full` starts both apps. Remove the folder after,
+from the repository root: `git worktree remove ../pr-<N>`. `npm ci` takes
 minutes. If you cannot wait or cannot run it, write "Color test: not run" in
 the report, and read the added lines for a hex, an `rgb()` or a
 `--mantine-color-<name>-<n>` shade instead.
@@ -211,7 +213,12 @@ prop) also gets no image. Save the images in
 | Web app | only the PR's images | `mark.sh` (the spot, no "after") |
 | Web app | an issue that shows only across steps | a GIF with `.claude/skills/evidence/rec.mjs` |
 
-The scripts are in `scripts/`. Each one prints the file it wrote.
+The scripts are in this skill's `scripts/` folder, not the repository's.
+Each one prints the file it wrote. From the repository root:
+
+```bash
+DR=.claude/skills/design-review/scripts
+```
 
 **Terminal.** Save what the command prints, colors and errors included
 (errors go to stderr, so add `2>&1`). Then write the "after" text by hand
@@ -219,13 +226,14 @@ from the fix, with the same data as the "before": the same names and URLs,
 so only the fix changes. `term.sh` wraps lines at 80 columns:
 
 ```bash
-CLICOLOR_FORCE=1 hoop context list > before.txt 2>&1   # or copy the PR's output
-scripts/term.sh before.txt after.txt ~/design-review/<N>/02-table.png v        # dark
-scripts/term.sh before.txt after.txt ~/design-review/<N>/02-table-light.png v light
+# The binary from step 3, built from the PR's code:
+CLICOLOR_FORCE=1 HOME="$SCRATCH/home" "$SCRATCH/hoop" context list > before.txt 2>&1
+$DR/term.sh before.txt after.txt ~/design-review/<N>/02-table.png v        # dark
+$DR/term.sh before.txt after.txt ~/design-review/<N>/02-table-light.png v light
 ```
 
 If `CLICOLOR_FORCE` gives no colors, run the command in a real terminal
-with `script -q before.txt <command>`.
+with `script -q before.txt "$SCRATCH/hoop" <args>`.
 
 **Web app, running.** `shot.mjs` opens the page, draws a red "BEFORE" box on
 the element, applies the fix in the page (not in the code), and draws a
@@ -234,14 +242,15 @@ green "AFTER" box. `--steps` reaches a state first (open a card, a modal):
 ```bash
 # A test hoop with a seeded admin, and its login in a file:
 scripts/dev/run-sandbox.sh start
-(source "${TMPDIR:-/tmp}/hoop-sandbox/env" && printf %s "$HOOP_TOKEN" > /tmp/hoop-dev-token)
+# The token is an admin login: keep it in your scratch folder, owner-only.
+(umask 077 && source "${TMPDIR:-/tmp}/hoop-sandbox/env" && printf %s "$HOOP_TOKEN" > "$SCRATCH/hoop-dev-token")
 # The web UI: `cd webapp_v2 && npm run dev:full` (http://localhost:5173).
 
-node scripts/shot.mjs http://localhost:5173 /sessions \
+node $DR/shot.mjs http://localhost:5173 /sessions \
   "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear Filters')" \
   "el.textContent = 'Clear filters'" ~/design-review/<N> --name 03-clear-filters --pad 160 \
-  --token /tmp/hoop-dev-token
-scripts/pair.sh ~/design-review/<N>/03-clear-filters-{before,after}.png ~/design-review/<N>/03-clear-filters.png
+  --token "$SCRATCH/hoop-dev-token"
+$DR/pair.sh ~/design-review/<N>/03-clear-filters-{before,after}.png ~/design-review/<N>/03-clear-filters.png
 ```
 
 For a PR, run the stack from the PR's code (the `../pr-<N>` folder of step
@@ -253,7 +262,7 @@ image's pixels: crop the area with ffmpeg and look at it, then read the box
 from the crop and add the crop's corner. Mark it:
 
 ```bash
-scripts/mark.sh shot.png <x> <y> <w> <h> ~/design-review/<N>/02-status-dot.png [pad]
+$DR/mark.sh shot.png <x> <y> <w> <h> ~/design-review/<N>/02-status-dot.png [pad]
 ```
 
 Look at every image before you use it: the box must sit on the issue.
