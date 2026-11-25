@@ -552,6 +552,15 @@ reports `refused`. The sidecar page shows `refused`, the version and the
 reason until a document applies; `not_applied` there is the shape of a boot
 crash-loop.
 
+**A resource pattern that matches nothing is refused (ENG-1239).** An older
+sidecar loaded a rule such as `resources: ["/repro.v1.*/Upload"]`, and the
+rule never fired (see [Guardrails and OPA](#guardrails-and-opa)). An upgraded
+sidecar refuses a document that holds one, `rule_library` included: it exits
+at startup and names the rule, and on a heartbeat it keeps its last rules and
+reports `refused`. An upgraded plane refuses such a pattern at the save, but
+a document saved before keeps it. Upgrade the plane, fix each pattern it
+names, then upgrade the sidecars.
+
 **Escape hatch.** `PATCH /api/sidecars/<name>` with
 `{"configuration": {"load_from_disk": true}}` hands the sidecar back to its
 own config file. The plane then serves only that flag and the license, so the
@@ -5649,6 +5658,29 @@ reason in `metadata.parse_error`, so a rule naming `unknown` refuses them.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
+
+**A resource pattern must be able to match.** `*` stands for one whole
+segment, and `**` only as the trailing `/**`. A gRPC resource is
+`/package.Service/Method`, so the service name is one segment. Two forms are
+refused, because a rule holding one would deny nothing it was written for:
+
+- a segment that mixes `*` with other text (`/repro.v1.*/Upload`,
+  `/api/v1*/users`), except `*.` and an extension of one to five letters
+  (`/reports/*.pdf`). That is how the HTTP codec writes a dynamic segment with
+  an extension: `/reports/12345.pdf` arrives as `/reports/*.pdf`;
+- a `**` that does not end the pattern.
+
+The sidecar refuses such a pattern at load, in `-validate` and on a
+heartbeat, and the control plane refuses it at the save, with the message
+`http.sql.fields` gives: `resource "/repro.v1.*/Upload" matches no request
+as written`. The check covers the `resources` of `http_resource` and
+`http_header` rules, the same rules in `rule_library.guardrails`, an analyzer
+`trigger.resources` and its `any` and `exclude` items, and `match_ignore`.
+Write `/repro.v1.Alpha/*` or `/api/v1/**` instead. `.` and `..` segments
+stay legal: a rule also matches the resource before they resolve. Any other
+segment is compared as text, so a rule that named a path segment holding a
+literal `*` beside other text, other than the normalized form, matched only a
+client that sent that star. Such a segment can no longer be named in a rule.
 
 **An `http_header` rule reads the request whose intent is in its headers.**
 kubectl fetches a Secret's table view with

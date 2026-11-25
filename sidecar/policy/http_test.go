@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -117,16 +118,61 @@ func TestHTTPResourceMalformedDoubleStar(t *testing.T) {
 	// pattern ending in "/**/" is not that suffix, and trimming slashes
 	// before looking for it would turn "/**/" into a match for everything.
 	for _, pattern := range []string{"/**/", "/admin/**/"} {
-		rules, err := policy.NewRules([]policy.Rule{
+		for _, res := range []string{"/", "/admin", "/admin/users", "/users/*/ssn"} {
+			if policy.MatchResource(pattern, res) {
+				t.Errorf("%q matched %s; a pattern ending in /**/ is not a trailing wildcard", pattern, res)
+			}
+		}
+		// A rule holding one would load and match nothing, so it is refused.
+		_, err := policy.NewRules([]policy.Rule{
 			policy.Rule{Name: "malformed", Type: policy.MatchHTTPResource}.
 				WithResources(pattern),
 		})
-		if err != nil {
-			t.Fatalf("NewRules(%q): %v", pattern, err)
+		if err == nil || !strings.Contains(err.Error(), "matches no request as written") {
+			t.Errorf("NewRules(%q) = %v, want the pattern refused", pattern, err)
 		}
-		for _, res := range []string{"/", "/admin", "/admin/users", "/users/*/ssn"} {
-			if rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
-				t.Errorf("%q denied %s; a pattern ending in /**/ is not a trailing wildcard", pattern, res)
+	}
+}
+
+// A resource pattern that can never match is refused when the rule is built,
+// on a gRPC lane and on an HTTP lane alike. Loaded, the rule would match
+// nothing and the request it was written to deny would reach the upstream.
+// The message is the one http.sql.fields gives, and names the rule.
+func TestHTTPRuleRefusesAPatternThatMatchesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		lane                inspect.Protocol
+		bad, good, resource string
+	}{
+		{inspect.GRPC, "/repro.v1.*/Upload", "/repro.v1.Alpha/*", "/repro.v1.Alpha/Upload"},
+		{inspect.HTTP, "/api/v1*/users", "/api/v1/**", "/api/v1/users"},
+	} {
+		for _, typ := range []policy.MatchType{policy.MatchHTTPResource, policy.MatchHTTPHeader} {
+			rule := func(pattern string) policy.Rule {
+				r := policy.Rule{Name: "deny-it", Type: typ}.WithResources("/ok/*", pattern)
+				if typ == policy.MatchHTTPHeader {
+					r.Headers = map[string][]string{"x-tenant": nil}
+				}
+				return r
+			}
+
+			_, err := policy.NewRules([]policy.Rule{rule(tc.bad)})
+			want := `deny-it: resource "` + tc.bad + `" matches no request as written: segment `
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s %s: NewRules(%q) = %v, want it to contain %q", tc.lane, typ, tc.bad, err, want)
+			}
+			if err := policy.ValidateRules([]policy.Rule{rule(tc.bad)}, true); err == nil {
+				t.Errorf("%s %s: ValidateRules(%q) accepted it", tc.lane, typ, tc.bad)
+			}
+
+			rules, err := policy.NewRules([]policy.Rule{rule(tc.good)})
+			if err != nil {
+				t.Fatalf("%s %s: NewRules(%q): %v", tc.lane, typ, tc.good, err)
+			}
+			stmt := httpStmt(&inspect.HTTPDetail{Method: "POST", Resource: tc.resource,
+				Headers: map[string]string{"x-tenant": "a"}})
+			stmt.Protocol = tc.lane
+			if !rules.Evaluate(stmt).Denied {
+				t.Errorf("%s %s: %q did not deny %s", tc.lane, typ, tc.good, tc.resource)
 			}
 		}
 	}
@@ -484,5 +530,89 @@ func TestValidResourcePattern(t *testing.T) {
 				t.Errorf("refused %q, yet it matches %q", p, r)
 			}
 		}
+	}
+}
+
+// rulePatterns is the acceptance matrix for a rule's resource pattern. ok
+// patterns either match a reachable resource or, for the query and dot
+// forms, matched before this check and must keep loading.
+var rulePatterns = []struct {
+	pattern string
+	ok      bool
+}{
+	{"/", true},
+	{"/**", true},
+	{"/api/*/users", true},
+	{"/api/v1/**", true},
+	{"/api/v1/namespaces/*/secrets/**", true},
+	{"/repro.v1.Alpha/*", true},
+	{"/reports/*.pdf", true},
+	{"/exports/*.CSV", true},
+	{"/files/my%20report", true},
+	{"/api/users?limit=10", true},
+	{"/admin/../public", true},
+	{"/./admin/**", true},
+	{"/api//users", true},
+	{"api/v1/users", true},
+
+	{"/repro.v1.*/Upload", false},
+	{"/api/v1*/users", false},
+	{"/api/*v1/users", false},
+	{"/api/**/users", false},
+	{"/api/**/", false},
+	{"**", false},
+	{"/files/\\*", false},
+	{"/files/*.tar.gz", false},
+	{"/files/*.pdf2", false},
+	{"/files/*.longer", false},
+	{"/files/**.pdf", false},
+	{"/api/users?id=*", false},
+}
+
+// A rule pattern is refused only when no request can reach it. A refused one
+// matches none of the resources a client could mean by it.
+func TestValidRulePattern(t *testing.T) {
+	for _, tc := range rulePatterns {
+		err := policy.ValidRulePattern(tc.pattern)
+		if (err == nil) != tc.ok {
+			t.Errorf("ValidRulePattern(%q) = %v, want ok=%v", tc.pattern, err, tc.ok)
+		}
+		_, rerr := policy.NewRules([]policy.Rule{
+			policy.Rule{Name: "r", Type: policy.MatchHTTPResource}.WithResources(tc.pattern),
+		})
+		if (rerr == nil) != tc.ok {
+			t.Errorf("NewRules(%q) = %v, want ok=%v", tc.pattern, rerr, tc.ok)
+		}
+		if tc.ok {
+			continue
+		}
+		for _, r := range []string{"/repro.v1.Alpha/Upload", "/api/v1/users", "/api/x/users",
+			"/files/*.pdf", "/files/*.gz", "/files/x", "/api/users"} {
+			if policy.MatchResource(tc.pattern, r) {
+				t.Errorf("refused %q, yet it matches %q", tc.pattern, r)
+			}
+		}
+	}
+}
+
+// The check reads only the resources a rule matches on. http_status never
+// reads resources, and header VALUE patterns are a different language where
+// "*" matches any run of characters.
+func TestRulePatternCheckLeavesOtherWildcardsAlone(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "status", Type: policy.MatchHTTPStatus}.
+			WithStatuses("5xx").WithResources("/api/v1*/users"),
+		policy.Rule{Name: "header", Type: policy.MatchHTTPHeader}.
+			WithHeaders(map[string][]string{"kubectl-command": {"kubectl delete*"}}),
+		policy.Rule{Name: "header-not", Type: policy.MatchHTTPHeader}.WithResources("/secrets/**").
+			WithHeadersNot(map[string][]string{"accept": {"application/json;as=Table;*"}}),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	v := rules.Evaluate(httpStmt(&inspect.HTTPDetail{Method: "DELETE", Resource: "/pods/x",
+		Headers: map[string]string{"kubectl-command": "kubectl delete pod x"}}))
+	if !v.Denied || v.Rule != "header" {
+		t.Errorf("verdict = %+v, want the header value wildcard to deny", v)
 	}
 }

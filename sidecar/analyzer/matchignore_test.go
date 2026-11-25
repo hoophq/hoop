@@ -250,6 +250,8 @@ func TestNewRefusesAnUnscopedMatchIgnore(t *testing.T) {
 	}{
 		{"no resources", analyzer.MatchIgnore{Fields: field}, "names no resources"},
 		{"blank resource", analyzer.MatchIgnore{Resources: []string{" "}, Fields: field}, "resources[0] is empty"},
+		{"a pattern that matches nothing", analyzer.MatchIgnore{Resources: []string{"/a", "/api/v1*/users"}, Fields: field},
+			`resources[1] "/api/v1*/users" matches no request as written`},
 		{"blank method", analyzer.MatchIgnore{Methods: []string{""}, Resources: []string{"/a"}, Fields: field}, "methods[0] is empty"},
 		{"no fields", analyzer.MatchIgnore{Resources: []string{"/a"}}, "names no fields"},
 		{"empty path", analyzer.MatchIgnore{Resources: []string{"/a"}, Fields: [][]string{{}}}, "fields[0] is empty"},
