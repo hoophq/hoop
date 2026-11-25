@@ -76,9 +76,18 @@ config:
 `/readyz` answers 200 once a config is loaded and every lane serves, and its
 JSON body says what is not: `config_loaded`, `lanes_open` with each lane's
 state, `valid_license`, `connected_to_control_plane`. A control plane lost
-after boot shows in the body only; it never makes the pod unready. Read it
-with `kubectl port-forward deploy/<release> 19000 && curl -s
-localhost:19000/readyz`: the kubelet never shows a probe's body.
+after boot shows in the body only; it never makes the pod unready. The
+kubelet never shows a probe's body; read it through a port-forward, which
+stays in the foreground, so run the two commands in two terminals:
+
+```sh
+kubectl port-forward deploy/<deployment> 19000   # terminal 1
+curl -s localhost:19000/readyz                    # terminal 2
+```
+
+`<deployment>` is `<release>-hoopsidecar`, or `<release>` itself when the
+release name already contains `hoopsidecar` (`fullnameOverride` replaces
+both); `kubectl get deploy -l app.kubernetes.io/instance=<release>` prints it.
 
 Under `controlPlane.url`, the admin server binds only after the first
 handshake, so while the sidecar waits for the control plane the probes on

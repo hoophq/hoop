@@ -55,6 +55,10 @@ type runningLane struct {
 	// stop calls it, so what Serve started for the lane ends with the
 	// lane and not with the process.
 	cancel context.CancelFunc
+	// ended is set when the lane's Serve returned, before its error
+	// reaches the reader. /readyz reads it: an engine that keeps its
+	// address after it stopped (libhoop's gRPC and SSH) is not open.
+	ended *atomic.Bool
 }
 
 func (l runningLane) addr() net.Addr {
@@ -303,6 +307,7 @@ func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 func (rt *laneRuntime) launch(rl runningLane) (<-chan error, error) {
 	ctx, cancel := context.WithCancel(rt.ctx)
 	rl.cancel = cancel
+	rl.ended = new(atomic.Bool)
 	rt.set.mu.Lock()
 	var err error
 	switch {
@@ -327,7 +332,9 @@ func (rt *laneRuntime) launch(rl runningLane) (<-chan error, error) {
 	served := make(chan error, 1)
 	go func() {
 		defer rt.wg.Done()
-		served <- rl.serve(ctx)
+		err := rl.serve(ctx)
+		rl.ended.Store(true)
+		served <- err
 	}()
 	return served, nil
 }

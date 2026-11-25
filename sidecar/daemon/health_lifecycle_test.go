@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -577,5 +578,105 @@ func TestStartAllPublishesOnlyAFullStart(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// stoppingEndpoint is a libhoop-shaped endpoint: no Ready, and an address
+// that stays after its Serve returned. Serve returns err once release closes.
+type stoppingEndpoint struct {
+	release chan struct{}
+	err     error
+}
+
+func (e *stoppingEndpoint) Serve(ctx context.Context) error {
+	select {
+	case <-e.release:
+		return e.err
+	case <-ctx.Done():
+		return nil
+	}
+}
+func (e *stoppingEndpoint) Close() error                         { return nil }
+func (e *stoppingEndpoint) Addr() net.Addr                       { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} }
+func (e *stoppingEndpoint) Stats() (active, total, denied int64) { return 0, 0, 0 }
+func (e *stoppingEndpoint) Notes() []string                      { return nil }
+
+// ENG-1116 (Qodo): an engine that keeps its address after its Serve failed
+// (libhoop's gRPC and SSH) reads closed from the moment Serve returned, not
+// open until the shutdown it triggers closes the registry.
+func TestAnEndpointWhoseServeReturnedIsNotOpen(t *testing.T) {
+	ep := &stoppingEndpoint{release: make(chan struct{}), err: errors.New("accept: too many open files")}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	failed := make(chan error, 1)
+	log := slog.New(slog.DiscardHandler)
+	rt := &laneRuntime{log: log, set: &laneSet{}, tokens: &tokenWatch{},
+		ctx: ctx, wg: &wg, fail: func(err error) { failed <- err }}
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	h := newHealthStatus()
+	rt.startAll([]runningLane{{name: "orders", protocol: "grpc", endpoint: ep, stopped: new(atomic.Bool)}},
+		func() { h.serving(rt.set, false, func() license.Status { return license.Status{} }) })
+	if code, r, _ := readyz(t, h); code != http.StatusOK || r.Lanes[0].State != laneOpen {
+		t.Fatalf("serving: /readyz %d %+v, want 200 open", code, r.Lanes)
+	}
+
+	close(ep.release)
+	select {
+	case <-failed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the Serve failure never reached fail")
+	}
+	// The registry is not closed yet: this is the window before shutdown.
+	code, r, _ := readyz(t, h)
+	if code != http.StatusServiceUnavailable || r.Lanes[0].State != laneClosed || r.Reason != readyLanesNotOpen {
+		t.Errorf("after Serve returned: /readyz %d %+v, want 503 lanes_not_open, closed", code, r)
+	}
+}
+
+// failingListener accepts nothing: Accept fails at once with a permanent
+// error, as a socket the kernel took away would.
+type failingListener struct{ net.Listener }
+
+func (failingListener) Accept() (net.Conn, error) { return nil, errors.New("accept broke") }
+func (failingListener) Close() error              { return nil }
+func (failingListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9} }
+
+// ENG-1116 (Qodo): the early health listener's server can stop on its own.
+// It says so in the log, and Run stops the process on it, as it does for a
+// health listener it binds itself: a platform that probes a dead port
+// restarts the pod in a loop otherwise, with no cause in the log.
+func TestAnEarlyHealthListenerThatFailsStopsRun(t *testing.T) {
+	t.Setenv(analytics.EnvVar, "off")
+	t.Setenv(ControlPlaneURLEnv, "")
+	t.Setenv(SidecarTokenEnv, "")
+	t.Setenv(HealthListenEnv, "")
+	var logged bytes.Buffer
+	hl := newHealthListener(failingListener{}, slog.New(slog.NewJSONHandler(&logged, nil)))
+	select {
+	case err := <-hl.failed:
+		// Put it back for Run: this test reads it first only to wait.
+		hl.failed <- err
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed health server reported nothing")
+	}
+	if !strings.Contains(logged.String(), `"msg":"health endpoint failed"`) || !strings.Contains(logged.String(), "accept broke") {
+		t.Errorf("log = %s, want the failure with its cause", logged.String())
+	}
+
+	path := writeConfig(t, `{"listeners":[{"protocol":"postgres","listen":"`+freeTCPAddr(t)+`","upstream":"h:5432"}],`+
+		`"audit":{"file":"`+t.TempDir()+`/audit.jsonl"}}`)
+	cfg, det, err := SetupWith(path, nil, nil, WithHealthListener(hl))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- Run(cfg, det) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "accept broke") {
+			t.Errorf("Run = %v, want the health listener's failure", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run kept running with a dead health listener")
 	}
 }

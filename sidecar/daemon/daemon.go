@@ -1329,7 +1329,18 @@ func Run(cfg *Config, det Plugin) error {
 		}()
 	}
 	// An early listener already serves this status; otherwise bind now.
-	if addr := healthAddr; addr != "" && cfg.healthListener == nil {
+	// Either way a health server that stops on its own stops the process.
+	if hl := cfg.healthListener; hl != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case serr := <-hl.failed:
+				fail(serr) // the listener logged it
+			case <-ctx.Done():
+			}
+		}()
+	} else if addr := healthAddr; addr != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

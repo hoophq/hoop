@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
@@ -234,6 +235,11 @@ func (h *healthStatus) report() readiness {
 		} else {
 			state = endpointState(l.endpoint, stopped)
 		}
+		// A lane whose Serve returned does not serve, whatever its
+		// address says. The process stops on it; until then it is closed.
+		if l.ended != nil && l.ended.Load() {
+			state = laneClosed
+		}
 		// A reload removing this lane took it out of the set after this
 		// snapshot. Its state is read before this check, and stop marks
 		// the lane before it closes it: a lane read as closed here is
@@ -373,6 +379,13 @@ type HealthListener struct {
 	ln   net.Listener
 	addr string
 	once sync.Once
+	// closing is set before Close stops the server, so the error Serve
+	// then returns is not reported as a failure.
+	closing atomic.Bool
+	// failed carries the error of a Serve that stopped on its own. Run
+	// stops the process on it, as it does for a health listener it binds
+	// itself: a platform that probes a dead port restarts the pod anyway.
+	failed chan error
 }
 
 // ListenHealth binds HealthListenEnv and serves the probes until Close. It
@@ -390,11 +403,24 @@ func ListenHealth() (*HealthListener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("health listener (%s): %w", HealthListenEnv, err)
 	}
-	l := &HealthListener{status: newHealthStatus(), ln: ln, addr: ln.Addr().String()}
+	return newHealthListener(ln, jsonLogger(os.Stderr, "")), nil
+}
+
+// newHealthListener serves the probes on ln, logging to log.
+func newHealthListener(ln net.Listener, log *slog.Logger) *HealthListener {
+	l := &HealthListener{status: newHealthStatus(), ln: ln, addr: ln.Addr().String(),
+		failed: make(chan error, 1)}
 	l.srv = newHealthServer(l.status)
-	go func() { _ = l.srv.Serve(ln) }()
-	jsonLogger(os.Stderr, "").Info("health endpoint listening", "listen", l.addr)
-	return l, nil
+	go func() {
+		err := l.srv.Serve(ln)
+		if l.closing.Load() || errors.Is(err, http.ErrServerClosed) {
+			return
+		}
+		log.Error("health endpoint failed", "listen", l.addr, "error", err)
+		l.failed <- fmt.Errorf("health listener (%s): %w", HealthListenEnv, err)
+	}()
+	log.Info("health endpoint listening", "listen", l.addr)
+	return l
 }
 
 // Addr is the bound address.
@@ -407,6 +433,7 @@ func (l *HealthListener) Close() error {
 		return nil
 	}
 	l.once.Do(func() {
+		l.closing.Store(true)
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = l.srv.Shutdown(ctx)
