@@ -1502,8 +1502,9 @@ so `DELETE /orders/1` can rate high on an open order and low on a closed one.
   `Proxy-Authorization`, `Cookie`, the identity or caller-token header,
   headers outside `http.headers` and sensitive query parameters. A value
   shorter than 8 bytes is replaced where it stands alone, not inside a
-  longer word. Then `send` redaction runs on the block. An encoded or binary
-  body is not read.
+  longer word. A header outside `http.headers` that is not a credential
+  stays when shorter than 4 bytes (`DNT: 1`). Then `send` redaction runs on
+  the block. An encoded or binary body is not read.
 - The prompt block keeps 2 KiB. A check needs room in `max_calls` and
   `rate_limit` but spends neither. A failed check classifies as without it
   and logs `resource check failed` or `resource check incomplete`.
