@@ -5103,6 +5103,13 @@ and bounded is only a body masking must rewrite as one unit; see [Masking
 and PII](#masking-and-pii). Before this, every http lane cut a response at
 8 MiB with a 403 (ENG-946).
 
+**An idle upstream that closes is dialed again.** The lane dials the
+upstream when a client connects. When the upstream closes that connection
+before the first request reaches it, for example at its read-header
+timeout while the analyzer judges the request, the lane dials once more and
+sends the request there. A close after a request ends the client's
+connection, as before.
+
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug
 like `/users/alice` survives intact: merging it with `/users/settings` would
