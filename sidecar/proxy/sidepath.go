@@ -113,7 +113,15 @@ func (p *sidePath) Exchange(ctx context.Context, req []byte, resp inspect.CheckR
 	}
 
 	deadline := time.Now().Add(checkDrainTimeout)
-	if len(cancel) > 0 {
+	if c, ok := resp.(inspect.InBandCancel); ok {
+		if b := c.Cancel(); b != nil {
+			if _, err := p.upstream.Write(b); err != nil {
+				p.complete(d, err)
+				p.end(errors.New("the upstream write of a resource check cancel failed"))
+				return err
+			}
+		}
+	} else if len(cancel) > 0 {
 		if err := p.cancel(cancel, deadline); err != nil {
 			p.log.Debug("resource check cancel failed", "error", err)
 		}

@@ -36,6 +36,7 @@ type (
 
 	ResourceCheck = codectypes.ResourceCheck
 	CheckResponse = codectypes.CheckResponse
+	InBandCancel  = codectypes.InBandCancel
 	CheckWant     = codectypes.CheckWant
 	CheckResult   = codectypes.CheckResult
 	TableFacts    = codectypes.TableFacts

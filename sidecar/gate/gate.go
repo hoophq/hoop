@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 
@@ -1139,6 +1140,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		d.Payload = ready
 	}
 	d.Statements = stmts
+	if g.check != nil && dir == inspect.FromClient && slices.ContainsFunc(stmts, g.check.Skips) {
+		ctx = context.WithValue(ctx, chunkSkipsKey{}, true)
+	}
 
 	// Lift every request's credential off its statement before anything
 	// else can read it, including the error path below and a denial that
@@ -1850,7 +1854,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) (policy.Ver
 	}
 	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder(), Conn: &g.conn}
 	if g.check != nil && g.side != nil {
-		ec.ResourceCheck = resourceCheck{check: g.check, side: g.side}
+		ec.ResourceCheck = resourceCheck{check: g.check, side: g.side, skip: chunkSkips(ctx)}
 	}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)

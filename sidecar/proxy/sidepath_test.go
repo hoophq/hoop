@@ -254,3 +254,39 @@ func TestACheckWaitsForNoClientWrite(t *testing.T) {
 		t.Fatal("a refused check reached the upstream")
 	}
 }
+
+// inBand is cancelled on its own connection, and done at "Z" once cancelled.
+type inBand struct {
+	endsAt
+	cancelled bool
+}
+
+func (r *inBand) Cancel() []byte {
+	r.cancelled = true
+	return []byte("attn")
+}
+
+func TestATimedOutCheckIsCancelledInBandAndDrained(t *testing.T) {
+	f := newSideFixture(t)
+	f.pump()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	resp := &inBand{}
+	done := make(chan error, 1)
+	go func() { done <- f.path.Exchange(ctx, []byte("check"), resp, []byte("cancel")) }()
+	if got := readExactly(t, f.server, 9); string(got) != "checkattn" {
+		t.Fatalf("the upstream got %q", got)
+	}
+	if _, err := f.server.Write([]byte("ackZ")); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, policy.ErrCheckCancelled) {
+		t.Fatalf("got %v, want ErrCheckCancelled", err)
+	}
+	select {
+	case c := <-f.accepted:
+		t.Fatalf("a cancel connection was opened: %v", c.RemoteAddr())
+	default:
+	}
+}

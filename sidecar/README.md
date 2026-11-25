@@ -1439,14 +1439,15 @@ A sidecar older than 1.198.0 cannot decode `rate_limit`, so the control plane
 refuses to serve a document that carries it to one.
 
 **`resource_check: true` gives the model the database's own estimates.** On
-a postgres lane, before a select, insert, update or delete that the trigger
-selects, the sidecar reads the size and indexes of each table the statement
-names and its `EXPLAIN` plan (never `ANALYZE`), on the client's own
-connection. The prompt then carries lines such as `Table orders: about 12M
-rows, 3.1 GB, indexes: ...` and the plan, so one SELECT can rate low on a
-small table and high on a large unindexed one.
+a postgres, mysql or mssql lane, before a select, insert, update or delete
+that the trigger selects, the sidecar reads the size and indexes of each
+table the statement names, on the client's own connection. On postgres and
+mysql it also reads the `EXPLAIN` plan (never `ANALYZE`). The prompt then
+carries lines such as `Table orders: about 12M rows, 3.1 GB, indexes: ...`
+and the plan, so one SELECT can rate low on a small table and high on a large
+unindexed one.
 
-- The check is one write, read-only and local to its own transaction:
+- On postgres, the check is one write, read-only and local to its own transaction:
   `transaction_read_only`, `lock_timeout` and `statement_timeout` bound it to
   500 ms. Past that the sidecar sends a CancelRequest on a new connection; an
   upstream that does not finish within 2 s more has the client connection
@@ -1475,12 +1476,37 @@ small table and high on a large unindexed one.
 - A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, with the parameter
   types the client sent, on PostgreSQL 12 or later.
+- On mysql, the check runs before a `COM_QUERY` only, when the last OK
+  packet shows autocommit on and no open transaction. Sizes come from
+  `information_schema.TABLES`, indexes from `information_schema.STATISTICS`.
+  The plan text runs as a prepared statement, so it cannot run a second
+  statement. `lock_wait_timeout` is 1 s during the check and restored after;
+  the catalog read carries `MAX_EXECUTION_TIME`. MySQL has no cancel, so an
+  upstream that does not answer within 2.5 s has the client connection
+  closed. A temporary table is named as such, without a size.
+- On mssql, the check is one SQL batch before a SQL batch only: outside a
+  transaction (`metadata["mssql.transaction"]` is `0`), with MARS off, on
+  TDS 7.2 or later. Sizes come from `sp_spaceused`, indexes from
+  `sys.indexes`, which needs SQL Server 2017 or later. It reads no plan:
+  `SHOWPLAN` changes the session. It reads nothing while
+  `IMPLICIT_TRANSACTIONS` is on. Past 500 ms the sidecar sends an attention
+  and drains the reply. A temporary table or synonym is named as such,
+  without a size.
+- On mysql and mssql nothing is cached: the database a name resolves in and
+  a temporary table that hides it can change without the sidecar seeing it.
+- A statement that reads the previous result gets no check, and neither do
+  the others in the same client write: on mysql `ROW_COUNT()`,
+  `FOUND_ROWS()`, `SHOW WARNINGS`, `SHOW ERRORS` and the other session
+  counters; on mssql `@@ROWCOUNT`, `ROWCOUNT_BIG()`, `@@ERROR`,
+  `@@FETCH_STATUS` and `@@CURSOR_ROWS`.
+- A MySQL prepared statement (`COM_STMT_*`) and an MSSQL RPC request get no
+  check.
 - The prompt block is capped at 2 KiB. A check needs room in the lane's
   `max_calls` and `rate_limit` but spends neither.
 - A failed or partial check classifies as without it and logs `resource
   check failed`, `resource check incomplete` or `resource check cancelled`
-  with the SQLSTATE. Every
-  statement it sends starts with `/* hoop sidecar resource check */`.
+  with the SQLSTATE or error number. Every statement it sends starts with
+  `/* hoop sidecar resource check */`.
 - Other protocols accept the field and do nothing. A control plane serves it
   only to a sidecar that reports `analyzer_resource_check`.
 

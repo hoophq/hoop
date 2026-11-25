@@ -480,10 +480,23 @@ func TestManyTablesLeaveRoomForThePlan(t *testing.T) {
 func TestAViewHasNoSizeInThePrompt(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
 	ev := checkEvaluator(t, p, nil)
-	chk := &fakeChecker{ready: true, tables: map[string]inspect.TableFacts{"big_v": {Name: "big_v", Found: true, Kind: "view"}}}
+	chk := &fakeChecker{ready: true, tables: map[string]inspect.TableFacts{"big_v": {Name: "big_v", Found: true, Kind: "view"}},
+		plan: []inspect.PlanNode{{Node: "Seq Scan", Relation: "big", Rows: 1000}}}
 	ev.EvaluateWith(sqlStmt("SELECT * FROM big_v", inspect.OpSelect, "big_v"), &policy.EvalContext{ResourceCheck: chk})
 	got := lastContent(p)
 	if !strings.Contains(got, "View big_v: no size of its own; see the plan") || strings.Contains(got, "0 rows") {
+		t.Fatalf("model input:\n%s", got)
+	}
+
+	// MSSQL reads no plan.
+	ev = checkEvaluator(t, p, nil)
+	chk = &fakeChecker{ready: true, tables: map[string]inspect.TableFacts{
+		"v": {Name: "v", Found: true, Kind: "view"}, "#t": {Name: "#t", Found: true, Kind: "temporary table"},
+	}}
+	ev.EvaluateWith(sqlStmt("SELECT * FROM v JOIN #t ON 1 = 1", inspect.OpSelect, "v", "#t"), &policy.EvalContext{ResourceCheck: chk})
+	got = lastContent(p)
+	if !strings.Contains(got, "View v: no size of its own\n") || strings.Contains(got, "see the plan") ||
+		!strings.Contains(got, "Temporary table #t: no size in the catalog") {
 		t.Fatalf("model input:\n%s", got)
 	}
 }

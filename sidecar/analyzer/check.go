@@ -183,12 +183,18 @@ func (e *Evaluator) reportCheck(ev ResourceCheckEvent) {
 	}
 }
 
+var checkDialects = map[inspect.Protocol]lexer.Dialect{
+	inspect.Postgres: lexer.Postgres,
+	inspect.MySQL:    lexer.MySQL,
+	inspect.MSSQL:    lexer.MSSQL,
+}
+
 // checkTables keeps a quoted name's case, which stmt.Tables folds for policy
 // rules: "Orders" and orders are two relations.
 func checkTables(stmt inspect.Statement) []string {
 	in := stmt.Tables
-	if stmt.Protocol == inspect.Postgres {
-		if a := lexer.Analyze(stmt.Text, lexer.Postgres); len(a.Relations) == len(in) {
+	if d, ok := checkDialects[stmt.Protocol]; ok {
+		if a := lexer.Analyze(stmt.Text, d); len(a.Relations) == len(in) {
 			in = make([]string, len(a.Relations))
 			for i, r := range a.Relations {
 				in[i] = r.Name
@@ -232,7 +238,7 @@ func renderCheckBlock(tables []inspect.TableFacts, plan []inspect.PlanNode) stri
 	}
 	var tl, pl []string
 	for _, t := range tables {
-		tl = append(tl, tableLine(t))
+		tl = append(tl, tableLine(t, len(plan) > 0))
 	}
 	if len(plan) > 0 {
 		pl = append(pl, "Plan:")
@@ -281,14 +287,20 @@ func clean(s string) string {
 	}, s)
 }
 
-func tableLine(t inspect.TableFacts) string {
+func tableLine(t inspect.TableFacts, plan bool) string {
 	if !t.Found {
 		return "Table " + clean(t.Name) + ": not found"
 	}
 	label := "Table"
 	switch t.Kind {
 	case "view", "foreign table":
-		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size of its own; see the plan"
+		line := strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size of its own"
+		if plan {
+			line += "; see the plan"
+		}
+		return line
+	case "temporary table", "synonym":
+		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size in the catalog"
 	case "partitioned table", "materialized view":
 		label = strings.ToUpper(t.Kind[:1]) + t.Kind[1:]
 	}
