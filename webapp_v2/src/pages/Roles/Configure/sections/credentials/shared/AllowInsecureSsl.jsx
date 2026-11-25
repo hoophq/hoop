@@ -67,7 +67,7 @@ export default function AllowInsecureSsl({ connection }) {
     return (
       <MaskedRow
         left={
-          <ThemeIcon size="md" radius="xl" variant="light" color="gray">
+          <ThemeIcon size="md" variant="light" color="gray">
             <EyeOff size={14} />
           </ThemeIcon>
         }

@@ -70,7 +70,7 @@
 
        ;; Learn more link
        [callout-link/main {:href (get-in config/docs-url [:setup :apis :api-keys])
-                           :text "Learn more about API Keys"}]]
+                           :text "Read the API Keys docs"}]]
 
       [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5" :items "end"}
        [:> Flex {:gap "2"}

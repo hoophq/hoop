@@ -7,7 +7,7 @@ import StepHeader from './components/StepHeader'
 import StepRow from './components/StepRow'
 import { useResourceSetupStore } from './store'
 
-const BADGES = { new: { label: 'NEW', color: 'green' }, beta: { label: 'BETA', color: 'indigo' } }
+const BADGES = { new: { label: 'NEW', color: 'green' }, beta: { label: 'BETA', color: 'gray' } }
 
 // The CLJS wizard names these by hand: linux-vm has no metadata entry, and the
 // other subtypes differ from their catalog names.
@@ -32,7 +32,7 @@ export default function NameStep() {
       />
 
       <StepRow title="Resource type" description="The type you picked in the resource catalog.">
-        <Paper withBorder p="md" radius="md" h={110} bg="var(--hoop-surface-raised)">
+        <Paper withBorder p="md" h={110} bg="var(--hoop-surface-raised)">
           <Stack justify="space-between" h="100%">
             <Group justify="space-between">
               <Image src={iconFor(setup)} alt={setup.subtype} w={24} h={24} fit="contain" />

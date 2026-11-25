@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Button, Grid, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { useDisclosure } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
@@ -122,8 +123,13 @@ export default function AttributesForm() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="center" mb="xxxlAlt">
-        <Title order={1}>{isEdit ? 'Configure Attribute' : 'Create Attribute'}</Title>
+      <Group justify="space-between" align="flex-start" mb="xxxlAlt">
+        <Stack gap="sm">
+          <Title order={1}>{isEdit ? 'Configure Attribute' : 'Create Attribute'}</Title>
+          <Text size="md" c="dimmed">
+            Choose the Resource Roles this attribute applies to.
+          </Text>
+        </Stack>
         <Group gap="sm">
           {isEdit && (
             <Button variant="subtle" color="red" onClick={openDelete} disabled={saving}>
@@ -165,8 +171,8 @@ export default function AttributesForm() {
           description="Select which Roles to apply this configuration."
         >
           <MultiSelect
-            label="Connections"
-            placeholder="Select connections…"
+            label="Resource Roles"
+            placeholder="Select Resource Roles…"
             data={availableConnections}
             value={connectionNames}
             onChange={setConnectionNames}

@@ -1,4 +1,6 @@
-import { Stack, Text, Button, Image, Anchor } from '@mantine/core'
+import { isValidElement } from 'react'
+import { Stack, Text, Image, Anchor } from '@mantine/core'
+import Button from '@/components/Button'
 
 // Two densities. The default owns the whole viewport — it is the only thing on
 // screen when a feature has no data yet. `compact` is for an empty result that
@@ -29,15 +31,15 @@ export default function EmptyState({
           w={320}
           fit="contain"
         />
-        <Stack align="center" gap="xs" maw={400}>
+        <Stack align="center" gap="xs">
           <Text fw={600} c="dimmed" ta="center">{title}</Text>
           {description && (
             <Text size="sm" c="dimmed" ta="center">{description}</Text>
           )}
         </Stack>
-        {action && (
-          <Button onClick={action.onClick}>{action.label}</Button>
-        )}
+        {isValidElement(action)
+          ? action
+          : action && <Button onClick={action.onClick}>{action.label}</Button>}
       </Stack>
 
       {docsUrl && docsLabel && (

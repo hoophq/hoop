@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Group, Loader, Paper, Text } from '@mantine/core'
+import { Box, Group, Loader, Paper, Text } from '@mantine/core'
+import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { sessionsService } from '@/services/sessions'
@@ -320,7 +321,6 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
       ref={containerRef}
       withBorder
       variant="outline"
-      radius="md"
       className={classes.player}
       data-fullscreen={fullscreen || undefined}
     >
@@ -354,7 +354,7 @@ export default function RdpStreamingPlayer({ sessionId, width, height }) {
         onFullscreen={toggleFullscreen}
       />
       {moreError && (
-        <Alert color="red" radius={0}>
+        <Alert color="red">
           <Group justify="space-between" wrap="nowrap">
             <Text size="sm">{`Failed to load more frames: ${moreError}`}</Text>
             <Button size="xs" variant="light" color="red" onClick={retryMore}>

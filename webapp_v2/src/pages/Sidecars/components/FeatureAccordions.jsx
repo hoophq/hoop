@@ -119,7 +119,6 @@ export default function FeatureAccordions({
   config,
   boundRules,
   defaultsOnly = false,
-  flush = false,
   actions,
 }) {
   const features = featureList(listener, config, boundRules, { defaultsOnly })
@@ -131,7 +130,6 @@ export default function FeatureAccordions({
     <Stack gap="sm">
       <Accordion
         variant="filled"
-        radius={flush ? 0 : 'md'}
         multiple
         classNames={{ item: classes.item, control: classes.control, label: classes.label, panel: classes.panel, content: classes.content }}
       >

@@ -90,7 +90,10 @@ import EmptyState from '@/layout/EmptyState'
   description="Try clearing the filter above."
 />
 ```
-`action` is optional — omit when the user has no permission to create.
+`action` is optional — omit when the user has no permission to create. It is
+`{ label, onClick }`, or an element when the create action is a menu (`NewRuleButton`).
+The create button lives in the empty state while the list is empty, and in the
+page header once the list has items: never both.
 `compact` tightens the vertical space (drops the 50vh floor, smaller padding
 and gap; the illustration is unchanged) for an empty result rendered below a
 page header, callout or filter bar rather than as the whole screen.
@@ -404,7 +407,7 @@ import Avatar from '@/components/Avatar'
   <Avatar size={24} color="gray" variant="light">+2</Avatar>
 </Avatar.Group>
 ```
-`radius` defaults to `xl`; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
+`radius` defaults to `xl`; `tile` makes it a square icon tile (`--hoop-icon-radius`), so a page never passes a radius; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
 
 ### `ActionMenu`
 Dropdown action menu for table rows and cards. Uses a `MoreHorizontal` icon trigger.

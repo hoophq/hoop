@@ -58,6 +58,8 @@ const (
 	// StageUpstream is from the request leaving the sidecar to its answer
 	// arriving. Pairing says how exact the measurement is.
 	StageUpstream Stage = "upstream"
+	// StageResourceCheck runs inside StageAnalyzer.
+	StageResourceCheck Stage = "resource_check"
 )
 
 // Engines a StagePolicy record names in hoop.engine.
@@ -95,9 +97,11 @@ const (
 
 // Stage outcomes for every stage but review.
 const (
-	OutcomeAllow = "allow"
-	OutcomeDeny  = "deny"
-	OutcomeError = "error"
+	OutcomeAllow   = "allow"
+	OutcomeDeny    = "deny"
+	OutcomeError   = "error"
+	OutcomeOK      = "ok"
+	OutcomeSkipped = "skipped"
 )
 
 // ExchangeKind names the span that encloses a client's exchange.

@@ -21,7 +21,7 @@ export default function NativeAccessTab({ connection }) {
     <Stack gap="xl" maw={720}>
       <ToggleSection
         title="Native access availability"
-        description="Access from your client of preference using hoop.dev to channel resource roles using our Desktop App or our Command Line Interface."
+        description="Access from your client of preference using hoop.dev to channel Resource Roles using our Desktop App or our Command Line Interface."
         checked={drafts.access_mode_connect === 'enabled'}
         onChange={(checked) =>
           setDraft({ access_mode_connect: checked ? 'enabled' : 'disabled' })

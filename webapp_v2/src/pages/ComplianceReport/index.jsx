@@ -1,26 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  ActionIcon,
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Center,
-  Divider,
-  Grid,
-  Group,
-  Progress,
-  RingProgress,
-  SimpleGrid,
-  Skeleton,
-  Stack,
-  Tabs,
-  Text,
-  ThemeIcon,
-  Title,
-  UnstyledButton,
-} from '@mantine/core'
+import { Card, Center, Divider, Grid, Group, Progress, RingProgress, SimpleGrid, Skeleton, Stack, Text, ThemeIcon, Title, UnstyledButton } from '@mantine/core'
+import Tabs from '@/components/Tabs'
+import ActionIcon from '@/components/ActionIcon'
+import Alert from '@/components/Alert'
+import Badge from '@/components/Badge'
+import Button from '@/components/Button'
+import Tooltip from '@/components/Tooltip'
 import { Carousel } from '@mantine/carousel'
 import { AlertCircle, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
 import { reportsService } from '@/services/reports'
@@ -52,18 +38,18 @@ function ReportSkeleton() {
       </Group>
       <Grid gutter="lgAlt">
         <Grid.Col span={{ base: 12, md: 4 }}>
-          <Skeleton h={280} radius="md" />
+          <Skeleton h={280} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 8 }}>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lgAlt">
             {[...Array(6)].map((_, i) => (
-              <Skeleton key={i} h={128} radius="md" />
+              <Skeleton key={i} h={128} />
             ))}
           </SimpleGrid>
         </Grid.Col>
       </Grid>
-      <Skeleton h={220} radius="md" />
-      <Skeleton h={400} radius="md" />
+      <Skeleton h={220} />
+      <Skeleton h={400} />
     </Stack>
   )
 }
@@ -115,7 +101,7 @@ function CategoryCard({ category }) {
         <Group justify="space-between" align="center" wrap="nowrap">
           <Text size="sm" fw={600}>{category.title}</Text>
           {Icon && (
-            <ThemeIcon variant="light" color={color} size="lg" radius="md">
+            <ThemeIcon variant="light" color={color} size="lg">
               <Icon size={18} />
             </ThemeIcon>
           )}
@@ -127,7 +113,7 @@ function CategoryCard({ category }) {
               /{category.total}
             </Text>
           </Group>
-          <Progress value={pct} color={color} size={4} radius="xl" />
+          <Progress value={pct} color={color} size={4} />
           <Text fz="xs" c="dimmed" lineClamp={1}>
             {CATEGORY_SUBTITLES[category.id] ?? ''}
           </Text>
@@ -170,7 +156,6 @@ function ActionRequiredItem({ item, categoryTitle, onNavigate }) {
             variant="light"
             color={CATEGORY_COLORS[item.category] ?? 'gray'}
             size="sm"
-            radius="sm"
             tt="none"
           >
             {categoryTitle ?? item.category.replaceAll('_', ' ')}
@@ -295,10 +280,10 @@ function ComplianceReport() {
   return (
     <Stack gap="xxlAlt" className={styles.reportRoot}>
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>Compliance Report</Title>
-          <Text size="lg" c="dimmed">
-            A compliance visibility across industry frameworks
+          <Text size="md" c="dimmed">
+            See how your setup meets common compliance frameworks.
           </Text>
         </Stack>
         {!printing && (
@@ -353,26 +338,28 @@ function ComplianceReport() {
           <Group justify="space-between" align="center">
             <Title order={4}>{`Action Required (${actionRequired.length})`}</Title>
             <Group gap="xs">
-              <ActionIcon
-                variant="default"
-                size="xs"
-                radius="sm"
-                aria-label="Previous actions"
-                disabled={!canScroll.prev}
-                onClick={() => embla?.scrollPrev()}
-              >
-                <ChevronLeft size={16} />
-              </ActionIcon>
-              <ActionIcon
-                variant="default"
-                size="xs"
-                radius="sm"
-                aria-label="Next actions"
-                disabled={!canScroll.next}
-                onClick={() => embla?.scrollNext()}
-              >
-                <ChevronRight size={16} />
-              </ActionIcon>
+              <Tooltip label="Previous actions">
+                <ActionIcon
+                  variant="default"
+                  size="xs"
+                  aria-label="Previous actions"
+                  disabled={!canScroll.prev}
+                  onClick={() => embla?.scrollPrev()}
+                >
+                  <ChevronLeft size={16} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Next actions">
+                <ActionIcon
+                  variant="default"
+                  size="xs"
+                  aria-label="Next actions"
+                  disabled={!canScroll.next}
+                  onClick={() => embla?.scrollNext()}
+                >
+                  <ChevronRight size={16} />
+                </ActionIcon>
+              </Tooltip>
             </Group>
           </Group>
           <Carousel

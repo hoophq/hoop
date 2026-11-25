@@ -1,18 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Paper,
-  Title,
-  TextInput,
-  PasswordInput,
-  Button,
-  Text,
-  Anchor,
-  Stack,
-  Alert,
-  Center,
-  Box,
-} from '@mantine/core'
+import { Paper, Title, Text, Anchor, Stack, Center, Box } from '@mantine/core'
+import PasswordInput from '@/components/PasswordInput'
+import TextInput from '@/components/TextInput'
+import Button from '@/components/Button'
+import Alert from '@/components/Alert'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
@@ -87,7 +79,7 @@ function Register() {
   return (
     <Center mih="100vh" bg="var(--hoop-surface-strong)">
       <Box w="90%" maw={400}>
-        <Paper shadow="sm" p={40} radius="lg">
+        <Paper withBorder p={40}>
           <Box
             component="img"
             src="/images/hoop-branding/SVG/hoop-symbol_black.svg"

@@ -351,7 +351,7 @@ export const useNativeAccessStore = create((set, get) => ({
 
       set({ requestFor: null })
       get().storeCredentials(data)
-      showSnackbar({ level: 'success', text: 'Native client access granted successfully!' })
+      showSnackbar({ level: 'success', text: 'Native client access granted.' })
     } catch (error) {
       // We asked for a persistent credential and the gateway refused. The only
       // 400 on that path is "this connection needs a bounded window", and the
@@ -428,7 +428,7 @@ export const useNativeAccessStore = create((set, get) => ({
         return
       }
       get().storeCredentials(data)
-      showSnackbar({ level: 'success', text: 'Credentials obtained successfully!' })
+      showSnackbar({ level: 'success', text: 'Credentials obtained.' })
     } catch (error) {
       const message = errorMessage(error, 'Failed to obtain credentials')
       // 403 rejected, 404 gone, 410 expired — the review will never produce
@@ -575,7 +575,7 @@ export const useNativeAccessStore = create((set, get) => ({
     try {
       await connectionCredentialsService.close(connectionName, credentialId)
       get().clearSession(connectionName)
-      showSnackbar({ level: 'success', text: 'Connection disconnected successfully.' })
+      showSnackbar({ level: 'success', text: 'Resource disconnected.' })
     } catch (error) {
       showSnackbar({ level: 'error', text: errorMessage(error, 'Failed to disconnect') })
     }
@@ -590,7 +590,7 @@ export const useNativeAccessStore = create((set, get) => ({
     try {
       await connectionCredentialsService.revoke(connectionName, credentialId)
       get().clearSession(connectionName)
-      showSnackbar({ level: 'success', text: 'Credential revoked successfully.' })
+      showSnackbar({ level: 'success', text: 'Credential revoked.' })
     } catch (error) {
       showSnackbar({ level: 'error', text: errorMessage(error, 'Failed to revoke credential') })
     }

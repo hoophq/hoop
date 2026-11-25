@@ -400,7 +400,7 @@ export const useResourceSetupStore = create((set, get) => {
         return
       }
       if (!current()) return
-      showSnackbar({ level: 'success', text: 'Resource created successfully!' })
+      showSnackbar({ level: 'success', text: 'Resource created.' })
       if (warned.length > 0) {
         showSnackbar({
           level: 'warning',

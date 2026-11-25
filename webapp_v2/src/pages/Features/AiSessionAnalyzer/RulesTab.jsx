@@ -8,6 +8,7 @@ import ValueFilter from '@/components/ValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
+import NewRuleButton from '@/components/NewRuleButton'
 import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
@@ -15,6 +16,7 @@ import { docsUrl } from '@/utils/docsUrl'
 import { RULE_KIND_ANALYZER, newRuleHint, newRulePath } from '@/utils/ruleTraffic'
 import { useAiSessionAnalyzerStore } from './store'
 import RuleListItem from './components/RuleListItem'
+import List from '@/components/List'
 
 // A sidecar rule reaches listeners, never a resource role, so each traffic has
 // its own filter.
@@ -64,14 +66,22 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
   const goCreate = () =>
     navigate(newRulePath('/features/ai-session-analyzer/rules/new', newTraffics[0]))
 
-  // The header's create menu covers both traffics.
+  // While the list is empty the create menu sits here, not in the header.
   if (list.length === 0 && mixed) {
     return (
       <EmptyState
-        title="No rules in your organization yet"
+        title="No AI Analyzer rules yet"
         description={newRuleHint(newTraffics)}
+        action={
+          <NewRuleButton
+            traffics={newTraffics}
+            onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}
+          >
+            Create new rule
+          </NewRuleButton>
+        }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Analyzer Configuration"
+        docsLabel="AI Analyzer documentation"
       />
     )
   }
@@ -83,8 +93,8 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
       <EmptyState
         title={
           providerConfigured
-            ? 'No rules in your organization yet'
-            : 'No configurations in your organization yet'
+            ? 'No AI Analyzer rules yet'
+            : 'AI Analyzer is not configured yet'
         }
         action={
           providerConfigured
@@ -92,7 +102,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
             : { label: 'Configure AI Analyzer', onClick: onGoConfigure }
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}
-        docsLabel="AI Analyzer Configuration"
+        docsLabel="AI Analyzer documentation"
       />
     )
   }
@@ -112,7 +122,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
           <AsyncValueFilter
             icon={Rotate3d}
             label="Resource Role"
-            placeholder="Search resource roles"
+            placeholder="Search Resource Roles"
             selected={selectedRole}
             onSelect={setSelectedRole}
             onClear={() => setSelectedRole(null)}
@@ -130,18 +140,16 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
       {filteredRules.length === 0 ? (
         <EmptyState
           compact
-          title="No AI Session Analyzer rules match your filters"
+          title="No AI Analyzer rules match your filters"
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredRules.map((rule, idx) => (
+        <List>
+          {filteredRules.map((rule) => (
             <RuleListItem
               key={rule.id ?? rule.name}
               rule={rule}
               traffic={traffic.trafficOf(rule)}
-              isFirst={idx === 0}
-              isLast={idx === filteredRules.length - 1}
               onConfigure={(name) =>
                 navigate(
                   `/features/ai-session-analyzer/rules/edit/${encodeURIComponent(name)}`,
@@ -149,7 +157,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure, newTraffic
               }
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

@@ -120,7 +120,7 @@ function Statement({ sessionId }) {
 
   if (status === 'error') {
     return (
-      <Alert color="red" variant="light" radius="md">
+      <Alert color="red" variant="light">
         Failed to load the statement. The decision below still applies.
       </Alert>
     )
@@ -467,13 +467,13 @@ export default function ReviewModal({
         </Stack>
 
         {review.rejection_reason && (
-          <Alert color="red" variant="light" radius="md" title="Rejection reason">
+          <Alert color="red" variant="light" title="Rejection reason">
             {review.rejection_reason}
           </Alert>
         )}
 
         {review.status === STATUS.EXPIRED && (
-          <Alert color="gray" variant="light" radius="md" title="Approval request expired">
+          <Alert color="gray" variant="light" title="Approval request expired">
             Nothing was released. Running the statement again files a new approval request.
           </Alert>
         )}

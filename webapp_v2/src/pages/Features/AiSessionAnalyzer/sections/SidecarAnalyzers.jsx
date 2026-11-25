@@ -84,7 +84,7 @@ export default function SidecarAnalyzers() {
                 <SidecarStatusBadge sidecar={sidecar} />
               </Table.Td>
               <Table.Td>
-                <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
+                <Badge variant="light" color="gray" fullLabel>
                   {usesConfigFile(sidecar) ? 'Config file' : 'Hoop'}
                 </Badge>
               </Table.Td>

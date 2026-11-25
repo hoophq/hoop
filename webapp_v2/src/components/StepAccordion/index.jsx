@@ -1,4 +1,5 @@
-import { Accordion, Avatar, Box, Flex, Text } from '@mantine/core';
+import { Accordion, Box, Flex, Text } from '@mantine/core';
+import Avatar from '@/components/Avatar';
 import { Check } from 'lucide-react';
 import classes from './StepAccordion.module.css';
 
@@ -6,7 +7,7 @@ function StepTrigger({ icon, title, subtitle, done }) {
   const StepIcon = icon;
   return (
     <Flex align="center" gap="md" className={classes.trigger}>
-      <Avatar size={64} variant="soft" color="gray" radius="var(--hoop-icon-radius)">
+      <Avatar size={64} variant="soft" color="gray" tile>
         <StepIcon size={16} />
       </Avatar>
       <Box className={classes.triggerBody}>
@@ -18,7 +19,7 @@ function StepTrigger({ icon, title, subtitle, done }) {
         </Text>
       </Box>
       {done &&
-        <Avatar size="sm" color="green" variant="light" radius="xl" mr="xs">
+        <Avatar size="sm" color="green" variant="light" mr="xs">
           <Check size={12} />
         </Avatar>}
     </Flex>

@@ -99,7 +99,7 @@ export default function SidecarDetailsPage() {
       ) : (
         selected && (
           <>
-            <Title order={1}>{`${selected.name} details`}</Title>
+            <Title order={1}>{selected.name}</Title>
             <HostedAnalyzerNotice configuration={selected.configuration} />
             <SidecarDetails
               sidecar={selected}

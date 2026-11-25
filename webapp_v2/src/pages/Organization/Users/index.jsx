@@ -214,7 +214,7 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
               Cancel
             </Button>
             <Button type="submit" loading={saving}>
-              {formType === 'create' ? 'Create' : 'Update'}
+              {formType === 'create' ? 'Add user' : 'Save'}
             </Button>
           </Group>
         </Stack>
@@ -228,7 +228,7 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
 export default function Users() {
   const [users, setUsers] = useState([])
   const [total, setTotal] = useState(0)
-  // The user count of the org without filters. The "Invite Users" promo is
+  // The user count of the org without filters. The "Invite users" promo is
   // about the org, not about what the current filter returns.
   const [orgTotal, setOrgTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -370,7 +370,7 @@ export default function Users() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load Users." />
 
   const filtered = Boolean(email || status)
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -379,18 +379,18 @@ export default function Users() {
     <>
       <Stack gap="xl">
         <Group justify="space-between" align="flex-start">
-          <Stack gap="xs">
+          <Stack gap="sm">
             <Title order={1}>Users</Title>
-            <Text c="dimmed" size="lg">
-              {`${total} ${total === 1 ? 'Member' : 'Members'}`}
+            <Text c="dimmed" size="md">
+              Invite people and manage their access.
             </Text>
           </Stack>
           <Group gap="sm">
             <Button variant="outline" color="gray" loading={exporting} onClick={handleExport}>
               Export CSV
             </Button>
-            {orgTotal !== 1 && (
-              <Button onClick={handleAdd}>Add User</Button>
+            {orgTotal > 1 && (
+              <Button onClick={handleAdd}>Add user</Button>
             )}
           </Group>
         </Group>
@@ -426,12 +426,15 @@ export default function Users() {
           ) : (
             <EmptyState
               title="No users yet"
-              description="Add your first user to get started."
-              action={{ label: 'Add User', onClick: handleAdd }}
+              description="Add a user to give them access to Hoop."
+              action={{ label: 'Add user', onClick: handleAdd }}
+              docsUrl={docsUrl.clients.webApp.userManagement}
+              docsLabel="Users documentation"
             />
           )
         ) : (
           <>
+            <Text size="sm" c="dimmed">{`${total} ${total === 1 ? 'member' : 'members'}`}</Text>
             <Table>
               <Table.Thead>
                 <Table.Tr>
@@ -484,15 +487,15 @@ export default function Users() {
             {orgTotal === 1 && (
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
-                  <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite users and setup team-based permissions and approval workflows for secure resource access
+                  <Text size="sm" c="dimmed" ta="center">
+                    Invite users and set up team permissions and approvals for Resource access.
                   </Text>
-                  <Button onClick={handleAdd}>Invite Users</Button>
+                  <Button onClick={handleAdd}>Invite users</Button>
                 </Stack>
                 <Text mt="auto" size="sm" c="dimmed" ta="center">
-                  {'Need more information? Check out '}
+                  {'Need more information? Check out our '}
                   <Anchor href={docsUrl.clients.webApp.userManagement} target="_blank" size="sm">
-                    User Management documentation
+                    Users documentation
                   </Anchor>
                   {'.'}
                 </Text>

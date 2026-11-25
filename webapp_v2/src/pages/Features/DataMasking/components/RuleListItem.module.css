@@ -1,0 +1,18 @@
+/* List draws the outer border and the line between rows. The panel under an
+   expanded row and its Resource Role list draw only their own lines. */
+.panel {
+  border-top: 1px solid var(--hoop-list-border);
+}
+
+.panelLabel {
+  flex-shrink: 0;
+}
+
+.connections {
+  border: 1px solid var(--hoop-list-border);
+  border-radius: var(--hoop-list-radius);
+}
+
+.connection:not(:last-child) {
+  border-bottom: 1px solid var(--hoop-list-border);
+}

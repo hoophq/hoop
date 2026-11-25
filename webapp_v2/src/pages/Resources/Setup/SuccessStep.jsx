@@ -13,9 +13,9 @@ import classes from './SuccessStep.module.css'
 function ActionCard({ icon: Icon, title, badge, description, onClick }) {
   return (
     <UnstyledButton onClick={onClick} className={classes.actionCard}>
-      <Paper withBorder radius="md" p="md" bg="transparent">
+      <Paper withBorder p="md" bg="transparent">
         <Group gap="md" wrap="nowrap">
-          <Avatar size="lg" radius="md" color="gray" variant="light">
+          <Avatar size="lg" tile color="gray" variant="light">
             <Icon size={20} />
           </Avatar>
           <Stack gap={2} flex={1}>
@@ -74,7 +74,7 @@ export default function SuccessStep() {
                 {`Your ${setup.subtype} is now protected by the access gateway.`}
               </Text>
               <Text c="dimmed" ta="center">
-                Every resource role will be authenticated, audited, and secured.
+                Every Resource Role will be authenticated, audited, and secured.
               </Text>
             </Stack>
           </Stack>

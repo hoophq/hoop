@@ -7,21 +7,18 @@
   margin-inline-start: var(--mantine-spacing-xsAlt);
 }
 
-/* A filter trigger that sits next to a Select and must read as one. */
+/* A filter trigger that sits next to a field: the field's corners, fill and
+   border, with a semibold label like every filter bar (Sessions included). */
 .root[data-variant='field'] {
   --button-bg: var(--hoop-surface-raised);
-  --button-hover: var(--hoop-surface-raised);
-  --button-color: var(--mantine-color-placeholder);
-  --button-bd: rem(1px) solid var(--mantine-color-gray-2);
-  font-weight: 400;
-}
-
-.root[data-variant='field'][data-filled] {
+  --button-hover: var(--hoop-surface-muted);
   --button-color: var(--mantine-color-text);
+  --button-bd: rem(1px) solid var(--mantine-color-gray-2);
+  font-weight: 600;
 }
 
 .root[data-variant='field'] .section:where([data-position='left']) {
-  color: var(--mantine-color-dimmed);
+  color: var(--mantine-color-text);
 }
 
 /* Feedback: a button steps up 1px on hover and sinks on press, so every

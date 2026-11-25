@@ -1,4 +1,5 @@
-import { Badge, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Card, Group, Stack, Text, Title } from '@mantine/core'
+import Badge from '@/components/Badge'
 import { STATUS_META } from '../constants'
 import styles from '../ComplianceReport.module.css'
 import { FrameworkScoreCard } from './FrameworkPanel'
@@ -21,7 +22,7 @@ function PrintControlRow({ control }) {
       />
       <Stack gap={2}>
         <Group gap="xs" wrap="nowrap">
-          <Badge variant="outline" color="blue" size="sm" radius="sm" tt="none">
+          <Badge variant="outline" color="blue" size="sm" tt="none">
             {control.id}
           </Badge>
           <Text fw={600}>{control.title}</Text>

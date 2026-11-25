@@ -31,8 +31,11 @@
           [:> Box {:class "min-h-screen bg-gray-1"}
            ;; Header with Save button
            [:> Box {:class "sticky top-app-header z-50 bg-gray-1 p-radix-7"}
-            [:> Flex {:justify "between" :align "center"}
-             [:> Heading {:as "h2" :size "8"} "Authentication"]
+            [:> Flex {:justify "between" :align "start"}
+             [:> Box
+              [:> Heading {:as "h1" :size "8"} "Authentication"]
+              [:> Text {:as "p" :size "3" :mt "2" :class "text-[--gray-11]"}
+               "Choose how people sign in to Hoop and how their accounts are managed."]]
              [:> Button {:size "3"
                          :loading submitting?
                          :disabled submitting?

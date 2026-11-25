@@ -50,14 +50,14 @@ function GatewaySlack({ showListeners = false }) {
     <Stack gap="xl">
       <Stack gap="xs">
         <Title order={1}>Slack</Title>
-        <Text c="dimmed">
-          Enable Slack on your connections and configure your Slack App to receive approval requests.
+        <Text size="md" c="dimmed">
+          Enable Slack on your Resources and configure your Slack App to receive approval requests.
         </Text>
       </Stack>
 
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
-          <Tabs.Tab value="connections">Connections</Tabs.Tab>
+          <Tabs.Tab value="connections">Resources</Tabs.Tab>
           {listeners && <Tabs.Tab value="listeners">Listeners</Tabs.Tab>}
           <Tabs.Tab value="configurations">Configurations</Tabs.Tab>
         </Tabs.List>

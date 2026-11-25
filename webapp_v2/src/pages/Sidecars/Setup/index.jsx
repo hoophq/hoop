@@ -160,7 +160,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
         <Stack gap="md">
           <Stack gap="sm">
             <Title order={1}>{copy.title}</Title>
-            <Text size="lg" c="dimmed">
+            <Text size="md" c="dimmed">
               {copy.subtitle}
             </Text>
           </Stack>
@@ -170,7 +170,10 @@ export default function SidecarSetup({ mode = 'connect' }) {
             ))}
           </Stepper>
         </Stack>
-        <Button size="sm" onClick={action.onClick} disabled={action.disabled} loading={action.loading} flex="0 0 auto">
+        <Button
+          variant={step === 0 && !sidecar ? 'default' : undefined}
+          onClick={action.onClick}
+          disabled={action.disabled} loading={action.loading} flex="0 0 auto">
           {action.label}
         </Button>
       </Group>

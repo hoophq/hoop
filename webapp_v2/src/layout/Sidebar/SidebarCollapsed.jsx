@@ -1,4 +1,5 @@
-import { Stack, Box, Tooltip, ScrollArea, Divider } from '@mantine/core'
+import { Stack, Box, ScrollArea, Divider } from '@mantine/core'
+import Tooltip from '@/components/Tooltip'
 import { ChevronsRight } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { IconBtn } from './IconBtn'

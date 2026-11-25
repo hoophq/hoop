@@ -1,19 +1,22 @@
+/* A profile is a selectable card: square and white like every card, indigo
+   when selected (the same selection as SelectionCard). */
 .card {
   display: block;
   width: 100%;
   height: 100%;
-  background: var(--hoop-surface-raised);
-  border: 1px solid var(--hoop-border-subtle);
-  border-radius: var(--mantine-radius-md);
+  background: var(--hoop-card-bg);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--hoop-card-radius);
 }
 
 .card:hover:not(:disabled) {
-  border-color: var(--hoop-border-strong);
+  background: var(--hoop-surface-muted);
 }
 
-.card[data-selected] {
-  background: color-mix(in srgb, var(--hoop-surface-muted) 30%, transparent);
-  border-color: var(--hoop-border-strong);
+.card[data-selected],
+.card[data-selected]:hover {
+  background: var(--mantine-primary-color-light);
+  border-color: var(--mantine-primary-color-filled);
 }
 
 .card:disabled {

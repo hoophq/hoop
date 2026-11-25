@@ -23,7 +23,7 @@ function ActionMenu({
   position = 'bottom-end',
 }) {
   return (
-    <Menu shadow="md" width={width} position={position} withinPortal>
+    <Menu width={width} position={position} withinPortal>
       <Menu.Target>
         {target ?? (
           <ActionIcon variant="subtle" color="gray" disabled={disabled} aria-label="Actions">

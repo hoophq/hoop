@@ -62,11 +62,11 @@ function AddLicenseModal({ opened, onClose }) {
     try {
       const serverInfo = await authService.getServerInfo()
       setServerInfo(serverInfo)
-      showSnackbar({ level: 'success', text: 'License updated successfully' })
+      showSnackbar({ level: 'success', text: 'License updated.' })
     } catch {
       showSnackbar({
         level: 'info',
-        text: 'License updated successfully',
+        text: 'License updated.',
         description: 'Reload the page to unlock Enterprise features.',
       })
     } finally {

@@ -1,16 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  Box,
-  Checkbox,
-  Grid,
-  Group,
-  SimpleGrid,
-  Stack,
-  Text,
-  ThemeIcon,
-  Title,
-} from '@mantine/core'
+import { Box, Grid, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import Checkbox from '@/components/Checkbox'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft, ClockArrowUp, CodeXml, Info } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -67,28 +58,22 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
   return (
     <Checkbox.Card
       className={classes.typeCard}
-      radius="lg"
       checked={checked}
       disabled={disabled}
       onChange={onToggle}
     >
       <Group gap="md" align="center" wrap="nowrap" p="md">
-        <Checkbox.Indicator
-          size="sm"
-          color="white"
-          iconColor="var(--brand-navy)"
-          disabled={disabled}
-        />
+        <Checkbox.Indicator size="sm" disabled={disabled} />
         {Icon && (
-          <ThemeIcon size="lg" radius="md" variant="default" className={classes.typeCardIcon}>
+          <ThemeIcon size="lg" variant="default">
             <Icon size={20} aria-hidden="true" />
           </ThemeIcon>
         )}
         <Stack gap={2} align="flex-start">
-          <Text size="sm" fw={500} c={checked ? 'white' : undefined}>
+          <Text size="sm" fw={500}>
             {title}
           </Text>
-          <Text size="xs" ta="left" c={checked ? 'var(--hoop-on-navy-dimmed)' : 'dimmed'}>
+          <Text size="xs" ta="left" c="dimmed">
             {description}
           </Text>
         </Stack>
@@ -247,8 +232,8 @@ function RuleFormFields({ rule, isEdit }) {
       showSnackbar({
         level: 'success',
         text: isEdit
-          ? `Access Request rule '${rule.name}' updated successfully!`
-          : `Access Request rule '${name}' created successfully!`,
+          ? `Approval rule "${rule.name}" updated.`
+          : `Approval rule "${name}" created.`,
       })
       navigate(LIST_PATH)
       return
@@ -271,7 +256,7 @@ function RuleFormFields({ rule, isEdit }) {
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: `Access Request rule '${rule.name}' deleted successfully!`,
+        text: `Approval rule "${rule.name}" deleted.`,
       })
       navigate(LIST_PATH)
       return
@@ -324,7 +309,7 @@ function RuleFormFields({ rule, isEdit }) {
           data-scrolled={!headerInView || undefined}
         >
           <Title order={2} lts="-0.00625em">
-            {isEdit ? 'Edit Access Request rule' : 'Create new Access Request rule'}
+            {isEdit ? 'Edit Approval rule' : 'Create Approval rule'}
           </Title>
           <Group gap="sm">
             {isEdit && !managed && (
@@ -352,7 +337,7 @@ function RuleFormFields({ rule, isEdit }) {
             />
           )}
           {managed && (
-            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+            <Alert color="indigo" variant="light" icon={<Info size={16} />}>
               {MANAGED_RULE_MESSAGE}
             </Alert>
           )}
@@ -361,7 +346,7 @@ function RuleFormFields({ rule, isEdit }) {
         <Stack gap="xxlAlt" className={classes.form}>
           <SectionRow
             title="Set new rule information"
-            description="Used to identify your Access Request rule in your resources."
+            description="Used to identify this Approval rule."
           >
             <Stack gap="lg">
               {/* The name is the rule's identifier on the gateway and there is
@@ -377,7 +362,7 @@ function RuleFormFields({ rule, isEdit }) {
               />
               <TextInput
                 label="Description (Optional)"
-                placeholder="Describe how this is used in your resource roles"
+                placeholder="Describe how this is used in your Resource Roles"
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
                 disabled={managed || submitting}
@@ -387,7 +372,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Access request type"
-            description="Define how to request to your resource roles. Select one or both."
+            description="Define how to request to your Resource Roles. Select one or both."
           >
             <Stack gap="md">
               <SimpleGrid cols={2} spacing="md">
@@ -411,7 +396,7 @@ function RuleFormFields({ rule, isEdit }) {
               <Group gap="xs" wrap="nowrap" align="flex-start" c="dimmed">
                 <Info size={16} />
                 <Text size="sm">
-                  Only resource roles that support the selected access types will be
+                  Only Resource Roles that support the selected access types will be
                   available.
                 </Text>
               </Group>
@@ -421,7 +406,7 @@ function RuleFormFields({ rule, isEdit }) {
           {accessTypeIncludes(accessType, ACCESS_TYPE.JIT) && (
             <SectionRow
               title="Access time range"
-              description="Select for how long temporary access will be available for your resource roles. Rule applied for Native Just-in-Time only."
+              description="Select for how long temporary access will be available for your Resource Roles. Rule applied for Native Just-in-Time only."
             >
               <Select
                 label="Time Range"
@@ -437,7 +422,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Resource configuration"
-            description="Select which resource roles to apply this configuration."
+            description="Select which Resource Roles to apply this configuration."
           >
             <ResourceRolesSelect
               connections={connections}
@@ -582,7 +567,7 @@ function RuleFormFields({ rule, isEdit }) {
         {pendingSwitch && (
           <Stack gap="lg">
             <Text size="sm">
-              {`Switching to ${accessTypeLabel(pendingSwitch.target)} will remove ${pendingSwitch.invalid.length} resource roles that don't support this type. This can't be undone.`}
+              {`Switching to ${accessTypeLabel(pendingSwitch.target)} will remove ${pendingSwitch.invalid.length} Resource Roles that don't support this type. This can't be undone.`}
             </Text>
             <Group justify="flex-end" gap="sm">
               <Button

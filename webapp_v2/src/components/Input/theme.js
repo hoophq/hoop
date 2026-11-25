@@ -113,6 +113,9 @@ export const ComboboxTheme = Combobox.extend({
 // to match the section headings they sit under. Four Create forms each carried
 // a private CSS-module copy of this rule before it moved here.
 export const InputWrapperTheme = Input.Wrapper.extend({
+  // A bare Input.Wrapper (around a SegmentedControl, a custom control) gets the
+  // field size too, so its description matches every other field's.
+  defaultProps: SIZE_DEFAULT,
   styles: { label: { fontWeight: 700 } },
   vars: (_theme, props) => {
     const fz = FONT_SIZES[props.size]

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Box, Button, Group, Popover, Stack, Text, Title } from '@mantine/core'
+import { Box, Group, Popover, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck, Link } from 'lucide-react'
 import Code from '@/components/Code'
 import PageLoader from '@/components/PageLoader'
@@ -104,8 +105,8 @@ function UserFilter({ value, onChange, users }) {
     <Popover opened={opened} onChange={setOpened} width={320} position="bottom-start" withinPortal>
       <Popover.Target>
         <Button
-          variant={value ? 'light' : 'outline'}
-          color="gray"
+          variant="field"
+          data-filled={value ? true : undefined}
           leftSection={<User size={14} />}
           onClick={() => { setSearch(''); setOpened((o) => !o) }}
         >
@@ -244,15 +245,15 @@ export default function AuditLogs() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load Audit Logs." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Stack gap="xs">
-          <Title order={1}>Internal Audit Logs</Title>
-          <Text c="dimmed" size="lg">
-            Showing {logs.length} of {pagination.total} logs
+        <Stack gap="sm">
+          <Title order={1}>Audit Logs</Title>
+          <Text c="dimmed" size="md">
+            Review the changes people make in your organization.
           </Text>
         </Stack>
         <Group gap="sm" wrap="wrap">
@@ -274,6 +275,7 @@ export default function AuditLogs() {
         />
       ) : (
         <>
+          <Text size="sm" c="dimmed">{`Showing ${logs.length} of ${pagination.total} logs`}</Text>
           <Table>
             <Table.Thead>
               <Table.Tr>

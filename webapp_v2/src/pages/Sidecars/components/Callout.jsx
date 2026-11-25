@@ -7,7 +7,7 @@ const SURFACES = { neutral: 'muted', info: 'info', warning: 'warning' }
 
 export default function Callout({ icon: Icon, tone = 'neutral', action, children }) {
   return (
-    <Paper variant={SURFACES[tone]} radius="md" p="sm">
+    <Paper variant={SURFACES[tone]} p="sm">
       <Group gap="xs" align="flex-start" wrap="nowrap">
         <Group h={20} align="center" flex="0 0 auto">
           <Icon size={16} aria-hidden="true" />

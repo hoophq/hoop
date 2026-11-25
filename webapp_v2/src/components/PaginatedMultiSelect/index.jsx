@@ -101,7 +101,7 @@ export default function PaginatedMultiSelect({
             className={classes.skeleton}
             height={10}
             width={110}
-            radius="xl"
+            radius="var(--hoop-badge-radius)"
           />
         )}
       </Pill>

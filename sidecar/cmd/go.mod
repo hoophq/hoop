@@ -42,7 +42,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261123200348-d0028d1a7483 // indirect
+	github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3 // indirect
 	github.com/hoophq/mcpproxy v0.2.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect

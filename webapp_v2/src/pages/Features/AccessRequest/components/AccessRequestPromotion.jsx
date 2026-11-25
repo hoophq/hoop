@@ -28,13 +28,13 @@ const FEATURE_ITEMS = [
 export default function AccessRequestPromotion({ onCreate }) {
   return (
     <FeaturePromotion
-      featureName="Access Request"
+      featureName="Approval rules"
       mode="empty-state"
       image="access-request-promotion.png"
       description="Streamline secure access with time-based approvals and automated workflows for your critical resources."
       featureItems={FEATURE_ITEMS}
       onPrimaryClick={onCreate}
-      primaryText="Create new Access Request rule"
+      primaryText="Create Approval rule"
     />
   )
 }

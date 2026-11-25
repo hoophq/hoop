@@ -31,9 +31,9 @@ const METHODS = [
 function MethodCard({ method, onPick, disabled }) {
   const Icon = method.icon
   return (
-    <Paper variant="muted" radius="xl" p="md">
+    <Paper variant="muted" p="md">
       <Stack gap="sm" align="flex-start">
-        <ThemeIcon size={48} radius="lg" variant="default">
+        <ThemeIcon size={48} variant="default">
           <Icon size={18} aria-hidden="true" />
         </ThemeIcon>
         <Stack gap={4}>

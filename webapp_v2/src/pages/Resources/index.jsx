@@ -18,7 +18,7 @@ import HoopCliModal from '@/pages/Resources/sections/HoopCliModal'
 import ResourceRow from '@/pages/Resources/sections/ResourceRow'
 import RoleRow from '@/pages/Resources/sections/RoleRow'
 import ViewTabs from '@/pages/Resources/sections/ViewTabs'
-import classes from '@/pages/Resources/List.module.css'
+import List from '@/components/List'
 import pageClasses from './Resources.module.css'
 
 const GETTING_STARTED_URL = 'https://hoop.dev/docs/introduction/getting-started'
@@ -29,15 +29,15 @@ function ListEmpty({ isAdmin }) {
     <EmptyState
       title={
         isAdmin
-          ? 'Get started by setting up your environment resources in your Organization'
+          ? 'No Resources yet'
           : 'Discover the resources your organization can connect to securely through Hoop'
       }
       action={{
-        label: isAdmin ? 'Setup new Resource' : 'Explore Resource Catalog',
+        label: isAdmin ? 'Set up a new Resource' : 'Explore the Resource catalog',
         onClick: () => navigate('/resource-catalog'),
       }}
       docsUrl={GETTING_STARTED_URL}
-      docsLabel="getting started documentation"
+      docsLabel="Resources documentation"
     />
   )
 }
@@ -67,7 +67,7 @@ function ListPanel({ tab, children }) {
 
   return (
     <Stack gap="md">
-      <ul className={classes.list}>{children(list.items)}</ul>
+      <List component="ul">{children(list.items)}</List>
       {more && <div ref={sentinel} />}
       {list.loading && (
         <Center>
@@ -143,11 +143,16 @@ export default function Resources() {
     <>
       <Tabs value={tab} onChange={(next) => next && switchTab(next)} unstyled>
         <Stack gap="md" pb="md" className={pageClasses.toolbar}>
-          <Group justify="space-between">
-            <Title order={1}>Resources</Title>
+          <Group justify="space-between" align="flex-start">
+            <Stack gap="sm">
+              <Title order={1}>Resources</Title>
+              <Text size="md" c="dimmed">
+                Find the Resources and Resource Roles you can access.
+              </Text>
+            </Stack>
             {resources.items.length > 0 && (
               <Button onClick={() => navigate('/resource-catalog')}>
-                {isAdmin ? 'Setup new Resource' : 'Explore Resource Catalog'}
+                {isAdmin ? 'Set up a new Resource' : 'Explore the Resource catalog'}
               </Button>
             )}
           </Group>

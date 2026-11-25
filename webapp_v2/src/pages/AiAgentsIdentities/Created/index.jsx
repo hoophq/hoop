@@ -1,5 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Anchor, Box, Button, Flex, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Anchor, Box, Flex, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import Alert from '@/components/Alert'
+import Button from '@/components/Button'
 import { Bot, Info, KeyRound } from 'lucide-react'
 import CopyButton from '@/components/CopyButton'
 import CodeSnippet from '@/components/CodeSnippet'
@@ -47,11 +49,11 @@ export default function AiAgentsIdentitiesCreated() {
       <Box maw={552} w="100%">
         <Stack gap="xl">
           <Flex direction="column" align="center" gap="sm">
-            <ThemeIcon size={72} radius="xl" color="indigo" variant="light">
+            <ThemeIcon size={72} color="indigo" variant="light">
               <Bot size={32} />
             </ThemeIcon>
             <Title order={2} ta="center">
-              Your AI Agent Identity is ready!
+              Your AI Agent Identity is ready.
             </Title>
           </Flex>
 
@@ -77,7 +79,7 @@ export default function AiAgentsIdentitiesCreated() {
             <Text size="sm" c="dimmed">
               {"Add Hoop's MCP to your .mcp.json file. "}
               <Anchor href={MCP_DOCS_URL} target="_blank" rel="noopener noreferrer" size="sm">
-                {"Learn more about Hoop's MCP."}
+                {"Read the Hoop MCP docs"}
               </Anchor>
             </Text>
             <CodeSnippet code={buildMcpSnippet(apiUrl, rawKey)} variant="gray" />

@@ -348,7 +348,7 @@ export const useSessionDetailsStore = create((set, get) => ({
     set({ killing: true })
     try {
       await sessionsService.kill(session.id)
-      showSnackbar({ level: 'success', text: 'Session killed successfully' })
+      showSnackbar({ level: 'success', text: 'Session killed.' })
       get().refresh()
       get().bumpRevision()
     } catch (err) {

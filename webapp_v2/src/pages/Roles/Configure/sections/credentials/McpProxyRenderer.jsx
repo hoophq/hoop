@@ -42,6 +42,7 @@ import {
 import { useCredentialsStore, useFormState } from '@/pages/Roles/Configure/sections/credentials/store'
 import { connectionsService } from '@/services/connections'
 import { showSnackbar } from '@/utils/snackbar'
+import classes from './McpProxyRenderer.module.css'
 
 // MCP Gateway (mcpproxy) connection editor — the protocol-aware MCP type
 // (ADR-0004), as opposed to the legacy `mcp` subtype that relays MCP as opaque
@@ -426,8 +427,8 @@ export default function McpProxyRenderer({
       setAuthError(null)
       showSnackbar({
         level: 'success',
-        text: 'MCP connection authorized',
-        description: 'Save the connection to finish attaching the login.',
+        text: 'MCP login authorized.',
+        description: 'Save the Resource Role to finish attaching the login.',
       })
     } catch (err) {
       finishError(err?.response?.data?.message || 'Failed to redeem token')
@@ -602,7 +603,7 @@ export default function McpProxyRenderer({
         )}
         {createMode && catalog.status === 'error' && (
           <Text size="sm" c="dimmed">
-            Server catalog unavailable — configure the endpoint manually below.
+            Server catalog unavailable. Configure the endpoint below.
           </Text>
         )}
 
@@ -652,7 +653,7 @@ export default function McpProxyRenderer({
       {/* Authorization — remote transports only. A stdio child authenticates
           through its own environment and never sees an HTTP header. */}
       {!stdio && (
-        <Paper withBorder radius="md" p="md">
+        <Paper withBorder p="md">
           <Stack gap="md">
             <Stack gap={4}>
               <Title order={5}>MCP Authorization</Title>
@@ -688,15 +689,15 @@ export default function McpProxyRenderer({
             {authMode === 'passthrough' && (
               <Stack gap="xs">
                 <Text size="sm" c="dimmed">
-                  No credential is stored on this connection. Each user&apos;s MCP
-                  client sends its own token, and Hoop forwards it to the server —
+                  No credential is stored on this Resource Role. Each user&apos;s MCP
+                  client sends its own token, and Hoop forwards it to the server,
                   so the server sees who is calling, and access follows each
                   user&apos;s own permissions.
                 </Text>
                 <Text size="sm" c="dimmed">
                   Users set this header in their MCP client configuration:
                 </Text>
-                <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                <Text size="xs" c="dimmed" ff="monospace" className={classes.breakAll}>
                   X-Hoop-Upstream-Authorization: Bearer &lt;their token&gt;
                 </Text>
               </Stack>
@@ -749,10 +750,10 @@ export default function McpProxyRenderer({
                       <Check size={16} color="var(--mantine-color-green-filled)" />
                       <Text size="sm" fw={500} c="green">
                         {granted && !pendingFlowId
-                          ? 'Authorized — token renewed automatically'
+                          ? 'Authorized. The token renews automatically.'
                           : pendingFlowId
-                            ? 'Authorized — save to finish attaching the login'
-                            : 'Authorized — access token stored'}
+                            ? 'Authorized. Save to attach the login.'
+                            : 'Authorized. Access token stored.'}
                       </Text>
                     </Group>
                     <Group gap="sm">
@@ -798,7 +799,7 @@ export default function McpProxyRenderer({
                       in, and stores the resulting access token. Register the
                       callback below as the redirect URI of your OAuth app.
                     </Text>
-                    <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                    <Text size="xs" c="dimmed" ff="monospace" className={classes.breakAll}>
                       {`${window.location.origin}/api/mcp-oauth/callback`}
                     </Text>
                     {authError && (
@@ -846,7 +847,7 @@ export default function McpProxyRenderer({
             onChange={(e) => setSetting(ENV.approvalTools, e.currentTarget.value)}
           />
           <Text size="sm" c="amber">
-            Approval routing is not available yet — matched tools are denied
+            Approval routing is not available yet. Matched tools are denied
             until it ships.
           </Text>
         </AccordionSection>

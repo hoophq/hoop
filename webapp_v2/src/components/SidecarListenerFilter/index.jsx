@@ -192,10 +192,8 @@ export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
           reads the same in both products. */}
       <Popover.Target>
         <Button
-          variant={selected ? 'light' : 'default'}
-          color="gray"
-          fz="sm"
-          c="dimmed"
+          variant="field"
+          data-filled={selected || undefined}
           onClick={() => setOpen((value) => !value)}
           leftSection={<Container size={16} />}
           rightSection={

@@ -25,7 +25,7 @@ function ProfileCard({ profile, selected, disabled, onSelect }) {
       onClick={onSelect}
     >
       <Group gap="md" align="flex-start" wrap="nowrap">
-        <ThemeIcon size="xl" radius="md" color={iconColor} variant={iconVariant}>
+        <ThemeIcon size="xl" color={iconColor} variant={iconVariant}>
           <Icon size={20} aria-hidden="true" />
         </ThemeIcon>
 
@@ -33,7 +33,7 @@ function ProfileCard({ profile, selected, disabled, onSelect }) {
           <Group gap="sm" wrap="nowrap">
             <Text fw={600}>{title}</Text>
             {badge && (
-              <Badge variant="light" color={badge.color} size="sm" tt="none" ml="auto">
+              <Badge variant="light" color={badge.color} size="sm" tt="none" ml="auto" fullLabel>
                 {badge.label}
               </Badge>
             )}

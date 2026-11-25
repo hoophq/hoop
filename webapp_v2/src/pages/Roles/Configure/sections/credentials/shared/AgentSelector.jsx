@@ -32,7 +32,7 @@ function AgentPicker() {
     <Stack gap="xsAlt">
       <Title order={5} fw={500}>Agent</Title>
       <Text size="sm" c="dimmed">
-        Which agent runs this connection.
+        The Agent that runs this Resource Role.
       </Text>
       <Select
         placeholder="Select an agent"

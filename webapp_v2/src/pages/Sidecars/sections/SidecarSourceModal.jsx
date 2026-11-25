@@ -42,7 +42,7 @@ export default function SidecarSourceModal({
       <Stack>
         {toConfigFile ? (
           <>
-            <Alert color="red" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+            <Alert color="red" variant="light" icon={<TriangleAlert size={16} />}>
               <Stack gap={4}>
                 <Text size="sm" fw={600}>
                   This deletes the rules stored in Hoop.
@@ -73,15 +73,15 @@ export default function SidecarSourceModal({
           </>
         ) : (
           <>
-            <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+            <Alert color="amber" variant="light" icon={<TriangleAlert size={16} />}>
               <Text size="sm" fw={600}>
                 After this step, the Sidecar ignores its local configuration file.
               </Text>
             </Alert>
             <Text size="sm">
               {hasReport
-                ? 'Hoop takes the configuration file the sidecar reported, shown on this page, and serves it on the next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'
-                : 'The sidecar sends its configuration file to Hoop on its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'}
+                ? 'Hoop takes the configuration file the sidecar reported, shown on this page, and serves it on the next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Analyzer. Edit the configuration in Hoop from then on.'
+                : 'The sidecar sends its configuration file to Hoop on its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Analyzer. Edit the configuration in Hoop from then on.'}
             </Text>
           </>
         )}

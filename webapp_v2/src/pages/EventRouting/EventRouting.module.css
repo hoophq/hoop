@@ -1,0 +1,33 @@
+/* The header sticks to the top of the scroll area and grows a separator once
+   it detaches from the sentinel above it. Mantine has no style prop for
+   z-index or a conditional border. */
+.stickyHeader {
+  z-index: 10;
+  border-bottom: 1px solid transparent;
+}
+
+.stickyHeader[data-scrolled] {
+  border-bottom-color: var(--hoop-list-border);
+}
+
+/* A line under each row of a hand-built list. */
+.row {
+  border-bottom: 1px solid var(--hoop-list-border);
+}
+
+.clickableRow {
+  border-bottom: 1px solid var(--hoop-list-border);
+  cursor: pointer;
+}
+
+/* The scrolling box that holds the event picker. */
+.scrollBox {
+  overflow: auto;
+  border: 1px solid var(--hoop-list-border);
+  border-radius: var(--hoop-list-radius);
+}
+
+/* The red dot that marks a subscription with recent failures. */
+.failureDot {
+  border-radius: 50%;
+}

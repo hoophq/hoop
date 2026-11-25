@@ -3,9 +3,9 @@
 export function blockedMessage(type, direction, words = []) {
   const subject = direction === 'output' ? 'Response' : 'Query'
   if (type === 'deny_words_list') {
-    return `${subject} blocked — ${words.length} forbidden ${words.length === 1 ? 'keyword' : 'keywords'} detected`
+    return `${subject} blocked: ${words.length} forbidden ${words.length === 1 ? 'keyword' : 'keywords'} detected`
   }
-  if (type === 'pattern_match') return `${subject} blocked — pattern violation detected`
+  if (type === 'pattern_match') return `${subject} blocked: pattern violation detected`
   return `${subject} blocked`
 }
 

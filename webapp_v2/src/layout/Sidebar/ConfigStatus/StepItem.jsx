@@ -19,7 +19,6 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
               variant="filled"
               color="green"
               size="xs"
-              radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}
             >
@@ -30,7 +29,6 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
               variant="light"
               color="gray"
               size="xs"
-              radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}
             >
