@@ -5,15 +5,27 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
+// recordEvaluator is checkEvaluator with a record redactor, as a build with a
+// detector has.
+func recordEvaluator(t *testing.T, p analyzer.Provider) *analyzer.Evaluator {
+	t.Helper()
+	return mustNew(t, analyzer.Config{
+		Provider: p, Trigger: analyzer.Trigger{All: true}, CacheSize: 100, CacheTTL: time.Minute,
+		ResourceCheck: true,
+		RecordRedact:  func(s string) string { return strings.ReplaceAll(s, "4111111111111111", "<CREDIT_CARD>") },
+	})
+}
+
 func TestTheTrailCarriesTheCheckAndTheProse(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
-	ev := checkEvaluator(t, p, nil)
+	ev := recordEvaluator(t, p)
 	chk := bigOrders()
 	stmt := sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders")
 
@@ -71,6 +83,12 @@ func TestTheTrailSaysWhyTheCheckDidNotRunFully(t *testing.T) {
 		{"partial", sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"),
 			func(f *fakeChecker) { f.planErr = "SQLSTATE 42501 (insufficient_privilege)" },
 			analyzer.CheckPartial, "plan: SQLSTATE 42501 (insufficient_privilege)", true, true},
+		{"every part refused", sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"),
+			func(f *fakeChecker) {
+				f.tablesErr = "SQLSTATE 42501 (insufficient_privilege)"
+				f.planErr = "SQLSTATE 42P01 (undefined_table)"
+			},
+			analyzer.CheckFailed, "tables: SQLSTATE 42501 (insufficient_privilege); plan: SQLSTATE 42P01 (undefined_table)", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chk := bigOrders()
@@ -94,10 +112,11 @@ func TestTheTrailSaysWhyTheCheckDidNotRunFully(t *testing.T) {
 
 func TestNoCheckNoCheckKeys(t *testing.T) {
 	stmt := sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders")
-	off := mustNew(t, analyzer.Config{Provider: &stubProvider{level: analyzer.RiskLow}, Trigger: analyzer.Trigger{All: true}})
+	off := mustNew(t, analyzer.Config{Provider: &stubProvider{level: analyzer.RiskLow}, Trigger: analyzer.Trigger{All: true},
+		RecordRedact: func(s string) string { return s }})
 	for name, got := range map[string]map[string]string{
 		"field off":  off.EvaluateWith(stmt, &policy.EvalContext{ResourceCheck: bigOrders()}).Annotations,
-		"no checker": checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil).EvaluateWith(stmt, &policy.EvalContext{}).Annotations,
+		"no checker": recordEvaluator(t, &stubProvider{level: analyzer.RiskLow}).EvaluateWith(stmt, &policy.EvalContext{}).Annotations,
 	} {
 		for k := range got {
 			if strings.HasPrefix(k, "resource_check") {
@@ -126,13 +145,73 @@ func TestARefusedBlockLeavesItsReasonInTheTrail(t *testing.T) {
 	}
 }
 
-func TestTheTrailTextFollowsTheSendRedaction(t *testing.T) {
-	ev := mustNew(t, analyzer.Config{Provider: &stubProvider{level: analyzer.RiskLow}, Trigger: analyzer.Trigger{All: true},
-		ResourceCheck: true, Redact: func(s string) string { return strings.ReplaceAll(s, "orders_pkey", "<NAME>") }})
-	text := ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"),
-		&policy.EvalContext{ResourceCheck: bigOrders()}).Annotations[analyzer.MetadataResourceCheck]
-	if strings.Contains(text, "orders_pkey") || !strings.Contains(text, "<NAME>") {
-		t.Fatalf("check text:\n%s", text)
+func TestTheTrailTextAndProseGoThroughTheRecordRedactor(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow, title: "reads card 4111111111111111"}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}, ResourceCheck: true,
+		Redact: func(s string) string { return s + "\n\n[proxy: this statement contained NAME]" },
+		RecordRedact: func(s string) string {
+			return strings.ReplaceAll(strings.ReplaceAll(s, "orders_pkey", "<NAME>"), "4111111111111111", "<CREDIT_CARD>")
+		}})
+	got := ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"),
+		&policy.EvalContext{ResourceCheck: bigOrders()}).Annotations
+	text := got[analyzer.MetadataResourceCheck]
+	if strings.Contains(text, "orders_pkey") || !strings.Contains(text, "<NAME>") || strings.Contains(text, "[proxy:") {
+		t.Errorf("check text:\n%s", text)
+	}
+	if !strings.Contains(lastContent(p), "[proxy:") {
+		t.Error("the model did not read the send redaction")
+	}
+	if got[analyzer.MetadataAITitle] != "reads card <CREDIT_CARD>" {
+		t.Errorf("title = %q", got[analyzer.MetadataAITitle])
+	}
+}
+
+func TestNoDetectorNoProse(t *testing.T) {
+	got := checkEvaluator(t, &stubProvider{level: analyzer.RiskHigh}, nil).EvaluateWith(
+		sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: bigOrders()}).Annotations
+	for _, k := range []string{analyzer.MetadataAITitle, analyzer.MetadataAIExplanation} {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s = %q with no record redactor", k, got[k])
+		}
+	}
+	if got[analyzer.MetadataResourceCheckStatus] != string(analyzer.CheckRan) {
+		t.Errorf("the check is missing: %+v", got)
+	}
+}
+
+func TestALaterLevelClearsWhatItDoesNotWrite(t *testing.T) {
+	ec := &policy.EvalContext{ResourceCheck: bigOrders(), Annotations: map[string]string{
+		analyzer.MetadataRiskLevel:           "low",
+		analyzer.MetadataAITitle:             "A low title",
+		analyzer.MetadataAIExplanation:       "A reasons",
+		analyzer.MetadataResourceCheck:       "Table orders: about 1.2M rows",
+		analyzer.MetadataResourceCheckStatus: "ran",
+		analyzer.MetadataResourceCheckMS:     "3",
+	}}
+	noCheck := mustNew(t, analyzer.Config{Provider: &stubProvider{level: analyzer.RiskHigh, title: "B high title"},
+		Trigger: analyzer.Trigger{All: true}, RecordRedact: func(s string) string { return s }})
+	got := noCheck.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), ec).Annotations
+	if got[analyzer.MetadataAITitle] != "B high title" {
+		t.Errorf("title = %q", got[analyzer.MetadataAITitle])
+	}
+	for _, k := range []string{analyzer.MetadataResourceCheck, analyzer.MetadataResourceCheckStatus, analyzer.MetadataResourceCheckMS} {
+		if v, ok := got[k]; !ok || v != "" {
+			t.Errorf("%s = %q, %v: the low analyzer's check stays beside the high level", k, v, ok)
+		}
+	}
+	if _, ok := got[analyzer.MetadataResourceCheckReason]; ok {
+		t.Error("a key no analyzer wrote was added")
+	}
+}
+
+func TestTheTrailShowsCostsAsTheModelReadsThem(t *testing.T) {
+	chk := bigOrders()
+	chk.plan = []inspect.PlanNode{{Node: "Limit", Rows: 3, Cost: 4.6}, {Depth: 1, Node: "Seq Scan", Relation: "orders", Rows: 3, Cost: 0.046}}
+	text := recordEvaluator(t, &stubProvider{level: analyzer.RiskLow}).EvaluateWith(
+		sqlStmt("SELECT * FROM orders LIMIT 3", inspect.OpSelect, "orders"), &policy.EvalContext{ResourceCheck: chk}).
+		Annotations[analyzer.MetadataResourceCheck]
+	if !strings.Contains(text, "cost 4.6)") || !strings.Contains(text, "cost 0.046)") {
+		t.Errorf("check text:\n%s", text)
 	}
 }
 
@@ -181,7 +260,7 @@ func TestOnlyTheLevelTheTrailKeepsWritesItsProse(t *testing.T) {
 		if tc.prior != "" {
 			ec.Annotations[analyzer.MetadataRiskLevel] = tc.prior
 		}
-		got := checkEvaluator(t, &stubProvider{level: tc.level}, nil).EvaluateWith(stmt, ec).Annotations
+		got := recordEvaluator(t, &stubProvider{level: tc.level}).EvaluateWith(stmt, ec).Annotations
 		_, title := got[analyzer.MetadataAITitle]
 		_, check := got[analyzer.MetadataResourceCheckStatus]
 		if title != tc.want || check != tc.want {

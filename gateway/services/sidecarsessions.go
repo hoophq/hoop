@@ -88,10 +88,10 @@ const (
 )
 
 // Bounds of the model prose and the resource check an entry stores. The
-// sidecar sends a title under 256 bytes, reasoning under 1 KiB and a check
-// under 2 KiB.
+// sidecar cuts a title at 256 bytes, reasoning at 1 KiB and a check at 2 KiB,
+// then adds a truncation marker.
 const (
-	maxSidecarAITitleChars       = 256
+	maxSidecarAITitleChars       = 512
 	maxSidecarResourceCheckChars = 4096
 	maxSidecarCheckReasonChars   = 512
 	maxSidecarCheckMillis        = 60_000
@@ -417,7 +417,7 @@ type sidecarAIDecision struct {
 	// AIRulesError is why the rule turn applied no rule.
 	AIRulesError string `json:"ai_rules_error,omitempty"`
 	// Title and Explanation are the model's. A sidecar that redacts
-	// statements does not send them.
+	// statements does not send the explanation.
 	Title         string                `json:"title,omitempty"`
 	Explanation   string                `json:"explanation,omitempty"`
 	ResourceCheck *sidecarResourceCheck `json:"resource_check,omitempty"`

@@ -108,7 +108,7 @@ func skipped(reason string) checkRecord {
 	return checkRecord{status: CheckSkipped, reason: reason}
 }
 
-func ranRecord(res inspect.CheckResult, err error, d time.Duration) checkRecord {
+func ranRecord(want inspect.CheckWant, res inspect.CheckResult, err error, d time.Duration) checkRecord {
 	rec := checkRecord{status: CheckRan, ran: true, duration: d}
 	switch {
 	case errors.Is(err, policy.ErrCheckNotReady):
@@ -121,6 +121,9 @@ func ranRecord(res inspect.CheckResult, err error, d time.Duration) checkRecord 
 		rec.reason = "the check failed; classified without it"
 	case res.TablesErr != "" || res.PlanErr != "":
 		rec.status = CheckPartial
+		if !(len(want.Tables) > 0 && res.TablesErr == "") && !(want.Plan && res.PlanErr == "") {
+			rec.status = CheckFailed
+		}
 		rec.reason = joinReasons("", res)
 	}
 	return rec
@@ -194,7 +197,7 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	default:
 		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
 		res, took, err := e.runCheck(ctx, rc, stmt, want, ec)
-		rec = ranRecord(res, err, took)
+		rec = ranRecord(want, res, err, took)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
 			scope := rc.Scope()
 			if res.TablesErr == "" {
@@ -230,18 +233,14 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		trail = renderCheckBlock(plain, nodes)
 	}
 	if block != "" && e.cfg.Redact != nil {
-		sent := e.cfg.Redact(block)
-		if sent == RefuseSentinel {
+		if block = e.cfg.Redact(block); block == RefuseSentinel {
 			e.reportCheck(ResourceCheckEvent{Rule: e.cfg.Rule, Err: errors.New("the redactor refused the check block; classified without it")})
 			rec.reason = "the redactor refused the check block; classified without it"
 			return "", rec
 		}
-		if trail == block {
-			trail = sent
-		} else if trail = e.cfg.Redact(trail); trail == RefuseSentinel {
-			trail = ""
-		}
-		block = sent
+	}
+	if trail != "" && e.cfg.RecordRedact != nil {
+		trail = e.cfg.RecordRedact(trail)
 	}
 	rec.text = strings.TrimPrefix(trail, checkHeader+"\n")
 	return block, rec
@@ -478,8 +477,12 @@ func approx(v float64) string {
 	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 		return "0"
 	}
-	exp := math.Floor(math.Log10(v))
-	v = math.Round(v/math.Pow(10, exp-1)) * math.Pow(10, exp-1)
+	exp := math.Floor(math.Log10(v)) - 1
+	if p := math.Pow(10, math.Abs(exp)); exp < 0 {
+		v = math.Round(v*p) / p
+	} else {
+		v = math.Round(v/p) * p
+	}
 	for _, u := range []struct {
 		div    float64
 		suffix string

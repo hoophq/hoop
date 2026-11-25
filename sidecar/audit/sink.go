@@ -59,7 +59,7 @@ type SinkOptions struct {
 	// covers every field that carries request CONTENT rather than the
 	// resource identity: Body, Target and each Query value are
 	// fingerprinted; Method, Path, Resource and Host stay. The analyzer's
-	// title and reasoning are dropped.
+	// reasoning is dropped.
 	//
 	// Some shops cannot store query text at all, because literals embed the
 	// very PII the database is regulated for. A fingerprint still answers

@@ -2610,14 +2610,16 @@ shown. All three field names are unchanged from the rule-form era, so
 dashboards and policies keyed on them keep working.
 
 `metadata.ai_title` and `metadata.ai_explanation` hold the model's title and
-reasoning, from the analyzer whose level the record shows. A sink with
-`audit.redact_statements` drops both: the model can quote the statement.
+reasoning, from the analyzer whose level the record shows, after the
+detector redacts them as it does the agents' reasons. A build with no
+detector records neither. A sink with `audit.redact_statements` drops the
+reasoning: the model can quote the statement.
 On a lane with `resource_check`, `metadata.resource_check` holds the block the
-model read, after `send`. `resource_check_status` is `ran`, `partial`,
-`cancelled`, `failed`, `cached` or `skipped`, `resource_check_ms` is the
-check query's time, and `resource_check_reason` says why it did not run or
-ran in part. An index definition that is not plain names is withheld from
-the record.
+model read, after the same detector. `resource_check_status` is `ran`,
+`partial`, `cancelled`, `failed`, `cached` or `skipped`, `resource_check_ms`
+is the check query's time, and `resource_check_reason` says why it did not
+run or ran in part. An index definition that is not plain names is withheld
+from the record.
 
 `ai_status` and `ai_rule` are the analyzer's OWN audit vocabulary, not the
 finding it publishes to policy. The trail keeps the specific word, because an

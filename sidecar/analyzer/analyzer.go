@@ -57,17 +57,18 @@ func (r RiskLevel) Valid() bool {
 // values) but leaves Event.Metadata alone, so anything written here lands
 // in the trail verbatim regardless of the operator's redact_statements
 // setting. Only classifications go here, never a value the statement carried.
-// Model prose goes only under the keys a redacting sink drops
-// (MetadataAITitle, MetadataAIExplanation), or through Config.RecordRedact.
+// Model prose goes only through Config.RecordRedact.
 const (
 	// MetadataAITitle and MetadataAIExplanation are the model's title and
-	// reasoning, on the evaluation whose risk level the trail keeps.
+	// reasoning, after Config.RecordRedact, on the evaluation whose risk
+	// level the trail keeps. A sink that redacts statements drops the
+	// reasoning.
 	MetadataAITitle       = audit.MetadataAITitle
 	MetadataAIExplanation = audit.MetadataAIExplanation
 
 	// The resource check behind that evaluation: the block the model read
-	// (after Config.Redact), a CheckStatus, the milliseconds a check query
-	// took, and why it did not run or was partial.
+	// (after Config.RecordRedact), a CheckStatus, the milliseconds a check
+	// query took, and why it did not run or was partial.
 	MetadataResourceCheck       = "resource_check"
 	MetadataResourceCheckStatus = "resource_check_status"
 	MetadataResourceCheckMS     = "resource_check_ms"
@@ -287,6 +288,10 @@ type Result struct {
 	// Explanation is the model's reasoning. Longer than Title and intended
 	// for the audit trail, not the wire.
 	Explanation string
+
+	// Title and Explanation as the trail keeps them, set once per call so a
+	// cached verdict is not redacted again.
+	recordTitle, recordExplanation string
 }
 
 // Provider performs one classification.

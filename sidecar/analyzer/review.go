@@ -269,8 +269,8 @@ type Settler interface {
 // reason beside it.
 //
 // It never reaches the review request. Title and Explanation reach the
-// audit trail as MetadataAITitle and MetadataAIExplanation, which a sink
-// that redacts statements drops. The plane's reviewer sends what it always
+// audit trail through Config.RecordRedact, and a sink that redacts
+// statements drops the explanation. The plane's reviewer sends what it always
 // sent; only a reviewer that already shows the statement to the person
 // deciding, the terminal one, reads this.
 type HoldDetail struct {

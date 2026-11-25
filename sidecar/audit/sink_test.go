@@ -829,7 +829,7 @@ func TestRedactStatementsCoversContentMetadata(t *testing.T) {
 	}
 }
 
-func TestRedactStatementsDropsTheModelProse(t *testing.T) {
+func TestRedactStatementsDropsTheModelReasoning(t *testing.T) {
 	meta := map[string]string{
 		MetadataAITitle:       "Deletes every order of acme",
 		MetadataAIExplanation: "It deletes rows where customer = 'acme'.",
@@ -839,13 +839,10 @@ func TestRedactStatementsDropsTheModelProse(t *testing.T) {
 	ev := Event{Kind: KindStatement, Statement: "DELETE FROM orders WHERE customer = 'acme'", Metadata: meta}
 
 	got := SinkOptions{RedactStatements: true}.Apply(ev).Metadata
-	if _, ok := got[MetadataAITitle]; ok {
-		t.Error("the title was kept")
-	}
 	if _, ok := got[MetadataAIExplanation]; ok {
 		t.Error("the reasoning was kept")
 	}
-	if got["resource_check"] != meta["resource_check"] || got["risk_level"] != "high" {
+	if got[MetadataAITitle] != meta[MetadataAITitle] || got["resource_check"] != meta["resource_check"] || got["risk_level"] != "high" {
 		t.Errorf("other keys changed: %+v", got)
 	}
 	if len(meta) != 4 {

@@ -712,10 +712,14 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// would report clean right up until something got blocked.
 	//
 	// Title and explanation are model prose that can quote the statement: a
-	// sink that redacts statements drops them (audit.SinkOptions).
+	// sink that redacts statements drops the explanation (audit.SinkOptions).
 	notes := e.notes(trail, string(level), string(action))
 	if keepsLevel(ec, level) {
-		e.record(notes, c)
+		var prior map[string]string
+		if ec != nil {
+			prior = ec.Annotations
+		}
+		e.record(notes, c, prior)
 	}
 
 	if action == ActionHandoff {
@@ -898,15 +902,45 @@ func (e *Evaluator) notes(status, level, action string) map[string]string {
 
 const maxTitleBytes = 256
 
-// record adds the model's title and reasoning and the resource check.
-func (e *Evaluator) record(notes map[string]string, c classified) {
-	if c.res.Title != "" {
-		notes[MetadataAITitle] = Truncate(c.res.Title, maxTitleBytes)
+var recordKeys = []string{
+	MetadataAITitle, MetadataAIExplanation,
+	MetadataResourceCheck, MetadataResourceCheckStatus, MetadataResourceCheckMS, MetadataResourceCheckReason,
+}
+
+// recordProse redacts the model's title and reasoning for the trail with
+// Config.RecordRedact, as the agents' prose. Without it the trail keeps neither.
+func (e *Evaluator) recordProse(res *Result) {
+	redact := e.cfg.RecordRedact
+	if redact == nil {
+		return
 	}
-	if c.res.Explanation != "" {
-		notes[MetadataAIExplanation] = Truncate(c.res.Explanation, maxAgentReasonBytes)
+	if res.Title != "" {
+		res.recordTitle = Truncate(redact(res.Title), maxTitleBytes)
 	}
-	c.check.write(notes)
+	if res.Explanation != "" {
+		res.recordExplanation = Truncate(redact(res.Explanation), maxAgentReasonBytes)
+	}
+}
+
+// record adds the model's title and reasoning and the resource check. A key
+// that an earlier analyzer wrote and this one does not is blanked, so the
+// trail holds one decision.
+func (e *Evaluator) record(notes map[string]string, c classified, prior map[string]string) {
+	vals := make(map[string]string, len(recordKeys))
+	if c.res.recordTitle != "" {
+		vals[MetadataAITitle] = c.res.recordTitle
+	}
+	if c.res.recordExplanation != "" {
+		vals[MetadataAIExplanation] = c.res.recordExplanation
+	}
+	c.check.write(vals)
+	for _, k := range recordKeys {
+		if v, ok := vals[k]; ok {
+			notes[k] = v
+		} else if _, ok := prior[k]; ok {
+			notes[k] = ""
+		}
+	}
 }
 
 // keepsLevel reports whether level replaces the risk level already on the
@@ -1045,6 +1079,7 @@ func (e *Evaluator) classify(
 		return classified{status: StatusError, err: err}
 	}
 
+	e.recordProse(res)
 	e.cache.put(cacheKey, *res)
 	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, check: check}
 }
