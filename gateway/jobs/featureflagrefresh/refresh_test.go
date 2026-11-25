@@ -92,10 +92,12 @@ func TestAFlagChangeOnOneReplicaReachesTheOther(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		run(ctx, models.DB, replicaB, func() time.Duration { return 20 * time.Millisecond }, func(orgID string) {
-			mu.Lock()
-			defer mu.Unlock()
-			notified = append(notified, orgID)
+		run(ctx, func() time.Duration { return 20 * time.Millisecond }, func(ctx context.Context) {
+			refresh(ctx, models.DB, replicaB, func(orgID string) {
+				mu.Lock()
+				defer mu.Unlock()
+				notified = append(notified, orgID)
+			})
 		})
 	}()
 	t.Cleanup(func() { cancel(); <-done })
@@ -115,13 +117,73 @@ func TestAFlagChangeOnOneReplicaReachesTheOther(t *testing.T) {
 	assert.Equal(t, []string{refreshOrgID, refreshOrgID}, notified)
 }
 
+// The docs promise that a change saved on another replica applies within
+// 15 s: the gap between two read starts plus one read.
 func TestTheRefreshIntervalStaysWithinTheBound(t *testing.T) {
 	for range 10_000 {
 		d := nextInterval()
 		require.GreaterOrEqual(t, d, baseInterval)
-		require.Less(t, d, MaxInterval)
+		require.Less(t, d, maxInterval)
 	}
-	assert.LessOrEqual(t, MaxInterval, 15*time.Second)
+	assert.Equal(t, maxInterval+refreshTimeout, propagationBound)
+	assert.LessOrEqual(t, propagationBound, 15*time.Second)
+}
+
+// A change saved just after a read took its snapshot waits for the next read.
+// That read must start interval() after the last one started: when the wait
+// began only once the slow read ended, the change took interval() plus two
+// reads (about 25 s with a 5 s read).
+func TestTheNextReadDelayCountsTheLastRead(t *testing.T) {
+	for _, tc := range []struct{ elapsed, want time.Duration }{
+		{0, maxInterval},
+		{refreshTimeout, maxInterval - refreshTimeout},
+		{maxInterval, 0},
+		{maxInterval + time.Second, 0},
+	} {
+		assert.Equal(t, tc.want, nextReadDelay(maxInterval, tc.elapsed), "after a %v read", tc.elapsed)
+	}
+	// The worst case: a change saved just after a read started is read by the
+	// next one, which starts maxInterval later and ends refreshTimeout after.
+	slowRead := refreshTimeout
+	assert.Equal(t, propagationBound, slowRead+nextReadDelay(maxInterval, slowRead)+refreshTimeout)
+}
+
+// run itself uses that delay. Wide margins: the old wait gives ~1.8 s between
+// starts, the new one ~1 s.
+func TestTheNextReadDoesNotWaitForTheLastOneToEnd(t *testing.T) {
+	const interval, readTime = time.Second, 800 * time.Millisecond
+	var mu sync.Mutex
+	var starts []time.Time
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		run(ctx, func() time.Duration { return interval }, func(context.Context) {
+			mu.Lock()
+			starts = append(starts, time.Now())
+			n := len(starts)
+			mu.Unlock()
+			if n == 3 {
+				cancel()
+				return
+			}
+			time.Sleep(readTime)
+		})
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not stop")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, starts, 3)
+	for i := 1; i < len(starts); i++ {
+		gap := starts[i].Sub(starts[i-1])
+		assert.GreaterOrEqual(t, gap, interval-50*time.Millisecond, "read %d started early", i)
+		assert.Less(t, gap, interval+readTime/2,
+			"read %d started %v after the last one: it waited for the last read to end", i, gap)
+	}
 }
 
 // fakeAgent is an agent stream on replica B. With block set, Send waits until
@@ -173,7 +235,9 @@ func TestABlockedAgentDoesNotStopTheRefresh(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		run(ctx, models.DB, replicaB, func() time.Duration { return 20 * time.Millisecond }, delivery.Notify)
+		run(ctx, func() time.Duration { return 20 * time.Millisecond }, func(ctx context.Context) {
+			refresh(ctx, models.DB, replicaB, delivery.Notify)
+		})
 	}()
 
 	putFlag(t, refreshOrgID, true)

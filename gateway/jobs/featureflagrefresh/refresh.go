@@ -17,29 +17,37 @@ import (
 )
 
 const (
-	baseInterval = 10 * time.Second
+	baseInterval = 7 * time.Second
 	// maxJitter spreads the replicas' reads apart.
-	maxJitter = 5 * time.Second
+	maxJitter = 3 * time.Second
 
-	// MaxInterval bounds the time between two reads: a flag change reaches
-	// every replica, and the agents connected to it, within MaxInterval plus
-	// one read.
-	MaxInterval = baseInterval + maxJitter
+	// maxInterval bounds the time from the start of one read to the start of
+	// the next.
+	maxInterval = baseInterval + maxJitter
 
-	// refreshTimeout keeps a slow read from delaying the next one long.
+	// refreshTimeout bounds one read.
 	refreshTimeout = 5 * time.Second
+
+	// propagationBound is how long a flag change saved on another replica
+	// takes to reach this replica's cache when the next read succeeds: it
+	// starts within maxInterval of the last one and ends within
+	// refreshTimeout. A failed read moves the change to the read after it.
+	// Delivery to agents is not covered: a blocked agent stream holds it.
+	propagationBound = maxInterval + refreshTimeout
 )
 
 // Run refreshes the flags every baseInterval plus up to maxJitter until ctx
 // is done. The boot already loaded them (services.WarmFeatureFlagCache).
 func Run(ctx context.Context, db *gorm.DB) {
-	run(ctx, db, featureflag.Default(), nextInterval, transport.SendFeatureFlagUpdateToOrg)
+	cache := featureflag.Default()
+	run(ctx, nextInterval, func(ctx context.Context) {
+		refresh(ctx, db, cache, transport.SendFeatureFlagUpdateToOrg)
+	})
 }
 
-// run refreshes cache after each interval(), and calls notify for each org
-// whose flags changed. notify must not block: a slow agent must not delay the
-// next read (transport.FeatureFlagDelivery does not).
-func run(ctx context.Context, db *gorm.DB, cache *featureflag.Cache, interval func() time.Duration, notify func(orgID string)) {
+// run calls read interval() after the previous read started, not after it
+// ended: a slow read must not add to the wait for the next one.
+func run(ctx context.Context, interval func() time.Duration, read func(ctx context.Context)) {
 	timer := time.NewTimer(interval())
 	defer timer.Stop()
 	for {
@@ -48,11 +56,21 @@ func run(ctx context.Context, db *gorm.DB, cache *featureflag.Cache, interval fu
 			return
 		case <-timer.C:
 		}
-		refresh(ctx, db, cache, notify)
-		timer.Reset(interval())
+		start := time.Now()
+		read(ctx)
+		timer.Reset(nextReadDelay(interval(), time.Since(start)))
 	}
 }
 
+// nextReadDelay is how long to wait after a read that took elapsed, so the
+// next read starts interval after the last one started.
+func nextReadDelay(interval, elapsed time.Duration) time.Duration {
+	return max(0, interval-elapsed)
+}
+
+// refresh reads the flags into cache, and calls notify for each org whose
+// flags changed. notify must not block: a slow agent must not delay the next
+// read (transport.FeatureFlagDelivery does not).
 func refresh(ctx context.Context, db *gorm.DB, cache *featureflag.Cache, notify func(orgID string)) {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
