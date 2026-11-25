@@ -4,6 +4,9 @@ import (
 	"container/list"
 	"sync"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 )
 
 // cache is a bounded LRU of verdicts keyed on statement shape.
@@ -173,6 +176,40 @@ func (c *cache) put(key string, res Result) {
 		c.order.Remove(oldest)
 		delete(c.entries, oldest.Value.(*cacheEntry).key)
 	}
+}
+
+const (
+	preparedMemoSize = 256
+	// The memo lives as long as its connection.
+	preparedMemoTTL = 100 * 365 * 24 * time.Hour
+)
+
+// preparedMemo is the connection's memo of prepared statement verdicts, so
+// the text makes one call however often it runs. Nil for other statements.
+func preparedMemo(e *Evaluator, stmt inspect.Statement, ec *policy.EvalContext) *cache {
+	switch stmt.Metadata[inspect.MetadataPrepared] {
+	case inspect.PreparedPrepare, inspect.PreparedRun:
+	default:
+		return nil
+	}
+	if ec == nil || ec.Conn == nil {
+		return nil
+	}
+	return ec.Conn.Value(e, func() any { return newCache(preparedMemoSize, preparedMemoTTL) }).(*cache)
+}
+
+// decision reads an agent decision from the connection's memo, then from
+// the lane's cache.
+func (e *Evaluator) decision(c classified, memoKey string) (agentMemo, bool) {
+	if m, ok := c.memo.decision(c.key, memoKey); ok {
+		return m, true
+	}
+	return e.cache.decision(c.key, memoKey)
+}
+
+func (e *Evaluator) remember(c classified, memoKey string, m agentMemo) {
+	e.cache.remember(c.key, memoKey, m)
+	c.memo.remember(c.key, memoKey, m)
 }
 
 // stats reports hit and miss counts. An operator reads these to decide

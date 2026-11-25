@@ -4550,6 +4550,13 @@ to it. A prepare the codec never saw — a connection adopted mid-flight — mak
 the execute an `unknown` operation, which a rule naming `unknown` refuses.
 That is the fail-closed direction.
 
+**The analyzer classifies a prepared statement once per connection.** Each
+`COM_STMT_EXECUTE` and `COM_STMT_FETCH` reuses the verdict of its
+`COM_STMT_PREPARE` (`ai_status: cached`), with the hand-off and rule agents'
+decisions, and a new hold still runs. `COM_STMT_CLOSE` and `COM_STMT_RESET`
+run nothing and are not classified. Codecs mark these steps with the
+`sql.prepared` metadata key.
+
 **Three negotiated features are refused rather than forwarded**, each with
 `ErrStreamUnsafe`, which the gate turns into a denial regardless of policy:
 

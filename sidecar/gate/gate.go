@@ -608,6 +608,8 @@ type Gate struct {
 	// Both are set before the pumps start.
 	check inspect.ResourceCheck
 	side  SidePath
+
+	conn policy.ConnState
 }
 
 // New builds a Gate for a session.
@@ -1846,7 +1848,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) (policy.Ver
 	if !ok {
 		return g.policy.Evaluate(stmt), nil
 	}
-	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
+	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder(), Conn: &g.conn}
 	if g.check != nil && g.side != nil {
 		ec.ResourceCheck = resourceCheck{check: g.check, side: g.side}
 	}

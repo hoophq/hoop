@@ -921,6 +921,10 @@ type classified struct {
 	// key is the cache key of an ok or cached classification. The
 	// hand-off decisions live on its entry.
 	key string
+
+	// memo is the connection's prepared-statement memo, nil for other
+	// statements.
+	memo *cache
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
@@ -943,6 +947,9 @@ func (e *Evaluator) classify(
 	}
 	builder, ok := BuilderFor(stmt.Protocol)
 	if !ok {
+		return classified{}
+	}
+	if stmt.Metadata[inspect.MetadataPrepared] == inspect.PreparedRelease {
 		return classified{}
 	}
 
@@ -978,8 +985,13 @@ func (e *Evaluator) classify(
 		text += "\n\n" + block
 		cacheKey += ":" + fingerprint(block)
 	}
+	memo := preparedMemo(e, stmt, ec)
+	if res, hit := memo.get(cacheKey); hit {
+		return classified{res: res, text: text, status: StatusCached, key: cacheKey, memo: memo}
+	}
 	if cached, hit := e.cache.get(cacheKey); hit {
-		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
+		memo.put(cacheKey, cached)
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, memo: memo}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//
@@ -1018,7 +1030,8 @@ func (e *Evaluator) classify(
 	}
 
 	e.cache.put(cacheKey, *res)
-	return classified{res: *res, text: text, status: StatusOK, key: cacheKey}
+	memo.put(cacheKey, *res)
+	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, memo: memo}
 }
 
 // failure renders a classification error according to the fail mode.
