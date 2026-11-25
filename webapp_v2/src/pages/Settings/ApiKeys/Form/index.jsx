@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Button, Grid, Group, Stack, Text, Title, Box } from '@mantine/core'
+import { Grid, Group, Stack, Text, Title, Box } from '@mantine/core'
+import Button from '@/components/Button'
 import { showSnackbar } from '@/utils/snackbar'
 import { ArrowLeft } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
@@ -101,8 +102,13 @@ export default function ApiKeysForm() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="center" mb="xxxlAlt">
-        <Title order={1}>{isEdit ? 'Configure API Key' : 'Create new API Key'}</Title>
+      <Group justify="space-between" align="flex-start" mb="xxxlAlt">
+        <Stack gap="sm">
+          <Title order={1}>{isEdit ? 'Configure API Key' : 'Create new API Key'}</Title>
+          <Text size="md" c="dimmed">
+            Give the key a name and choose its groups.
+          </Text>
+        </Stack>
         <Button onClick={handleSubmit} loading={saving}>
           Save
         </Button>

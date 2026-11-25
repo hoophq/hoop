@@ -127,7 +127,7 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
       <Stack gap="xs">
         <Title order={4}>SSH Configuration</Title>
         <Text size="sm" c="dimmed">
-          Provide SSH information to set up your connection.
+          Provide SSH information to set up your Resource Role.
         </Text>
       </Stack>
 

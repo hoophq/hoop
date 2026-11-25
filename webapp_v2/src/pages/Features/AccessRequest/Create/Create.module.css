@@ -31,25 +31,21 @@
   font-weight: 700;
 }
 
-/* Access-type Checkbox.Cards: same visual language as SelectionCard, driven
-   by Mantine's data-checked attribute. The card keeps Mantine's default
-   border (withBorder) and paints it navy when checked. */
+/* Access-type Checkbox.Cards: the same selection as SelectionCard. Indigo is
+   the selection (the action color), on a light tint, so the page's primary
+   button stays the strongest element. Hover and press come from the theme. */
 .typeCard {
   width: 100%;
-  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .typeCard:hover {
-  background-color: var(--hoop-surface-strong);
+  background-color: var(--hoop-surface-muted);
 }
 
-.typeCard[data-checked] {
-  background-color: var(--brand-navy);
-  border-color: var(--brand-navy);
-}
-
+.typeCard[data-checked],
 .typeCard[data-checked]:hover {
-  background-color: var(--brand-navy);
+  background-color: var(--mantine-primary-color-light);
+  border-color: var(--mantine-primary-color-filled);
 }
 
 .typeCard:disabled {
@@ -62,11 +58,5 @@
 }
 
 .typeCard[data-checked]:disabled:hover {
-  background-color: var(--brand-navy);
-}
-
-.typeCard[data-checked] .typeCardIcon {
-  background-color: var(--hoop-on-navy-surface);
-  color: var(--hoop-on-navy-text);
-  border-color: transparent;
+  background-color: var(--mantine-primary-color-light);
 }

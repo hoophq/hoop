@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Button, Divider, Group, Image, Paper, Popover, Stack, Text, Title } from '@mantine/core'
+import { Box, Divider, Group, Image, Paper, Popover, ScrollArea, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { Check, Rotate3d, Search, X } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -61,14 +62,14 @@ function ConnectionFilter({ value, onChange, connections }) {
             </Button>
           )}
           <TextInput
-            placeholder="Search resource roles"
+            placeholder="Search Resource Roles"
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
             leftSection={<Search size={14} />}
           />
-          <Box mah={280} style={{ overflowY: 'auto' }}>
+          <ScrollArea.Autosize mah={280}>
             {filtered.length === 0 ? (
-              <Text size="sm" c="dimmed" p="xs">No connections found</Text>
+              <Text size="sm" c="dimmed" p="xs">No Resources found</Text>
             ) : (
               <Stack gap={2}>
                 {filtered.map((conn) => (
@@ -91,7 +92,7 @@ function ConnectionFilter({ value, onChange, connections }) {
                 ))}
               </Stack>
             )}
-          </Box>
+          </ScrollArea.Autosize>
         </Stack>
       </Popover.Dropdown>
     </Popover>
@@ -138,15 +139,15 @@ export default function Attributes() {
     : attributes
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load Attributes." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="center">
-        <Stack gap="xs" flex={1} miw={0}>
+        <Stack gap="sm" flex={1} miw={0}>
           <Title order={1}>Attributes</Title>
-          <Text c="dimmed" size="lg">
-            Properties that control how features and security policies apply to connections. Assign attributes to connections to automatically enforce consistent behaviors.
+          <Text c="dimmed" size="md">
+            Tag Resources with attributes to apply the same rules to all of them.
           </Text>
         </Stack>
         {attributes.length > 0 && (
@@ -156,7 +157,8 @@ export default function Attributes() {
 
       {attributes.length === 0 ? (
         <EmptyState
-          title="No Attributes configured in your Organization yet"
+          title="No Attributes yet"
+          description="Create an Attribute to group Resource Roles and apply features to them."
           action={{ label: 'Create a new Attribute', onClick: () => navigate('/settings/attributes/new') }}
           docsUrl={docsUrl.features.attributes}
           docsLabel="Attributes documentation"
@@ -175,10 +177,10 @@ export default function Attributes() {
 
           {filtered.length === 0 ? (
             <Text c="dimmed" size="sm">
-              {`No attributes match connection '${filterConn}'.`}
+              {`No attributes match Resource '${filterConn}'.`}
             </Text>
           ) : (
-            <Paper withBorder radius="md">
+            <Paper withBorder>
               {filtered.map((attr, idx) => (
                 <div key={attr.name}>
                   {idx > 0 && <Divider />}

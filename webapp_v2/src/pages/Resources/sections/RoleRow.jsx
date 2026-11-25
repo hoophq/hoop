@@ -4,6 +4,7 @@ import { ChevronDown, EllipsisVertical } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import ActionMenu from '@/components/ActionMenu'
 import Button from '@/components/Button'
+import Tooltip from '@/components/Tooltip'
 import { useBridgeStore } from '@/stores/useBridgeStore'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import {
@@ -64,7 +65,7 @@ export default function RoleRow({
             )}
             {canTestConnection(role) && (
               <ActionMenu.Item disabled={testing} onClick={() => onTest(role.name)}>
-                Test Connection
+                Test connection
               </ActionMenu.Item>
             )}
           </ActionMenu>
@@ -73,9 +74,11 @@ export default function RoleRow({
         {isAdmin && (
           <ActionMenu
             target={
-              <ActionIcon variant="subtle" color="gray" size="sm" aria-label={'More options for ' + role.name}>
-                <EllipsisVertical size={16} />
-              </ActionIcon>
+              <Tooltip label={'More options for ' + role.name}>
+                <ActionIcon variant="subtle" color="gray" size="sm" aria-label={'More options for ' + role.name}>
+                  <EllipsisVertical size={16} />
+                </ActionIcon>
+              </Tooltip>
             }
           >
             {role.managed_by !== 'hoopagent' && (

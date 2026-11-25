@@ -167,9 +167,11 @@ export default function Reviews() {
 
       <Stack gap="xl">
         <Stack gap="sm">
-          <Title order={1}>Approvals</Title>
-          <Text size="lg" c="dimmed">
-            The sessions and statements waiting for approval, and what was decided about them.
+          <Title order={1}>{filter === 'settled' ? 'Approval History' : 'Pending Approvals'}</Title>
+          <Text size="md" c="dimmed">
+            {filter === 'settled'
+              ? 'See what was decided about each approval request.'
+              : 'Approve or reject the sessions and statements waiting for review.'}
           </Text>
         </Stack>
 

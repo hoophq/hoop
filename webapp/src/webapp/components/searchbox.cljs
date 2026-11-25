@@ -79,7 +79,7 @@
         [searchbox-list-icon]])]))
 
 (defn input-style [icon-position]
-  (str "w-full rounded-md border shadow-sm "
+  (str "w-full rounded-none border "
        "border-gray-300 bg-white focus:outline-primary-9 "
        "focus:ring-1 focus:ring-primary-9 "
        "sm:text-sm "
@@ -88,7 +88,7 @@
          "pl-8 pr-3")))
 
 (defn input-style-dark [icon-position]
-  (str "w-full rounded-md border shadow-sm "
+  (str "w-full rounded-none border "
        "border-gray-400 bg-transparent text-white "
        "pl-3 pr-12 "
        "focus:border-white focus:outline-none "

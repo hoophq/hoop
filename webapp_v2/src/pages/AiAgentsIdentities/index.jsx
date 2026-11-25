@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import Button from '@/components/Button'
 import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
@@ -11,6 +12,7 @@ import Modal from '@/components/Modal'
 import Tooltip from '@/components/Tooltip'
 import { aiAgentsService } from '@/services/aiAgents'
 import { truncateKey } from '@/utils/maskedKey'
+import { docsUrl } from '@/utils/docsUrl'
 
 const LIST_PATH = '/ai-agents-identities'
 const NEW_PATH = '/ai-agents-identities/new'
@@ -71,25 +73,29 @@ export default function AiAgentsIdentities() {
   }
 
   if (showLoader) return <PageLoader />
-  if (error) return <PageLoader error={error} />
+  if (error) return <PageLoader error h={300} message="Failed to load AI Agents Identities." />
 
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>AI Agents Identities</Title>
-          <Text c="dimmed" size="lg">
+          <Text c="dimmed" size="md">
             Create scoped, auditable identities for your AI agents.
           </Text>
         </Stack>
-        <Button onClick={() => navigate(NEW_PATH)}>Create new AI Agent</Button>
+        {agents.length > 0 && (
+          <Button onClick={() => navigate(NEW_PATH)}>Create new AI Agent</Button>
+        )}
       </Group>
 
       {agents.length === 0 ? (
         <EmptyState
-          title="No AI agents yet"
-          description="Create an AI Agent identity to give programmatic, auditable access to Hoop from your AI tools."
+          title="No AI Agent Identities yet"
+          description="Create one to give your AI tools scoped, auditable access to Hoop."
           action={{ label: 'Create new AI Agent', onClick: () => navigate(NEW_PATH) }}
+          docsUrl={docsUrl.features.mcpServer}
+          docsLabel="AI Agent Identities documentation"
         />
       ) : (
         <Table>

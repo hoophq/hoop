@@ -3,7 +3,7 @@
 .card {
   background-color: var(--mantine-color-body);
   border: 1px solid var(--hoop-border-subtle);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--hoop-card-radius);
   padding: var(--mantine-spacing-smAlt);
 }
 

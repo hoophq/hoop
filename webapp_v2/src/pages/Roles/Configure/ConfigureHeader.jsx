@@ -5,7 +5,7 @@ import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { canTestConnection, isSidecarMirror } from '@/utils/connectionPolicy'
 
 // Page header. Shows "Configure" + the connection's icon and name on the
-// left, and the Test Connection action on the right.
+// left, and the Test connection action on the right.
 
 export default function ConfigureHeader({ connection, testing, onTest }) {
   const getConnectionIcon = useConnectionIconGetter()
@@ -15,7 +15,7 @@ export default function ConfigureHeader({ connection, testing, onTest }) {
   return (
     <Group justify="space-between" align="flex-start">
       <Stack gap="xs">
-        <Title order={2}>Configure</Title>
+        <Title order={1}>Configure</Title>
         <Group gap="sm" align="center">
           <Image src={iconUrl} w={20} h={20} alt="" />
           <Text size="md">{connection.name}</Text>
@@ -29,7 +29,7 @@ export default function ConfigureHeader({ connection, testing, onTest }) {
 
       {canTest && (
         <Button variant="default" loading={testing} onClick={onTest}>
-          Test Connection
+          Test connection
         </Button>
       )}
     </Group>

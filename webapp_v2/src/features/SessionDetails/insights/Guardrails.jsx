@@ -29,7 +29,7 @@ function Words({ entry }) {
   const chips = (
     <Group gap={4}>
       {words.map((word) => (
-        <Paper key={word} variant="strong" radius="sm" p="smAlt">
+        <Paper key={word} variant="strong" p="smAlt">
           <Text ff="monospace" size="xs">
             {word}
           </Text>

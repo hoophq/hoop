@@ -3,6 +3,7 @@ import { Box, Flex, Popover, Stack, Text } from '@mantine/core'
 import { Check, Search, X } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
+import classes from './ValueFilter.module.css'
 
 export default function ValueFilter({
   icon,
@@ -43,10 +44,8 @@ export default function ValueFilter({
           in the filter bar. */}
       <Popover.Target>
         <Button
-          variant={hasSelected ? 'light' : 'default'}
-          color="gray"
-          fz="sm"
-          c="dimmed"
+          variant="field"
+          data-filled={hasSelected || undefined}
           onClick={() => setOpen((value) => !value)}
           leftSection={<Icon size={16} />}
           rightSection={
@@ -75,7 +74,7 @@ export default function ValueFilter({
                 onClear()
                 close()
               }}
-              style={{ cursor: 'pointer', borderRadius: 4 }}
+              className={classes.option}
             >
               <Text size="sm" c="dimmed">
                 Clear filter
@@ -89,7 +88,7 @@ export default function ValueFilter({
             leftSection={<Search size={14} />}
           />
           {filtered.length > 0 ? (
-            <Stack gap={0} mah={288} style={{ overflowY: 'auto' }}>
+            <Stack gap={0} mah={288} className={classes.scroll}>
               {filtered.map((value) => (
                 <Flex
                   key={value}
@@ -101,7 +100,7 @@ export default function ValueFilter({
                     onSelect(value)
                     close()
                   }}
-                  style={{ cursor: 'pointer', borderRadius: 4 }}
+                  className={classes.option}
                 >
                   <Text size="sm" lineClamp={1}>
                     {value}

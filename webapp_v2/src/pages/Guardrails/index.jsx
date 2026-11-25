@@ -22,6 +22,8 @@ import { useGuardrailsStore } from './store'
 import { AGENT_DLP_REQUIRED } from './helpers'
 import GuardrailListItem from './components/GuardrailListItem'
 import GuardrailsPromotion from './components/GuardrailsPromotion'
+import List from '@/components/List'
+import { docsUrl } from '@/utils/docsUrl'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
@@ -135,12 +137,14 @@ export default function Guardrails() {
         <Stack gap="sm">
           <Title order={1}>Guardrails</Title>
           <Text size="md" c="dimmed">
-            Create custom rules to guide and protect usage of your resource roles and sidecar listeners
+            Create custom rules to guide and protect usage of your Resource Roles and Sidecar listeners
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
-          Create new rule
-        </Button>
+        {list.length > 0 && (
+          <Button onClick={goCreate} disabled={atFreeLimit}>
+            Create new rule
+          </Button>
+        )}
       </Group>
 
       {atFreeLimit && (
@@ -168,7 +172,7 @@ export default function Guardrails() {
               <AsyncValueFilter
                 icon={Rotate3d}
                 label="Resource Role"
-                placeholder="Search resource roles"
+                placeholder="Search Resource Roles"
                 selected={selectedRole}
                 onSelect={setSelectedRole}
                 onClear={() => setSelectedRole(null)}
@@ -195,9 +199,11 @@ export default function Guardrails() {
 
       {list.length === 0 ? (
         <EmptyState
-          compact
           title="No Guardrails yet"
-          description="Create one for your resource roles or sidecar listeners."
+          description="Create one for your Resource Roles or Sidecar listeners."
+          action={{ label: 'Create new rule', onClick: goCreate }}
+          docsUrl={docsUrl.features.guardrails}
+          docsLabel="Guardrails documentation"
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState
@@ -206,18 +212,16 @@ export default function Guardrails() {
           description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
         />
       ) : (
-        <Box>
-          {filteredGuardrails.map((guardrail, idx) => (
+        <List>
+          {filteredGuardrails.map((guardrail) => (
             <GuardrailListItem
               key={guardrail.id}
               guardrail={guardrail}
               traffic={traffic.trafficOf(guardrail)}
-              isFirst={idx === 0}
-              isLast={idx === filteredGuardrails.length - 1}
               onConfigure={(id) => navigate(`/guardrails/edit/${id}`)}
             />
           ))}
-        </Box>
+        </List>
       )}
     </Stack>
   )

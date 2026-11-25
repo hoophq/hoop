@@ -1,15 +1,8 @@
 import { useState, useEffect } from 'react'
-import {
-  Alert,
-  Anchor,
-  Button,
-  Group,
-  JsonInput,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
+import { Anchor, Group, JsonInput, Stack, Text, Title } from '@mantine/core'
+import Alert from '@/components/Alert'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
 import { AlertCircle } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'
@@ -94,7 +87,7 @@ function SettingsLicense() {
     setSaving(true)
     try {
       await licenseService.update(parsed)
-      showSnackbar({ level: 'success', text: 'License updated successfully' })
+      showSnackbar({ level: 'success', text: 'License updated.' })
       const [updated, serverInfo] = await Promise.all([licenseService.getInfo(), authService.getServerInfo()])
       setLicenseInfo(updated)
       setServerInfo(serverInfo)
@@ -111,9 +104,9 @@ function SettingsLicense() {
   return (
     <Stack gap={0}>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Title order={1}>License</Title>
-          <Text size="lg" c="dimmed">
+          <Text size="md" c="dimmed">
             View and manage your organization's license.
           </Text>
         </Stack>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Group, Stack, Switch, Text, Title } from '@mantine/core'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import Switch from '@/components/Switch'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
@@ -9,7 +10,7 @@ import { showSnackbar } from '@/utils/snackbar'
 
 const STABILITY_COLOR = {
   experimental: 'orange',
-  beta: 'indigo',
+  beta: 'gray',
 }
 
 export default function SettingsExperimental() {
@@ -66,9 +67,9 @@ export default function SettingsExperimental() {
 
   return (
     <Stack gap="xl">
-      <Stack gap="xs">
-        <Title order={1}>Experimental features</Title>
-        <Text c="dimmed" size="lg">
+      <Stack gap="sm">
+        <Title order={1}>Experimental</Title>
+        <Text c="dimmed" size="md">
           Enable or disable experimental and beta features for your organization.
         </Text>
       </Stack>
@@ -102,6 +103,7 @@ export default function SettingsExperimental() {
                   <Badge
                     variant="light"
                     color={STABILITY_COLOR[flag.stability] ?? 'gray'}
+                    fullLabel
                   >
                     {flag.stability}
                   </Badge>

@@ -25,6 +25,7 @@ import PresetMappingTable from './sections/PresetMappingTable'
 import AutomatedMappingTable from './sections/AutomatedMappingTable'
 import PromptsTable from './sections/PromptsTable'
 import CmdbTable from './sections/CmdbTable'
+import classes from './Form.module.css'
 
 const FREE_LICENSE_INFO_MESSAGE =
   'Organizations with Free plan have limited automation. Upgrade to Enterprise to have unlimited access to Jira Templates.'
@@ -165,15 +166,11 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
         mb="xl"
         mx={-PAGE_PADDING}
         px={PAGE_PADDING}
-        style={{
-          zIndex: 10,
-          borderBottom: headerInView
-            ? '1px solid transparent'
-            : '1px solid var(--mantine-color-default-border)',
-        }}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
         <Title order={2}>
-          {isEdit ? 'Configure JIRA Template' : 'Create a new JIRA Template'}
+          {isEdit ? 'Configure Jira template' : 'Create a new Jira template'}
         </Title>
         <Group gap="sm">
           {isEdit && (
@@ -201,7 +198,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
       <Stack gap="xxlAlt">
         <FormSection
           title="Integration details"
-          description="Used to identify your Jira configuration in your resource roles."
+          description="Used to identify your Jira configuration in your Resource Roles."
         >
           <Stack gap="md" maw={600}>
             <TextInput
@@ -263,7 +260,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
 
         <FormSection
           title="Associate Resource Roles"
-          description="Select resource roles where this template should be applied"
+          description="Select Resource Roles where this template should be applied"
         >
           <Box maw={600}>
             <ConnectionsMultiSelect
@@ -274,8 +271,8 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
         </FormSection>
 
         <FormSection
-          title="Configure resource role tags mapping"
-          description="Match key-value information in Jira fields with your resource role tags."
+          title="Configure Resource Role tags mapping"
+          description="Match key-value information in Jira fields with your Resource Role tags."
         >
           <PresetMappingTable
             rows={mappingRows}
@@ -289,7 +286,7 @@ function JiraTemplateFormFields({ template, id, isEdit }) {
 
         <FormSection
           title="Configure automated mapping"
-          description="Append additional information to your Jira cards when executing a command in your resource roles."
+          description="Append additional information to your Jira cards when executing a command in your Resource Roles."
         >
           <AutomatedMappingTable
             rows={mappingRows}

@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { Box, Text } from '@mantine/core'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import Checkbox from '@/components/Checkbox'
 import Table from '@/components/Table'
 import classes from './TreeTable.module.css'
@@ -51,16 +52,18 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
             )}
             <Table.Td w={40}>
               {(hasChildren || row.error) && (
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  size="sm"
-                  aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${row.name}`}
-                  aria-expanded={isOpen}
-                  onClick={() => toggle(row.id)}
-                >
-                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </ActionIcon>
+                <Tooltip label={`${isOpen ? 'Collapse' : 'Expand'} ${row.name}`}>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="sm"
+                    aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${row.name}`}
+                    aria-expanded={isOpen}
+                    onClick={() => toggle(row.id)}
+                  >
+                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </ActionIcon>
+                </Tooltip>
               )}
             </Table.Td>
             {columns.map((column, index) => (

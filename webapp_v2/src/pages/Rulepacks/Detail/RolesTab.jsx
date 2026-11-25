@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Box,
-  Card,
-  Checkbox,
-  Group,
-  Stack,
-  Text,
-} from '@mantine/core'
+import { Box, Card, Group, Stack, Text } from '@mantine/core'
+import Checkbox from '@/components/Checkbox'
 import { ListVideo, Rotate3d, Search, Shapes } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
@@ -105,7 +99,7 @@ export default function RolesTab() {
     if (result.ok) {
       showSnackbar({
         level: 'success',
-        text: 'Rulepack applied successfully',
+        text: 'Rulepack applied.',
       })
       return
     }
@@ -114,8 +108,8 @@ export default function RolesTab() {
       level: 'error',
       text:
         missing && missing.length > 0
-          ? `Unknown connections: ${missing.join(', ')}`
-          : 'Failed to apply rulepack',
+          ? `Unknown Resource Roles: ${missing.join(', ')}`
+          : 'Failed to apply rulepack.',
     })
   }
 
@@ -125,7 +119,7 @@ export default function RolesTab() {
   return (
     <Stack gap="md">
       <Group gap="xs" align="flex-start" wrap="wrap">
-        <Box style={{ flex: 1, minWidth: 240 }}>
+        <Box flex={1} miw={240}>
           <TextInput
             placeholder="Search roles"
             value={search}
@@ -166,8 +160,8 @@ export default function RolesTab() {
           <Box p="xl" ta="center">
             <Text size="sm" c="dimmed">
               {anyFilter
-                ? 'No connections match your filters.'
-                : 'No connections available.'}
+                ? 'No Resource Roles match your filters.'
+                : 'No Resource Roles available.'}
             </Text>
           </Box>
         ) : (

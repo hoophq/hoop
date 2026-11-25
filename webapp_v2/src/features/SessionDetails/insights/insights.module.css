@@ -1,7 +1,7 @@
 /* The insight cards' layout; their surfaces are Paper variants (theme). */
 .header {
   width: 100%;
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--hoop-card-radius);
 }
 
 .chevron {

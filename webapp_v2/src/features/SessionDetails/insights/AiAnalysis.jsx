@@ -52,7 +52,7 @@ export default function AiAnalysis({ analysis }) {
         <Group gap="xs" wrap="nowrap">
           <Image src="/images/ai-session-analyzer-logo.svg" alt="" w={20} h={20} />
           <Text size="sm" fw={700}>
-            AI Session Analyzer
+            AI Analyzer
           </Text>
         </Group>
       }

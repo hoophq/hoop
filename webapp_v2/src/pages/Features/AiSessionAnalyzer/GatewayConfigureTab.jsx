@@ -48,7 +48,12 @@ const emptyDraft = () => ({ model: '', apiKey: '', apiUrl: '' })
 // and read by gateway/aianalyzer and gateway/transport/client.go. A sidecar
 // reads none of it: its provider lives in its own document, per sidecar, and
 // its credential is a path on its own filesystem.
-export default function GatewayConfigureTab({ onSaved }) {
+// With sidecars too, the section says this provider is for Agent sessions only:
+// one line about the provider, in the provider section, not above the form.
+const PROVIDER_HELP = 'Pick a market model, or a custom one that follows the OpenAI API.'
+const PROVIDER_SCOPE = ' It analyzes Agent sessions. Each Sidecar sets its provider in its own configuration.'
+
+export default function GatewayConfigureTab({ onSaved, mixed = false }) {
   const provider = useAiSessionAnalyzerStore((s) => s.provider)
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
   const saveProvider = useAiSessionAnalyzerStore((s) => s.saveProvider)
@@ -124,7 +129,7 @@ export default function GatewayConfigureTab({ onSaved }) {
     <Stack gap="xxlAlt" pb="xl">
       <SectionRow
         title="Select your provider"
-        description="Select between a market or custom model. Custom models need to follow the OpenAI API pattern."
+        description={mixed ? PROVIDER_HELP + PROVIDER_SCOPE : PROVIDER_HELP}
       >
         <Box maw={600}>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">

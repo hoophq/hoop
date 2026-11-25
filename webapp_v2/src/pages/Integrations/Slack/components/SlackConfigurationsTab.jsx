@@ -67,7 +67,7 @@ function SlackConfigurationsTab({
       showSnackbar({ level: 'error', text: 'Tokens must contain only ASCII characters.' })
       return
     }
-    onSave(payload, 'Slack app configured!')
+    onSave(payload, 'Slack app configured.')
   }
 
   return (

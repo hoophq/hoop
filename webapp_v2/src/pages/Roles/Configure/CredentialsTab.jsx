@@ -59,7 +59,7 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
     if (error && !metadata) {
       return (
         <CredentialsError
-          title="Could not load the connection catalog."
+          title="Could not load the Resource catalog."
           message={error}
         />
       )
@@ -74,7 +74,7 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
     return (
       <CredentialsError
         title={`No catalog entry for ${shape}.`}
-        message="Try refreshing the page — if it keeps failing, the connections catalog is missing this subtype."
+        message="Refresh the page. If it fails again, the Resource catalog does not have this subtype."
       />
     )
   }

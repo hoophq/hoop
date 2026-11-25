@@ -74,7 +74,7 @@ function RoleAttributes({ role }) {
         onCreate={(name) => createAttribute(role.id, name)}
       />
       <Text size="sm" c="dimmed">
-        Determine how protection rules and access policies apply to this role.
+        Determine how protection rules and access rules apply to this role.
       </Text>
     </Stack>
   )
@@ -178,7 +178,7 @@ export default function RoleForm({ role }) {
               leftSection={<Trash2 size={16} />}
               onClick={() => removeRole(role.id)}
             >
-              Remove Role
+              Remove Resource Role
             </Button>
           </Group>
         )}

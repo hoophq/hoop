@@ -1,4 +1,4 @@
-import { Tooltip } from '@mantine/core';
+import Tooltip from '@/components/Tooltip';
 import { useNavigate } from 'react-router-dom';
 import classes from './Sidebar.module.css';
 

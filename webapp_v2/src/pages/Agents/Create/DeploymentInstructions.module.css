@@ -1,0 +1,4 @@
+/* A key or URL has no spaces: let it break anywhere so it never scrolls sideways. */
+.breakAll {
+  word-break: break-all;
+}

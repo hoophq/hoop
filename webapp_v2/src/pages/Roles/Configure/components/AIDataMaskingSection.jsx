@@ -53,7 +53,7 @@ export default function AIDataMaskingSection() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more about AI Data Masking
+            Read the AI Data Masking docs
           </Button>
           {redactProvider === 'mspresidio' &&
             <Button
@@ -63,7 +63,7 @@ export default function AIDataMaskingSection() {
               component="a"
               href="/ai-data-masking"
             >
-              Go to AI Data Masking Management
+              Go to AI Data Masking
             </Button>}
         </Stack>
       }

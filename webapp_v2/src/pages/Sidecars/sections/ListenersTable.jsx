@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Group, Image, Stack, Text } from '@mantine/core'
-import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, CirclePlus, Pencil, Search } from 'lucide-react'
+import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Plus, Search } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import Tooltip from '@/components/Tooltip'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Table from '@/components/Table'
 import TextInput from '@/components/TextInput'
+import EmptyState from '@/layout/EmptyState'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { protocolInfo } from '../config'
 import { listenerPolicies } from '../features'
@@ -42,8 +44,8 @@ function PoliciesCell({ listener, config, boundRules }) {
   const { features, inheritedOnly } = listenerPolicies(listener, config, boundRules)
   if (features.length > 0) return <FeaturePills compact features={features} />
   return (
-    <Text size="xs" fw={500} c="var(--hoop-text-faint)">
-      {inheritedOnly ? 'Inherited policy' : 'No policies configured'}
+    <Text size="sm" c="dimmed">
+      {inheritedOnly ? 'Inherited rules' : 'No rules'}
     </Text>
   )
 }
@@ -96,44 +98,45 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
-        <Group gap="lgAlt" align="center">
-          <Group gap="smAlt" align="baseline">
-            <Text size="sm" fw={700}>
-              Listeners
-            </Text>
-            <Text size="xs" fw={500} c="var(--hoop-text-faint)">
-              {`${listeners.length} ${listeners.length === 1 ? 'Listener' : 'Listeners'}`}
-            </Text>
-          </Group>
-          {listeners.length > 0 && (
-            <TextInput
-              size="xs"
-              placeholder="Search Listeners"
-              aria-label="Search listeners"
-              leftSection={<Search size={16} aria-hidden="true" />}
-              value={query}
-              onChange={(e) => setQuery(e.currentTarget.value)}
-              w={200}
-            />
-          )}
+        <Group gap="sm" align="baseline">
+          {/* Same weight as the other sections of the card (Global settings, Features). */}
+          <Text fw={600}>Listeners</Text>
+          <Text size="sm" c="dimmed">
+            {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
+          </Text>
         </Group>
-        {editable && (
-          <Button variant="light" size="xs" leftSection={<CirclePlus size={16} />} onClick={onAdd}>
-            Add Listener
+        {/* One create button: in the empty state while there are none. */}
+        {editable && listeners.length > 0 && (
+          <Button variant="default" size="sm" leftSection={<Plus size={16} />} onClick={onAdd}>
+            Add listener
           </Button>
         )}
       </Group>
 
+      {listeners.length > 0 && (
+        <TextInput
+          placeholder="Search listeners"
+          aria-label="Search listeners"
+          leftSection={<Search size={16} aria-hidden="true" />}
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
+          w={280}
+        />
+      )}
+
       {listeners.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          {editable
-            ? 'No listeners yet. A sidecar needs at least one to start.'
-            : 'No listeners here. A connected sidecar reads them from its own config file.'}
-        </Text>
+        <EmptyState
+          compact
+          title="No listeners yet"
+          description={
+            editable
+              ? 'A Sidecar needs at least one listener to start.'
+              : 'A connected Sidecar reads its listeners from its own config file.'
+          }
+          action={editable ? { label: 'Add listener', onClick: onAdd } : undefined}
+        />
       ) : rows.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          {`No listener matches "${query.trim()}".`}
-        </Text>
+        <EmptyState compact title="No listeners match your search" description="Try clearing the search above." />
       ) : (
         <Table scrollable verticalSpacing="md">
           <Table.Thead>
@@ -155,15 +158,17 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
               return [
                 <Table.Tr key={`${label}-${index}`}>
                   <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      onClick={() => toggle(index)}
-                      aria-expanded={open}
-                      aria-label={`${open ? 'Hide' : 'Show'} details for ${label}`}
-                    >
-                      {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </ActionIcon>
+                    <Tooltip label={`${open ? 'Hide' : 'Show'} details for ${label}`}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => toggle(index)}
+                        aria-expanded={open}
+                        aria-label={`${open ? 'Hide' : 'Show'} details for ${label}`}
+                      >
+                        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </ActionIcon>
+                    </Tooltip>
                   </Table.Td>
                   <Table.Td miw={140}>
                     {/* An unnamed lane shows the name the daemon gives it, so
@@ -195,12 +200,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                   </Table.Td>
                   {editable && (
                     <Table.Td>
-                      <Button
-                        variant="subtle"
-                        size="compact-sm"
-                        leftSection={<Pencil size={14} />}
-                        onClick={() => onEdit(index)}
-                      >
+                      <Button variant="default" size="sm" onClick={() => onEdit(index)}>
                         Edit
                       </Button>
                     </Table.Td>
@@ -209,7 +209,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <FeatureRules flush sidecar={sidecar} listener={listener} editable={editable} />
+                      <FeatureRules sidecar={sidecar} listener={listener} editable={editable} />
                     </Table.Td>
                   </Table.Tr>
                 ),

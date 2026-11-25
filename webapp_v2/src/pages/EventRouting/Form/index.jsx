@@ -13,6 +13,7 @@ import Textarea from "@/components/Textarea"
 import { showSnackbar } from "@/utils/snackbar"
 import { useEventRoutingStore } from "../store"
 import EventDescription from "../components/EventDescription"
+import classes from "../EventRouting.module.css"
 
 function extractRepoName(repository) {
   if (!repository) return ""
@@ -336,12 +337,8 @@ export default function EventRoutingForm() {
         bg="var(--mantine-color-body)"
         py="md"
         mb="xxlAlt"
-        style={{
-          zIndex: 10,
-          borderBottom: headerInView
-            ? "1px solid transparent"
-            : "1px solid var(--mantine-color-default-border)",
-        }}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
         <Title order={1}>
           {isEdit ? "Edit subscription" : "Create subscription"}
@@ -401,29 +398,29 @@ export default function EventRoutingForm() {
 
         <SectionRow
           title="Target runbook"
-          description="Pick the resource role first, then the runbook to execute when matching events fire."
+          description="Pick the Resource Role first, then the runbook to execute when matching events fire."
         >
           <Stack gap="md">
             <Select
               label="Resource role"
               withAsterisk
-              placeholder="Select a resource role"
+              placeholder="Select a Resource Role"
               data={connectionOptions}
               value={form.connectionName || null}
               onChange={selectConnection}
               searchable
-              nothingFoundMessage="No resource roles"
+              nothingFoundMessage="No Resource Roles"
             />
             <Select
               label="Runbook"
               withAsterisk
               placeholder={
                 !form.connectionName
-                  ? "Select a resource role first"
+                  ? "Select a Resource Role first"
                   : runbooksStatus === "loading"
                     ? "Loading runbooks…"
                     : noRunbooks
-                      ? "No runbooks for this resource role"
+                      ? "No runbooks for this Resource Role"
                       : "Select a runbook"
               }
               data={runbookOptions}
@@ -437,7 +434,7 @@ export default function EventRoutingForm() {
             />
             {noRunbooks && (
               <Text size="xs" c="dimmed">
-                {"No runbooks are configured for this resource role. "}
+                {"No runbooks are configured for this Resource Role. "}
                 <Anchor href="/features/runbooks/setup" size="xs">
                   Set up runbooks
                 </Anchor>
@@ -447,7 +444,7 @@ export default function EventRoutingForm() {
             {runbooksStatus === "error" && (
               <Text size="xs" c="red">
                 {runbooksByConnection[form.connectionName]?.error ||
-                  "Failed to load runbooks for this resource role."}
+                  "Failed to load runbooks for this Resource Role."}
               </Text>
             )}
           </Stack>
@@ -464,11 +461,7 @@ export default function EventRoutingForm() {
           >
             <Box
               mah={480}
-              style={{
-                overflow: "auto",
-                border: "1px solid var(--mantine-color-default-border)",
-                borderRadius: "var(--mantine-radius-sm)",
-              }}
+              className={classes.scrollBox}
             >
               {grouped.length === 0 ? (
                 <Text size="xs" c="dimmed" p="md">
@@ -481,10 +474,7 @@ export default function EventRoutingForm() {
                       px="sm"
                       py="xs"
                       bg="var(--hoop-surface-muted)"
-                      style={{
-                        borderBottom:
-                          "1px solid var(--mantine-color-default-border)",
-                      }}
+                      className={classes.row}
                     >
                       <Text size="xs" fw={600} c="dimmed" tt="uppercase">
                         {cat}
@@ -499,15 +489,11 @@ export default function EventRoutingForm() {
                         gap="sm"
                         wrap="nowrap"
                         bg="white"
-                        style={{
-                          borderBottom:
-                            "1px solid var(--mantine-color-default-border)",
-                          cursor: "pointer",
-                        }}
+                        className={classes.clickableRow}
                         onClick={() => selectEvent(e.name)}
                       >
                         <Radio value={e.name} mt={4} />
-                        <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                        <Stack gap={2} flex={1} miw={0}>
                           <Code variant="accent">{e.name}</Code>
                           <EventDescription text={e.description} size="xs" c="dimmed" />
                         </Stack>
@@ -546,17 +532,14 @@ export default function EventRoutingForm() {
                   wrap="nowrap"
                   gap="md"
                   bg="var(--hoop-surface-muted)"
-                  style={{
-                    borderBottom:
-                      "1px solid var(--mantine-color-default-border)",
-                  }}
+                  className={classes.row}
                 >
                   <Text
                     size="xs"
                     fw={600}
                     c="dimmed"
                     tt="uppercase"
-                    style={{ flex: 1, minWidth: 0 }}
+                    flex={1} miw={0}
                   >
                     Runbook parameter
                   </Text>
@@ -566,7 +549,7 @@ export default function EventRoutingForm() {
                     fw={600}
                     c="dimmed"
                     tt="uppercase"
-                    style={{ flex: 1.2, minWidth: 0 }}
+                    flex={1.2} miw={0}
                   >
                     Event payload field
                   </Text>
@@ -582,12 +565,9 @@ export default function EventRoutingForm() {
                       align="flex-start"
                       wrap="nowrap"
                       gap="md"
-                      style={{
-                        borderBottom:
-                          "1px solid var(--mantine-color-default-border)",
-                      }}
+                      className={classes.row}
                     >
-                      <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                      <Stack gap={2} flex={1} miw={0}>
                         <Group gap="xs" align="center">
                           <Code>{paramName}</Code>
                           {required && (
@@ -610,9 +590,9 @@ export default function EventRoutingForm() {
                       <ArrowRight
                         size={16}
                         color="var(--mantine-color-dimmed)"
-                        style={{ marginTop: 6 }}
+                        mt={6}
                       />
-                      <Box style={{ flex: 1.2, minWidth: 0 }}>
+                      <Box flex={1.2} miw={0}>
                         <Select
                           placeholder={
                             required ? "Pick an event field" : "Optional"

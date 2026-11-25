@@ -1,5 +1,6 @@
 import { SpotlightRoot, SpotlightSearch, SpotlightActionsList } from '@mantine/spotlight';
-import { Badge, ActionIcon } from '@mantine/core';
+import Badge from '@/components/Badge';
+import ActionIcon from '@/components/ActionIcon';
 import { Search, X } from 'lucide-react';
 
 function CommandPaletteRoot({ 

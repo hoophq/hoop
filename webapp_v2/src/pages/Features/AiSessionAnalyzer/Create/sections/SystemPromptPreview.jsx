@@ -33,7 +33,7 @@ export default function SystemPromptPreview() {
             <Text size="sm" fw={500}>
               {"Hoop's appended system prompt"}
             </Text>
-            <Badge variant="light" color="gray" radius="xl">
+            <Badge variant="light" color="gray">
               Read-only
             </Badge>
           </Group>

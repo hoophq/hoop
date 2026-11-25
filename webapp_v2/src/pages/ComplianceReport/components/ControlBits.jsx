@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom'
-import { Badge, Button, Group, Stack, Text, ThemeIcon, Tooltip } from '@mantine/core'
+import { Group, Stack, Text, ThemeIcon } from '@mantine/core'
+import Badge from '@/components/Badge'
+import Button from '@/components/Button'
+import Tooltip from '@/components/Tooltip'
 import { STATUS_META, catalogDocsUrl } from '../constants'
 import styles from '../ComplianceReport.module.css'
 
@@ -36,7 +39,6 @@ export function StatusIndicator({ status, message, evidence, size = 18 }) {
         variant="light"
         color={meta.color}
         size={26}
-        radius="xl"
         tabIndex={0}
         aria-label={message ? `${meta.label}: ${message}` : meta.label}
       >
@@ -93,7 +95,7 @@ export function ControlRow({ control }) {
         />
         <Stack gap={2}>
           <Group gap="xs" wrap="nowrap">
-            <Badge variant="default" size="sm" radius="sm" ff="monospace" tt="none">
+            <Badge variant="default" size="sm" ff="monospace" tt="none">
               {control.id}
             </Badge>
             <Text size="sm" fw={500}>

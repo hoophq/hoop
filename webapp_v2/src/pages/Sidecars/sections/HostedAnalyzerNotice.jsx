@@ -12,7 +12,7 @@ export default function HostedAnalyzerNotice({ configuration }) {
   if (configuration?.analyzer?.use_hoop_llm_provider !== true) return null
 
   return (
-    <Alert color="yellow" variant="light" icon={<TriangleAlert size={16} />} radius="md">
+    <Alert color="yellow" variant="light" icon={<TriangleAlert size={16} />}>
       <Text size="sm">
         This sidecar's AI analyzer uses the model Hoop hosts. Statement text, which can contain
         personal data, is sent to Hoop for classification. To keep it in your network, set your own

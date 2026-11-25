@@ -68,7 +68,7 @@ export default function TerminalAccessTab({ connection }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more about Runbooks
+            Read the Runbooks docs
           </Button>
         }
       />
@@ -78,7 +78,7 @@ export default function TerminalAccessTab({ connection }) {
           <Title order={4}>Guardrails</Title>
           <Text size="sm" c="dimmed">
             Create custom rules to guide and protect usage within your
-            resource roles.
+            Resource Roles.
           </Text>
         </Stack>
         <MultiSelect
@@ -111,7 +111,7 @@ export default function TerminalAccessTab({ connection }) {
         <Select
           placeholder="Select..."
           clearable
-          nothingFoundMessage="No Jira templates configured. Go to JIRA Integration to add one."
+          nothingFoundMessage="No Jira templates configured. Go to Jira integration to add one."
           data={jiraOptions}
           value={drafts.jira_issue_template_id || null}
           onChange={(value) => setDraft({ jira_issue_template_id: value || '' })}
@@ -124,7 +124,7 @@ export default function TerminalAccessTab({ connection }) {
           component={Link}
           to="/jira-templates"
         >
-          Go to JIRA Integration
+          Go to Jira integration
         </Button>
       </Stack>
 
@@ -133,7 +133,7 @@ export default function TerminalAccessTab({ connection }) {
           <Title order={4}>Require specific metadata</Title>
           <Text size="sm" c="dimmed">
             Include mandatory metadata to be filled before executing
-            commands on this resource role.
+            commands on this Resource Role.
           </Text>
         </Stack>
         <MetadataFieldsInput />

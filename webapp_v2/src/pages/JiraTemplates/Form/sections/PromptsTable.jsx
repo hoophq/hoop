@@ -1,4 +1,5 @@
-import { Checkbox, Stack } from '@mantine/core'
+import { Stack } from '@mantine/core'
+import Checkbox from '@/components/Checkbox'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import TagsInput from '@/components/TagsInput'

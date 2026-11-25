@@ -3,6 +3,7 @@ import { Box, Flex, Popover, Stack, Text } from "@mantine/core";
 import { Check, Search, X } from "lucide-react";
 import Button from "@/components/Button";
 import TextInput from "@/components/TextInput";
+import classes from "./FilterPopover.module.css";
 
 /**
  * A popover-based single-select filter. Shows a searchable list of values
@@ -82,7 +83,7 @@ export default function FilterPopover({
 								onClear();
 								close();
 							}}
-							style={{ cursor: "pointer", borderRadius: 4 }}
+							className={classes.option}
 						>
 							<Text size="sm" c="dimmed">
 								Clear filter
@@ -96,7 +97,7 @@ export default function FilterPopover({
 						leftSection={<Search size={14} />}
 					/>
 					{filtered.length > 0 ? (
-						<Stack gap={0} mah={288} style={{ overflowY: "auto" }}>
+						<Stack gap={0} mah={288} className={classes.scroll}>
 							{filtered.map((value) => (
 								<Flex
 									key={value}
@@ -108,7 +109,7 @@ export default function FilterPopover({
 										onSelect(value);
 										close();
 									}}
-									style={{ cursor: "pointer", borderRadius: 4 }}
+									className={classes.option}
 								>
 									<Text size="sm" lineClamp={1}>
 										{value}

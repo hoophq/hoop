@@ -60,7 +60,7 @@ export default function JiraTemplates() {
   }
 
   if (listStatus === 'error' || integrationStatus === 'error') {
-    return <Text c="red">Failed to load Jira templates.</Text>
+    return <PageLoader error h={300} message="Failed to load Jira Templates." />
   }
 
   // Promotion gate: like other features, the full-page promotion replaces the
@@ -81,7 +81,8 @@ export default function JiraTemplates() {
   }
 
   const atFreeLimit = isFreeLicense && list.length >= 1
-  const showCreate = Boolean(integration) && list.length > 0
+  // The Configuration tab has its own Confirm button: one filled button per view.
+  const showCreate = Boolean(integration) && list.length > 0 && tab !== 'configuration'
 
   return (
     <Stack gap="xl">
@@ -89,7 +90,7 @@ export default function JiraTemplates() {
         <Stack gap="sm">
           <Title order={1}>Jira Templates</Title>
           <Text size="md" c="dimmed">
-            Optimize and automate workflows with Jira integration.
+            Set the fields of the Jira issues that Hoop opens for sessions.
           </Text>
         </Stack>
         {showCreate && (
@@ -97,7 +98,7 @@ export default function JiraTemplates() {
             onClick={() => navigate('/jira-templates/new')}
             disabled={atFreeLimit}
           >
-            Create new
+            Create Jira template
           </Button>
         )}
       </Group>

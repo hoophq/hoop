@@ -3,7 +3,7 @@
 
 .terminal {
   background-color: var(--hoop-terminal-bg);
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--hoop-card-radius);
   border: 1px solid var(--hoop-terminal-border);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-xs);

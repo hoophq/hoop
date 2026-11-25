@@ -26,7 +26,7 @@ export default function CardStack({ cards }) {
   })
   if (cards.length === 1) return stack
   return (
-    <Paper withBorder radius="lg" p="md">
+    <Paper withBorder p="md">
       {stack}
     </Paper>
   )
