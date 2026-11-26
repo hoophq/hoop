@@ -11,7 +11,8 @@ ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=578.0.0-0
 ARG NODE_VERSION=22.18.0
 # DEP-91: tool versions are ARG-driven so the two trains can diverge. The
 # defaults here are the LEGACY (hoophq/hoopdev) pins, kept stable for backward
-# compatibility. The CLEAN train — published as the `-clean` tag suffix, and
+# compatibility, except where upstream dropped a version (gcloud, psql). The
+# CLEAN train — published as the `-clean` tag suffix, and
 # the base the hoop-ng/hoopdev-ng repos build on — overrides them to the latest
 # releases via build-args in the clean matrix leg of
 # .github/workflows/agent-tools-build.yml.
