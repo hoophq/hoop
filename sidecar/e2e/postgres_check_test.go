@@ -231,7 +231,7 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 		}
 	})
 
-	t.Run("two literals share one generic plan", func(t *testing.T) {
+	t.Run("two keys of one shape share one plan", func(t *testing.T) {
 		checks := func() int { return strings.Count(logs.String(), `"msg":"resource check"`) }
 		before := checks()
 		for _, stmt := range []string{"SELECT v FROM big WHERE id = 21", "SELECT v FROM big WHERE id = 22 /* app='e2e' */"} {
@@ -243,7 +243,7 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 			t.Fatalf("%d checks for two literals of one shape, want 1", n)
 		}
 		if in := model.input(t, "WHERE id = 21"); !strings.Contains(in, "Index Scan on big using big_pkey") {
-			t.Fatalf("no generic plan in the model input:\n%s", in)
+			t.Fatalf("no index scan in the model input:\n%s", in)
 		}
 	})
 

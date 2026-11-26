@@ -25,8 +25,6 @@ type fakeChecker struct {
 	planErr string
 	retry   bool
 	wants   []inspect.CheckWant
-	// old is a server that cannot plan PlanText (PostgreSQL 11).
-	old bool
 
 	// scope defaults to one database and role; unknown empties it.
 	scope   string
@@ -67,7 +65,6 @@ func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect
 	}
 	if want.Plan {
 		res.Plan, res.PlanErr = f.plan, f.planErr
-		res.Generic = want.PlanText != "" && !f.old
 	}
 	return res, f.err
 }
@@ -296,68 +293,61 @@ func TestAParameterizedStatementAsksForAGenericPlan(t *testing.T) {
 	chk := bigOrders()
 	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = $1 AND note <> '$9'", inspect.OpSelect, "orders"),
 		&policy.EvalContext{ResourceCheck: chk})
-	if w := chk.checks(); len(w) != 1 || w[0].Params != 1 || w[0].PlanText != "" {
+	if w := chk.checks(); len(w) != 1 || w[0].Params != 1 {
 		t.Fatalf("checks = %+v", w)
 	}
 }
 
-func TestOneGenericPlanServesEveryLiteral(t *testing.T) {
+func TestOneLiteralPlanServesItsShape(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
 	ev := checkEvaluator(t, p, nil)
 	chk := bigOrders()
 	ec := &policy.EvalContext{ResourceCheck: chk}
 
-	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 1 AND note = 'a'", inspect.OpDelete, "orders"), ec)
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 1", inspect.OpDelete, "orders"), ec)
 	first := lastContent(p)
+	ev.EvaluateWith(sqlStmt("delete from orders\n where id='3' /*traceparent='00-ab-01'*/", inspect.OpDelete, "orders"), ec)
+	if block := first[strings.Index(first, "Resource check"):]; lastContent(p) == first || !strings.HasSuffix(lastContent(p), block) {
+		t.Fatalf("a cached plan rendered another block:\n%s", lastContent(p))
+	}
 	for _, text := range []string{
-		"DELETE FROM orders WHERE id = 2 AND note = 'b'",
-		"delete from orders\n where id=3 and note='c' /*traceparent='00-ab-01'*/",
+		"DELETE FROM orders WHERE id = 2",
+		"UPDATE orders SET note = 'a' WHERE id = 1",
+		"UPDATE orders SET note = 'b' WHERE id = 2",
 	} {
 		ev.EvaluateWith(sqlStmt(text, inspect.OpDelete, "orders"), ec)
 	}
-	w := chk.checks()
-	if len(w) != 1 || w[0].PlanText != "DELETE FROM orders WHERE id = $1 AND note = $2" || w[0].Params != 2 {
-		t.Fatalf("checks = %+v, want one generic plan", w)
-	}
-	if block := first[strings.Index(first, "Resource check"):]; !strings.HasSuffix(lastContent(p), block) {
-		t.Fatalf("a cached plan rendered another block:\n%s", lastContent(p))
+	if w := chk.checks(); len(w) != 2 {
+		t.Fatalf("checks = %+v, want one per shape", w)
 	}
 
-	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 1 AND note LIKE 'a%'", inspect.OpDelete, "orders"), ec)
-	if w = chk.checks(); len(w) != 2 || w[1].PlanText != "DELETE FROM orders WHERE id = $1 AND note LIKE 'a%'" {
-		t.Fatalf("checks = %+v, want LIKE kept inline", w)
+	for _, text := range []string{
+		"DELETE FROM orders WHERE id > 1",
+		"DELETE FROM orders WHERE id > 2",
+		"DELETE FROM orders WHERE note = 'a'",
+		"DELETE FROM orders WHERE note = 'b'",
+		"DELETE FROM orders WHERE id = 1.5",
+	} {
+		ev.EvaluateWith(sqlStmt(text, inspect.OpDelete, "orders"), ec)
 	}
-}
-
-func TestAFailedGenericPlanFallsBackToTheText(t *testing.T) {
-	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
-	chk := bigOrders()
-	chk.planErr = "SQLSTATE 42P18 (indeterminate_datatype)"
-	ec := &policy.EvalContext{ResourceCheck: chk}
-
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 1", inspect.OpSelect, "orders"), ec)
-	chk.planErr = ""
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 2", inspect.OpSelect, "orders"), ec)
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 2", inspect.OpSelect, "orders"), ec)
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 3", inspect.OpSelect, "orders"), ec)
-	w := chk.checks()
-	if len(w) != 3 || w[0].PlanText == "" || w[1].PlanText != "" || w[2].PlanText != "" || !w[2].Plan {
-		t.Fatalf("checks = %+v, want the generic plan once, then a plan per text", w)
+	if w := chk.checks(); len(w) != 7 {
+		t.Fatalf("%d checks, want a plan per range, non-key and non-integer literal", len(w))
 	}
 }
 
-func TestPostgres11PlansEachText(t *testing.T) {
+func TestAShapeDoesNotCacheAPlanError(t *testing.T) {
 	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
 	chk := bigOrders()
-	chk.old = true
 	ec := &policy.EvalContext{ResourceCheck: chk}
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), ec)
 
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 1", inspect.OpSelect, "orders"), ec)
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 1 -- again", inspect.OpSelect, "orders"), ec)
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 2", inspect.OpSelect, "orders"), ec)
-	w := chk.checks()
-	if len(w) != 2 || w[0].PlanText == "" || w[1].PlanText != "" {
-		t.Fatalf("checks = %+v, want the statement plan cached by its text", w)
+	chk.plan, chk.planErr = nil, "SQLSTATE 22P02 (invalid_text_representation)"
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 'x'", inspect.OpSelect, "orders"), ec)
+	chk.plan, chk.planErr = bigOrders().plan, ""
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 5", inspect.OpSelect, "orders"), ec)
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 6", inspect.OpSelect, "orders"), ec)
+	if w := chk.checks(); len(w) != 3 {
+		t.Fatalf("%d checks, want the error not shared and the plan shared", len(w))
 	}
 }
 
@@ -372,11 +362,11 @@ func TestACommentOnlyStatementCallsNoModel(t *testing.T) {
 	if n := p.calls.Load(); n != 0 {
 		t.Fatalf("%d model calls for statements with no SQL token", n)
 	}
-	for _, text := range []string{"/*!50000 DROP TABLE t */", "-- x\nDELETE FROM t"} {
+	for _, text := range []string{"/*!50000 DROP TABLE t */", "/*M! DROP TABLE t */", "-- x\nDELETE FROM t"} {
 		ev.Evaluate(inspect.Statement{Protocol: inspect.MySQL, Direction: inspect.FromClient, Text: text, Operation: inspect.OpDelete})
 	}
-	if n := p.calls.Load(); n != 2 {
-		t.Fatalf("%d model calls, want 2", n)
+	if n := p.calls.Load(); n != 3 {
+		t.Fatalf("%d model calls, want 3", n)
 	}
 }
 

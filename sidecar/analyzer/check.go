@@ -72,14 +72,6 @@ type planEntry struct {
 	err   string
 }
 
-// planShape is the text the check plans and the key its plan is cached under.
-type planShape struct {
-	key string
-	// text is CheckWant.PlanText; empty plans the statement.
-	text   string
-	params int
-}
-
 func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext) string {
 	if !e.cfg.ResourceCheck || ec == nil || ec.ResourceCheck == nil || !checkable(stmt.Operation) {
 		return ""
@@ -101,13 +93,13 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			missing = append(missing, t)
 		}
 	}
-	shape := e.shapeOf(scope, stmt)
-	if key := planKey(scope, shape.key, tables, facts); key != "" {
+	shape, _ := planShape(stmt, uniqueKeys(tables, facts))
+	if key := planKey(scope, shape, tables, facts); key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
 
 	if (len(missing) > 0 || !havePlan) && e.budget.available(e.cfg.MaxCalls, e.cfg.RateLimit) {
-		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: shape.params, PlanText: shape.text, Timeout: CheckTimeout}
+		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
 		res, err := e.runCheck(ctx, rc, stmt, want, ec)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
 			scope := rc.Scope()
@@ -122,7 +114,12 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			}
 			if want.Plan {
 				plan, havePlan = planEntry{lines: planLines(res.Plan), err: res.PlanErr}, true
-				e.storePlan(scope, stmt, shape, tables, facts, plan, res)
+				// An error can come from a replaced value (22P02), so a shape
+				// caches only a plan.
+				shape, replaced := planShape(stmt, uniqueKeys(tables, facts))
+				if key := planKey(scope, shape, tables, facts); key != "" && !res.Retry && !(replaced && res.PlanErr != "") {
+					e.plans.put(key, plan)
+				}
 			}
 		}
 	}
@@ -163,60 +160,50 @@ func planKey(scope, shape string, tables []string, facts map[string]tableEntry) 
 			return ""
 		}
 	}
-	return shapeKey(scope, shape)
-}
-
-func shapeKey(scope, shape string) string {
 	sum := sha256.Sum256([]byte(shape))
 	return checkKey(scope, string(sum[:]))
 }
 
-// shapeOf plans a Postgres statement that has literals and no binds as a
-// generic plan of its text with the literals as $n, so one plan serves every
-// value. A shape whose generic plan failed uses its own text until the mark
-// expires.
-func (e *Evaluator) shapeOf(scope string, stmt inspect.Statement) planShape {
-	if stmt.Protocol == inspect.Postgres && scope != "" {
-		if text, n, ok := lexer.Parameterize(stmt.Text); ok && n > 0 {
-			if key, ok := lexer.PlanKey(text, lexer.Postgres); ok {
-				generic := planShape{key: "generic\x00" + key, text: text, params: n}
-				if _, failed := e.noGeneric.get(shapeKey(scope, generic.key)); !failed {
-					return generic
-				}
-			}
-		}
-	}
-	return textShape(stmt)
-}
-
-func textShape(stmt inspect.Statement) planShape {
+// planShape is what a plan is cached under: the statement without comments,
+// with $n in place of each literal whose value cannot change the plan
+// (lexer.Parameterize). The plan of one such statement serves them all.
+// replaced reports that a literal became $n.
+func planShape(stmt inspect.Statement, unique func(string) bool) (shape string, replaced bool) {
 	if stmt.Protocol != inspect.Postgres {
-		return planShape{key: stmt.Text}
+		return stmt.Text, false
 	}
-	key, ok := lexer.PlanKey(stmt.Text, lexer.Postgres)
+	text, n, ok := lexer.Parameterize(stmt.Text, unique)
+	prefix := "shape\x00"
 	if !ok {
-		key = stmt.Text
+		text, prefix = stmt.Text, "text\x00"
 	}
-	return planShape{key: "text\x00" + key, params: maxParam(stmt)}
+	key, ok := lexer.PlanKey(text, lexer.Postgres)
+	if !ok {
+		return stmt.Text, false
+	}
+	return prefix + key, n > 0
 }
 
-// storePlan caches a plan under its shape. A generic plan that failed, or that
-// the server could not run (PostgreSQL 11 plans the statement instead),
-// marks its shape so the next statement plans its own text.
-func (e *Evaluator) storePlan(scope string, stmt inspect.Statement, shape planShape, tables []string, facts map[string]tableEntry, plan planEntry, res inspect.CheckResult) {
-	if res.Retry || scope == "" {
-		return
+// uniqueKeys returns the columns that a unique index of the statement's one
+// table covers alone, from cached facts. libhoop writes a definition as
+// "btree (col)", "expression" for an expression column and " partial" after
+// a partial index.
+func uniqueKeys(tables []string, facts map[string]tableEntry) func(string) bool {
+	if len(tables) != 1 {
+		return nil
 	}
-	if shape.text != "" && (!res.Generic || res.PlanErr != "") {
-		e.noGeneric.put(shapeKey(scope, shape.key), struct{}{})
-		if res.Generic {
-			return
+	keys := map[string]bool{}
+	for _, x := range facts[tables[0]].facts.Indexes {
+		col, ok := strings.CutPrefix(x.Definition, "btree (")
+		col, ok2 := strings.CutSuffix(col, ")")
+		if (x.Unique || x.Primary) && ok && ok2 && !strings.Contains(col, ", ") && col != "expression" {
+			keys[col] = true
 		}
-		shape = textShape(stmt)
 	}
-	if key := planKey(scope, shape.key, tables, facts); key != "" {
-		e.plans.put(key, plan)
+	if len(keys) == 0 {
+		return nil
 	}
+	return func(c string) bool { return keys[c] }
 }
 
 func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, error) {

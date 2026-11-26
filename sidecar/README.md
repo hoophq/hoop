@@ -1403,8 +1403,10 @@ included, and `exclude` with nothing else to narrow is refused. A control
 plane serves `any` and `exclude` only to a sidecar that reports
 `analyzer_trigger_items`.
 
-A SQL statement with only comments and semicolons (a driver's `-- ping`) is
-not classified, as if the trigger did not select it.
+On a postgres, mysql, mssql, oracle or clickhouse lane, a statement with only
+comments and semicolons (a driver's `-- ping`) is not classified, as if the
+trigger did not select it. A MySQL `/*! */` or MariaDB `/*M! */` comment runs,
+so it is classified.
 
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
@@ -1459,17 +1461,17 @@ small table and high on a large unindexed one.
   plan.
 - Each lane keeps its own cache. Size and indexes are cached 30 s per
   database, current role and table; a plan per the same scope and the
-  statement's shape. Comments and spacing do not change the shape; an
-  optimizer hint (`/*+ ... */`) does. A lock or timeout error is not cached.
-  The verdict cache key includes the check.
-- A statement with literals and no `$n` parameters gets a generic plan of its
-  text with `$n` in place of each literal that is compared (`=`, `<>`, `<`,
-  `<=`, `>`, `>=`), bounds a `BETWEEN`, or is an item of an `IN` or `VALUES`
-  list, so `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals
-  stay: `LIMIT`, `LIKE`, typed literals, function arguments. A generic plan
-  estimates `col < $1` at a fixed share of the table, whatever the value.
-- When the server cannot build the generic plan (a type it cannot infer,
-  PostgreSQL 11), that shape is planned with its literals until 30 s pass.
+  statement's shape. A lock or timeout error is not cached. The verdict cache
+  key includes the check.
+- The shape drops comments and spacing; an optimizer hint (`/*+ ... */`)
+  stays. It also drops each literal whose value cannot change the plan: a
+  value that `SET` assigns or a `VALUES` list holds, and a string or integer
+  compared with `=`, `<>` or `!=` to, or listed in `IN` after, a column that a
+  unique index covers alone, on a statement with one table and no subquery.
+  So `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals stay:
+  a range or a skewed column changes the plan's row estimate.
+- A statement whose strings read differently under
+  `standard_conforming_strings = off` is keyed by its exact text.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no

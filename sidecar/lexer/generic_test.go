@@ -1,54 +1,59 @@
 package lexer_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/lexer"
 )
 
+func idKey(c string) bool { return c == "id" || c == "Email" }
+
+var placeholder = regexp.MustCompile(`\$[0-9]`)
+
 func TestParameterize(t *testing.T) {
 	for sql, want := range map[string]string{
-		"SELECT * FROM t WHERE id = 42":                                            "SELECT * FROM t WHERE id = $1",
-		"SELECT * FROM t WHERE a<>'x' AND b != 2 AND c>=3":                         "SELECT * FROM t WHERE a<>$1 AND b != $2 AND c>=$3",
-		"SELECT * FROM t WHERE ts BETWEEN '2024-01-01' AND '2024-02-01' AND v = 1": "SELECT * FROM t WHERE ts BETWEEN $1 AND $2 AND v = $3",
-		"SELECT * FROM t WHERE id IN (1, 2, 3)":                                    "SELECT * FROM t WHERE id IN ($1, $2, $3)",
-		"INSERT INTO t (a, b) VALUES (1, 'x'), (2, 'y')":                           "INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)",
-		"UPDATE t SET v = E'it''s' WHERE id = $$7$$":                               "UPDATE t SET v = $1 WHERE id = $2",
-		"SELECT * FROM t WHERE (a, b) IN ((1, 2), (3, 4))":                         "SELECT * FROM t WHERE (a, b) IN (($1, $2), ($3, $4))",
-		"SELECT * FROM t WHERE id='a'AND v=1":                                      "SELECT * FROM t WHERE id=$1 AND v=$2",
-		"SELECT * FROM t WHERE x BETWEEN'a'AND'b'":                                 "SELECT * FROM t WHERE x BETWEEN $1 AND $2",
-		"SELECT * FROM t /* id = 5 */ WHERE id = 5 -- = 6":                         "SELECT * FROM t /* id = 5 */ WHERE id = $1 -- = 6",
-		"SELECT * FROM t WHERE x BETWEEN SYMMETRIC 1 AND 5":                        "SELECT * FROM t WHERE x BETWEEN SYMMETRIC 1 AND $1",
-		"SELECT * FROM t WHERE id IN (lower('A'), 'b')":                            "SELECT * FROM t WHERE id IN (lower('A'), $1)",
-		"SELECT * FROM t WHERE data->>'k' = 'v'":                                   "SELECT * FROM t WHERE data->>'k' = $1",
-		"SELECT * FROM t WHERE x BETWEEN (1) AND 5 AND y = 2":                      "SELECT * FROM t WHERE x BETWEEN (1) AND $1 AND y = $2",
+		"SELECT * FROM t WHERE id = 42":                                 "SELECT * FROM t WHERE id = $1",
+		"SELECT * FROM t WHERE t.ID<>'x' AND \"Email\" != 'a'":          "SELECT * FROM t WHERE t.ID<>$1 AND \"Email\" != $2",
+		"SELECT * FROM t WHERE id IN (1, 2, 3)":                         "SELECT * FROM t WHERE id IN ($1, $2, $3)",
+		"SELECT * FROM t WHERE id NOT IN ('a')":                         "SELECT * FROM t WHERE id NOT IN ($1)",
+		"INSERT INTO t (a, b) VALUES (1, 'x'), (2.5, 'y')":              "INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)",
+		"UPDATE t SET v = E'it''s', n = 1.5 WHERE id = $$7$$":           "UPDATE t SET v = $1, n = $2 WHERE id = $3",
+		"UPDATE t SET v = 'x' WHERE status = 'done'":                    "UPDATE t SET v = $1 WHERE status = 'done'",
+		"SELECT * FROM t WHERE id='a'AND v=1":                           "SELECT * FROM t WHERE id=$1 AND v=1",
+		"SELECT * FROM t /* id = 5 */ WHERE id = 5 -- = 6":              "SELECT * FROM t /* id = 5 */ WHERE id = $1 -- = 6",
+		"INSERT INTO t VALUES (1, ARRAY[1, 2], lower('A'))":             "INSERT INTO t VALUES ($1, ARRAY[1, 2], lower('A'))",
+		"INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET n = 2": "INSERT INTO t VALUES ($1) ON CONFLICT (id) DO UPDATE SET n = $2",
 	} {
-		got, n, ok := lexer.Parameterize(sql)
-		if !ok || got != want || n != strings.Count(want, "$") {
+		got, n, ok := lexer.Parameterize(sql, idKey)
+		if !ok || got != want || n != len(placeholder.FindAllString(want, -1)) {
 			t.Errorf("Parameterize(%q) = %q, %d, %v; want %q", sql, got, n, ok, want)
 		}
 	}
 }
 
-func TestParameterizeKeepsLiteralsThatShapeThePlan(t *testing.T) {
+func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 	for _, sql := range []string{
+		"SELECT * FROM t WHERE id > 5 OR id <= 9 OR id BETWEEN 1 AND 2",
+		"SELECT * FROM t WHERE status = 'done' AND tenant IN (1, 2)",
+		"SELECT * FROM t WHERE id = 1.5 OR id = 1e3 OR id = 99999999999999999999",
 		"SELECT * FROM t LIMIT 10 OFFSET 20",
-		"SELECT * FROM t WHERE name LIKE 'a%' OR name ILIKE 'b%' OR name ~ 'c'",
+		"SELECT * FROM t WHERE email LIKE 'a%' OR email ~ 'c'",
 		"SELECT * FROM t ORDER BY 1, 2",
-		"SELECT a, count(*) FROM t GROUP BY 1",
-		"SELECT * FROM t WHERE d = DATE '2024-01-01' AND ts > now() - INTERVAL '1 day'",
-		"SELECT * FROM t WHERE lower(name) = lower('X')",
-		"SELECT * FROM t WHERE id = ANY('{1,2}') OR tags = ARRAY['a']",
-		"SELECT * FROM t WHERE x = -5",
-		"SELECT * FROM t WHERE doc @> '{\"a\": 1}' AND data->'k' IS NOT NULL",
-		"SELECT * FROM t WHERE id IN (SELECT id FROM u WHERE k, 'x')",
-		"SELECT 1, 'a' FROM t",
+		"SELECT * FROM t WHERE id = -5",
+		"SELECT * FROM t WHERE data->>'id' = 'v'",
+		"SELECT * FROM t WHERE id IN (SELECT id FROM t WHERE id = 5)",
+		"WITH c AS (SELECT owner AS id FROM t) SELECT * FROM c WHERE id = 5",
+		"SELECT * FROM t WHERE lower(id) = 'x'",
 	} {
-		got, n, ok := lexer.Parameterize(sql)
+		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || n != 0 || got != sql {
 			t.Errorf("Parameterize(%q) = %q, %d, %v; want it unchanged", sql, got, n, ok)
 		}
+	}
+	if got, n, _ := lexer.Parameterize("SELECT * FROM t WHERE id = 5", nil); n != 0 || got != "SELECT * FROM t WHERE id = 5" {
+		t.Errorf("no unique key, got %q", got)
 	}
 }
 
@@ -56,11 +61,15 @@ func TestParameterizeRefuses(t *testing.T) {
 	for _, sql := range []string{
 		"SELECT * FROM t WHERE id = $1 AND v = 'x'",
 		"SELECT * FROM t WHERE v = 'open",
+		`DELETE FROM t WHERE v = 'a\' AND id = 2 -- ' OR n > 0`,
 		"INSERT INTO t VALUES " + strings.Repeat("(1),", 65535) + "(1)",
 	} {
-		if got, n, ok := lexer.Parameterize(sql); ok {
+		if got, n, ok := lexer.Parameterize(sql, idKey); ok {
 			t.Errorf("Parameterize(%.60q) = %.60q, %d; want refused", sql, got, n)
 		}
+	}
+	if _, _, ok := lexer.Parameterize(`SELECT * FROM t WHERE id = E'a\'b'`, idKey); !ok {
+		t.Error("a backslash both readings agree on was refused")
 	}
 }
 
@@ -81,6 +90,7 @@ func TestPlanKey(t *testing.T) {
 		{"SELECT * FROM t WHERE id = 1", "SELECT * FROM t WHERE id = 2"},
 		{"SELECT * FROM t WHERE n LIKE 'a%'", "SELECT * FROM t WHERE n LIKE '%a'"},
 		{`SELECT * FROM "T"`, "SELECT * FROM t"},
+		{"SELECT * FROM Ábc", "SELECT * FROM ábc"},
 		{"SELECT * FROM t", "/*+ SeqScan(t) */ SELECT * FROM t"},
 		{"SELECT * FROM t WHERE a <= 1", "SELECT * FROM t WHERE a < = 1"},
 	}
@@ -91,8 +101,10 @@ func TestPlanKey(t *testing.T) {
 			t.Errorf("PlanKey(%q) == PlanKey(%q) = %q", pair[0], pair[1], a)
 		}
 	}
-	if _, ok := lexer.PlanKey("SELECT 'open", lexer.Postgres); ok {
-		t.Error("an unterminated literal scanned in full")
+	for _, sql := range []string{"SELECT 'open", `SELECT 'a\' AND 1 -- '`} {
+		if _, ok := lexer.PlanKey(sql, lexer.Postgres); ok {
+			t.Errorf("PlanKey(%q) has a key", sql)
+		}
 	}
 	if _, ok := lexer.PlanKey(`SELECT 'a\'; DELETE FROM t; -- '`, lexer.MySQL); ok {
 		t.Error("two MySQL readings gave one key")

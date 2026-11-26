@@ -21,7 +21,7 @@ require (
 	github.com/gomlx/gomlx v0.28.2 // indirect
 	github.com/gomlx/onnx-gomlx v0.5.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261126151852-a2002e5935e4 // indirect
+	github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3 // indirect
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/viant/afs v1.30.0 // indirect

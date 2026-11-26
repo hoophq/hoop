@@ -471,9 +471,8 @@ type Evaluator struct {
 	budgetLogged sync.Once
 	onBudget     func()
 
-	facts     *ttlCache[tableEntry]
-	plans     *ttlCache[planEntry]
-	noGeneric *ttlCache[struct{}]
+	facts *ttlCache[tableEntry]
+	plans *ttlCache[planEntry]
 }
 
 // New builds an Evaluator.
@@ -588,7 +587,6 @@ func New(cfg Config) (*Evaluator, error) {
 		retryCap:     retryCap,
 		facts:        newTTLCache[tableEntry](checkCacheSize, checkTTL),
 		plans:        newTTLCache[planEntry](checkCacheSize, checkTTL),
-		noGeneric:    newTTLCache[struct{}](checkCacheSize, checkTTL),
 	}, nil
 }
 
