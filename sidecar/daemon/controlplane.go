@@ -381,6 +381,9 @@ type controlPlane struct {
 	// events is the sink that sends audit events to the plane. Run sets it
 	// before the heartbeat starts; nil in a process without one.
 	events *sessionEventSink
+	// otel counts each heartbeat's handshake. Run sets it before the
+	// heartbeat starts; nil without a telemetry block.
+	otel *otelExporter
 	// health hears every handshake, for /readyz. Run sets it before the
 	// heartbeat starts; nil reports into nothing.
 	health *healthStatus
@@ -1081,6 +1084,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		if errors.Is(err, ErrPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)
 		}
+		cp.otel.heartbeat(err)
 		if err != nil {
 			rl.tel.heartbeatFailed()
 			cp.health.planeFailed(err)

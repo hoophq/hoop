@@ -3131,8 +3131,8 @@ the block is the configuration, so `-validate` and the plane can check it.
 Every signal carries the resource `service.name=hoop-sidecar` (override it
 under `resource`), `service.version`, `service.instance.id` (the same
 install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
-and `hoop.schema.version=1.1`, with the schema URL
-`https://hoop.dev/schemas/sidecar-telemetry/1.1`. An attribute or series
+and `hoop.schema.version=1.2`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.2`. An attribute or series
 added bumps the minor; one renamed or removed bumps the major, because a
 dashboard written against the old name goes dark.
 
@@ -3152,6 +3152,7 @@ dashboard written against the old name goes dark.
 | `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
 | `hoop.sidecar.session_events.sent`, `.dropped` | counter | the control plane copy's counters |
 | `hoop.sidecar.config.generation` | gauge | reloads applied since start |
+| `hoop.sidecar.control_plane.handshakes` | counter | `hoop.handshake.kind` (`boot`, `heartbeat`), `hoop.outcome` (`ok`, `unreachable`, `no_config`, `error`) |
 
 No metric carries a principal, a session id, a table or statement text:
 those are unbounded, and they belong on the span and the log record below.
@@ -3224,6 +3225,14 @@ under the same redaction as the statement), each metadata key as
 `hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
 written under a sampled span carries its trace and span id.
 
+A failed control plane handshake is a log record too, with events on: body
+`control_plane_handshake`, severity `WARN`, and `hoop.handshake.kind` and
+`hoop.outcome`, nothing else. The error text stays in the sidecar's own log:
+it can carry the plane's response body or a redirect location. The record
+is not an audit event and is not counted in `events_sent`. The plane cannot
+report its own outage; its sidecars can, from the counter above and this
+record.
+
 The record goes through the same redaction as the audit file and the plane
 copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:
 true`, because the collector is a new place audit data leaves the process;
@@ -3233,7 +3242,7 @@ fails a write and never blocks a statement: a bounded queue
 collector falls behind, and `GET /stats` reports `telemetry.events_sent`
 and `telemetry.events_dropped`. The audit file stays the record of truth.
 
-Alerts live in the backend. Three worth having:
+Alerts live in the backend. Four worth having:
 
 ```
 # denials on a lane, per minute
@@ -3242,6 +3251,8 @@ sum by (hoop_lane) (rate(hoop_sidecar_statements_total{hoop_verdict="deny"}[5m])
 sum by (hoop_analyzer) (rate(hoop_sidecar_analyzer_request_duration_seconds_count{hoop_outcome!="ok"}[5m])) > 0
 # the audit trail is dropping records
 rate(hoop_sidecar_audit_errors_total[5m]) > 0
+# the control plane is not answering this sidecar
+sum by (service_instance_id) (rate(hoop_sidecar_control_plane_handshakes_total{hoop_outcome!="ok"}[5m])) > 0
 ```
 
 and, on the log records, a `violation` burst for one `hoop.principal`, which

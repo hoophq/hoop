@@ -100,6 +100,7 @@ const (
 	attrCallKind   = "hoop.analyzer.kind"
 	attrStatus     = "hoop.status"
 	attrAction     = "hoop.action"
+	attrHandshake  = "hoop.handshake.kind"
 
 	// mcp lane messages. The engine bounds the method and the tool.
 	attrMCPMethod   = "hoop.mcp.method"
@@ -167,6 +168,7 @@ type Exporter struct {
 	analyzerRetries    metric.Int64Counter
 	analyzerStatements metric.Int64Counter
 	mcpMessages        metric.Int64Counter
+	handshakes         metric.Int64Counter
 	connections        metric.Int64ObservableCounter
 	active             metric.Int64ObservableGauge
 	sessionSent        metric.Int64ObservableCounter
@@ -302,6 +304,9 @@ func (e *Exporter) buildInstruments() error {
 	e.mcpMessages, err = m.Int64Counter("hoop.sidecar.mcp.messages",
 		metric.WithDescription("Messages an mcp lane judged, by method, tool and decision."), metric.WithUnit("{message}"))
 	collect(err)
+	e.handshakes, err = m.Int64Counter("hoop.sidecar.control_plane.handshakes",
+		metric.WithDescription("Handshakes with the control plane, by kind and outcome."), metric.WithUnit("{handshake}"))
+	collect(err)
 	e.connections, err = m.Int64ObservableCounter("hoop.sidecar.connections",
 		metric.WithDescription("Connections accepted since start."), metric.WithUnit("{connection}"))
 	collect(err)
@@ -375,6 +380,33 @@ func (e *Exporter) AnalyzerOutcome(o telemetry.AnalyzerOutcome) {
 		attribute.String(attrRiskLevel, o.RiskLevel),
 		attribute.String(attrAction, o.Action),
 	)))
+}
+
+// ControlPlaneHandshake counts one handshake. Rare (one a minute) so the
+// attribute set is built per call. A failure is also a WARN log record,
+// sent only when events are on: that is the one signal with a log
+// pipeline, and building one for this record alone would send logs to a
+// collector that may take none. The record carries the kind and the fixed
+// outcome only, never error text (telemetry.Handshake).
+func (e *Exporter) ControlPlaneHandshake(h telemetry.Handshake) {
+	ctx := context.Background()
+	e.handshakes.Add(ctx, 1, metric.WithAttributeSet(attribute.NewSet(
+		attribute.String(attrHandshake, h.Kind),
+		attribute.String(attrOutcome, h.Outcome),
+	)))
+	if h.Outcome == telemetry.HandshakeOK || e.logger == nil {
+		return
+	}
+	var r log.Record
+	r.SetTimestamp(time.Now())
+	r.SetBody(log.StringValue("control_plane_handshake"))
+	r.SetSeverity(log.SeverityWarn)
+	r.SetSeverityText("WARN")
+	r.AddAttributes(
+		log.String(attrHandshake, h.Kind),
+		log.String(attrOutcome, h.Outcome),
+	)
+	e.logger.Emit(ctx, r)
 }
 
 // ObserveProcess registers the callback the observable instruments read on

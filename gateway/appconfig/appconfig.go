@@ -82,6 +82,8 @@ type Config struct {
 
 	pgMaxOpenConns int
 
+	otlp *OTLPExport
+
 	spiffeMode          string
 	spiffeBundleURL     string
 	spiffeBundleFile    string
@@ -322,6 +324,11 @@ func Load() error {
 		return err
 	}
 
+	otlp, err := loadOTLPExport()
+	if err != nil {
+		return err
+	}
+
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -368,6 +375,7 @@ func Load() error {
 		eventRoutingWorkers:             eventRoutingWorkers,
 		pgMaxOpenConns:                  pgMaxOpenConns,
 		slackSocketSlots:                slackSocketSlots,
+		otlp:                            otlp,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -647,6 +655,10 @@ func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWo
 
 // PgMaxOpenConns is the most PostgreSQL connections the gateway pool opens.
 func (c Config) PgMaxOpenConns() int { return c.pgMaxOpenConns }
+
+// OTLPExport is where the gateway pushes its OpenTelemetry signals, nil
+// when OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+func (c Config) OTLPExport() *OTLPExport { return c.otlp }
 
 // SlackSocketSlots is how many gateway replicas may open a Slack socket per
 // organization in replica mode. The others post through the Web API only.

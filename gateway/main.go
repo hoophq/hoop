@@ -44,6 +44,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
+	"github.com/hoophq/hoop/gateway/telemetry"
 	"github.com/hoophq/hoop/gateway/transport"
 
 	// plugins
@@ -107,6 +108,16 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 	goMigrateStep.OK("")
+
+	if cfg := appconfig.Get().OTLPExport(); cfg != nil {
+		sqlDB, err := models.DB.DB()
+		if err == nil {
+			err = telemetry.Start(cfg, ver.Version, sqlDB)
+		}
+		if err != nil {
+			log.Fatalf("failed starting the OpenTelemetry export, reason=%v", err)
+		}
+	}
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
