@@ -65,3 +65,25 @@ func TestReviewExecutedByField(t *testing.T) {
 		t.Errorf("executed_by = %v, want %s", got, executor)
 	}
 }
+
+// A session recorded before origin was persisted has no origin key.
+func TestSessionOriginInAPI(t *testing.T) {
+	encode := func(s *models.Session) map[string]any {
+		t.Helper()
+		raw, err := json.Marshal(toOpenApiSession(s, false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if v, ok := encode(&models.Session{})["origin"]; ok {
+		t.Fatalf("session without origin has origin=%v", v)
+	}
+	if got := encode(&models.Session{Origin: proto.SessionOriginCLI})["origin"]; got != "cli" {
+		t.Fatalf("origin = %v, want cli", got)
+	}
+}
