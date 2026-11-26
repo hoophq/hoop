@@ -120,6 +120,6 @@ func (a *Agent) setPostgresFastMasking(opts map[string]string) {
 // absent option keeps the masked text in every column.
 func (a *Agent) setPostgresMaskedTypedNull(opts map[string]string) {
 	if a.flags.IsEnabled(postgresMaskedTypedNullFlag) {
-		opts["postgres_null_masked_typed_cells"] = "true"
+		opts[libhoop.OptPostgresNullMaskedTypedCells] = "true"
 	}
 }
