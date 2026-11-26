@@ -22,16 +22,17 @@ function errorText(error) {
   return error?.response?.data?.message || error?.message || ''
 }
 
+// Read at submit: the form stays editable while the requests run.
+function federationConfig(role) {
+  if (role.method !== CONNECTION_METHODS.IAM_FEDERATION) return null
+  return buildFederationConfig(role.credentials.getState().federation.form)
+}
+
 // One PUT /connections/:role/federation per federation role, all in parallel.
 // Answers the roles whose PUT failed, with the first error.
-async function saveFederations(roles) {
-  const federated = roles.filter((role) => role.method === CONNECTION_METHODS.IAM_FEDERATION)
-  const results = await Promise.allSettled(
-    federated.map((role) =>
-      federationService.save(role.name, buildFederationConfig(role.credentials.getState().federation.form)),
-    ),
-  )
-  const failed = federated.filter((_, i) => results[i].status === 'rejected').map((role) => role.name)
+async function saveFederations(federated) {
+  const results = await Promise.allSettled(federated.map(({ name, config }) => federationService.save(name, config)))
+  const failed = federated.filter((_, i) => results[i].status === 'rejected').map(({ name }) => name)
   const error = results.find((result) => result.status === 'rejected')?.reason
   return { failed, error }
 }
@@ -52,16 +53,16 @@ async function rollBack(resourceName, roleNames) {
 
 // Add role: POST /connections, then the federation config. A role whose
 // federation save fails is deleted again, so the admin can add it later.
-async function createRole(role, body) {
+async function createRole(body, federation) {
   let created
   try {
     created = await connectionsService.create(body)
   } catch (error) {
     return { name: body.name, error: errorText(error) }
   }
-  if (role.method !== CONNECTION_METHODS.IAM_FEDERATION) return { name: body.name, created }
+  if (!federation) return { name: body.name, created }
   try {
-    await federationService.save(body.name, buildFederationConfig(role.credentials.getState().federation.form))
+    await federationService.save(body.name, federation)
     return { name: body.name, created }
   } catch (error) {
     const reason = `IAM Federation setup failed: ${errorText(error)}`
@@ -370,6 +371,10 @@ export const useResourceSetupStore = create((set, get) => {
         connections,
         profileAttribute: profile?.attribute_name ?? null,
       })
+      const federated = roles.flatMap((role) => {
+        const config = federationConfig(role)
+        return config ? [{ name: role.name, config }] : []
+      })
       const current = latest('submit')
       set({ submitting: true })
       let warned = []
@@ -384,7 +389,7 @@ export const useResourceSetupStore = create((set, get) => {
       }
       // The resource exists now: a failed federation save rolls it back, even
       // after the admin left the wizard, so a retry starts clean.
-      const federation = await saveFederations(roles)
+      const federation = await saveFederations(federated)
       if (federation.failed.length > 0) {
         const left = await rollBack(name, payload.roles.map((role) => role.name))
         if (!current()) return
@@ -425,9 +430,10 @@ export const useResourceSetupStore = create((set, get) => {
         connections,
         profileAttribute: profile?.attribute_name ?? null,
       }).roles.map((body) => ({ ...body, resource_name: name }))
+      const federations = roles.map(federationConfig)
       const current = latest('submit')
       set({ submitting: true })
-      const results = await Promise.all(bodies.map((body, i) => createRole(roles[i], body)))
+      const results = await Promise.all(bodies.map((body, i) => createRole(body, federations[i])))
       if (!current()) return
       const created = results.filter((result) => result.created)
       const failed = results.flatMap(({ name, error }, i) => (error ? [{ id: roles[i].id, name, error }] : []))

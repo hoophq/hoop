@@ -795,6 +795,17 @@ describe('BigQuery create: federation save and rollback', () => {
     expect(showSnackbar).not.toHaveBeenCalled()
   })
 
+  it('saves the federation config as submitted, even if the form changes during the POST', async () => {
+    threeRoles()
+    let release
+    resourcesService.create.mockImplementation(() => new Promise((resolve) => (release = () => resolve({ data: {} }))))
+    const submitting = store().submit(connections)
+    role(0).credentials.getState().setFederationProjectId('edited')
+    release()
+    await submitting
+    expect(federationService.save.mock.calls[0][1].extra_config).toEqual({ project_id: 'p1' })
+  })
+
   it('a resource with no federation role sends no PUT', async () => {
     begin('bigquery', { name: 'bq-plain', agentId: 'a1', profile: null })
     useResourceSetupStore.setState({ roleOptions: 'ready' })
@@ -912,6 +923,22 @@ describe('/resources/:name/add-role', () => {
       extra_config: { project_id: 'p1' },
     })
     expect(store().step).toBe('success')
+  })
+
+  it('the federation PUT carries the values the POST was built from (Q12)', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    let release
+    connectionsService.create.mockImplementation(
+      (body) => new Promise((resolve) => (release = () => resolve({ name: body.name }))),
+    )
+    const adding = store().addRoles(connections)
+    role(0).credentials.getState().setFederationProjectId('edited')
+    release()
+    await adding
+    expect(decoded(posted()[0].secret)['envvar:CLOUDSDK_CORE_PROJECT']).toBe('p1')
+    expect(federationService.save.mock.calls[0][1].extra_config).toEqual({ project_id: 'p1' })
   })
 
   it('a failed federation save deletes that role only and names it (Q12, Q13)', async () => {
