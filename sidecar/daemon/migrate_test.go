@@ -203,9 +203,9 @@ func TestRenderMigratedIsCleanAndLossless(t *testing.T) {
 // The prune must not eat the spellings whose presence is the meaning: an
 // opt-out opa block, an empty rules override, an explicit fail_open: false.
 func TestRenderMigratedKeepsMeaningfulEmptiness(t *testing.T) {
-	off := false
+	on := true
 	cfg := &Config{
-		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m", FailOpen: &off},
+		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m", FailOpen: &on},
 		OPA:      &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
 		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{
 			{Name: "no-drop", Type: policy.MatchDenyWords, Words: []string{"drop"}},
@@ -231,8 +231,8 @@ func TestRenderMigratedKeepsMeaningfulEmptiness(t *testing.T) {
 	} else if len(gc.Rules) != 0 {
 		t.Errorf("the lane's empty rules override was pruned away:\n%s", doc)
 	}
-	if reloaded.Analyzer.failOpen() {
-		t.Errorf("the explicit fail_open: false was pruned away:\n%s", doc)
+	if !reloaded.Analyzer.failOpen() {
+		t.Errorf("the explicit fail_open: true was pruned away:\n%s", doc)
 	}
 }
 

@@ -511,9 +511,9 @@ curl -s localhost:19002/api/stats | python3 -m json.tool   # by_risk
 curl -s localhost:19002/config    | python3 -m json.tool   # each lane's resolved analyzer
 ```
 
-This evaluator **fails open** by default. It depends on a third-party API, and
-refusing every statement during a vendor outage is a larger incident than the
-one it guards against. OPA and the local rules still fail closed. Full
+This evaluator **fails closed** by default, as OPA and the local rules do: a
+statement the model could not classify is denied. `fail_open: true` lets it
+through instead, for a database that must stay up through a provider outage. Full
 reference in [`sidecar/README.md`](../../../sidecar/README.md) and
 [ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
 

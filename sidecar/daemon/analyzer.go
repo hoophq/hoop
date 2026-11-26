@@ -212,11 +212,11 @@ type AnalyzerConfig struct {
 
 	// FailOpen allows a statement whose classification failed.
 	//
-	// It is a POINTER so an unset value can default to true, which is the
-	// opposite of every other evaluator in this system and deliberate: a
-	// classifier that denies whenever its provider has an outage takes the
-	// database down with it. Set it false where the classification is a
-	// compliance requirement.
+	// Unset means false: a provider outage, a lapsed bill or a refusal must
+	// not let unclassified statements through, as with every other
+	// evaluator here (ENG-1265). It was true before, so it stays a POINTER:
+	// an explicit false and an explicit true both survive a -migrate render.
+	// Set it true where the database must stay up through a provider outage.
 	FailOpen *bool `json:"fail_open,omitempty"`
 
 	// Send controls what leaves the process: raw, redacted or refuse.
@@ -635,10 +635,10 @@ func specFromRule(r policy.Rule) LaneAnalyzerConfig {
 	}
 }
 
-// failOpen resolves the pointer default.
+// failOpen resolves the pointer default: closed.
 func (a *AnalyzerConfig) failOpen() bool {
 	if a == nil || a.FailOpen == nil {
-		return true
+		return false
 	}
 	return *a.FailOpen
 }

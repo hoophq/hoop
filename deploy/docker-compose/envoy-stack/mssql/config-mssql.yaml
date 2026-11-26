@@ -58,9 +58,10 @@ pii:
 #   # Workload Identity there is then NO credential on disk to leak or rotate.
 #   # Elsewhere: credentials_file: /run/secrets/vertex-sa.json, mode 0600.
 #   timeout_sec: 10
-#   # true is the default here and the opposite of every other evaluator: a
-#   # classifier that denies during a provider outage takes appdb down with it.
-#   fail_open: true
+#   # false is the default, as for every other evaluator: a statement the
+#   # model could not classify is denied. true keeps appdb up through a
+#   # provider outage, and lets statements through unscored while it lasts.
+#   fail_open: false
 #   # The detector above already runs in this process. A relay whose job is
 #   # keeping taxpayer ids out of the database's query log must not post them
 #   # to a model vendor, so entity VALUES are withheld and only their names go.

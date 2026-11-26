@@ -311,14 +311,16 @@ func TestMCPLaneHoldNeedsAPlane(t *testing.T) {
 }
 
 // A provider failure behaves as on a postgres lane: fail_open allows the
-// call and records ai_status error, fail_open false refuses it.
+// call and records ai_status error; fail_open false, or no fail_open at all
+// (the default is closed, ENG-1265), refuses it.
 func TestMCPLaneAnalyzerProviderFailure(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
 		block   string
 		allowed bool
 	}{
-		{`{"high":"block"}`, true},
+		{`{"high":"block"}`, false},
+		{`{"high":"block","fail_open":true}`, true},
 		{`{"high":"block","fail_open":false}`, false},
 	} {
 		var logs bytes.Buffer
