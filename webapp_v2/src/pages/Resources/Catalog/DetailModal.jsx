@@ -127,30 +127,32 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
   return (
     <Modal opened={opened} onClose={onClose} size={1000} withCloseButton={false} padding="xlAlt">
       <Stack gap="xlAlt">
-        <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
-          <Stack gap="xs">
+        <Stack gap="xs">
+          <Group justify="space-between" gap="md" wrap="nowrap">
             <Group gap="sm">
               <Title order={2}>{entry.name}</Title>
               <EntryBadges entry={entry} />
             </Group>
-            {entry.description && <Text c="dimmed">{entry.description}</Text>}
-          </Stack>
-          <Group gap="sm" wrap="nowrap">
-            <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
-              View Docs
-            </Button>
-            {isAdmin && (
-              <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
-                Continue Setup
-              </Button>
-            )}
             <Tooltip label="Close">
               <ActionIcon variant="subtle" color="gray" aria-label="Close" onClick={onClose}>
                 <X size={18} />
               </ActionIcon>
             </Tooltip>
           </Group>
-        </Group>
+          <Group justify="space-between" gap="xl" wrap="nowrap">
+            <Text c="dimmed">{entry.description}</Text>
+            <Group gap="sm" wrap="nowrap">
+              <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
+                View Docs
+              </Button>
+              {isAdmin && (
+                <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
+                  Continue Setup
+                </Button>
+              )}
+            </Group>
+          </Group>
+        </Stack>
         <Tabs defaultValue="overview">
           <Tabs.List>
             <Tabs.Tab value="overview">Overview</Tabs.Tab>
