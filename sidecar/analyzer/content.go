@@ -89,6 +89,9 @@ func noSQLToken(p inspect.Protocol, text string) bool {
 		return false
 	}
 	shape, ok := StatementShape(string(p), text)
+	if p == inspect.Spanner {
+		shape, ok = lexer.Shape(text, lexer.GoogleSQL)
+	}
 	return ok && strings.Trim(shape, "; ") == ""
 }
 

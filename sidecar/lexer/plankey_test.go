@@ -45,6 +45,11 @@ func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 		"SELECT * FROM t WHERE data->>'id' = 'v'",
 		"SELECT * FROM t WHERE id IN (SELECT id FROM t WHERE id = 5)",
 		"WITH c AS (SELECT owner AS id FROM t) SELECT * FROM c WHERE id = 5",
+		"DELETE FROM t USING (VALUES ('open')) v(s) WHERE t.status = v.s",
+		"UPDATE t SET n = n + 1 FROM (VALUES (1, 'a')) v(k, s) WHERE t.k = v.k",
+		"SELECT * FROM t WHERE status IN (VALUES ('a'), ('b'))",
+		"SELECT * FROM t WHERE set IS NOT NULL AND status = 'open'",
+		"INSERT INTO t SELECT * FROM (VALUES (1)) v(x)",
 		"SELECT * FROM t WHERE lower(id) = 'x'",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)

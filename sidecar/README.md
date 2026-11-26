@@ -1403,7 +1403,7 @@ included, and `exclude` with nothing else to narrow is refused. A control
 plane serves `any` and `exclude` only to a sidecar that reports
 `analyzer_trigger_items`.
 
-On a postgres, mysql, mssql, oracle or clickhouse lane, a statement with only
+On a postgres, mysql, mssql, oracle, clickhouse or spanner lane, a statement with only
 comments and semicolons (a driver's `-- ping`) is not classified, as if the
 trigger did not select it. A MySQL `/*! */` or MariaDB `/*M! */` comment runs,
 so it is classified.
@@ -1465,9 +1465,10 @@ small table and high on a large unindexed one.
   key includes the check.
 - The shape drops comments and spacing; an optimizer hint (`/*+ ... */`)
   stays. It also drops each literal whose value cannot change the plan: a
-  value that `SET` assigns or a `VALUES` list holds, and a string or integer
-  compared with `=`, `<>` or `!=` to, or listed in `IN` after, a column that a
-  unique index covers alone, on a statement with one table and no subquery.
+  value that `UPDATE ... SET` assigns or an `INSERT`'s own `VALUES` list
+  holds, and a string or integer compared with `=`, `<>` or `!=` to, or
+  listed in `IN` after, a column that a valid, whole unique index covers
+  alone, on a statement with one table, no children and no subquery.
   So `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals stay:
   a range or a skewed column changes the plan's row estimate.
 - A statement whose strings read differently under

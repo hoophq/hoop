@@ -11,7 +11,9 @@ const maxPlaceholders = 65535
 // Parameterize reads sql as PostgreSQL and returns it with $n in place of each
 // literal whose value does not change the plan's row estimates, so one
 // generic plan serves every value:
-//   - a value that SET assigns or that a VALUES list holds;
+//   - a value that UPDATE ... SET or ON CONFLICT DO UPDATE SET assigns, or
+//     that an INSERT's own VALUES list holds (a VALUES used as a table can
+//     change the plan);
 //   - a string or integer compared with =, <> or != to a column that unique
 //     reports as a unique key, or listed in IN after one, in a statement with
 //     no subquery or WITH.
@@ -34,9 +36,12 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 	key := func(k int) bool {
 		return unique != nil && k >= 0 && toks[k].isName() && unique(folded(sql, toks[k], spans[k]))
 	}
+	insert := len(toks) > 0 && toks[0].isWord("insert")
+	update := len(toks) > 0 && toks[0].isWord("update")
 	type frame struct{ list, afterList bool }
 	stack := []frame{{}}
 	setDepth := -1
+	sawSet := false
 	var b strings.Builder
 	last := 0
 	for i, t := range toks {
@@ -65,8 +70,8 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 			}
 		}
 		switch {
-		case t.isWord("set"):
-			setDepth = len(stack)
+		case t.isWord("set") && len(stack) == 1 && (update && !sawSet || i > 0 && toks[i-1].isWord("update")):
+			setDepth, sawSet = 1, true
 		case setDepth == len(stack) && (t.isWord("where") || t.isWord("from") || t.isWord("returning")):
 			setDepth = -1
 		case isPunct(t, "(", "["):
@@ -74,7 +79,7 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 			if isPunct(t, "(") && i > 0 {
 				switch p := toks[i-1]; {
 				case p.isWord("values"):
-					list = true
+					list = insert && len(stack) == 1
 				case p.isWord("in"):
 					col := i - 2
 					if col >= 0 && toks[col].isWord("not") {

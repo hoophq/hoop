@@ -184,12 +184,12 @@ func planShape(stmt inspect.Statement, unique func(string) bool) (shape string, 
 	return prefix + key, n > 0
 }
 
-// uniqueKeys returns the columns that a unique index of the statement's one
-// table covers alone, from cached facts. libhoop writes a definition as
-// "btree (col)", "expression" for an expression column and " partial" after
-// a partial index.
+// uniqueKeys returns the columns that a valid, whole unique index of the
+// statement's one table covers alone, from cached facts (see
+// inspect.IndexFacts.Definition). A table with children has none: its index
+// does not cover their rows, and a partition key picks the partition.
 func uniqueKeys(tables []string, facts map[string]tableEntry) func(string) bool {
-	if len(tables) != 1 {
+	if len(tables) != 1 || facts[tables[0]].facts.Children {
 		return nil
 	}
 	keys := map[string]bool{}

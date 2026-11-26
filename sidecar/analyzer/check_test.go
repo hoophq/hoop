@@ -335,6 +335,29 @@ func TestOneLiteralPlanServesItsShape(t *testing.T) {
 	}
 }
 
+func TestOnlyAWholeValidUniqueIndexIsAKey(t *testing.T) {
+	for name, edit := range map[string]func(*inspect.TableFacts){
+		"children": func(f *inspect.TableFacts) { f.Children = true },
+		"invalid":  func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id) invalid" },
+		"partial":  func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id) partial" },
+		"two cols": func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id, note)" },
+	} {
+		ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+		chk := bigOrders()
+		f := chk.tables["orders"]
+		f.Indexes = slices.Clone(f.Indexes)
+		edit(&f)
+		chk.tables["orders"] = f
+		ec := &policy.EvalContext{ResourceCheck: chk}
+		for _, id := range []string{"1", "2", "3"} {
+			ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = "+id, inspect.OpDelete, "orders"), ec)
+		}
+		if n := len(chk.checks()); n != 3 {
+			t.Errorf("%s: %d checks, want a plan per value", name, n)
+		}
+	}
+}
+
 func TestAShapeDoesNotCacheAPlanError(t *testing.T) {
 	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
 	chk := bigOrders()
@@ -354,7 +377,7 @@ func TestAShapeDoesNotCacheAPlanError(t *testing.T) {
 func TestACommentOnlyStatementCallsNoModel(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
 	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}})
-	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.Oracle, inspect.ClickHouse} {
+	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.Oracle, inspect.ClickHouse, inspect.Spanner} {
 		for _, text := range []string{"-- ping", ";", "/* a */ ; -- b"} {
 			ev.Evaluate(inspect.Statement{Protocol: proto, Direction: inspect.FromClient, Text: text})
 		}
