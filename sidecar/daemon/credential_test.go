@@ -115,7 +115,7 @@ func TestATokenFileIsReReadOnEveryHandshake(t *testing.T) {
 	second := k8sJWT(t, "system:serviceaccount:ws-1:hoop-sidecar", time.Now().Add(2*time.Hour))
 	// Trailing whitespace is what an editor or `echo` leaves behind.
 	writeTokenFile(t, path, second+"\n")
-	if _, err := fetchControlPlaneConfig(cfg.cp.url, cfg.cp.cred, handshakeRequest{Version: Version}); err != nil {
+	if _, err := fetchControlPlaneConfig(context.Background(), cfg.cp.url, cfg.cp.cred, handshakeRequest{Version: Version}); err != nil {
 		t.Fatalf("second handshake: %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestGCPIdentityAsksTheMetadataServerForThePlaneAudience(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupWith: %v", err)
 	}
-	if _, err := fetchControlPlaneConfig(cfg.cp.url, cfg.cp.cred, handshakeRequest{Version: Version}); err != nil {
+	if _, err := fetchControlPlaneConfig(context.Background(), cfg.cp.url, cfg.cp.cred, handshakeRequest{Version: Version}); err != nil {
 		t.Fatalf("second handshake: %v", err)
 	}
 

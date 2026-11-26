@@ -220,6 +220,13 @@ type Config struct {
 	// verdict about reachability.
 	cp *controlPlane
 
+	// health is what the probes report. SetupWith fills it so the boot
+	// reports into it; Run creates one for a Config assembled in Go.
+	health *healthStatus
+	// healthListener is the listener the entry point bound before Setup
+	// (ListenHealth), nil when none. Run serves through it, and closes it.
+	healthListener *HealthListener
+
 	// localReviewer files held statements with whoever runs this process,
 	// when it has no control plane. WithLocalReviewer fills it; see there.
 	localReviewer LocalReviewer

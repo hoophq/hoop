@@ -505,8 +505,29 @@ than merged: two authorities for one fact is the same mistake as a field
 written in two spellings. The pushed document drops `control_plane_url` and
 `license`: the URL is connection metadata this process already resolved, and
 the license belongs to the organization, which serves its own on every
-handshake. A first handshake that fails stops
-startup, since there is nothing to serve yet.
+handshake. There is nothing to serve before the first handshake answers, so
+the boot retries a plane that is down: a refused connection, a timeout, a
+5xx, or a success or 5xx whose body was cut. The wait before each attempt is
+drawn from zero to a ceiling that doubles from 1 s to 30 s, and each attempt
+logs a warning. One 5-minute deadline bounds every request and wait of the
+boot; after it the process stops as it would have on the first failure. Any
+other answer stops startup at once, also with a cut body: a refused token
+(401), a config the plane cannot build (422), a redirect, a 429, or a
+certificate or TLS handshake this process refuses. A 412 still imports the
+file, and the import requests share the same deadline. A check does not
+retry: `-validate`, `-grpc-discover` and the CLI's Connect page report a
+plane that is down at once. An embedder asks the same with
+`daemon.WithoutBootRetry()`, and stops a retrying boot by cancelling the
+context it passed with `daemon.WithContext(ctx)`. The retry's warnings are
+written before `Run`, as JSON on stderr; `daemon.WithBootLog(w)` sends them
+to another writer. `hoop start sidecar` uses it so that the text format and
+the terminal before the dashboard show them as text, like every other line.
+
+Under Kubernetes, a liveness probe on `admin.listen` fails while the process
+retries, since the admin server binds only after the handshake. Give the
+container a startup probe whose budget covers the retry, or the kubelet
+restarts it after the liveness threshold. The helm chart's startup probe is
+always on, 120 × 5 s.
 
 Once running, a heartbeat repeats the handshake about every minute (each
 wait is drawn from 48 to 72 seconds, so a fleet started together does not
@@ -1225,10 +1246,51 @@ never the signature.
 The admin listener (`admin.listen`) serves `GET /healthz`, `GET /readyz` and
 one authenticated write, the ICA `POST /v1/drain`. It serves
 no audit data and no lane rules, so a platform can probe it. A workspace that
-reaches it learns whether the process is up, and from `/readyz` the names of
-the lanes that are not ready yet (`not ready: <lanes>`, 503) or, with
-`admin.ica_readiness_json`, the ICA inspection state (`status`,
-`inspection_enabled`, `graphics_bypassed`, `protocol_validation_enabled`).
+reaches it learns whether the process is up, and from `/readyz` the process
+status as JSON, or, with `admin.ica_readiness_json`, the ICA inspection state
+(`status`, `inspection_enabled`, `graphics_bypassed`,
+`protocol_validation_enabled`).
+
+`/healthz` answers `200 ok` while the process runs, also while the boot
+retries its control plane handshake. `/readyz` answers 200 when a config is
+loaded and every lane serves, else 503. Probes read the status code; the body
+is for the person who reads it:
+
+```json
+{
+  "status": "ready",
+  "process_running": true,
+  "pid": 7,
+  "valid_license": true,
+  "config_loaded": true,
+  "lanes_open": true,
+  "control_plane_enabled": true,
+  "connected_to_control_plane": false,
+  "control_plane": {"last_handshake": "2026-11-23T17:40:12Z", "error": "unreachable"},
+  "lanes": [{"name": "paymentsdb", "protocol": "postgres", "state": "open"}]
+}
+```
+
+- `reason`, set on a 503: `waiting_for_control_plane` (no config yet, the
+  plane has not answered), `starting` (the config is not loaded yet),
+  `lanes_not_open` (a lane does not serve; `lanes` names it) or `stopping`
+  (the process is shutting down and takes no new traffic; `/healthz` stays
+  200 until it exits).
+- A lane's `state` is `open`, `starting` (not bound yet), `not_ready` (the
+  lane says it cannot serve: an ICA engine still loading or draining, a gRPC
+  lane without its schema, an MCP lane not bound) or `closed` (it stopped
+  accepting).
+- `control_plane.error` is the last failed handshake: `unreachable`,
+  `timeout`, `server_error`, `no_config` or `refused`. It is empty after a
+  success. `boot_attempts` counts the failed requests of the boot.
+- A control plane lost after the config loaded never makes `/readyz` 503:
+  the lanes keep serving the last good config, and only the body says so.
+- The body holds codes and lane names, never an error's text, a URL, a
+  token or a license.
+
+Earlier releases answered `/readyz` with plain text (`ready`, or
+`not ready: <lanes>`), and counted a lane ready before it bound. A script
+that read the text reads `status` and `lanes` now.
 
 The read routes, `/stats`, `/metrics`, `/config`, `/events` and `/api/*`,
 have no authentication: whoever reaches them reads the audit trail and each
@@ -1248,9 +1310,15 @@ moved to that port.
 
 `HOOP_SIDECAR_HEALTH_LISTEN` binds one more listener with `/healthz` and
 `/readyz` only, for a deployment that probes a port other than
-`admin.listen`. It is an environment variable and not a config key. A bind
-failure stops the process, like a lane that cannot bind, and a port another
-listener of the config binds is refused at startup.
+`admin.listen`. It is an environment variable and not a config key. It binds
+when the process starts, before the config is known, so it answers while the
+boot waits for its control plane: `/healthz` 200, `/readyz` 503 with
+`waiting_for_control_plane` and the boot's attempts. `admin.listen` comes
+from the config and binds only after the handshake; a probe on it reads a
+refused connection until then, which a startup probe counts as not started.
+`-validate` and `-grpc-discover` do not bind it. A bind failure stops the
+process, like a lane that cannot bind, and a port another listener of the
+config binds is refused at startup.
 
 The audit trail also leaves the process through `audit.file`, the control
 plane copy (see "Connecting it to a Control Plane") and OTLP (see
@@ -3085,8 +3153,8 @@ the block is the configuration, so `-validate` and the plane can check it.
 Every signal carries the resource `service.name=hoop-sidecar` (override it
 under `resource`), `service.version`, `service.instance.id` (the same
 install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
-and `hoop.schema.version=1.1`, with the schema URL
-`https://hoop.dev/schemas/sidecar-telemetry/1.1`. An attribute or series
+and `hoop.schema.version=1.2`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.2`. An attribute or series
 added bumps the minor; one renamed or removed bumps the major, because a
 dashboard written against the old name goes dark.
 
@@ -3106,6 +3174,7 @@ dashboard written against the old name goes dark.
 | `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
 | `hoop.sidecar.session_events.sent`, `.dropped` | counter | the control plane copy's counters |
 | `hoop.sidecar.config.generation` | gauge | reloads applied since start |
+| `hoop.sidecar.control_plane.handshakes` | counter | `hoop.handshake.kind` (`boot`, `heartbeat`), `hoop.outcome` (`ok`, `unreachable`, `no_config`, `error`) |
 
 No metric carries a principal, a session id, a table or statement text:
 those are unbounded, and they belong on the span and the log record below.
@@ -3178,6 +3247,14 @@ under the same redaction as the statement), each metadata key as
 `hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
 written under a sampled span carries its trace and span id.
 
+A failed control plane handshake is a log record too, with events on: body
+`control_plane_handshake`, severity `WARN`, and `hoop.handshake.kind` and
+`hoop.outcome`, nothing else. The error text stays in the sidecar's own log:
+it can carry the plane's response body or a redirect location. The record
+is not an audit event and is not counted in `events_sent`. The plane cannot
+report its own outage; its sidecars can, from the counter above and this
+record.
+
 The record goes through the same redaction as the audit file and the plane
 copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:
 true`, because the collector is a new place audit data leaves the process;
@@ -3185,9 +3262,14 @@ the file keeps the text under the audit block's own setting. The sink never
 fails a write and never blocks a statement: a bounded queue
 (`events.queue_size`, default 4096) drops the oldest record when the
 collector falls behind, and `GET /stats` reports `telemetry.events_sent`
-and `telemetry.events_dropped`. The audit file stays the record of truth.
+and `telemetry.events_dropped`. `events_sent` counts records handed to the
+queue and `events_dropped` those the full queue evicted before export, so
+`events_sent - events_dropped` is "accepted and not evicted here": it
+includes records still queued and records whose export failed or the
+collector refused. Neither counter shows successful delivery. The audit
+file stays the record of truth.
 
-Alerts live in the backend. Three worth having:
+Alerts live in the backend. Four worth having:
 
 ```
 # denials on a lane, per minute
@@ -3196,6 +3278,8 @@ sum by (hoop_lane) (rate(hoop_sidecar_statements_total{hoop_verdict="deny"}[5m])
 sum by (hoop_analyzer) (rate(hoop_sidecar_analyzer_request_duration_seconds_count{hoop_outcome!="ok"}[5m])) > 0
 # the audit trail is dropping records
 rate(hoop_sidecar_audit_errors_total[5m]) > 0
+# the control plane is not answering this sidecar
+sum by (service_instance_id) (rate(hoop_sidecar_control_plane_handshakes_total{hoop_outcome!="ok"}[5m])) > 0
 ```
 
 and, on the log records, a `violation` burst for one `hoop.principal`, which

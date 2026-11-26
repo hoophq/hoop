@@ -95,6 +95,13 @@ export function setupConfigFor(catalogId, connections = []) {
   return { type: config.type, subtype: config.subtype, command: config.command ?? null }
 }
 
+// /resources/:name/add-role adds roles of the resource's own type and subtype.
+// Linux VM is the only one with a command the metadata does not carry.
+export function setupConfigForResource(resource) {
+  const mapped = Object.values(SETUP_MAPPINGS).find((m) => m.subtype === resource.subtype && m.command)
+  return { type: resource.type, subtype: resource.subtype, command: mapped?.command ?? null }
+}
+
 export function isReactSetup(config) {
   return REACT_SETUP_SUBTYPES.has(config.subtype)
 }

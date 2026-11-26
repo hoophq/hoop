@@ -143,6 +143,23 @@ config:
   # API_KEY can be set before the first boot. It never renames an existing one.
   # ORG_ID: ''
 
+  ## OpenTelemetry: the control plane pushes its own metrics (sidecar
+  ## handshakes, session event ingest, database pool, API latency) to an OTLP
+  ## collector. Off while the endpoint is empty. Nothing scrapes this process.
+  ## Same transports as the sidecar `telemetry` block, so one collector serves
+  ## both. A malformed value stops startup.
+  # OTEL_EXPORTER_OTLP_ENDPOINT: 'otel-collector:4317'   # a URL, or host:port for grpc
+  # OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc'                  # grpc | http/protobuf
+  # OTEL_EXPORTER_OTLP_HEADERS: ''                       # k=v,k2=v2, values URL-encoded
+  # OTEL_EXPORTER_OTLP_INSECURE: 'false'                 # true sends a host:port endpoint in the clear
+  # OTEL_EXPORTER_OTLP_CERTIFICATE: ''                   # PEM file with the collector's CA, via extraVolumes
+  # OTEL_EXPORTER_OTLP_TIMEOUT: '10000'                  # milliseconds per export
+  # OTEL_METRIC_EXPORT_INTERVAL: '60000'                 # milliseconds between exports
+  # OTEL_TRACES_SAMPLER: ''                              # empty sends no spans; e.g. parentbased_traceidratio
+  # OTEL_TRACES_SAMPLER_ARG: ''                          # the ratio, 0 to 1
+  # OTEL_SERVICE_NAME: 'hoop-control-plane'              # the gateway chart's default is hoop-gateway
+  # OTEL_RESOURCE_ATTRIBUTES: ''                         # e.g. deployment.environment=prod
+
 # -- Define extra secret as environment variables.
 #
 # Also the way through for any key this chart declines to render: the exclusion

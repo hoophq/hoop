@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/gateway/telemetry"
 	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
@@ -85,6 +86,7 @@ func PostEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("the body is not a batch of events: %v", err)})
 		return
 	}
+	telemetry.SetEventCount(c, len(req.Events))
 	if len(req.Events) > daemon.MaxSessionEventsBatch {
 		answerBatchTooLarge(c)
 		return
