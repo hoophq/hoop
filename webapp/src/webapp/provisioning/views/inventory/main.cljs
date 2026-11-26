@@ -90,10 +90,10 @@
     (let [count-val (if (pos? selected-in-stage) selected-in-stage total-in-stage)
           label-str (if (pos? selected-in-stage)
                       (str count-val " selected")
-                      (str "all " count-val))
+                      (data/pluralize count-val "Resource"))
           manage?   (= tab :manage)
-;; Both stages wait for the user: amber. Indigo is only the action
-          ;; (hoop-ui skill: indigo is never a status).
+          ;; Both stages wait for the user: the icon is amber. The banner
+          ;; itself stays neutral (hoop-ui skill: indigo is never a status).
           color     "amber"]
       [shared/callout-bar
        {:color    color
@@ -111,7 +111,8 @@
                                :color "gray" :highContrast true
                                :on-click on-import-csv}
                     [:> Upload {:size 14}] " Import CSV"]
-                   [:> Button {:size "2" :radius "full" :variant "soft"
+                   [:> Button {:size "2" :variant "outline" :radius "full"
+                               :color "gray" :highContrast true
                                :on-click on-action}
                     (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
                     (str " " (if manage? "Set up " "Provision ") label-str)]]}])))
@@ -328,10 +329,17 @@
                   :on-open-bulk-admin #(on-open-bulk-admin [resource])
                   :on-open-bulk-roles #(on-open-bulk-roles [resource])
                   nil)]
-    (when action
-      [:> Button (cond-> {:variant (:variant action) :size "1" :radius "full"}
-                   (:color action) (assoc :color (:color action))
-                   handler         (assoc :on-click handler))
+    ;; hoop-ui row action: a small secondary button, never a bare text link.
+    ;; A finished row has nothing to do, so it shows a status badge instead.
+    (cond
+      handler
+      [:> Button {:variant "outline" :color "gray" :highContrast true
+                  :size "2" :radius "full" :on-click handler}
+       (:row-label action)]
+
+      action
+      [:> Badge {:color "green" :variant "soft" :size "1" :radius "full"}
+       [:> Check {:size 12 :aria-hidden true}]
        (:row-label action)])))
 
 (defn- inventory-row

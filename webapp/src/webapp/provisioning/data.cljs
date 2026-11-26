@@ -43,19 +43,13 @@
 (def stage-action
   {:needs-admin {:row-label   "Set up admin"
                  :banner-verb "Set up"
-                 :handler-key :on-open-bulk-admin
-                 :variant     "ghost"
-                 :color       nil}
+                 :handler-key :on-open-bulk-admin}
    :needs-roles {:row-label   "Provision roles"
                  :banner-verb "Provision"
-                 :handler-key :on-open-bulk-roles
-                 :variant     "ghost"
-                 :color       nil}
+                 :handler-key :on-open-bulk-roles}
    :ready       {:row-label   "Configured"
                  :banner-verb nil
-                 :handler-key nil
-                 :variant     "ghost"
-                 :color       "gray"}})
+                 :handler-key nil}})
 
 
 (def ^:private valid-permissions

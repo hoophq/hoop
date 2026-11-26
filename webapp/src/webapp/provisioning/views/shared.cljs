@@ -37,30 +37,28 @@
    [:> Callout.Text (if size {:size size} {}) text]])
 
 (defn callout-bar
-  "Color-coded banner with a left accent, leading icon, title/subtitle slot,
-   and an actions slot on the right."
+  "Status banner: a white square card with a gray border. Only the icon takes
+   the status color; the title says the status in words (hoop-ui skill: a
+   status is never color alone, and a page note stays quiet)."
   [{:keys [color icon title subtitle extra actions px py]
     :or   {px "5" py "4"}}]
-  (let [c #(str "var(--" color "-" % ")")]
-    [:> Flex {:align "center" :justify "between" :gap "4"
-              :px px :py py :mb "4"
-              :style {:background    (c 2)
-                      :border-top    (str "1px solid " (c 5))
-                      :border-right  (str "1px solid " (c 5))
-                      :border-bottom (str "1px solid " (c 5))
-                      :border-left   (str "4px solid " (c 9))}}
-     [:> Flex {:align "center" :gap "3"}
-      (when icon
-        [:> Box {:style {:color       (c 9)
-                         :display     "flex"
-                         :flex-shrink 0}}
-         icon])
-      [:> Flex {:direction "column" :gap "0"}
-       (when title    [:> Text {:size "2" :weight "medium"} title])
-       (when subtitle [:> Text {:size "1" :color "gray"} subtitle])
-       extra]]
-     (when actions
-       [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])]))
+  [:> Flex {:align "center" :justify "between" :gap "4"
+            :px px :py py :mb "4"
+            :style {:background "var(--color-panel-solid)"
+                    :border     "1px solid var(--gray-6)"}}
+   [:> Flex {:align "center" :gap "3"}
+    (when icon
+      [:> Box {:aria-hidden true
+               :style {:color       (str "var(--" color "-11)")
+                       :display     "flex"
+                       :flex-shrink 0}}
+       icon])
+    [:> Flex {:direction "column" :gap "0"}
+     (when title    [:> Text {:size "2" :weight "medium"} title])
+     (when subtitle [:> Text {:size "2" :color "gray"} subtitle])
+     extra]]
+   (when actions
+     [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])])
 
 (defn bulk-screen-header
   "Back button + heading + resource count badge."
