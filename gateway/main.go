@@ -32,6 +32,7 @@ import (
 	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/jobs/credentialsweeper"
+	"github.com/hoophq/hoop/gateway/jobs/featureflagrefresh"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarmirrorstatus"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarsessionreaper"
 	"github.com/hoophq/hoop/gateway/models"
@@ -309,6 +310,9 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	// A mirror of a sidecar listener reads offline when its sidecar stops
 	// checking in; the handshake sets it online.
 	go sidecarmirrorstatus.Run(context.Background(), models.DB)
+
+	// A flag change through another replica reaches this one.
+	go featureflagrefresh.Run(context.Background(), models.DB)
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

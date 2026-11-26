@@ -228,74 +228,161 @@ func Lookup(name string) (Flag, bool) {
 
 // --- per-org cache used by gateway (process-local) ---
 
-var (
-	cacheMu sync.RWMutex
-	// orgID -> flagName -> enabled
-	cache = map[string]map[string]bool{}
-)
+// Cache holds each org's stored flag values in one process. The package
+// functions read and write Default; a test builds another to stand for a
+// second gateway replica.
+type Cache struct {
+	mu sync.RWMutex
+	// orgID -> flagName -> enabled. An org's map is never written in place:
+	// a writer replaces it, so a reader may keep it after RUnlock.
+	orgs map[string]map[string]bool
+	// gen counts Set and SetAll calls. See Replace.
+	gen uint64
+}
+
+// NewCache returns an empty cache: every flag reads its Default.
+func NewCache() *Cache {
+	return &Cache{orgs: map[string]map[string]bool{}}
+}
+
+var defaultCache = NewCache()
+
+// Default is the cache the gateway serves from.
+func Default() *Cache { return defaultCache }
 
 // Set updates the in-process cache for a single flag in one org.
-func Set(orgID, name string, enabled bool) {
+func Set(orgID, name string, enabled bool) { defaultCache.Set(orgID, name, enabled) }
+
+// SetAll replaces the entire flag snapshot for an org.
+func SetAll(orgID string, flags map[string]bool) { defaultCache.SetAll(orgID, flags) }
+
+// IsEnabled returns the effective value for a flag in an org.
+// Unknown flags return false and log a warning.
+func IsEnabled(orgID, name string) bool { return defaultCache.IsEnabled(orgID, name) }
+
+// SnapshotForOrg returns the effective boolean map for every catalog flag
+// in the given org. Used to populate /serverinfo and gRPC packets.
+func SnapshotForOrg(orgID string) map[string]bool { return defaultCache.SnapshotForOrg(orgID) }
+
+// Set updates a single flag in one org.
+func (c *Cache) Set(orgID, name string, enabled bool) {
 	if _, ok := catalog[name]; !ok {
 		return
 	}
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	if cache[orgID] == nil {
-		cache[orgID] = map[string]bool{}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	flags := make(map[string]bool, len(c.orgs[orgID])+1)
+	for k, v := range c.orgs[orgID] {
+		flags[k] = v
 	}
-	cache[orgID][name] = enabled
+	flags[name] = enabled
+	c.orgs[orgID] = flags
+	c.gen++
 }
 
 // SetAll replaces the entire flag snapshot for an org.
-func SetAll(orgID string, flags map[string]bool) {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	filtered := make(map[string]bool, len(flags))
-	for name, enabled := range flags {
-		if _, ok := catalog[name]; ok {
-			filtered[name] = enabled
+func (c *Cache) SetAll(orgID string, flags map[string]bool) {
+	filtered := inCatalog(flags)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.orgs[orgID] = filtered
+	c.gen++
+}
+
+// Generation changes on each Set and SetAll. Read it before reading the
+// flags that Replace gets.
+func (c *Cache) Generation() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.gen
+}
+
+// Replace makes snapshot (orgID -> flagName -> enabled) the whole cache, and
+// returns the orgs whose flags changed. An org absent from snapshot reads the
+// defaults. It refuses, and reports false, when a Set or SetAll ran after gen
+// was read: snapshot can be older than that write.
+func (c *Cache) Replace(gen uint64, snapshot map[string]map[string]bool) ([]string, bool) {
+	next := make(map[string]map[string]bool, len(snapshot))
+	for orgID, flags := range snapshot {
+		next[orgID] = inCatalog(flags)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gen != gen {
+		return nil, false
+	}
+	var changed []string
+	for orgID, flags := range next {
+		if !sameFlags(c.orgs[orgID], flags) {
+			changed = append(changed, orgID)
 		}
 	}
-	cache[orgID] = filtered
+	for orgID, flags := range c.orgs {
+		if _, ok := next[orgID]; !ok && len(flags) > 0 {
+			changed = append(changed, orgID)
+		}
+	}
+	c.orgs = next
+	sort.Strings(changed)
+	return changed, true
 }
 
 // IsEnabled returns the effective value for a flag in an org.
 // Unknown flags return false and log a warning.
-func IsEnabled(orgID, name string) bool {
+func (c *Cache) IsEnabled(orgID, name string) bool {
 	f, ok := catalog[name]
 	if !ok {
 		log.Warnf("featureflag: unknown flag %q, returning false", name)
 		return false
 	}
-	cacheMu.RLock()
-	orgFlags, orgOK := cache[orgID]
-	if orgOK {
-		if val, found := orgFlags[name]; found {
-			cacheMu.RUnlock()
-			return val
-		}
+	c.mu.RLock()
+	val, found := c.orgs[orgID][name]
+	c.mu.RUnlock()
+	if found {
+		return val
 	}
-	cacheMu.RUnlock()
 	return f.Default
 }
 
 // SnapshotForOrg returns the effective boolean map for every catalog flag
-// in the given org. Used to populate /serverinfo and gRPC packets.
-func SnapshotForOrg(orgID string) map[string]bool {
-	cacheMu.RLock()
-	orgFlags := cache[orgID]
-	cacheMu.RUnlock()
+// in the given org.
+func (c *Cache) SnapshotForOrg(orgID string) map[string]bool {
+	c.mu.RLock()
+	orgFlags := c.orgs[orgID]
+	c.mu.RUnlock()
 
 	snapshot := make(map[string]bool, len(catalog))
 	for name, f := range catalog {
-		if orgFlags != nil {
-			if val, found := orgFlags[name]; found {
-				snapshot[name] = val
-				continue
-			}
+		if val, found := orgFlags[name]; found {
+			snapshot[name] = val
+			continue
 		}
 		snapshot[name] = f.Default
 	}
 	return snapshot
+}
+
+// inCatalog returns the flags of flags the catalog knows.
+func inCatalog(flags map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(flags))
+	for name, enabled := range flags {
+		if _, ok := catalog[name]; ok {
+			out[name] = enabled
+		}
+	}
+	return out
+}
+
+// sameFlags compares two stored flag sets. An empty set and a nil one are
+// the same: both read the defaults.
+func sameFlags(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, enabled := range a {
+		if v, ok := b[name]; !ok || v != enabled {
+			return false
+		}
+	}
+	return true
 }
