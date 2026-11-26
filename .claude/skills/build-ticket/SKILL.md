@@ -155,6 +155,10 @@ name, stop and report what is missing.
 - `webapp_v2/`: `npm run lint` and `npm run build`
 - New endpoint or schema: `make generate-openapi-docs`
 - Migration: test `down 1`
+- A change to the web app or to output a person reads in the terminal: run
+  the `design-review` skill on the branch. Fix each Must fix. Fix each
+  Should fix, or list it in the PR's "Additional Notes". Questions for
+  design go there too.
 
 Then push the branch and open the PR as a draft, title `<ID>: <summary>`
 (`gh pr create --draft`), so CI runs while QA works. Step 7 fills it. In
