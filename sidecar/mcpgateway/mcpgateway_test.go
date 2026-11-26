@@ -34,6 +34,7 @@ type recSession struct {
 	deny      map[string]string
 	hide      map[string]bool
 	held      map[string]bool
+	denyList  string
 	mask      func(string) (string, []string, int, error)
 	recordErr error
 	calls     []string
@@ -75,6 +76,9 @@ func (s *recSession) ToolList(_ context.Context, tools []daemon.MCPToolInfo, hid
 		s.seen = append(s.seen, tl.Name, tl.Description)
 	}
 	s.acts = append(s.acts, "tools/list:"+strings.Join(names, ",")+" hidden:"+strings.Join(hidden, ","))
+	if s.denyList != "" {
+		return daemon.MCPVerdict{Message: s.denyList}
+	}
 	return daemon.MCPVerdict{Allowed: true}
 }
 
@@ -136,6 +140,7 @@ type testLane struct {
 	deny      map[string]string
 	hide      map[string]bool
 	held      map[string]bool
+	denyList  string
 	mask      func(string) (string, []string, int, error)
 	recordErr error
 	sessions  []*recSession
@@ -146,7 +151,7 @@ func (l *testLane) open(_ context.Context, c daemon.MCPCaller) (daemon.MCPLaneSe
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callers = append(l.callers, c)
-	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, held: l.held, mask: l.mask, recordErr: l.recordErr}
+	s := &recSession{id: fmt.Sprintf("sidecar-%d", len(l.sessions)+1), deny: l.deny, hide: l.hide, held: l.held, denyList: l.denyList, mask: l.mask, recordErr: l.recordErr}
 	l.sessions = append(l.sessions, s)
 	return s, nil
 }
@@ -353,6 +358,26 @@ func TestAHiddenToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(acts, "\n"), "hidden:delete_customer") {
 		t.Fatalf("the catalog statement does not name the hidden tool: %v", acts)
+	}
+}
+
+// A tools/list a rule or OPA denies ends the MCP session and its sidecar
+// session.
+func TestADeniedCatalogEndsTheSession(t *testing.T) {
+	ln := &testLane{denyList: "deny word in a description"}
+	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	body := c.list(t)
+	if !strings.Contains(body, "-32010") || !strings.Contains(body, "tool catalog denied: deny word in a description") || strings.Contains(body, `"echo"`) {
+		t.Fatalf("denied catalog: %s", body)
+	}
+	waitFor(t, "the sidecar session to close", func() bool { _, _, closed := ln.session(0).snapshot(); return closed })
+	if _, acts, _ := ln.session(0).snapshot(); !strings.Contains(strings.Join(acts, "\n"), "mcp_session_killed") {
+		t.Fatalf("activities: %v", acts)
+	}
+	if code, _ := c.post(t, `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`); code != 404 {
+		t.Fatalf("message after the kill: %d, want 404", code)
 	}
 }
 
