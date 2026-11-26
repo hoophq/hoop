@@ -89,6 +89,9 @@ type exporter struct {
 
 var current atomic.Pointer[exporter]
 
+// onFatal registers flushOnFatal with the logger once per process.
+var onFatal sync.Once
+
 // Start builds the exporters cfg names and starts pushing. A nil cfg is
 // export off, and Start does nothing. db is the pool the gauges read; nil
 // registers none.
@@ -120,6 +123,9 @@ func Start(cfg *appconfig.OTLPExport, version string, db *sql.DB) error {
 		return err
 	}
 	current.Store(e)
+	// A startup error after this point exits through log.Fatal, not a
+	// signal. The signals recorded until then go out first.
+	onFatal.Do(func() { log.OnFatal(flushOnFatal) })
 	// The host only: an endpoint path can carry a vendor key, the reason
 	// appconfig keeps the endpoint out of its errors.
 	log.Infof("telemetry enabled, host=%s, protocol=%s, interval=%s, traces=%v",
@@ -230,6 +236,15 @@ func Shutdown(ctx context.Context) error {
 		return errors.New(describe(err))
 	}
 	return nil
+}
+
+// flushOnFatal is Shutdown for a log.Fatal exit, with the signal path's bound.
+func flushOnFatal() {
+	ctx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
+	defer cancel()
+	if err := Shutdown(ctx); err != nil {
+		log.Warnf("telemetry shutdown reported an error: %v", err)
+	}
 }
 
 func (e *exporter) shutdown(ctx context.Context) error {
