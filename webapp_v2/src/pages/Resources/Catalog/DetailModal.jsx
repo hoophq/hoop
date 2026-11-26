@@ -135,11 +135,21 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
             </Group>
             {entry.description && <Text c="dimmed">{entry.description}</Text>}
           </Stack>
-          <Tooltip label="Close">
-            <ActionIcon variant="subtle" color="gray" aria-label="Close" onClick={onClose}>
-              <X size={18} />
-            </ActionIcon>
-          </Tooltip>
+          <Group gap="sm" wrap="nowrap">
+            <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
+              View Docs
+            </Button>
+            {isAdmin && (
+              <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
+                Continue Setup
+              </Button>
+            )}
+            <Tooltip label="Close">
+              <ActionIcon variant="subtle" color="gray" aria-label="Close" onClick={onClose}>
+                <X size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Group>
         <Tabs defaultValue="overview">
           <Tabs.List>
@@ -159,16 +169,6 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
             </Tabs.Panel>
           )}
         </Tabs>
-        <Group justify="flex-end" gap="sm">
-          <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
-            View Docs
-          </Button>
-          {isAdmin && (
-            <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
-              Continue Setup
-            </Button>
-          )}
-        </Group>
       </Stack>
     </Modal>
   )
