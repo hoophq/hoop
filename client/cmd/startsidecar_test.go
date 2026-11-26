@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
+	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/spf13/cobra"
@@ -358,5 +361,25 @@ func TestSidecarBareInvocation(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// ENG-1153 (Qodo): the boot retry logs before sidecartui.Run converts the
+// daemon's output. In the text format and before the dashboard those lines
+// are text; in the JSON format they stay the daemon's JSON on stderr.
+func TestBootLogFollowsTheLogFormat(t *testing.T) {
+	if w := bootLogFor(sidecartui.FormatJSON, io.Discard); w != nil {
+		t.Errorf("JSON format: boot log = %T, want nil (the daemon's own stderr)", w)
+	}
+	for _, f := range []sidecartui.Format{sidecartui.FormatText, sidecartui.FormatTUI} {
+		var out bytes.Buffer
+		w := bootLogFor(f, &out)
+		if w == nil {
+			t.Fatalf("%s format: no boot log writer", f)
+		}
+		slog.New(slog.NewJSONHandler(w, nil)).Warn("the control plane is unavailable; retrying the boot handshake", "attempt", 1)
+		if got := out.String(); strings.HasPrefix(got, "{") || !strings.Contains(got, "level=WARN") || !strings.Contains(got, "attempt=1") {
+			t.Errorf("%s format: boot log line = %q, want logfmt", f, got)
+		}
 	}
 }

@@ -55,6 +55,10 @@ type runningLane struct {
 	// stop calls it, so what Serve started for the lane ends with the
 	// lane and not with the process.
 	cancel context.CancelFunc
+	// ended is set when the lane's Serve returned, before its error
+	// reaches the reader. /readyz reads it: an engine that keeps its
+	// address after it stopped (libhoop's gRPC and SSH) is not open.
+	ended *atomic.Bool
 }
 
 func (l runningLane) addr() net.Addr {
@@ -101,6 +105,14 @@ func (s *laneSet) snapshot() []runningLane {
 	out := make([]runningLane, len(s.lanes))
 	copy(out, s.lanes)
 	return out
+}
+
+// isClosed reports that closeAll ran: the process is stopping, and /readyz
+// says so before the first lane closes.
+func (s *laneSet) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 func (s *laneSet) remove(name string) (runningLane, bool) {
@@ -295,6 +307,7 @@ func (rt *laneRuntime) build(ln *lane) (runningLane, error) {
 func (rt *laneRuntime) launch(rl runningLane) (<-chan error, error) {
 	ctx, cancel := context.WithCancel(rt.ctx)
 	rl.cancel = cancel
+	rl.ended = new(atomic.Bool)
 	rt.set.mu.Lock()
 	var err error
 	switch {
@@ -319,7 +332,9 @@ func (rt *laneRuntime) launch(rl runningLane) (<-chan error, error) {
 	served := make(chan error, 1)
 	go func() {
 		defer rt.wg.Done()
-		served <- rl.serve(ctx)
+		err := rl.serve(ctx)
+		rl.ended.Store(true)
+		served <- err
 	}()
 	return served, nil
 }
@@ -345,6 +360,26 @@ func (rt *laneRuntime) start(rl runningLane) error {
 	}
 	go rt.watch(rl, served)
 	return nil
+}
+
+// startAll starts the startup lanes in config order, then calls started.
+// On the first lane that cannot start it reports the error through fail, so
+// Run's one shutdown path runs, closes the lanes not started yet (they hold
+// no socket; close releases an engine among them) and never calls started:
+// the lanes that did start are not the config, and /readyz must not read
+// them as ready.
+func (rt *laneRuntime) startAll(built []runningLane, started func()) {
+	for i, b := range built {
+		if err := rt.start(b); err != nil {
+			rt.log.Error("listener failed", "listener", b.name, "error", err)
+			rt.fail(err)
+			for _, rest := range built[i+1:] {
+				_ = rest.close()
+			}
+			return
+		}
+	}
+	started()
 }
 
 // startBound serves a lane a reload added. It returns once the socket is

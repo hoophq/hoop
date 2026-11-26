@@ -87,7 +87,7 @@ func TestTheHeartbeatCountsEachHandshakeByOutcome(t *testing.T) {
 func TestHandshakeOutcome(t *testing.T) {
 	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer tlsSrv.Close()
-	_, certErr := fetchControlPlaneConfig(tlsSrv.URL, tokenCredential("hsc_x"), handshakeRequest{Version: "test"})
+	_, certErr := fetchControlPlaneConfig(context.Background(), tlsSrv.URL, tokenCredential("hsc_x"), handshakeRequest{Version: "test"})
 	if certErr == nil {
 		t.Fatal("a plane with an untrusted certificate answered")
 	}

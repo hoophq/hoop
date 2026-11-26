@@ -97,6 +97,34 @@ type setupOptions struct {
 	localFirst      []string
 	planeURL        string
 	firstRun        FirstRunObserver
+	noBootRetry     bool
+	ctx             context.Context
+	bootLog         io.Writer
+	health          *HealthListener
+}
+
+// WithoutBootRetry makes a failed first handshake return at once, whatever
+// the failure. A boot retries a control plane that is down (see bootRetry);
+// a check does not: -validate, or a screen testing a URL a person typed,
+// reports the failure now instead of waiting minutes for a plane that may
+// never answer.
+func WithoutBootRetry() Option {
+	return func(o *setupOptions) { o.noBootRetry = true }
+}
+
+// WithContext bounds the control plane requests Setup makes, and the boot
+// retry between them. An entry point that handles signals itself passes the
+// context they cancel, so a stop during the retry stops Setup at once.
+func WithContext(ctx context.Context) Option {
+	return func(o *setupOptions) { o.ctx = ctx }
+}
+
+// WithBootLog sends the boot retry's log lines to w instead of stderr. They
+// are written before Run, so an entry point that turns the daemon's JSON log
+// into another format passes the same converter here; each Write is one
+// JSON line. Nil keeps stderr.
+func WithBootLog(w io.Writer) Option {
+	return func(o *setupOptions) { o.bootLog = w }
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -145,9 +173,10 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 // When a control plane is configured (HOOP_CONTROL_PLANE_URL or the config
 // file's "control_plane_url" key), the running config comes from its
 // handshake and path may be empty; see resolveConfigSource for what a file
-// still contributes then. A first fetch that fails stops startup, because
-// there is nothing to serve yet; once running, the heartbeat degrades
-// instead.
+// still contributes then. There is nothing to serve before the first
+// handshake answers, so a plane that is down, times out or answers 5xx is
+// retried for up to five minutes (bootRetry), and any other failure stops
+// startup at once; once running, the heartbeat degrades instead.
 func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
 	var o setupOptions
 	for _, apply := range opts {
@@ -164,10 +193,19 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 			return nil, nil, err
 		}
 	}
-	cfg, err := resolveConfigSource(local, o.token, o.planeURL)
+	ctx := o.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	health := newHealthStatus()
+	if o.health != nil {
+		health = o.health.status
+	}
+	cfg, err := resolveConfigSource(ctx, local, o.token, o.planeURL, !o.noBootRetry, o.bootLog, health)
 	if err != nil {
 		return nil, nil, err
 	}
+	cfg.health, cfg.healthListener = health, o.health
 	// The file is what runs: standalone, or a plane that delegates to disk.
 	if local != nil && cfg == local {
 		cfg.Deprecations = append(cfg.Deprecations, cfg.fileDeprecations...)
@@ -440,9 +478,22 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
-	cfg, det, err := SetupWith(*configPath, load, build,
-		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
-		WithEntrypoint(analytics.EntrypointBinary))
+	opts := []Option{WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
+		WithEntrypoint(analytics.EntrypointBinary)}
+	if *validate || *grpcDiscover != "" {
+		// A check, not a boot: report a plane that is down now, and leave
+		// the health port to the sidecar this pod already runs.
+		opts = append(opts, WithoutBootRetry())
+	} else {
+		// A boot: answer the probes while the plane is waited for.
+		hl, herr := ListenHealth()
+		if herr != nil {
+			return herr
+		}
+		defer func() { _ = hl.Close() }()
+		opts = append(opts, WithHealthListener(hl))
+	}
+	cfg, det, err := SetupWith(*configPath, load, build, opts...)
 	if err != nil {
 		return err
 	}
@@ -902,6 +953,9 @@ func noticeLicenseExpiry(lic license.Status, lastNotified int, log *slog.Logger)
 // in Go carries the zero Status, so an embedder who never calls UseLicense
 // gets the caps rather than a bypass.
 func Run(cfg *Config, det Plugin) error {
+	// The entry point's early health listener serves through Run, and stops
+	// with it, whatever stops Run.
+	defer func() { _ = cfg.healthListener.Close() }()
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return err
 	}
@@ -1149,20 +1203,16 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}
 	rt.ctx, rt.wg, rt.fail = ctx, &wg, fail
-	for i, b := range built {
-		if serr := rt.start(b); serr != nil {
-			// fail reports it through the channel a Serve failure uses, so
-			// the select below runs the one shutdown path. start closed
-			// this lane; the lanes not started yet hold no socket, and
-			// close releases an engine among them.
-			log.Error("listener failed", "listener", b.name, "error", serr)
-			fail(serr)
-			for _, rest := range built[i+1:] {
-				_ = rest.close()
-			}
-			break
-		}
+	// The probes read the registry once every startup lane is in it,
+	// bound or not, so none reads as missing; lanes a reload adds and
+	// removes show on the next probe. After a startup failure it is never
+	// published: the lanes that did start would read as ready while the
+	// process is on its way down.
+	health := cfg.health
+	if health == nil {
+		health = newHealthStatus()
 	}
+	rt.startAll(built, func() { health.serving(rt.set, icaReadinessJSONFor(cfg), licState.get) })
 
 	switch {
 	case cfg.cp != nil:
@@ -1179,6 +1229,15 @@ func Run(cfg *Config, det Plugin) error {
 				"url", cfg.cp.url,
 				"listeners", len(cfg.Listeners))
 		}
+		if cfg.cp.importUncertain {
+			// A retried import answered 409. Its earlier attempt may have
+			// landed, or someone else wrote first; neither is known, so
+			// neither is claimed.
+			log.Warn("an earlier attempt of the configuration import may have landed; the control plane's configuration is in use",
+				"url", cfg.cp.url,
+				"listeners", len(cfg.Listeners),
+				"hint", "edit the configuration in the control plane; the local file no longer holds it")
+		}
 		if cfg.cp.fileListeners > 0 {
 			log.Warn("the config file's listeners are ignored: the control plane owns the running config",
 				"file_listeners", cfg.cp.fileListeners,
@@ -1194,6 +1253,7 @@ func Run(cfg *Config, det Plugin) error {
 				"in_force", cfg.lic.State().String(),
 				"hint", "set the organization's license in the control plane")
 		}
+		cfg.cp.health = health
 		go cfg.cp.heartbeat(ctx, log, rl)
 	case cfg.configPath != "":
 		log.Info("watching the config file; a rule edit applies without a restart",
@@ -1212,7 +1272,7 @@ func Run(cfg *Config, det Plugin) error {
 		}
 		runAdmin = func() error {
 			return serveAdmin(ctx, cfg.Admin.Listen, cfg.Admin.APIListen, rt.set,
-				view, ac, analyzerCfg, am, licState, otel, log, icaReadinessJSONFor(cfg))
+				view, ac, analyzerCfg, am, licState, otel, log, health)
 		}
 	}
 	// PUT /license is gone. An operator who still sets its secret expects a
@@ -1270,12 +1330,23 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}()
 	}
-	if addr := healthAddr; addr != "" {
+	// An early listener already serves this status; otherwise bind now.
+	// Either way a health server that stops on its own stops the process.
+	if hl := cfg.healthListener; hl != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h := healthState{rt.set, icaReadinessJSONFor(cfg)}
-			if serr := serveHealth(ctx, addr, h, log); serr != nil {
+			select {
+			case serr := <-hl.failed:
+				fail(serr) // the listener logged it
+			case <-ctx.Done():
+			}
+		}()
+	} else if addr := healthAddr; addr != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if serr := serveHealth(ctx, addr, health, log); serr != nil {
 				log.Error("health endpoint failed", "listen", addr, "error", serr)
 				fail(serr)
 			}
@@ -1303,6 +1374,9 @@ func Run(cfg *Config, det Plugin) error {
 		tel.trackLicenseExpired(cfg, licState)
 		cancel()
 	}
+	// closeAll marks the registry closed before the first lane closes:
+	// /readyz reads that and answers stopping, while /healthz answers
+	// until the process is gone.
 	rt.set.closeAll(log)
 	wg.Wait()
 	close(errCh)
@@ -1861,6 +1935,14 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchem
 }
 
 func newLogger(level string) *slog.Logger {
+	l := jsonLogger(os.Stderr, level)
+	slog.SetDefault(l)
+	return l
+}
+
+// jsonLogger is the process log shape on w, without making it the default:
+// the boot logs its handshake retries before Setup knows the config.
+func jsonLogger(w io.Writer, level string) *slog.Logger {
 	var lv slog.Level
 	switch level {
 	case "debug":
@@ -1875,10 +1957,7 @@ func newLogger(level string) *slog.Logger {
 	// JSON to stderr: audit events go to their own sink, so stderr carries
 	// only operational output and a container platform can route the two
 	// differently.
-	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: lv})
-	l := slog.New(h)
-	slog.SetDefault(l)
-	return l
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: lv}))
 }
 
 // auditChain is what buildAudit assembles: the sink the gate writes to, plus
@@ -1989,7 +2068,7 @@ func serveAdmin(
 	licState *licenseState,
 	otel *otelExporter,
 	log *slog.Logger,
-	icaReadinessJSON bool,
+	health *healthStatus,
 ) error {
 	var probesLn, apiLn net.Listener
 	if addr != "" {
@@ -2011,7 +2090,7 @@ func serveAdmin(
 	}
 
 	probes := http.NewServeMux()
-	handleHealth(probes, healthState{lanes, icaReadinessJSON})
+	handleHealth(probes, health)
 
 	// The one write here is the ICA deployment drain. It has its own token
 	// and is off unless the operator sets it: every read route is

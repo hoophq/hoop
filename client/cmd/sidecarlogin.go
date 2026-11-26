@@ -469,8 +469,9 @@ func sidecarTokenGiven() bool {
 // sidecar. A sidecar that just logged in is empty, and with no config file
 // to import there is nothing to serve until someone adds a listener in the
 // web app; waiting beats exiting with a 412 the person has to rerun past.
-func waitForPlaneConfig(ctx context.Context, out io.Writer, login *savedSidecarLogin, setup func() error) error {
-	err := setup()
+// setup gets ctx, so a signal also ends a boot retry inside it.
+func waitForPlaneConfig(ctx context.Context, out io.Writer, login *savedSidecarLogin, setup func(context.Context) error) error {
+	err := setup(ctx)
 	if !errors.Is(err, daemon.ErrPlaneHasNoConfig) {
 		return err
 	}
@@ -487,7 +488,7 @@ func waitForPlaneConfig(ctx context.Context, out io.Writer, login *savedSidecarL
 			return ctx.Err()
 		case <-time.After(5 * time.Second):
 		}
-		if err = setup(); !errors.Is(err, daemon.ErrPlaneHasNoConfig) {
+		if err = setup(ctx); !errors.Is(err, daemon.ErrPlaneHasNoConfig) {
 			return err
 		}
 	}

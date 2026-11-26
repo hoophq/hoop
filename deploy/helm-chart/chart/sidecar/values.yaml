@@ -257,11 +257,15 @@ existingSecret: ''
 
 # -- Admin probes on port 19000. Defaults remain /healthz. ICA deployments
 # should set readinessPath and startupPath to /readyz so model loading finishes
-# before traffic is admitted. Liveness stays /healthz; startup is opt-in.
+# before traffic is admitted. Liveness stays /healthz. The startup probe is
+# always on: the relay retries its first control plane handshake for up to
+# 5 minutes before the admin server binds, and the default budget (120 x 5s)
+# covers that. Keep startupPeriodSeconds x startupFailureThreshold above
+# 5 minutes, or the kubelet restarts a relay that is still retrying.
 probe: {}
   # readinessPath: /readyz
   # livenessPath: /healthz
-  # startupPath: /readyz
+  # startupPath: /readyz       # default /healthz
   # startupFailureThreshold: 180
   # startupPeriodSeconds: 5
   # timeoutSeconds: 2

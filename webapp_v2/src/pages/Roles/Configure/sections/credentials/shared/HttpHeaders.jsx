@@ -187,7 +187,7 @@ export default function HttpHeaders({
 
   return (
     <Stack gap="md">
-      <Stack gap="xs">
+      <Stack gap="xsAlt">
         <Title order={4}>{title}</Title>
         <Text size="sm" c="dimmed">
           {description}
@@ -250,11 +250,11 @@ export default function HttpHeaders({
           )
         })}
         <Group gap="sm">
-          <Button variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
+          <Button size="sm" variant="light" leftSection={<Plus size={14} />} onClick={addEmptyRow}>
             {addLabel}
           </Button>
           {canRemove && (
-            <Button variant="light" color="gray" onClick={removeLastRow}>
+            <Button size="sm" variant="light" color="gray" onClick={removeLastRow}>
               Remove
             </Button>
           )}

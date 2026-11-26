@@ -72,7 +72,11 @@ Find the nearest command in `client/cmd/` and match its shape.
 
 ## 4. Layout
 
-- **Width:** fit 80 columns. A TUI reads the terminal width.
+- **Width:** the text we write (help, messages, errors, headers) fits 80
+  columns. A TUI reads the terminal width.
+- **Never cut the person's data** (a URL, a name, an ID) to fit: they copy
+  it. A table with long data may be wider than 80 columns. When a column is
+  often long, leave it out of the list and show it in the `show` command.
 - **Tables:** `styles.RenderTable` for every list a person reads. Headers in
   UPPERCASE (`NAME`, `TYPE`, `STATUS`). No hand-aligned columns or
   `tabwriter` in new code.
@@ -110,7 +114,8 @@ builds its styles in a `setTheme` that runs again on `tea.BackgroundColorMsg`.
 - [ ] Every status has a word or a symbol, not only a color.
 - [ ] `Short` starts with a verb, under 60 characters. `Example` is set.
 - [ ] Every error has a next step. No struct dumps or raw bodies.
-- [ ] Lists use `styles.RenderTable` with UPPERCASE headers. Fits 80 columns.
+- [ ] Lists use `styles.RenderTable` with UPPERCASE headers. Our text fits
+      80 columns. No data cut to fit.
 - [ ] `-o json` prints JSON only on stdout.
 - [ ] No secret printed. No em dash, emoji or exclamation mark.
 - [ ] A destructive action asks first, and has `--yes`.
