@@ -25,6 +25,7 @@ export const connectionsService = {
     if (connectionIds?.length) params.set('connection_ids', connectionIds.join(','))
     return api.get(`/connections?${params.toString()}`).then((res) => res.data)
   },
+  create: (payload) => api.post('/connections', payload).then((res) => res.data),
   getConnection: (nameOrId) =>
     api.get(`/connections/${encodeURIComponent(nameOrId)}`).then((res) => res.data),
   patchConnection: (name, payload) =>
