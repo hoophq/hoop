@@ -14,17 +14,20 @@ var placeholder = regexp.MustCompile(`\$[0-9]`)
 
 func TestParameterize(t *testing.T) {
 	for sql, want := range map[string]string{
-		"SELECT * FROM t WHERE id = 42":                                 "SELECT * FROM t WHERE id = $1",
-		"SELECT * FROM t WHERE t.ID<>'x' AND \"Email\" != 'a'":          "SELECT * FROM t WHERE t.ID<>$1 AND \"Email\" != $2",
-		"SELECT * FROM t WHERE id IN (1, 2, 3)":                         "SELECT * FROM t WHERE id IN ($1, $2, $3)",
-		"SELECT * FROM t WHERE id NOT IN ('a')":                         "SELECT * FROM t WHERE id NOT IN ($1)",
-		"INSERT INTO t (a, b) VALUES (1, 'x'), (2.5, 'y')":              "INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)",
-		"UPDATE t SET v = E'it''s', n = 1.5 WHERE id = $$7$$":           "UPDATE t SET v = $1, n = $2 WHERE id = $3",
-		"UPDATE t SET v = 'x' WHERE status = 'done'":                    "UPDATE t SET v = $1 WHERE status = 'done'",
-		"SELECT * FROM t WHERE id='a'AND v=1":                           "SELECT * FROM t WHERE id=$1 AND v=1",
-		"SELECT * FROM t /* id = 5 */ WHERE id = 5 -- = 6":              "SELECT * FROM t /* id = 5 */ WHERE id = $1 -- = 6",
-		"INSERT INTO t VALUES (1, ARRAY[1, 2], lower('A'))":             "INSERT INTO t VALUES ($1, ARRAY[1, 2], lower('A'))",
-		"INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET n = 2": "INSERT INTO t VALUES ($1) ON CONFLICT (id) DO UPDATE SET n = $2",
+		"SELECT * FROM t WHERE id = 42":                                   "SELECT * FROM t WHERE id = $1",
+		"SELECT * FROM t WHERE t.ID<>'x' AND \"Email\" != 'a'":            "SELECT * FROM t WHERE t.ID<>$1 AND \"Email\" != $2",
+		"SELECT * FROM t WHERE id IN (1, 2, 3)":                           "SELECT * FROM t WHERE id IN ($1, $2, $3)",
+		"SELECT * FROM t WHERE id NOT IN ('a')":                           "SELECT * FROM t WHERE id NOT IN ($1)",
+		"INSERT INTO t (a, b) VALUES (1, 'x'), (2.5, 'y')":                "INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)",
+		"UPDATE t SET v = E'it''s', n = 1.5 WHERE id = $$7$$":             "UPDATE t SET v = $1, n = $2 WHERE id = $3",
+		"UPDATE t SET v = 'x' WHERE status = 'done'":                      "UPDATE t SET v = $1 WHERE status = 'done'",
+		"SELECT * FROM t WHERE id='a'AND v=1":                             "SELECT * FROM t WHERE id=$1 AND v=1",
+		"SELECT * FROM t /* id = 5 */ WHERE id = 5 -- = 6":                "SELECT * FROM t /* id = 5 */ WHERE id = $1 -- = 6",
+		"INSERT INTO t VALUES (1, ARRAY[1, 2], lower('A'))":               "INSERT INTO t VALUES ($1, ARRAY[1, 2], lower('A'))",
+		"INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET n = 2":   "INSERT INTO t VALUES ($1) ON CONFLICT (id) DO UPDATE SET n = $2",
+		"DELETE FROM ONLY s.t AS x WHERE x.id = 5 RETURNING *":            "DELETE FROM ONLY s.t AS x WHERE x.id = $1 RETURNING *",
+		"UPDATE t x SET n = 1 WHERE t.id = 5 AND x.id IS DISTINCT FROM 6": "UPDATE t x SET n = $1 WHERE t.id = $2 AND x.id IS DISTINCT FROM 6",
+		"SELECT extract(year FROM ts) FROM t WHERE id = 5 FOR UPDATE;":    "SELECT extract(year FROM ts) FROM t WHERE id = $1 FOR UPDATE;",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || got != want || n != len(placeholder.FindAllString(want, -1)) {
@@ -51,6 +54,19 @@ func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 		"SELECT * FROM t WHERE set IS NOT NULL AND status = 'open'",
 		"INSERT INTO t SELECT * FROM (VALUES (1)) v(x)",
 		"SELECT * FROM t WHERE lower(id) = 'x'",
+		"DELETE FROM t USING (VALUES ('closed', 7)) v(s, id) WHERE t.status = v.s AND v.id = 8",
+		"UPDATE t SET n = n FROM (VALUES (7)) v(id) WHERE v.id = 8",
+		"DELETE FROM t WHERE status IN (SELECT s FROM (VALUES ('a', 7)) v(s, id) WHERE id = 8)",
+		"DELETE FROM t WHERE id = 8 AND EXISTS (SELECT 1)",
+		"SELECT * FROM t JOIN u ON u.k = t.k WHERE id = 5",
+		"SELECT * FROM t, generate_series(1, 9) g(id) WHERE id = 5",
+		"SELECT * FROM t AS x(k, id) WHERE id = 5",
+		"SELECT * FROM t WHERE o.id = 5 OR (r).id = 5 OR s.t.id = 5 OR k::id = 5",
+		"SELECT * FROM t WHERE id = 5 UNION SELECT * FROM u WHERE id = 6",
+		"INSERT INTO t SELECT * FROM u WHERE id = 5",
+		"SELECT * FROM t TABLESAMPLE system (1) WHERE id = 5",
+		"SELECT * FROM t WHERE id = 5 AND v IS DISTINCT FROM 'a' AND w FROM u",
+		"SELECT id = 5",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || n != 0 || got != sql {

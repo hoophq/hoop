@@ -15,8 +15,8 @@ const maxPlaceholders = 65535
 //     that an INSERT's own VALUES list holds (a VALUES used as a table can
 //     change the plan);
 //   - a string or integer compared with =, <> or != to a column that unique
-//     reports as a unique key, or listed in IN after one, in a statement with
-//     no subquery or WITH.
+//     reports as a unique key, or listed in IN after one, in a SELECT, UPDATE
+//     or DELETE that reads one table and nothing else (keySource).
 //
 // Other literals stay. A generic plan estimates col > $1, or col = $1 on a
 // skewed column, at a fixed share of the table, which can be far below the
@@ -30,11 +30,20 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 	if !ok || !sameWithBackslashes(sql, rules, spans) {
 		return "", 0, false
 	}
-	if unique != nil && hasSubquery(toks) {
+	names, one := keySource(sql, toks, spans)
+	if !one {
 		unique = nil
 	}
 	key := func(k int) bool {
-		return unique != nil && k >= 0 && toks[k].isName() && unique(folded(sql, toks[k], spans[k]))
+		if unique == nil || k < 0 || !toks[k].isName() || !unique(folded(sql, toks[k], spans[k])) {
+			return false
+		}
+		if k > 0 && isPunct(toks[k-1], ".") {
+			return k > 1 && toks[k-2].isName() && slices.Contains(names, folded(sql, toks[k-2], spans[k-2])) &&
+				(k < 3 || !isPunct(toks[k-3], "."))
+		}
+		// In x::id, id is a type.
+		return k == 0 || !isPunct(toks[k-1], ":")
 	}
 	insert := len(toks) > 0 && toks[0].isWord("insert")
 	update := len(toks) > 0 && toks[0].isWord("update")
@@ -134,22 +143,70 @@ func operatorBefore(sql string, toks []Token, spans [][2]int, i int) (string, in
 	return sql[spans[start][0]:spans[i-1][1]], start
 }
 
-// hasSubquery reports a second SELECT or a WITH: either can give a unique
-// column's name to another value.
-func hasSubquery(toks []Token) bool {
-	selects := 0
-	for _, t := range toks {
-		if t.isWord("with") {
-			return true
-		}
-		if t.isWord("select") {
-			if selects++; selects > 1 {
-				return true
+// keySource returns the names a column of the statement's table can carry: the
+// table's name and its alias. ok is false unless the statement is a SELECT,
+// UPDATE or DELETE that reads that one table and nothing else, since a join,
+// subquery, VALUES or function in FROM can give a key's name to another value.
+func keySource(sql string, toks []Token, spans [][2]int) (names []string, ok bool) {
+	if len(toks) == 0 {
+		return nil, false
+	}
+	verb := toks[0]
+	if !verb.isWord("select") && !verb.isWord("update") && !verb.isWord("delete") {
+		return nil, false
+	}
+	depth, from := 0, -1
+	for i, t := range toks {
+		switch {
+		case isPunct(t, "("):
+			depth++
+		case isPunct(t, ")"):
+			depth--
+		case i > 0 && t.Kind == Word && slices.Contains(otherSources, t.Text):
+			return nil, false
+		case t.isWord("from") && depth == 0 && !(i > 1 && toks[i-1].isWord("distinct") && (toks[i-2].isWord("is") || toks[i-2].isWord("not"))):
+			if from >= 0 {
+				return nil, false
 			}
+			from = i
 		}
 	}
-	return false
+	i := from + 1
+	switch {
+	case verb.isWord("select") && from < 0, verb.isWord("delete") && from != 1, verb.isWord("update") && from >= 0:
+		return nil, false
+	case verb.isWord("update"):
+		i = 1
+	}
+	if i < len(toks) && toks[i].isWord("only") {
+		i++
+	}
+	if i >= len(toks) || !toks[i].isName() {
+		return nil, false
+	}
+	table := folded(sql, toks[i], spans[i])
+	if i += 1; i+1 < len(toks) && isPunct(toks[i], ".") && toks[i+1].isName() {
+		table = folded(sql, toks[i+1], spans[i+1])
+		i += 2
+	}
+	names = []string{table}
+	if i < len(toks) && toks[i].isWord("as") {
+		i++
+	}
+	if i < len(toks) && toks[i].isName() && !(toks[i].Kind == Word && slices.Contains(clauses, toks[i].Text)) {
+		names = append(names, folded(sql, toks[i], spans[i]))
+		i++
+	}
+	if verb.isWord("update") {
+		return names, i < len(toks) && toks[i].isWord("set")
+	}
+	return names, i == len(toks) || isPunct(toks[i], ";") || toks[i].Kind == Word && slices.Contains(clauses, toks[i].Text)
 }
+
+var (
+	otherSources = []string{"select", "values", "with", "join", "using", "lateral", "table"}
+	clauses      = []string{"where", "group", "having", "window", "order", "limit", "offset", "fetch", "for", "returning", "set"}
+)
 
 // wholeNumber reports whether the scanner's number is the whole literal:
 // it stops before an exponent (1e3), a radix (0x1F) or a separator (1_000).
