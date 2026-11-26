@@ -31,11 +31,27 @@
                     "locked")
       "locked")))
 
+;; Every color the Hub draws, by role. The legacy app has no --hoop-* role
+;; tokens, so these Radix shades are named once here and read by role
+;; (hoop-ui: green done, amber pending, gray neutral).
+(def colors
+  {:done         "var(--green-9)"
+   :pending      "var(--amber-9)"
+   :neutral      "var(--gray-7)"
+   :locked       "var(--gray-4)"
+   :track        "var(--gray-3)"
+   :border       "var(--gray-6)"
+   :divider      "var(--gray-5)"
+   :muted-icon   "var(--gray-5)"
+   :surface      "var(--color-panel-solid)"
+   :row-hover    "var(--gray-2)"
+   :row-selected "var(--indigo-2)"})
+
 ;; Single source of truth for both the bar color and the tooltip wording.
 (def segment-states
-  {"done"   {:bg "var(--green-9)"  :text "complete"}
-   "active" {:bg "var(--amber-9)"  :text "action required"}
-   "locked" {:bg "var(--gray-4)"   :text "complete previous steps first"}})
+  {"done"   {:bg (:done colors)    :text "complete"}
+   "active" {:bg (:pending colors) :text "action required"}
+   "locked" {:bg (:locked colors)  :text "complete previous steps first"}})
 
 ;; Drives the per-row "Set up admin / Provision roles / Manage" buttons and
 ;; the stage-banner action button. `:handler-key` is looked up in the props
@@ -316,9 +332,9 @@
 ;; columns, never from a row tint alone (hoop-ui skill: no status by color).
 (defn row-bg [_stage selected? hovered?]
   (cond
-    selected? "var(--indigo-2)"
-    hovered?  "var(--gray-2)"
-    :else "var(--color-panel-solid)"))
+    selected? (:row-selected colors)
+    hovered?  (:row-hover colors)
+    :else (:surface colors)))
 
 (defn make-default-config []
   {:method "manual" :username "admin" :password ""})

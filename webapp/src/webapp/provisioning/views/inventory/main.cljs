@@ -43,15 +43,15 @@
         needs-admin (count (filter #(= :needs-admin (:stage %)) resources))
         needs-roles (count (filter #(= :needs-roles (:stage %)) resources))
         stages [{:label "Inventory" :big-num total         :detail (str total " total")
-                 :fill 1                                   :fill-color "var(--gray-7)"
+                 :fill 1                                   :fill-color (:neutral data/colors)
                  :pending 0   :pending-color "gray"}
                 {:label "Manage"    :big-num needs-admin   :detail (str needs-admin " pending")
                  :fill (if (pos? total) (/ needs-admin total) 0)
-                 :fill-color "var(--amber-9)"
+                 :fill-color (:pending data/colors)
                  :pending needs-admin :pending-color "amber"}
                 {:label "Provision" :big-num needs-roles   :detail (str needs-roles " pending")
                  :fill (if (pos? total) (/ needs-roles total) 0)
-                 :fill-color "var(--amber-9)"
+                 :fill-color (:pending data/colors)
                  :pending needs-roles :pending-color "amber"}]]
     [:> Flex {:align "stretch" :mb "5" :gap "0"}
      (doall
@@ -59,11 +59,11 @@
         ^{:key (:label s)}
         [:<>
          (when (pos? i)
-           [:> Flex {:align "center" :px "1" :style {:color "var(--gray-4)" :flex-shrink 0}}
+           [:> Flex {:align "center" :px "1" :style {:color (:locked data/colors) :flex-shrink 0}}
             [:> ChevronRight {:size 16}]])
          [:> Box {:style {:flex 1
-                          :background "var(--color-panel-solid)"
-                          :border        "1px solid var(--gray-6)"
+                          :background (:surface data/colors)
+                          :border        (str "1px solid " (:border data/colors))
                           :padding       "14px 16px 12px"}}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :justify "between"}
@@ -80,7 +80,7 @@
             [:> Text {:size "7" :weight "bold" :style {:line-height 1 :color "var(--gray-12)"}}
              (:big-num s)]
             [:> Text {:size "1" :color "gray"} (:detail s)]]
-           [:> Box {:style {:height 5 :background "var(--gray-3)" :overflow "hidden"}}
+           [:> Box {:style {:height 5 :background (:track data/colors) :overflow "hidden"}}
             [:> Box {:style {:height     "100%"
                              :width      (str (* (:fill s) 100) "%")
                              :background (:fill-color s)}}]]]]]))]))
@@ -238,11 +238,11 @@
                     :transform   "translateX(-50%)"
                     :z-index     40
                     :background  "var(--gray-1)"
-                    :border      "1px solid var(--gray-6)"
+                    :border      (str "1px solid " (:border data/colors))
                     :box-shadow  "0 8px 32px rgba(0,0,0,0.12)"
                     :white-space "nowrap"}}
    [:> Text {:size "2" :weight "medium"} (str count-val " selected")]
-   [:> Box {:style {:width 1 :height 16 :background "var(--gray-6)"}}]
+   [:> Box {:style {:width 1 :height 16 :background (:border data/colors)}}]
    (when (pos? admin-count)
      [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-add-admin}
       [:> UserCog {:size 14}] (str " Manage (" admin-count ")")])
@@ -269,7 +269,7 @@
     [:> Flex {:align "center" :gap "3"}
      [:> Text {:size "3" :color "gray"}
       "Track and provision every database Resource connected to Hoop."]
-     [:> Box {:style {:width 1 :height 12 :background "var(--gray-5)" :flex-shrink 0}}]
+     [:> Box {:style {:width 1 :height 12 :background (:divider data/colors) :flex-shrink 0}}]
      [:> Text {:size "3" :color "gray"} (data/pluralize total-resources "Resource")]
      [status-dot {:color "green" :size 5}]
      [:> Text {:size "3" :color "green"} (str ready-count " complete")]]]
@@ -305,7 +305,7 @@
   [:> Table.Row
    [:> Table.Cell {:col-span 7}
     [:> Flex {:direction "column" :align "center" :justify "center" :py "9" :gap "3"}
-     [:> Box {:style {:color "var(--gray-5)" :display "flex"}}
+     [:> Box {:style {:color (:muted-icon data/colors) :display "flex"}}
       (if (seq search)
         [:> Search {:size 30 :stroke-width 1.5}]
         [:> Database {:size 30 :stroke-width 1.5}])]

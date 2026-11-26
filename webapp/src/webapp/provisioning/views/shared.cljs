@@ -5,7 +5,8 @@
                            Loader2 Upload X]]
    ["papaparse" :as papa]
    ["react" :as react]
-   [clojure.string :as cs]))
+   [clojure.string :as cs]
+   [webapp.provisioning.data :as data]))
 
 
 (defn zebra-bg
@@ -44,8 +45,8 @@
     :or   {px "5" py "4"}}]
   [:> Flex {:align "center" :justify "between" :gap "4"
             :px px :py py :mb "4"
-            :style {:background "var(--color-panel-solid)"
-                    :border     "1px solid var(--gray-6)"}}
+            :style {:background (:surface data/colors)
+                    :border     (str "1px solid " (:border data/colors))}}
    [:> Flex {:align "center" :gap "3"}
     (when icon
       [:> Box {:aria-hidden true
