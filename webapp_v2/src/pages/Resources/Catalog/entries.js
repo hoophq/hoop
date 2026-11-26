@@ -20,7 +20,7 @@ const POPULAR = new Set(['postgres', 'mysql', 'mongodb', 'ssh', 'linux-vm'])
 
 const BADGES = {
   new: { text: 'NEW', color: 'green' },
-  beta: { text: 'BETA', color: 'indigo' },
+  beta: { text: 'BETA', color: 'gray' },
 }
 
 const CREDENTIAL_TYPES = {

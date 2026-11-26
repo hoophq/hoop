@@ -149,7 +149,7 @@ describe('labels', () => {
   it('maps badges', () => {
     expect(entryBadges({ badges: ['new', 'beta', 'preview'] })).toEqual([
       { text: 'NEW', color: 'green' },
-      { text: 'BETA', color: 'indigo' },
+      { text: 'BETA', color: 'gray' },
       { text: 'Preview', color: 'gray' },
     ])
     expect(entryBadges({})).toEqual([])
