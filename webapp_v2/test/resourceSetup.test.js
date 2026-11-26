@@ -139,6 +139,16 @@ describe('setupConfigFor', () => {
   })
 })
 
+describe('every catalog id', () => {
+  // Every id of the real connections-metadata.json, type and subtype only.
+  const catalog = fixture('catalog-ids').connections
+  const ids = [...catalog.map((c) => c.id), 'linux-vm']
+
+  it.each(ids)('%s renders the React wizard', (id) => {
+    expect(isReactSetup(setupConfigFor(id, catalog))).toBe(true)
+  })
+})
+
 describe('isReactSetup', () => {
   it.each([
     ['postgres', true],

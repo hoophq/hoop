@@ -77,7 +77,7 @@ function Filters({ search, onSearch, categories, onCategories, tags, onToggleTag
       gap="xlAlt"
       w={{ base: '100%', md: 280 }}
       pos={{ base: 'static', md: 'sticky' }}
-      top={0}
+      top="var(--app-shell-header-offset, 0rem)"
     >
       <TextInput
         label="Search"
