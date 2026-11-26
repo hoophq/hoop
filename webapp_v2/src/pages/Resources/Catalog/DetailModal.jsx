@@ -1,13 +1,11 @@
 import { Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Anchor, Group, Paper, ScrollArea, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
-import { BookMarked, Cable, Monitor, SquareTerminal, X } from 'lucide-react'
-import ActionIcon from '@/components/ActionIcon'
+import { BookMarked, Cable, Monitor, SquareTerminal } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import Tabs from '@/components/Tabs'
-import Tooltip from '@/components/Tooltip'
 import { credentialTypeLabel, docsUrl, entryBadges, markdownLinkParts } from './entries'
 
 const ACCESS_METHODS = [
@@ -127,32 +125,25 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
   return (
     <Modal opened={opened} onClose={onClose} size={1000} withCloseButton={false} padding="xlAlt">
       <Stack gap="xlAlt">
-        <Stack gap="xs">
-          <Group justify="space-between" gap="md" wrap="nowrap">
+        <Group justify="space-between" gap="xl" wrap="nowrap">
+          <Stack gap="xs">
             <Group gap="sm">
               <Title order={2}>{entry.name}</Title>
               <EntryBadges entry={entry} />
             </Group>
-            <Tooltip label="Close">
-              <ActionIcon variant="subtle" color="gray" aria-label="Close" onClick={onClose}>
-                <X size={18} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-          <Group justify="space-between" gap="xl" wrap="nowrap">
-            <Text c="dimmed">{entry.description}</Text>
-            <Group gap="sm" wrap="nowrap">
-              <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
-                View Docs
+            {entry.description && <Text c="dimmed">{entry.description}</Text>}
+          </Stack>
+          <Group gap="sm" wrap="nowrap">
+            <Button variant="default" component="a" href={docsUrl(entry)} target="_blank" rel="noreferrer">
+              View Docs
+            </Button>
+            {isAdmin && (
+              <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
+                Continue Setup
               </Button>
-              {isAdmin && (
-                <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
-                  Continue Setup
-                </Button>
-              )}
-            </Group>
+            )}
           </Group>
-        </Stack>
+        </Group>
         <Tabs defaultValue="overview">
           <Tabs.List>
             <Tabs.Tab value="overview">Overview</Tabs.Tab>
