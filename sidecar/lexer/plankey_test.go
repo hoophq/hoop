@@ -29,6 +29,7 @@ func TestParameterize(t *testing.T) {
 		"UPDATE t x SET n = 1 WHERE t.id = 5 AND x.id IS DISTINCT FROM 6":  "UPDATE t x SET n = $1 WHERE t.id = $2 AND x.id IS DISTINCT FROM 6",
 		"SELECT extract(year FROM ts) FROM t WHERE id = 5 FOR UPDATE;":     "SELECT extract(year FROM ts) FROM t WHERE id = $1 FOR UPDATE;",
 		"DELETE FROM t WHERE NOT id = 5 OR (t.id = 6) OR w = 1 AND id = 7": "DELETE FROM t WHERE NOT id = $1 OR (t.id = $2) OR w = 1 AND id = $3",
+		"UPDATE t SET d = '2020-01-01'::date, n = 2 WHERE id = '7'::int":   "UPDATE t SET d = $1::date, n = $2 WHERE id = $3::int",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || got != want || n != len(placeholder.FindAllString(want, -1)) {
@@ -72,6 +73,10 @@ func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 		"DELETE FROM t WHERE w OPERATOR(pg_catalog.-) id = 1 OR ARRAY[id = 2] IS NULL",
 		"DELETE FROM t WHERE a LIKE id = 't' OR ts AT TIME ZONE id = 'x' OR (a COLLATE id) = 'y'",
 		"DELETE FROM t WHERE x BETWEEN 1 AND id = 't'",
+		"UPDATE t SET n = CASE WHEN 1 = 1 THEN 0 ELSE (SELECT count(*) FROM u) END",
+		"UPDATE t SET b = 'f'::bool AND x, n = 1 + 2 WHERE status = 'a'",
+		"INSERT INTO t VALUES ('f'::bool AND x, 1 + 2)",
+		"SELECT * FROM t WHERE id = 5 || 'x' OR id = 6 + 1",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || n != 0 || got != sql {

@@ -53,6 +53,15 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 		p := toks[first-1]
 		return isPunct(p, "(", ",") || p.Kind == Word && slices.Contains(keyLeads, p.Text)
 	}
+	// ends reports that the literal at i, with an optional ::type, is a whole
+	// value: in 'f' AND x or 1 + x the planner can fold the value into another plan.
+	ends := func(i int, words []string) bool {
+		j := i + 1
+		if j+2 < len(toks) && isPunct(toks[j], ":") && isPunct(toks[j+1], ":") && toks[j+2].isName() {
+			j += 3
+		}
+		return j == len(toks) || isPunct(toks[j], ",", ")", ";") || toks[j].Kind == Word && slices.Contains(words, toks[j].Text)
+	}
 	insert := len(toks) > 0 && toks[0].isWord("insert")
 	update := len(toks) > 0 && toks[0].isWord("update")
 	type frame struct{ list, afterList bool }
@@ -68,9 +77,10 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 		}
 		if i > 0 && (t.Kind == Literal || t.Kind == Number && wholeNumber(sql, spans[i])) {
 			op, start := operatorBefore(sql, toks, spans, i)
-			listed := top.list && isPunct(toks[i-1], "(", ",")
-			assigned := op == "=" && setDepth == len(stack)
-			keyed := (op == "=" || op == "<>" || op == "!=") && plainValue(t) && key(start-1)
+			listed := top.list && isPunct(toks[i-1], "(", ",") && ends(i, nil)
+			assigned := op == "=" && setDepth == len(stack) && start > 1 && toks[start-1].isName() &&
+				(toks[start-2].isWord("set") || isPunct(toks[start-2], ",")) && ends(i, setEnds)
+			keyed := (op == "=" || op == "<>" || op == "!=") && plainValue(t) && key(start-1) && ends(i, keyEnds)
 			if listed || assigned || keyed {
 				if n++; n > maxPlaceholders {
 					return "", 0, false
@@ -217,6 +227,8 @@ var (
 	refused  = []string{"select", "values", "with", "join", "using", "lateral", "table", "between"}
 	clauses  = []string{"where", "group", "having", "window", "order", "limit", "offset", "fetch", "for", "returning", "set"}
 	keyLeads = []string{"where", "and", "or", "not", "when", "then", "else", "having", "select", "by", "returning", "set"}
+	setEnds  = []string{"where", "from", "returning"}
+	keyEnds  = []string{"and", "or", "when", "then", "else", "end", "group", "having", "window", "order", "limit", "offset", "fetch", "for", "returning"}
 )
 
 // wholeNumber reports whether the scanner's number is the whole literal:

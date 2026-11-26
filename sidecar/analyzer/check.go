@@ -94,8 +94,8 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			missing = append(missing, t)
 		}
 	}
-	shape, _ := planShape(stmt, tables, facts)
-	if key := planKey(scope, shape, tables, facts); key != "" {
+	key, replaced := planKey(scope, stmt, tables, facts)
+	if key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
 
@@ -103,22 +103,24 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
 		res, err := e.runCheck(ctx, rc, stmt, want, ec)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
-			scope := rc.Scope()
+			after := rc.Scope()
 			if res.TablesErr == "" {
 				for _, f := range res.Tables {
 					entry := tableEntry{facts: f, line: tableLine(f)}
 					facts[f.Name] = entry
-					if scope != "" && f.Resolved {
-						e.facts.put(checkKey(scope, f.Name), entry)
+					if after != "" && f.Resolved {
+						e.facts.put(checkKey(after, f.Name), entry)
 					}
 				}
 			}
 			if want.Plan {
 				plan, havePlan = planEntry{lines: planLines(res.Plan), err: res.PlanErr}, true
+				if len(missing) > 0 || after != scope {
+					key, replaced = planKey(after, stmt, tables, facts)
+				}
 				// An error can come from a replaced value (22P02), so a shape
 				// caches only a plan.
-				shape, replaced := planShape(stmt, tables, facts)
-				if key := planKey(scope, shape, tables, facts); key != "" && !res.Retry && !(replaced && res.PlanErr != "") {
+				if key != "" && !res.Retry && !(replaced && res.PlanErr != "") {
 					e.plans.put(key, plan)
 				}
 			}
@@ -151,18 +153,20 @@ func checkKey(scope, name string) string {
 }
 
 // planKey is empty when the plan must not be cached: no role, or a table
-// whose name the search path or the role could resolve elsewhere.
-func planKey(scope, shape string, tables []string, facts map[string]tableEntry) string {
+// whose name the search path or the role could resolve elsewhere. replaced
+// reports that the shape holds $n in place of a literal.
+func planKey(scope string, stmt inspect.Statement, tables []string, facts map[string]tableEntry) (key string, replaced bool) {
 	if scope == "" {
-		return ""
+		return "", false
 	}
 	for _, t := range tables {
 		if !facts[t].facts.Resolved {
-			return ""
+			return "", false
 		}
 	}
+	shape, replaced := planShape(stmt, tables, facts)
 	sum := sha256.Sum256([]byte(shape))
-	return checkKey(scope, string(sum[:]))
+	return checkKey(scope, string(sum[:])), replaced
 }
 
 // planShape is what a plan is cached under: the statement without comments,

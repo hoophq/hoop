@@ -1472,8 +1472,10 @@ small table and high on a large unindexed one.
   literal) and be bare or carry the table's name or alias, in a
   `SELECT`, `UPDATE` or `DELETE` that reads one table without children: no
   join, subquery, `VALUES` or function in `FROM`.
-  So `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals stay:
-  a range or a skewed column changes the plan's row estimate.
+  So `WHERE id = 1` and `WHERE id = 2` share one plan. The literal must be
+  the whole value, with an optional `::type`: in `'f' AND x` or `1 + x` the
+  planner can fold it into another plan. Other literals stay: a range or a
+  skewed column changes the plan's row estimate.
 - A statement whose strings read differently under
   `standard_conforming_strings = off` is keyed by its exact text. A
   statement on a table with a rewrite rule (or a view), or with 8 tables or
