@@ -116,8 +116,8 @@ describe('setupConfigFor', () => {
     ['kubernetes-token', { type: 'custom', subtype: 'kubernetes', command: ['bash'] }],
     ['python-scripts', { type: 'custom', subtype: 'python', command: ['python3', '-'] }],
     ['linux-vm', { type: 'custom', subtype: 'linux-vm', command: ['bash'] }],
-    ['oracle', { type: 'database', subtype: 'oracledb', command: null }],
-    ['tcp', { type: 'application', subtype: 'tcp', command: null }],
+    ['webapps-and-apis', { type: 'application', subtype: 'tcp', command: null }],
+    ['httpproxy', { type: 'httpproxy', subtype: 'httpproxy', command: null }],
   ])('resolves %s', (id, config) => {
     expect(setupConfigFor(id, connections)).toEqual(config)
   })
@@ -126,6 +126,11 @@ describe('setupConfigFor', () => {
     expect(setupConfigFor(null, connections)).toBeNull()
     expect(setupConfigFor('', connections)).toBeNull()
     expect(setupConfigFor('not-a-catalog-id', connections)).toBeNull()
+  })
+
+  it('has no keys for ids the catalog does not list (Q23)', () => {
+    expect(setupConfigFor('oracle', connections)).toBeNull()
+    expect(setupConfigFor('tcp', connections)).toBeNull()
   })
 
   it('resolves a mapped id before the metadata loads', () => {
@@ -154,6 +159,22 @@ describe('isReactSetup', () => {
     ['bigquery', true],
   ])('%s renders React: %s', (id, react) => {
     expect(isReactSetup(setupConfigFor(id, connections))).toBe(react)
+  })
+})
+
+describe('metadataForSubtype', () => {
+  it('finds httpproxy by its catalog id: its metadata says web-application (Q22)', () => {
+    expect(metadataForSubtype(connections, 'httpproxy')?.id).toBe('httpproxy')
+  })
+
+  it('finds kubernetes-token, with its token fields, by subtype (Q23)', () => {
+    const entry = metadataForSubtype(connections, setupConfigFor('kubernetes-token', connections).subtype)
+    expect(entry?.id).toBe('kubernetes-token')
+    expect(entry.resourceConfiguration.credentials.length).toBeGreaterThan(0)
+  })
+
+  it('answers null for a subtype with no metadata', () => {
+    expect(metadataForSubtype(connections, 'linux-vm')).toBeNull()
   })
 })
 

@@ -8,9 +8,8 @@ const SETUP_MAPPINGS = {
   mysql: { type: 'database', subtype: 'mysql' },
   mongodb: { type: 'database', subtype: 'mongodb' },
   mssql: { type: 'database', subtype: 'mssql' },
-  oracle: { type: 'database', subtype: 'oracledb' },
   ssh: { type: 'application', subtype: 'ssh' },
-  tcp: { type: 'application', subtype: 'tcp' },
+  // Roles keep the subtype httpproxy; the metadata entry says web-application.
   httpproxy: { type: 'httpproxy', subtype: 'httpproxy' },
   // A catalog-only entry: it is not in the metadata.
   'linux-vm': { type: 'custom', subtype: 'linux-vm', command: ['bash'] },
@@ -107,7 +106,11 @@ export function isReactSetup(config) {
 }
 
 // The metadata entry of a subtype: the CLJS wizard reads its fields, name and
-// command by subtype, not by catalog id.
+// command by subtype, not by catalog id. httpproxy is found by its id (Q22).
 export function metadataForSubtype(connections = [], subtype) {
-  return connections.find((c) => c.resourceConfiguration?.subtype === subtype) ?? null
+  return (
+    connections.find((c) => c.resourceConfiguration?.subtype === subtype) ??
+    connections.find((c) => c.id === subtype) ??
+    null
+  )
 }
