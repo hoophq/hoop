@@ -268,8 +268,9 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 // Replacing the whole block instead would silently revert two safety
 // properties an operator wrote down. `send: refuse` becomes the inherited
 // default, so statement text a relay exists to keep away from a model vendor
-// is posted to one; `fail_open: false` becomes true, so a provider outage
-// starts allowing the statements the block was there to deny. Neither failure
+// is posted to one; `fail_open: false` becomes the inherited value, true on a
+// sidecar section that sets it, so a provider outage starts allowing the
+// statements the block was there to deny. Neither failure
 // is visible anywhere: the document still validates and the lane still
 // reports an analyzer.
 //

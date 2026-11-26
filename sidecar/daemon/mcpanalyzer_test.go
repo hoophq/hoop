@@ -353,6 +353,37 @@ func TestMCPLaneAnalyzerProviderFailure(t *testing.T) {
 	}
 }
 
+// A listener block's fail_open overrides the top-level one in both
+// directions, and with neither set a provider failure denies (ENG-1265).
+func TestLaneFailOpenOverridesTopLevel(t *testing.T) {
+	for _, c := range []struct {
+		top, lane string
+		denied    bool
+	}{
+		{``, ``, true},
+		{`,"fail_open":true`, ``, false},
+		{`,"fail_open":false`, ``, true},
+		{`,"fail_open":true`, `,"fail_open":false`, true},
+		{`,"fail_open":false`, `,"fail_open":true`, false},
+		{``, `,"fail_open":true`, false},
+	} {
+		doc := `{"analyzer":{"provider":"stub","model":"m"` + c.top + `},"listeners":[{"name":"appdb","protocol":"postgres","listen":"127.0.0.1:15432","upstream":"db:5432","analyzer":{"high":"block"` + c.lane + `}}]}`
+		cfg, err := LoadConfigBytes([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.lic = licensed(t)
+		lanes, err := buildLanes(cfg, nil, &analyzerDeps{cfg: cfg.Analyzer, provider: &toolRiskProvider{err: errors.New("provider down")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sql := inspect.Statement{Protocol: inspect.Postgres, Direction: inspect.FromClient, Text: "DELETE FROM t", Operation: inspect.OpDelete}
+		if denied := lanes[0].policy.Evaluate(sql).Denied; denied != c.denied {
+			t.Errorf("top %q lane %q: denied=%v, want %v", c.top, c.lane, denied, c.denied)
+		}
+	}
+}
+
 // On a SQL tool the model reads the call, then each SQL statement as SQL.
 // An argument besides the SQL reaches the model with the call.
 func TestMCPLaneAnalyzerReadsTheCallAndTheSQLOfASQLTool(t *testing.T) {

@@ -1541,12 +1541,14 @@ nothing removes one.
 has already happened, and read-side exposure is masking's job.
 
 **`fail_open` defaults to false**, as every other evaluator does. A statement
-the analyzer could not classify (provider error, timeout, refusal) is denied,
-so a provider outage or a lapsed bill never lets unclassified statements
-through. Set it true where the database must stay up through a provider
-outage, and accept that statements then pass unscored while it lasts. Before
-ENG-1265 the default was true: a config that omits the key now denies on a
-provider failure, and an older sidecar still allows.
+the analyzer could not classify because the provider failed (error, timeout,
+refusal) is denied. Set it true to allow those statements unscored during a
+provider outage. A lane that holds statements for approval denies them
+whatever `fail_open` says. A spent `max_calls` budget or a `rate_limit` hit is
+not a provider failure and does not follow `fail_open`: a holding lane denies,
+a lane that only warns or blocks allows. Before ENG-1265 the default was true:
+a config that omits the key now denies on a provider failure, and an older
+sidecar still allows.
 
 **`send: redacted` rewrites every detected value as its entity class** before
 the statement leaves the process. A relay whose job is keeping taxpayer ids

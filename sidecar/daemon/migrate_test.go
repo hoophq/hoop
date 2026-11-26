@@ -203,9 +203,9 @@ func TestRenderMigratedIsCleanAndLossless(t *testing.T) {
 // The prune must not eat the spellings whose presence is the meaning: an
 // opt-out opa block, an empty rules override, an explicit fail_open: false.
 func TestRenderMigratedKeepsMeaningfulEmptiness(t *testing.T) {
-	on := true
+	off := false
 	cfg := &Config{
-		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m", FailOpen: &on},
+		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m", FailOpen: &off},
 		OPA:      &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
 		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{
 			{Name: "no-drop", Type: policy.MatchDenyWords, Words: []string{"drop"}},
@@ -230,6 +230,20 @@ func TestRenderMigratedKeepsMeaningfulEmptiness(t *testing.T) {
 		t.Errorf("the lane's opa opt-out was pruned away:\n%s", doc)
 	} else if len(gc.Rules) != 0 {
 		t.Errorf("the lane's empty rules override was pruned away:\n%s", doc)
+	}
+	// Absent and false resolve alike in this build, but a sidecar from before
+	// ENG-1265 reads an absent key as fail-open. Only the key keeps it closed.
+	if f := reloaded.Analyzer.FailOpen; f == nil || *f {
+		t.Errorf("the explicit fail_open: false was pruned away:\n%s", doc)
+	}
+
+	on := true
+	cfg.Analyzer.FailOpen = &on
+	if doc, err = RenderMigrated(cfg); err != nil {
+		t.Fatalf("RenderMigrated: %v", err)
+	}
+	if reloaded, err = LoadConfigBytes(doc); err != nil {
+		t.Fatalf("the rendered document does not load: %v\n%s", err, doc)
 	}
 	if !reloaded.Analyzer.failOpen() {
 		t.Errorf("the explicit fail_open: true was pruned away:\n%s", doc)

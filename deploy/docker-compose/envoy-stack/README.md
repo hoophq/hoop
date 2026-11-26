@@ -512,8 +512,9 @@ curl -s localhost:19002/config    | python3 -m json.tool   # each lane's resolve
 ```
 
 This evaluator **fails closed** by default, as OPA and the local rules do: a
-statement the model could not classify is denied. `fail_open: true` lets it
-through instead, for a database that must stay up through a provider outage. Full
+statement the provider failed to classify is denied. `fail_open: true` lets it
+through instead, except on a lane that holds statements for approval. A spent
+`max_calls` budget or a rate limit does not follow `fail_open`. Full
 reference in [`sidecar/README.md`](../../../sidecar/README.md) and
 [ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
 

@@ -492,14 +492,16 @@ endpoint host and whether a custom prompt is set, never the credential.
 ### The fail-closed default
 
 This evaluator defaults to `fail_open: false`, as the local rules and OPA do.
-A statement the model could not classify (provider error, timeout, refusal)
-is denied, so a provider outage or a lapsed bill never lets an unscored
-statement through. The error reaches the audit trail.
+A statement the model could not classify because the provider failed (error,
+timeout, refusal) is denied. The error reaches the audit trail.
 
-Set `fail_open: true` where the database must stay up through a provider
-outage. The local rules and OPA still run, so a silent analyzer then means
-"guarded by everything except the model". Before ENG-1265 the default was
-`true`; an older sidecar still reads an omitted key that way.
+Set `fail_open: true` to allow those statements during a provider outage. The
+local rules and OPA still run, so a silent analyzer then means "guarded by
+everything except the model". A lane that holds statements for approval
+denies them whatever `fail_open` says. A spent `max_calls` budget or a
+`rate_limit` hit does not follow `fail_open`: a holding lane denies, other
+lanes allow. Before ENG-1265 the default was `true`; an older sidecar still
+reads an omitted key that way.
 
 ### Writing your own prompt
 
