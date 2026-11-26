@@ -1468,7 +1468,8 @@ small table and high on a large unindexed one.
   value that `UPDATE ... SET` assigns or an `INSERT`'s own `VALUES` list
   holds, and a string or integer compared with `=`, `<>` or `!=` to, or
   listed in `IN` after, a column that a valid, whole unique index covers
-  alone. That column must be bare or carry the table's name or alias, in a
+  alone. That column must stand outside any expression (`w - id` keeps its
+  literal) and be bare or carry the table's name or alias, in a
   `SELECT`, `UPDATE` or `DELETE` that reads one table without children: no
   join, subquery, `VALUES` or function in `FROM`.
   So `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals stay:

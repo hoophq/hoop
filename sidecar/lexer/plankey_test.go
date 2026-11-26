@@ -69,6 +69,9 @@ func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 		"SELECT * FROM t WHERE id = 5 AND v IS DISTINCT FROM 'a' AND w FROM u",
 		"SELECT id = 5",
 		"DELETE FROM t WHERE w - id = 1 OR w || t.id = 'a' OR -id = 3 OR w - id IN (1, 2)",
+		"DELETE FROM t WHERE w OPERATOR(pg_catalog.-) id = 1 OR ARRAY[id = 2] IS NULL",
+		"DELETE FROM t WHERE a LIKE id = 't' OR ts AT TIME ZONE id = 'x' OR (a COLLATE id) = 'y'",
+		"DELETE FROM t WHERE x BETWEEN 1 AND id = 't'",
 	} {
 		got, n, ok := lexer.Parameterize(sql, idKey)
 		if !ok || n != 0 || got != sql {
@@ -77,6 +80,9 @@ func TestParameterizeKeepsLiteralsThatChangeTheEstimate(t *testing.T) {
 	}
 	if got, n, _ := lexer.Parameterize("SELECT * FROM t WHERE id = 5", nil); n != 0 || got != "SELECT * FROM t WHERE id = 5" {
 		t.Errorf("no unique key, got %q", got)
+	}
+	if got, n, _ := lexer.Parameterize("SELECT = 5 FROM t", func(string) bool { return true }); n != 0 {
+		t.Errorf("a verb as key, got %q", got)
 	}
 }
 

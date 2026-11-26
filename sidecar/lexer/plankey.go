@@ -45,9 +45,13 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 			}
 			first = k - 2
 		}
-		// In w - id the value meets an expression, which can have statistics;
-		// in x::id, id is a type.
-		return first == 0 || !isOperator(toks[first-1]) && !isPunct(toks[first-1], ".", ":")
+		// In w - id or w LIKE id the value meets an expression, which can have
+		// statistics of its own.
+		if first == 0 {
+			return false
+		}
+		p := toks[first-1]
+		return isPunct(p, "(", ",") || p.Kind == Word && slices.Contains(keyLeads, p.Text)
 	}
 	insert := len(toks) > 0 && toks[0].isWord("insert")
 	update := len(toks) > 0 && toks[0].isWord("update")
@@ -166,7 +170,7 @@ func keySource(sql string, toks []Token, spans [][2]int) (names []string, ok boo
 			depth++
 		case isPunct(t, ")"):
 			depth--
-		case i > 0 && t.Kind == Word && slices.Contains(otherSources, t.Text):
+		case i > 0 && t.Kind == Word && slices.Contains(refused, t.Text):
 			return nil, false
 		case t.isWord("from") && depth == 0 && !(i > 1 && toks[i-1].isWord("distinct") && (toks[i-2].isWord("is") || toks[i-2].isWord("not"))):
 			if from >= 0 {
@@ -208,8 +212,11 @@ func keySource(sql string, toks []Token, spans [][2]int) (names []string, ok boo
 }
 
 var (
-	otherSources = []string{"select", "values", "with", "join", "using", "lateral", "table"}
-	clauses      = []string{"where", "group", "having", "window", "order", "limit", "offset", "fetch", "for", "returning", "set"}
+	// refused holds the words of another row source, and BETWEEN, whose AND
+	// can sit right before a key inside an expression.
+	refused  = []string{"select", "values", "with", "join", "using", "lateral", "table", "between"}
+	clauses  = []string{"where", "group", "having", "window", "order", "limit", "offset", "fetch", "for", "returning", "set"}
+	keyLeads = []string{"where", "and", "or", "not", "when", "then", "else", "having", "select", "by", "returning", "set"}
 )
 
 // wholeNumber reports whether the scanner's number is the whole literal:
