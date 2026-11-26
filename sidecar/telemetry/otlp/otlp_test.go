@@ -506,3 +506,74 @@ func TestALaneRecorderFollowsItsProtocol(t *testing.T) {
 		t.Fatalf("recorder for the re-added lane = %+v, want protocol mysql", moved)
 	}
 }
+
+// What a backend sees follows the protocol as well: the statement counter
+// is filed under the protocol of the recorder that counted it, across
+// postgres -> mysql -> postgres, and the connections gauge reports the
+// protocol the process snapshot names, not the one of a recorder cached
+// under the same lane name.
+func TestALaneRecorderExportsItsCurrentProtocol(t *testing.T) {
+	rcv := newReceiver(t)
+	exp := mustNew(t, httpConfig(rcv.srv.URL))
+	exp.ObserveProcess(func() telemetry.ProcessSnapshot {
+		return telemetry.ProcessSnapshot{Lanes: []telemetry.LaneStats{{Lane: "reports", Protocol: "mysql", Active: 1, Total: 1}}}
+	})
+	ctx := context.Background()
+	stmt := inspect.Statement{Direction: inspect.FromClient, Operation: inspect.OpSelect, Text: "SELECT 1"}
+	for _, protocol := range []string{"postgres", "mysql", "postgres"} {
+		_, end := exp.Lane("reports", protocol).BeginStatement(ctx, stmt)
+		end(telemetry.Verdict{})
+	}
+	shutdown(t, exp)
+
+	// A periodic export can land before the one Shutdown flushes, so the
+	// receiver can hold several collections. Sums are cumulative and come
+	// in arrival order: the last point per protocol is the total.
+	got := map[string]float64{}
+	for _, p := range rcv.metric("hoop.sidecar.statements") {
+		if p.attrs["hoop.lane"] != "reports" || p.attrs["hoop.verdict"] != telemetry.OutcomeAllow {
+			t.Errorf("statement point = %+v", p)
+		}
+		got[p.attrs["hoop.protocol"]] = p.value
+	}
+	if want := map[string]float64{"postgres": 2, "mysql": 1}; len(got) != len(want) || got["postgres"] != 2 || got["mysql"] != 1 {
+		t.Errorf("statements by protocol = %v, want %v", got, want)
+	}
+	gauge := rcv.metric("hoop.sidecar.connections.active")
+	if len(gauge) == 0 {
+		t.Fatal("no connections.active point")
+	}
+	for _, p := range gauge {
+		if p.attrs["hoop.protocol"] != "mysql" {
+			t.Errorf("connections.active point = %+v, want it under mysql", p)
+		}
+	}
+}
+
+// hoop.verdict on a log record keeps the spellings a backend query names:
+// "allow" on a statement, "deny" on a violation.
+func TestEventVerdictsKeepTheirSpellings(t *testing.T) {
+	rcv := newReceiver(t)
+	cfg := httpConfig(rcv.srv.URL)
+	cfg.Events = &telemetry.EventsConfig{Enabled: true}
+	exp := mustNew(t, cfg)
+	sink := exp.AuditSink(audit.SinkOptions{})
+	ctx := context.Background()
+	for _, ev := range []audit.Event{
+		{Kind: audit.KindStatement, Allowed: true, Statement: "SELECT 1"},
+		{Kind: audit.KindViolation, Allowed: false, Statement: "DELETE FROM users"},
+	} {
+		if err := sink.Write(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shutdown(t, exp)
+
+	got := map[string]string{}
+	for _, r := range rcv.logRecords() {
+		got[anyString(r.Body)] = logAttrs(r)["hoop.verdict"]
+	}
+	if want := map[string]string{"statement": "allow", "violation": "deny"}; got["statement"] != "allow" || got["violation"] != "deny" {
+		t.Errorf("verdicts by kind = %v, want %v", got, want)
+	}
+}

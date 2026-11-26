@@ -301,8 +301,12 @@ type Resource struct {
 
 // Stats is what the exporter reports about itself for GET /stats.
 type Stats struct {
-	// EventsSent and EventsDropped count audit events the log exporter
-	// accepted and dropped. Zero when events are off.
+	// EventsSent counts audit events handed to the log exporter's queue;
+	// EventsDropped counts those the full queue evicted before export. So
+	// EventsSent minus EventsDropped is "accepted and not evicted here":
+	// it includes records still queued and records whose export failed or
+	// the collector refused, which stay counted in EventsSent. Neither
+	// counter shows successful delivery. Zero when events are off.
 	EventsSent, EventsDropped int64
 }
 
