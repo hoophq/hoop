@@ -1,11 +1,13 @@
 import { Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Anchor, Group, Paper, ScrollArea, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
-import { BookMarked, Cable, Monitor, SquareTerminal } from 'lucide-react'
+import { BookMarked, Cable, Monitor, SquareTerminal, X } from 'lucide-react'
+import ActionIcon from '@/components/ActionIcon'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import Tabs from '@/components/Tabs'
+import Tooltip from '@/components/Tooltip'
 import { credentialTypeLabel, docsUrl, entryBadges, markdownLinkParts } from './entries'
 
 const ACCESS_METHODS = [
@@ -78,7 +80,7 @@ function OverviewTab({ entry }) {
                     <Icon size={18} />
                   </ThemeIcon>
                   <Stack gap={2}>
-                    <Title order={4}>{title}</Title>
+                    <Text fw={600}>{title}</Text>
                     <Text size="sm" c="dimmed">
                       {description}
                     </Text>
@@ -102,7 +104,7 @@ function SetupGuideTab({ credentials }) {
           <Stack gap="xs">
             <Group justify="space-between" gap="xs">
               <Group gap="xs">
-                <Title order={4}>{credential.name}</Title>
+                <Text fw={600}>{credential.name}</Text>
                 {credential.required && <Badge variant="light">Required</Badge>}
               </Group>
               <Badge variant="light" color="gray" tag>
@@ -123,31 +125,34 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
   const credentials = entry.resourceConfiguration?.credentials
 
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      size="xl"
-      title={
-        <Group gap="xs">
-          {entry.name}
-          <EntryBadges entry={entry} />
+    <Modal opened={opened} onClose={onClose} size={1000} withCloseButton={false} padding="xlAlt">
+      <Stack gap="xlAlt">
+        <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+          <Stack gap="xs">
+            <Group gap="sm">
+              <Title order={2}>{entry.name}</Title>
+              <EntryBadges entry={entry} />
+            </Group>
+            {entry.description && <Text c="dimmed">{entry.description}</Text>}
+          </Stack>
+          <Tooltip label="Close">
+            <ActionIcon variant="subtle" color="gray" aria-label="Close" onClick={onClose}>
+              <X size={18} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
-      }
-    >
-      <Stack gap="lg">
-        {entry.description && <Text c="dimmed">{entry.description}</Text>}
         <Tabs defaultValue="overview">
           <Tabs.List>
             <Tabs.Tab value="overview">Overview</Tabs.Tab>
             {credentials && <Tabs.Tab value="setup-guide">Setup Guide</Tabs.Tab>}
           </Tabs.List>
-          <Tabs.Panel value="overview" pt="lg">
+          <Tabs.Panel value="overview" pt="lgAlt">
             <ScrollArea.Autosize mah={400}>
               <OverviewTab entry={entry} />
             </ScrollArea.Autosize>
           </Tabs.Panel>
           {credentials && (
-            <Tabs.Panel value="setup-guide" pt="lg">
+            <Tabs.Panel value="setup-guide" pt="lgAlt">
               <ScrollArea.Autosize mah={400}>
                 <SetupGuideTab credentials={credentials} />
               </ScrollArea.Autosize>
