@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Flex, Group, Image, Input, Paper, Stack, Text, Title, UnstyledButton } from '@mantine/core'
+import { Flex, Group, Image, Input, Paper, Stack, Text, Title, UnstyledButton, rem } from '@mantine/core'
 import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
 import Checkbox from '@/components/Checkbox'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import EmptyState from '@/layout/EmptyState'
+import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { useUserStore } from '@/stores/useUserStore'
 import DetailModal from './DetailModal'
@@ -77,7 +78,7 @@ function Filters({ search, onSearch, categories, onCategories, tags, onToggleTag
       gap="xlAlt"
       w={{ base: '100%', md: 280 }}
       pos={{ base: 'static', md: 'sticky' }}
-      top="var(--app-shell-header-offset, 0rem)"
+      top={`calc(var(--app-shell-header-offset, 0rem) + ${rem(PAGE_PADDING)})`}
     >
       <TextInput
         label="Search"
