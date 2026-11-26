@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -857,7 +858,7 @@ func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(local, "", "")
+	cfg, err := resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}
@@ -944,7 +945,7 @@ func TestADiskModeAnswerWithoutAFileStopsStartup(t *testing.T) {
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
 	t.Setenv(SidecarTokenEnv, "hsc_x")
 
-	_, err := resolveConfigSource(nil, "", "")
+	_, err := resolveConfigSource(context.Background(), nil, "", "", true, nil)
 	if err == nil {
 		t.Fatal("a disk-mode answer without a file was accepted")
 	}
@@ -964,7 +965,7 @@ func TestADiskModeAnswerNeedsFileListeners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	_, err = resolveConfigSource(local, "", "")
+	_, err = resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err == nil {
 		t.Fatal("a disk-mode answer with a listener-less file was accepted")
 	}
@@ -996,7 +997,7 @@ func TestAConfigFileMayNotWriteLoadFromDisk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadConfigBytes: %v", err)
 			}
-			_, err = resolveConfigSource(local, "", "")
+			_, err = resolveConfigSource(context.Background(), local, "", "", true, nil)
 			if err == nil {
 				t.Fatal("a file writing load_from_disk was accepted")
 			}
@@ -1030,7 +1031,7 @@ func TestADiskModeAnswerNeverSeedsThePlane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(local, "", "")
+	cfg, err := resolveConfigSource(context.Background(), local, "", "", true, nil)
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}
@@ -1057,7 +1058,7 @@ func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	answer, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{
+	answer, err := fetchControlPlaneConfig(context.Background(), srv.URL, tokenCredential("hsc_token"), handshakeRequest{
 		Version:         "1.2.3",
 		AppliedRevision: "rev-1",
 		LastOutcome:     "refused",
@@ -1093,7 +1094,7 @@ func TestHandshakeOmitsAnUnreportedDocument(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: "1.2.3"}); err != nil {
+	if _, err := fetchControlPlaneConfig(context.Background(), srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: "1.2.3"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, key := range []string{"applied_revision", "last_outcome"} {

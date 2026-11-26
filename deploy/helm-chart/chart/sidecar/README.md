@@ -185,6 +185,7 @@ under `deploy/docker-compose/` binds:
 | `service.type` | Default `ClusterIP` |
 | `probe.port` | Where the probes go. Default `19000`, the admin port; setting it skips the render check on `config.admin.listen` |
 | `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing |
+| `probe.startupPath`, `probe.startupPeriodSeconds`, `probe.startupFailureThreshold` | The startup probe, always on. Default `/healthz`, every 5 s, 120 failures. The admin server binds only after the first control plane handshake, which the relay retries for up to 5 minutes while the plane is down; keep the budget above that, or the kubelet restarts a relay that is still retrying. ICA deployments set `/readyz` |
 | `service.annotations` | Annotations on the Service |
 | `extraVolumes` / `extraVolumeMounts` | For what the config references by path: CA files, credentials |
 | `nameOverride`, `fullnameOverride` | Change the name chart-owned resources are built from |

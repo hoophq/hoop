@@ -97,6 +97,33 @@ type setupOptions struct {
 	localFirst      []string
 	planeURL        string
 	firstRun        FirstRunObserver
+	noBootRetry     bool
+	ctx             context.Context
+	bootLog         io.Writer
+}
+
+// WithoutBootRetry makes a failed first handshake return at once, whatever
+// the failure. A boot retries a control plane that is down (see bootRetry);
+// a check does not: -validate, or a screen testing a URL a person typed,
+// reports the failure now instead of waiting minutes for a plane that may
+// never answer.
+func WithoutBootRetry() Option {
+	return func(o *setupOptions) { o.noBootRetry = true }
+}
+
+// WithContext bounds the control plane requests Setup makes, and the boot
+// retry between them. An entry point that handles signals itself passes the
+// context they cancel, so a stop during the retry stops Setup at once.
+func WithContext(ctx context.Context) Option {
+	return func(o *setupOptions) { o.ctx = ctx }
+}
+
+// WithBootLog sends the boot retry's log lines to w instead of stderr. They
+// are written before Run, so an entry point that turns the daemon's JSON log
+// into another format passes the same converter here; each Write is one
+// JSON line. Nil keeps stderr.
+func WithBootLog(w io.Writer) Option {
+	return func(o *setupOptions) { o.bootLog = w }
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -145,9 +172,10 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 // When a control plane is configured (HOOP_CONTROL_PLANE_URL or the config
 // file's "control_plane_url" key), the running config comes from its
 // handshake and path may be empty; see resolveConfigSource for what a file
-// still contributes then. A first fetch that fails stops startup, because
-// there is nothing to serve yet; once running, the heartbeat degrades
-// instead.
+// still contributes then. There is nothing to serve before the first
+// handshake answers, so a plane that is down, times out or answers 5xx is
+// retried for up to five minutes (bootRetry), and any other failure stops
+// startup at once; once running, the heartbeat degrades instead.
 func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
 	var o setupOptions
 	for _, apply := range opts {
@@ -164,7 +192,11 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 			return nil, nil, err
 		}
 	}
-	cfg, err := resolveConfigSource(local, o.token, o.planeURL)
+	ctx := o.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cfg, err := resolveConfigSource(ctx, local, o.token, o.planeURL, !o.noBootRetry, o.bootLog)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -440,9 +472,13 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
-	cfg, det, err := SetupWith(*configPath, load, build,
-		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
-		WithEntrypoint(analytics.EntrypointBinary))
+	opts := []Option{WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
+		WithEntrypoint(analytics.EntrypointBinary)}
+	if *validate || *grpcDiscover != "" {
+		// A check, not a boot: report a plane that is down now.
+		opts = append(opts, WithoutBootRetry())
+	}
+	cfg, det, err := SetupWith(*configPath, load, build, opts...)
 	if err != nil {
 		return err
 	}
@@ -1177,6 +1213,15 @@ func Run(cfg *Config, det Plugin) error {
 				"url", cfg.cp.url,
 				"listeners", len(cfg.Listeners))
 		}
+		if cfg.cp.importUncertain {
+			// A retried import answered 409. Its earlier attempt may have
+			// landed, or someone else wrote first; neither is known, so
+			// neither is claimed.
+			log.Warn("an earlier attempt of the configuration import may have landed; the control plane's configuration is in use",
+				"url", cfg.cp.url,
+				"listeners", len(cfg.Listeners),
+				"hint", "edit the configuration in the control plane; the local file no longer holds it")
+		}
 		if cfg.cp.fileListeners > 0 {
 			log.Warn("the config file's listeners are ignored: the control plane owns the running config",
 				"file_listeners", cfg.cp.fileListeners,
@@ -1859,6 +1904,14 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchem
 }
 
 func newLogger(level string) *slog.Logger {
+	l := jsonLogger(os.Stderr, level)
+	slog.SetDefault(l)
+	return l
+}
+
+// jsonLogger is the process log shape on w, without making it the default:
+// the boot logs its handshake retries before Setup knows the config.
+func jsonLogger(w io.Writer, level string) *slog.Logger {
 	var lv slog.Level
 	switch level {
 	case "debug":
@@ -1873,10 +1926,7 @@ func newLogger(level string) *slog.Logger {
 	// JSON to stderr: audit events go to their own sink, so stderr carries
 	// only operational output and a container platform can route the two
 	// differently.
-	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: lv})
-	l := slog.New(h)
-	slog.SetDefault(l)
-	return l
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: lv}))
 }
 
 // auditChain is what buildAudit assembles: the sink the gate writes to, plus
