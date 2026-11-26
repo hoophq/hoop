@@ -141,6 +141,11 @@ describe('labels', () => {
     expect(categoryLabel('infrastructure-access')).toBe('Infrastructure Access')
   })
 
+  it('writes AI and LLMs as such in both places', () => {
+    expect(sectionTitle('ai-and-llms')).toBe('AI and LLMs')
+    expect(categoryLabel('ai-and-llms')).toBe('AI and LLMs')
+  })
+
   it('maps badges', () => {
     expect(entryBadges({ badges: ['new', 'beta', 'preview'] })).toEqual([
       { text: 'NEW', color: 'green' },

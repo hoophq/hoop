@@ -89,7 +89,12 @@ function Filters({ search, onSearch, categories, onCategories, tags, onToggleTag
       <Checkbox.Group label="Categories" value={categories} onChange={onCategories}>
         <Stack gap="sm" mt="sm">
           {options.categories.map((category) => (
-            <Checkbox key={category} value={category} label={categoryLabel(category)} />
+            <Checkbox
+              key={category}
+              value={category}
+              label={categoryLabel(category)}
+              classNames={{ input: classes.toggle, label: classes.toggle }}
+            />
           ))}
         </Stack>
       </Checkbox.Group>

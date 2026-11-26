@@ -76,16 +76,21 @@ export function filterOptions(entries) {
   return { categories, tags }
 }
 
+const CATEGORY_NAMES = { 'ai-and-llms': 'AI and LLMs' }
+
 export function sectionTitle(category) {
-  return capitalize(category).replace(/-/g, ' ')
+  return CATEGORY_NAMES[category] ?? capitalize(category).replace(/-/g, ' ')
 }
 
 // The filter list capitalizes each word; a section title only the first.
 export function categoryLabel(category) {
-  return category
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
+  return (
+    CATEGORY_NAMES[category] ??
+    category
+      .split('-')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  )
 }
 
 export function entryBadges(entry) {
