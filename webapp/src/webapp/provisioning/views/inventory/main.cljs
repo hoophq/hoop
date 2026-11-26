@@ -32,7 +32,6 @@
            [:> Tooltip {:content (str (:label seg) " — " text)}
             [:> Box {:style {:flex          "1 1 0"
                              :height        7
-                             :border-radius 3
                              :background    bg
                              :cursor        "default"}}]]))]
       [:> Text {:size "1" :color "gray"
@@ -52,8 +51,8 @@
                  :pending needs-admin :pending-color "amber"}
                 {:label "Provision" :big-num needs-roles   :detail (str needs-roles " pending")
                  :fill (if (pos? total) (/ needs-roles total) 0)
-                 :fill-color "var(--blue-9)"
-                 :pending needs-roles :pending-color "blue"}]]
+                 :fill-color "var(--amber-9)"
+                 :pending needs-roles :pending-color "amber"}]]
     [:> Flex {:align "stretch" :mb "5" :gap "0"}
      (doall
       (for [[i s] (map-indexed vector stages)]
@@ -64,35 +63,27 @@
             [:> ChevronRight {:size 16}]])
          [:> Box {:style {:flex 1
                           :background "var(--color-panel-solid)"
-                          :border-left   "1px solid var(--gray-4)"
-                          :border-right  "1px solid var(--gray-4)"
-                          :border-bottom "1px solid var(--gray-4)"
-                          :border-top    (str "3px solid " (nth data/funnel-accent i))
-                          :border-radius "var(--radius-3)"
+                          :border        "1px solid var(--gray-6)"
                           :padding       "14px 16px 12px"}}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :justify "between"}
-            [:> Text {:size "1" :weight "medium"
-                      :style {:letter-spacing "0.04em" :text-transform "uppercase"
-                              :font-size 10 :color "var(--gray-9)"}}
+            [:> Text {:size "2" :weight "medium" :color "gray"}
              (:label s)]
             [:> Flex {:align "center" :gap "2"}
              (when (pos? (:pending s))
-               [:> Badge {:color (:pending-color s) :variant "soft" :size "1"}
+               [:> Badge {:color (:pending-color s) :variant "soft" :size "1" :radius "full"}
                 (str (:pending s) " pending")])
-             [:> Text {:size "1" :style {:font-family "var(--font-mono)" :font-size 10
-                                         :color "var(--gray-6)"}}
+             [:> Text {:size "1" :color "gray"
+                       :style {:font-family "var(--font-mono)"}}
               (nth data/funnel-step-id i)]]]
            [:> Flex {:align "baseline" :gap "2"}
             [:> Text {:size "7" :weight "bold" :style {:line-height 1 :color "var(--gray-12)"}}
              (:big-num s)]
             [:> Text {:size "1" :color "gray"} (:detail s)]]
-           [:> Box {:style {:height 5 :background "var(--gray-3)" :border-radius 99 :overflow "hidden"}}
+           [:> Box {:style {:height 5 :background "var(--gray-3)" :overflow "hidden"}}
             [:> Box {:style {:height     "100%"
                              :width      (str (* (:fill s) 100) "%")
-                             :background (:fill-color s)
-                             :border-radius 99
-                             :transition "width 0.6s ease"}}]]]]]))]))
+                             :background (:fill-color s)}}]]]]]))]))
 
 (defn stage-banner [{:keys [tab total-in-stage selected-in-stage on-action on-import-csv]}]
   (when (and (not= tab :inventory) (pos? total-in-stage))
@@ -111,11 +102,11 @@
                          " need an admin account before Hoop can provision roles."
                          " have an admin account but haven't had roles provisioned."))
         :actions  [:<>
-                   [:> Button {:size "2" :variant "outline"
+                   [:> Button {:size "2" :variant "outline" :radius "full"
                                :color (if manage? "amber" "gray")
                                :on-click on-import-csv}
                     [:> Upload {:size 14}] " Import CSV"]
-                   [:> Button {:size "2" :color (if manage? "amber" "indigo")
+                   [:> Button {:size "2" :radius "full" :color (if manage? "amber" "indigo")
                                :on-click on-action}
                     (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
                     (str " " (if manage? "Set up " "Provision ") label-str " →")]]}])))
@@ -239,41 +230,42 @@
                     :z-index     40
                     :background  "var(--gray-1)"
                     :border      "1px solid var(--gray-6)"
-                    :border-radius "var(--radius-4)"
                     :box-shadow  "0 8px 32px rgba(0,0,0,0.12)"
                     :white-space "nowrap"}}
    [:> Text {:size "2" :weight "medium"} (str count-val " selected")]
    [:> Box {:style {:width 1 :height 16 :background "var(--gray-6)"}}]
    (when (pos? admin-count)
-     [:> Button {:size "2" :color "amber" :variant "soft" :on-click on-add-admin}
+     [:> Button {:size "2" :radius "full" :color "amber" :variant "soft" :on-click on-add-admin}
       [:> UserCog {:size 14}] (str " Manage (" admin-count ")")])
    (when (pos? roles-count)
-     [:> Button {:size "2" :variant "soft" :on-click on-configure-roles}
+     [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-configure-roles}
       [:> Key {:size 14}] (str " Provision (" roles-count ")")])
    (when (pos? edit-admin-count)
-     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-admin}
+     [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-admin}
       [:> Pencil {:size 14}] (str " Edit admin (" edit-admin-count ")")])
    (when (pos? edit-provision-count)
-     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
+     [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-provision}
       [:> Pencil {:size 14}] (str " Edit provision (" edit-provision-count ")")])
-   [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-inventory}
+   [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-inventory}
     [:> Pencil {:size 14}] (str " Edit inventory (" count-val ")")]
-   [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
-    [:> X {:size 14}]]])
+   [:> Tooltip {:content "Clear selection"}
+    [:> Button {:size "2" :radius "full" :variant "ghost" :color "gray" :on-click on-clear
+                :aria-label "Clear selection"}
+     [:> X {:size 14}]]]])
 
 (defn- inventory-header [{:keys [total-resources ready-count on-open-bulk-import]}]
   [:> Flex {:align "center" :justify "between" :mb "6"}
    [:> Flex {:direction "column" :gap "2"}
-    [:> Heading {:size "8"} "Provisioning Hub"]
+    [:> Heading {:as "h1" :size "8" :weight "bold"} "Provisioning Hub"]
     [:> Flex {:align "center" :gap "3"}
-     [:> Text {:size "2" :color "gray"}
-      "Track and provision every database resource connected to Hoop."]
+     [:> Text {:size "3" :color "gray"}
+      "Track and provision every database Resource connected to Hoop."]
      [:> Box {:style {:width 1 :height 12 :background "var(--gray-5)" :flex-shrink 0}}]
-     [:> Text {:size "2" :color "gray"} (data/pluralize total-resources "resource")]
+     [:> Text {:size "3" :color "gray"} (data/pluralize total-resources "Resource")]
      [status-dot {:color "green" :size 5}]
-     [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
+     [:> Text {:size "3" :color "green"} (str ready-count " complete")]]]
    [:> Flex {:gap "2"}
-    [:> Button {:size "3" :on-click on-open-bulk-import}
+    [:> Button {:size "3" :radius "full" :on-click on-open-bulk-import}
      [:> Upload {:size 16}] " Import Resources"]]])
 
 (defn- inventory-tabs [{:keys [active-tab counts on-change]}]
@@ -292,7 +284,9 @@
    [:> TextField.Root {:placeholder (str "Search "
                                          (cs/lower-case
                                           (get data/stage-label active-tab "inventory"))
-                                         " resources…")
+                                         " Resources…")
+                       :aria-label "Search Resources"
+                       :radius    "none"
                        :value     search
                        :onChange  #(set-search (.. % -target -value))
                        :style     {:max-width 360}}
@@ -311,9 +305,9 @@
         (seq search)              (str "No results for \"" search "\"")
         (= active-tab :manage)    "All resources have admin accounts configured"
         (= active-tab :provision) "No resources are ready for provisioning yet"
-        :else                     "No resources found")]
+        :else                     "No Resources yet")]
      (when (seq search)
-       [:> Button {:variant "ghost" :size "1" :color "gray"
+       [:> Button {:variant "ghost" :size "1" :color "gray" :radius "full"
                    :on-click on-clear-search}
         "Clear search"])]]])
 
@@ -327,7 +321,7 @@
                   :on-open-bulk-roles #(on-open-bulk-roles [resource])
                   nil)]
     (when action
-      [:> Button (cond-> {:variant (:variant action) :size "1"}
+      [:> Button (cond-> {:variant (:variant action) :size "1" :radius "full"}
                    (:color action) (assoc :color (:color action))
                    handler         (assoc :on-click handler))
        (:row-label action)])))
@@ -344,9 +338,9 @@
    [:> Table.Cell {:on-click #(.stopPropagation %)}
     [:> Checkbox {:checked selected? :onCheckedChange on-toggle}]]
    [:> Table.Cell [:> Text {:size "2" :weight "medium"} (:name resource)]]
-   [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
+   [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1" :radius "full"} (:db-type resource)]]
    [:> Table.Cell
-    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+    [:> Text {:size "1" :style {:font-family "var(--font-mono)"}}
      (:address resource)]]
    [:> Table.Cell
     (if (:admin resource)
@@ -368,7 +362,8 @@
            selected-ids hovered-row search active-tab
            on-toggle-select on-toggle-all on-set-hovered on-set-search
            on-open-bulk-admin on-open-bulk-roles]}]
-  [:> Table.Root {:variant "surface"}
+  [:> Table.Root {:variant "surface"
+                  :style {"--table-border-radius" "0px"}}
    [:> Table.Header
     [:> Table.Row
      [:> Table.ColumnHeaderCell {:style {:width 48}}
@@ -408,7 +403,7 @@
     {:page        safe-page
      :total-pages (max 1 total-pages)
      :on-change   on-change
-     :label       (str (data/pluralize total-visible "resource")
+     :label       (str (data/pluralize total-visible "Resource")
                        (when (pos? selected-count)
                          (str " \u00b7 " selected-count " selected")))}]])
 

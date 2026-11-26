@@ -34,7 +34,7 @@
 ;; Single source of truth for both the bar color and the tooltip wording.
 (def segment-states
   {"done"   {:bg "var(--green-9)"  :text "complete"}
-   "active" {:bg "var(--indigo-9)" :text "action required"}
+   "active" {:bg "var(--amber-9)"  :text "action required"}
    "locked" {:bg "var(--gray-4)"   :text "complete previous steps first"}})
 
 ;; Drives the per-row "Set up admin / Provision roles / Manage" buttons and
@@ -318,18 +318,17 @@
                   :variant "soft" :color "indigo" :icon :rocket :label "Apply"
                   :cancel? true}})
 
-(defn row-bg [stage selected? hovered?]
+;; Rows are white: the stage reads from the Admin account and Setup progress
+;; columns, never from a row tint alone (hoop-ui skill: no status by color).
+(defn row-bg [_stage selected? hovered?]
   (cond
     selected? "var(--indigo-2)"
-    hovered?  "var(--indigo-1)"
-    (= stage :needs-admin) "var(--amber-1)"
-    (= stage :needs-roles) "var(--blue-1)"
-    :else "var(--green-1)"))
+    hovered?  "var(--gray-2)"
+    :else "var(--color-panel-solid)"))
 
 (defn make-default-config []
   {:method "manual" :username "admin" :password ""})
 
-(def funnel-accent  ["var(--gray-8)" "var(--amber-9)" "var(--blue-9)"])
 (def funnel-step-id ["01" "02" "03"])
 
 (defn pluralize

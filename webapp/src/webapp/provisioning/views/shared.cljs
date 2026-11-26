@@ -48,8 +48,7 @@
                       :border-top    (str "1px solid " (c 5))
                       :border-right  (str "1px solid " (c 5))
                       :border-bottom (str "1px solid " (c 5))
-                      :border-left   (str "4px solid " (c 9))
-                      :border-radius "var(--radius-3)"}}
+                      :border-left   (str "4px solid " (c 9))}}
      [:> Flex {:align "center" :gap "3"}
       (when icon
         [:> Box {:style {:color       (c 9)
@@ -105,14 +104,16 @@
          [:> Text {:size "1" :color "gray"} label])
        (when paginated?
          [:> Flex {:align "center" :gap "2"}
-          [:> Button {:size "1" :variant "ghost" :color "gray"
+          [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                      :aria-label "Previous page"
                       :disabled (zero? page)
                       :on-click #(on-change (dec page))}
            [:> ChevronLeft {:size 14}]]
           [:> Text {:size "1" :color "gray"}
            (str (inc page) " / " total-pages
                 (when detail (str " (" detail ")")))]
-          [:> Button {:size "1" :variant "ghost" :color "gray"
+          [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                      :aria-label "Next page"
                       :disabled (>= (inc page) total-pages)
                       :on-click #(on-change (inc page))}
            [:> ChevronRight {:size 14}]]])])))
