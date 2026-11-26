@@ -29,10 +29,9 @@
          (let [state    (data/get-segment-state (:key seg) resource)
                {:keys [bg text]} (get data/segment-states state)]
            ^{:key (:key seg)}
-           [:> Tooltip {:content (str (:label seg) " — " text)}
+           [:> Tooltip {:content (str (:label seg) ": " text)}
             [:> Box {:style {:flex          "1 1 0"
                              :height        7
-                             :border-radius 3
                              :background    bg
                              :cursor        "default"}}]]))]
       [:> Text {:size "1" :color "gray"
@@ -44,94 +43,92 @@
         needs-admin (count (filter #(= :needs-admin (:stage %)) resources))
         needs-roles (count (filter #(= :needs-roles (:stage %)) resources))
         stages [{:label "Inventory" :big-num total         :detail (str total " total")
-                 :fill 1                                   :fill-color "var(--gray-7)"
+                 :fill 1                                   :fill-color (:neutral data/colors)
                  :pending 0   :pending-color "gray"}
                 {:label "Manage"    :big-num needs-admin   :detail (str needs-admin " pending")
                  :fill (if (pos? total) (/ needs-admin total) 0)
-                 :fill-color "var(--amber-9)"
+                 :fill-color (:pending data/colors)
                  :pending needs-admin :pending-color "amber"}
                 {:label "Provision" :big-num needs-roles   :detail (str needs-roles " pending")
                  :fill (if (pos? total) (/ needs-roles total) 0)
-                 :fill-color "var(--blue-9)"
-                 :pending needs-roles :pending-color "blue"}]]
+                 :fill-color (:pending data/colors)
+                 :pending needs-roles :pending-color "amber"}]]
     [:> Flex {:align "stretch" :mb "5" :gap "0"}
      (doall
       (for [[i s] (map-indexed vector stages)]
         ^{:key (:label s)}
         [:<>
          (when (pos? i)
-           [:> Flex {:align "center" :px "1" :style {:color "var(--gray-4)" :flex-shrink 0}}
+           [:> Flex {:align "center" :px "1" :style {:color (:locked data/colors) :flex-shrink 0}}
             [:> ChevronRight {:size 16}]])
          [:> Box {:style {:flex 1
-                          :background "var(--color-panel-solid)"
-                          :border-left   "1px solid var(--gray-4)"
-                          :border-right  "1px solid var(--gray-4)"
-                          :border-bottom "1px solid var(--gray-4)"
-                          :border-top    (str "3px solid " (nth data/funnel-accent i))
-                          :border-radius "var(--radius-3)"
+                          :background (:surface data/colors)
+                          :border        (str "1px solid " (:border data/colors))
                           :padding       "14px 16px 12px"}}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :justify "between"}
-            [:> Text {:size "1" :weight "medium"
-                      :style {:letter-spacing "0.04em" :text-transform "uppercase"
-                              :font-size 10 :color "var(--gray-9)"}}
+            [:> Text {:size "2" :weight "medium" :color "gray"}
              (:label s)]
             [:> Flex {:align "center" :gap "2"}
              (when (pos? (:pending s))
-               [:> Badge {:color (:pending-color s) :variant "soft" :size "1"}
+               [:> Badge {:color (:pending-color s) :variant "soft" :size "1" :radius "full"}
                 (str (:pending s) " pending")])
-             [:> Text {:size "1" :style {:font-family "var(--font-mono)" :font-size 10
-                                         :color "var(--gray-6)"}}
+             [:> Text {:size "1" :color "gray"
+                       :style {:font-family "var(--font-mono)"}}
               (nth data/funnel-step-id i)]]]
            [:> Flex {:align "baseline" :gap "2"}
             [:> Text {:size "7" :weight "bold" :style {:line-height 1 :color "var(--gray-12)"}}
              (:big-num s)]
             [:> Text {:size "1" :color "gray"} (:detail s)]]
-           [:> Box {:style {:height 5 :background "var(--gray-3)" :border-radius 99 :overflow "hidden"}}
+           [:> Box {:style {:height 5 :background (:track data/colors) :overflow "hidden"}}
             [:> Box {:style {:height     "100%"
                              :width      (str (* (:fill s) 100) "%")
-                             :background (:fill-color s)
-                             :border-radius 99
-                             :transition "width 0.6s ease"}}]]]]]))]))
+                             :background (:fill-color s)}}]]]]]))]))
 
 (defn stage-banner [{:keys [tab total-in-stage selected-in-stage on-action on-import-csv]}]
   (when (and (not= tab :inventory) (pos? total-in-stage))
     (let [count-val (if (pos? selected-in-stage) selected-in-stage total-in-stage)
           label-str (if (pos? selected-in-stage)
                       (str count-val " selected")
-                      (str "all " count-val))
+                      (data/pluralize count-val "Resource"))
           manage?   (= tab :manage)
-          color     (if manage? "amber" "blue")]
+          ;; Both stages wait for the user: the icon is amber. The banner
+          ;; itself stays neutral (hoop-ui skill: indigo is never a status).
+          color     "amber"]
       [shared/callout-bar
        {:color    color
         :icon     (if manage? [:> UserCog {:size 18}] [:> Key {:size 18}])
         :title    (if manage? "Admin accounts needed" "Role provisioning needed")
-        :subtitle (str (data/pluralize total-in-stage "resource")
-                       (if manage?
-                         " need an admin account before Hoop can provision roles."
-                         " have an admin account but haven't had roles provisioned."))
+        :subtitle (str (data/pluralize total-in-stage "Resource")
+                       (let [one? (= 1 total-in-stage)]
+                         (if manage?
+                           (str (if one? " needs" " need")
+                                " an admin account before Hoop can provision roles.")
+                           (str (if one? " has" " have")
+                                " an admin account but no roles provisioned yet."))))
         :actions  [:<>
-                   [:> Button {:size "2" :variant "outline"
-                               :color (if manage? "amber" "gray")
+                   [:> Button {:size "2" :variant "outline" :radius "full"
+                               :color "gray" :highContrast true
                                :on-click on-import-csv}
                     [:> Upload {:size 14}] " Import CSV"]
-                   [:> Button {:size "2" :color (if manage? "amber" "indigo")
+                   [:> Button {:size "2" :variant "outline" :radius "full"
+                               :color "gray" :highContrast true
                                :on-click on-action}
                     (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
-                    (str " " (if manage? "Set up " "Provision ") label-str " →")]]}])))
+                    (str " " (if manage? "Set up " "Provision ") label-str)]]}])))
 
 (defn job-status-bar [{:keys [job on-view on-dismiss]}]
   (let [done     (data/count-by-status (:items job) "done")
         failed   (data/count-by-status (:items job) "failed")
         total    (count (:items job))
         running? (< (+ done failed) total)
-        color    (cond running? "indigo" (pos? failed) "amber" :else "green")
+        color    (cond running? "gray" (pos? failed) "red" :else "green")
         icon     (cond
                    running?      [shared/spinner {:color color :size 14}]
                    (pos? failed) [:> AlertCircle {:size 14}]
                    :else         [:> Check {:size 14}])
         title    (str (if (= (:type job) :admin-setup) "Admin setup" "Role provisioning")
-                      " — " (second (re-find #"— (.+)" (:label job))))
+                      ": " (second (re-find #"— (.+)" (:label job))))
         progress (if running?
                    (str (+ done failed) " / " total " processed")
                    (str done " succeeded" (when (pos? failed) (str ", " failed " failed"))))]
@@ -143,11 +140,13 @@
                 [:> Text {:size "2" :weight "medium"} title]
                 [:> Text {:size "2" :color "gray"} progress]]
       :actions [:<>
-                [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                [:> Button {:size "1" :variant "ghost" :radius "full" :on-click on-view}
                  (if running? "View progress" "View results")]
                 (when-not running?
-                  [:> Button {:size "1" :variant "ghost" :color "gray" :on-click on-dismiss}
-                   [:> X {:size 12}]])]}]))
+                  [:> Tooltip {:content "Dismiss"}
+                   [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                               :aria-label "Dismiss" :on-click on-dismiss}
+                    [:> X {:size 12}]]])]}]))
 
 (defn plan-job-banner
   "Shows the active plan-job status when the user navigates back to the inventory
@@ -178,10 +177,10 @@
             total     (count items)
             all-done  (and (not busy?) (zero? ready))
             all-success? (and all-done (zero? failed) (zero? cancelled))
-            color     (cond busy?          "indigo"
-                            (pos? failed)  "amber"
+            color     (cond busy?          "gray"
+                            (pos? failed)  "red"
                             all-done       "green"
-                            (pos? ready)   "blue"
+                            (pos? ready)   "amber"
                             :else          "gray")
             icon      (cond
                         busy?        [shared/spinner {:color color :size 14}]
@@ -197,8 +196,8 @@
                            (when (pos? skipped)   (str ", " skipped   " skipped"))
                            (when (pos? cancelled) (str ", " cancelled " cancelled")))
             progress  (cond
-                        planning (str "Planning — " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
-                        applying (str "Applying — " applied-or-skipped "/" total)
+                        planning (str "Planning " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
+                        applying (str "Applying " applied-or-skipped "/" total)
                         all-done (str applied-or-skipped " applied" suffix)
                         :else    (str ready " ready to apply" suffix))]
         (when-not all-success?
@@ -210,12 +209,13 @@
                       [:> Text {:size "2" :weight "medium"} "Role provisioning"]
                       [:> Text {:size "2" :color "gray"} progress]]
             :actions [:<>
-                      [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                      [:> Button {:size "1" :variant "ghost" :radius "full" :on-click on-view}
                        (if busy? "View progress" "View results")]
                       (when (and (not busy?) on-dismiss)
-                        [:> Button {:size "1" :variant "ghost" :color "gray"
-                                    :on-click on-dismiss}
-                         [:> X {:size 12}]])]}])))))
+                        [:> Tooltip {:content "Dismiss"}
+                         [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                                     :aria-label "Dismiss" :on-click on-dismiss}
+                          [:> X {:size 12}]]])]}])))))
 
 (defn floating-action-bar
   "Bottom-floating action bar shown when at least one resource is selected.
@@ -238,42 +238,43 @@
                     :transform   "translateX(-50%)"
                     :z-index     40
                     :background  "var(--gray-1)"
-                    :border      "1px solid var(--gray-6)"
-                    :border-radius "var(--radius-4)"
+                    :border      (str "1px solid " (:border data/colors))
                     :box-shadow  "0 8px 32px rgba(0,0,0,0.12)"
                     :white-space "nowrap"}}
    [:> Text {:size "2" :weight "medium"} (str count-val " selected")]
-   [:> Box {:style {:width 1 :height 16 :background "var(--gray-6)"}}]
+   [:> Box {:style {:width 1 :height 16 :background (:border data/colors)}}]
    (when (pos? admin-count)
-     [:> Button {:size "2" :color "amber" :variant "soft" :on-click on-add-admin}
+     [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-add-admin}
       [:> UserCog {:size 14}] (str " Manage (" admin-count ")")])
    (when (pos? roles-count)
-     [:> Button {:size "2" :variant "soft" :on-click on-configure-roles}
+     [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-configure-roles}
       [:> Key {:size 14}] (str " Provision (" roles-count ")")])
    (when (pos? edit-admin-count)
-     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-admin}
+     [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-admin}
       [:> Pencil {:size 14}] (str " Edit admin (" edit-admin-count ")")])
    (when (pos? edit-provision-count)
-     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
+     [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-provision}
       [:> Pencil {:size 14}] (str " Edit provision (" edit-provision-count ")")])
-   [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-inventory}
+   [:> Button {:size "2" :radius "full" :variant "soft" :color "gray" :on-click on-edit-inventory}
     [:> Pencil {:size 14}] (str " Edit inventory (" count-val ")")]
-   [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
-    [:> X {:size 14}]]])
+   [:> Tooltip {:content "Clear selection"}
+    [:> Button {:size "2" :radius "full" :variant "ghost" :color "gray" :on-click on-clear
+                :aria-label "Clear selection"}
+     [:> X {:size 14}]]]])
 
 (defn- inventory-header [{:keys [total-resources ready-count on-open-bulk-import]}]
   [:> Flex {:align "center" :justify "between" :mb "6"}
    [:> Flex {:direction "column" :gap "2"}
-    [:> Heading {:size "8"} "Provisioning Hub"]
+    [:> Heading {:as "h1" :size "8" :weight "bold"} "Provisioning Hub"]
     [:> Flex {:align "center" :gap "3"}
-     [:> Text {:size "2" :color "gray"}
-      "Track and provision every database resource connected to Hoop."]
-     [:> Box {:style {:width 1 :height 12 :background "var(--gray-5)" :flex-shrink 0}}]
-     [:> Text {:size "2" :color "gray"} (data/pluralize total-resources "resource")]
+     [:> Text {:size "3" :color "gray"}
+      "Track and provision every database Resource connected to Hoop."]
+     [:> Box {:style {:width 1 :height 12 :background (:divider data/colors) :flex-shrink 0}}]
+     [:> Text {:size "3" :color "gray"} (data/pluralize total-resources "Resource")]
      [status-dot {:color "green" :size 5}]
-     [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
+     [:> Text {:size "3" :color "green"} (str ready-count " complete")]]]
    [:> Flex {:gap "2"}
-    [:> Button {:size "3" :on-click on-open-bulk-import}
+    [:> Button {:size "3" :radius "full" :on-click on-open-bulk-import}
      [:> Upload {:size 16}] " Import Resources"]]])
 
 (defn- inventory-tabs [{:keys [active-tab counts on-change]}]
@@ -292,7 +293,9 @@
    [:> TextField.Root {:placeholder (str "Search "
                                          (cs/lower-case
                                           (get data/stage-label active-tab "inventory"))
-                                         " resources…")
+                                         " Resources…")
+                       :aria-label "Search Resources"
+                       :radius    "none"
                        :value     search
                        :onChange  #(set-search (.. % -target -value))
                        :style     {:max-width 360}}
@@ -302,7 +305,7 @@
   [:> Table.Row
    [:> Table.Cell {:col-span 7}
     [:> Flex {:direction "column" :align "center" :justify "center" :py "9" :gap "3"}
-     [:> Box {:style {:color "var(--gray-5)" :display "flex"}}
+     [:> Box {:style {:color (:muted-icon data/colors) :display "flex"}}
       (if (seq search)
         [:> Search {:size 30 :stroke-width 1.5}]
         [:> Database {:size 30 :stroke-width 1.5}])]
@@ -311,9 +314,9 @@
         (seq search)              (str "No results for \"" search "\"")
         (= active-tab :manage)    "All resources have admin accounts configured"
         (= active-tab :provision) "No resources are ready for provisioning yet"
-        :else                     "No resources found")]
+        :else                     "No Resources yet")]
      (when (seq search)
-       [:> Button {:variant "ghost" :size "1" :color "gray"
+       [:> Button {:variant "ghost" :size "1" :color "gray" :radius "full"
                    :on-click on-clear-search}
         "Clear search"])]]])
 
@@ -326,10 +329,17 @@
                   :on-open-bulk-admin #(on-open-bulk-admin [resource])
                   :on-open-bulk-roles #(on-open-bulk-roles [resource])
                   nil)]
-    (when action
-      [:> Button (cond-> {:variant (:variant action) :size "1"}
-                   (:color action) (assoc :color (:color action))
-                   handler         (assoc :on-click handler))
+    ;; hoop-ui row action: a small secondary button, never a bare text link.
+    ;; A finished row has nothing to do, so it shows a status badge instead.
+    (cond
+      handler
+      [:> Button {:variant "outline" :color "gray" :highContrast true
+                  :size "2" :radius "full" :on-click handler}
+       (:row-label action)]
+
+      action
+      [:> Badge {:color "green" :variant "soft" :size "1" :radius "full"}
+       [:> Check {:size 12 :aria-hidden true}]
        (:row-label action)])))
 
 (defn- inventory-row
@@ -344,9 +354,9 @@
    [:> Table.Cell {:on-click #(.stopPropagation %)}
     [:> Checkbox {:checked selected? :onCheckedChange on-toggle}]]
    [:> Table.Cell [:> Text {:size "2" :weight "medium"} (:name resource)]]
-   [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
+   [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1" :radius "full"} (:db-type resource)]]
    [:> Table.Cell
-    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+    [:> Text {:size "1" :style {:font-family "var(--font-mono)"}}
      (:address resource)]]
    [:> Table.Cell
     (if (:admin resource)
@@ -368,7 +378,8 @@
            selected-ids hovered-row search active-tab
            on-toggle-select on-toggle-all on-set-hovered on-set-search
            on-open-bulk-admin on-open-bulk-roles]}]
-  [:> Table.Root {:variant "surface"}
+  [:> Table.Root {:variant "surface"
+                  :style {"--table-border-radius" "0px"}}
    [:> Table.Header
     [:> Table.Row
      [:> Table.ColumnHeaderCell {:style {:width 48}}
@@ -408,7 +419,7 @@
     {:page        safe-page
      :total-pages (max 1 total-pages)
      :on-change   on-change
-     :label       (str (data/pluralize total-visible "resource")
+     :label       (str (data/pluralize total-visible "Resource")
                        (when (pos? selected-count)
                          (str " \u00b7 " selected-count " selected")))}]])
 

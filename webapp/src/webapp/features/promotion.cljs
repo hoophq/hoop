@@ -1,13 +1,13 @@
 (ns webapp.features.promotion
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Callout Flex Heading Link
-                               Text]]
-   ["lucide-react" :refer [ArrowUpRight Database FastForward FileLock2
+   ["@radix-ui/themes" :refer [Avatar Box Button Flex Heading Text]]
+   ["lucide-react" :refer [Database FastForward FileLock2
                            Laptop ListCheck ListTodo Lock MonitorCheck
                            SearchCode Settings2 ShieldCheck
                            Sparkles UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.callout-link :as callout-link]
    [webapp.config :as config]))
 
 (defn request-demo
@@ -31,12 +31,17 @@
           (.open js/window "https://hoop.dev/meet" "_blank")))
       (.open js/window "https://hoop.dev/meet" "_blank"))))
 
+;; Drawn like FeaturePromotion in webapp_v2 (hoop-ui skill): square indigo
+;; icon tiles, a pill primary button, a pill docs link.
 (defn feature-item
   "Component to display a feature item with an icon"
   [{:keys [icon title description]}]
   [:> Flex {:align "start" :gap "5"}
    [:> Avatar {:size "4"
+               :radius "none"
                :variant "soft"
+               :color "indigo"
+               :aria-hidden true
                :fallback  (r/as-element
                            icon)}]
    [:> Flex {:direction "column" :gap "1"}
@@ -78,8 +83,8 @@
      ;; primary button out of reach on a short window.
      [:> Box {:class "w-1/2 p-12 flex flex-col overflow-y-auto"}
       [:> Box {:class "my-auto space-y-radix-8"}
-       [:> Box
-        [:> Heading {:size "8" :weight "bold" :class "text-gray-12"}
+       [:> Box {:class "space-y-radix-2"}
+        [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
          (str "Get more with " feature-name)]
 
         [:> Text {:as "p" :size "5" :class "text-gray-11"}
@@ -95,21 +100,18 @@
           extra-information])
 
        (when (and link-button-href link-button-text)
-         [:> Link {:href (get-in config/docs-url link-button-href)
-                   :target "_blank"}
-          [:> Callout.Root {:size "1" :variant "outline" :color "gray" :class "w-fit"}
-           [:> Callout.Icon
-            [:> ArrowUpRight {:size 16}]]
-           [:> Callout.Text
-            link-button-text]]])
+         [callout-link/main {:href (get-in config/docs-url link-button-href)
+                             :text link-button-text}])
 
        (when (and on-primary-click button-text)
          [:> Button {:size "3"
+                     :radius "full"
                      :onClick on-primary-click
                      :class "self-start"}
           button-text])]]
 
-     [:> Box {:class "w-1/2 bg-blue-50 min-h-full flex-shrink-0"}
+     [:> Box {:class "w-1/2 min-h-full flex-shrink-0"
+              :style {:background-color "var(--indigo-3)"}}
       (if image
         [:img {:src (str "/images/illustrations/" image)
                :alt (str feature-name " illustration")
@@ -130,13 +132,13 @@
     :image "runbooks-promotion.png"
     :description "Automate operational tasks with version-controlled templates."
     :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Fully Automated Tasks"
+                     :title "Fully automated tasks"
                      :description "Standardize operational procedures with interactive runbooks that guide users through complex tasks."}
                     {:icon [:> Settings2 {:size 20}]
-                     :title "Complete Control"
+                     :title "Complete control"
                      :description "Create step-by-step procedures for common tasks and troubleshooting scenarios."}
                     {:icon [:> ShieldCheck {:size 20}]
-                     :title "Flexibility with High-Level Security"
+                     :title "Flexibility with high-level security"
                      :description "Maintain security while allowing teams to execute approved operations efficiently."}]
     :on-primary-click (if (= mode :empty-state)
                         (fn []
@@ -156,18 +158,18 @@
    {:feature-name "Parallel Mode"
     :mode mode
     :image "parallel-mode-promotion.png"
-    :description "Improve your workflow and boost your productivity"
+    :description "Run one command or Runbook on many Resources at once."
     :feature-items [{:icon [:> FastForward {:size 20}]
                      :title "Simplified execution flow"
-                     :description "Run multiple resources simultaneously with a redesigned, faster, and more intuitive experience."}
+                     :description "Run on many Resources at the same time, in one faster flow."}
                     {:icon [:> ListTodo {:size 20}]
-                     :title "Smarter selection & control"
-                     :description "Access from Terminal or Runbooks to easily search, filter, or select by resource type with instant prefill."}
+                     :title "Smarter selection and control"
+                     :description "Open it from Terminal or Runbooks. Search, filter or select by Resource type."}
                     {:icon [:> MonitorCheck {:size 20}]
-                     :title "Clear visibility & feedback"
-                     :description "Monitor with the new Execution Summary and identify statuses: Success, Error, or Approval Required  all in a single, organized view."}]
+                     :title "Clear visibility and feedback"
+                     :description "See each result in the Execution Summary: Success, Error or Approval Required, in one view."}]
     :on-primary-click #(rf/dispatch [:parallel-mode/mark-promotion-seen])
-    :primary-text "Get Started"}])
+    :primary-text "Get started"}])
 
 (defn users-promotion
   "Specific component for User Access"
@@ -178,39 +180,39 @@
     :image "user-manage-promotion.png"
     :description "Set up team-based permissions and approval workflows for secure resource access."
     :feature-items [{:icon [:> ShieldCheck {:size 20}]
-                     :title "Identity Providers Integration"
+                     :title "Identity provider integration"
                      :description "Connect your existing identity solution (like Auth0, Okta, Google, Azure and more) to sync users and groups automatically."}
                     {:icon [:> UserRoundCheck {:size 20}]
                      :title "Access Control"
-                     :description "Define precise boundaries around your infrastructure with flexible rules that protect sensitive resources and scale effortlessly."}
+                     :description "Set rules that decide who can reach each Resource in your infrastructure."}
                     {:icon [:> ListTodo {:size 20}]
-                     :title "Approval Workflows"
-                     :description "Add intelligent security gates with real-time command approvals and just-in-time access."}]
+                     :title "Approval workflows"
+                     :description "Ask for an Approval before a command runs, and give just-in-time access."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
-    :primary-text "Get Started"}])
+    :primary-text "Get started"}])
 
 (defn ai-session-analyzer-promotion
-  "Specific component for AI Session Analyzer"
+  "Specific component for AI Analyzer"
   [{:keys [mode on-promotion-seen]}]
   [feature-promotion
-   {:feature-name "AI Session Analyzer"
+   {:feature-name "AI Analyzer"
     :mode mode
     :image "ai-session-analyzer-promotion.png"
     :description "Monitor terminal sessions and resource usage in real time."
     :feature-items [{:icon [:> SearchCode {:size 20}]
-                     :title "Real-Time Risk Analysis"
+                     :title "Real-time risk analysis"
                      :description "Analyze commands before execution to prevent security and reliability risks."}
                     {:icon [:> ShieldCheck {:size 20}]
-                     :title "Configurable Rules"
+                     :title "Configurable rules"
                      :description "Admins define alert or block policies per resource."}
                     {:icon [:> Sparkles {:size 20}]
-                     :title "Context-Aware AI Decisions"
+                     :title "Context-aware AI decisions"
                      :description "Use schema, indexes, and resource context to deliver accurate, trustworthy risk assessments."}]
     :on-primary-click (fn []
                         (when on-promotion-seen
                           (on-promotion-seen))
                         (rf/dispatch [:navigate :ai-session-analyzer]))
-    :primary-text "Configure AI Session Analyzer"}])
+    :primary-text "Configure AI Analyzer"}])
 
 (defn machine-identities-promotion
   "Specific component for Machine Identities"
@@ -221,10 +223,10 @@
     :image "machine-identities-promotion.png"
     :description "Enable services and other non-human entities."
     :feature-items [{:icon [:> Laptop {:size 20}]
-                     :title "Service Identity Management"
+                     :title "Service identity management"
                      :description "Create secure identities for services and applications."}
                     {:icon [:> Database {:size 20}]
-                     :title "Data Identification"
+                     :title "Data identification"
                      :description "Detect sensitive data flows between services and environments."}
                     {:icon [:> Lock {:size 20}]
                      :title "Access Control"

@@ -31,11 +31,27 @@
                     "locked")
       "locked")))
 
+;; Every color the Hub draws, by role. The legacy app has no --hoop-* role
+;; tokens, so these Radix shades are named once here and read by role
+;; (hoop-ui: green done, amber pending, gray neutral).
+(def colors
+  {:done         "var(--green-9)"
+   :pending      "var(--amber-9)"
+   :neutral      "var(--gray-7)"
+   :locked       "var(--gray-4)"
+   :track        "var(--gray-3)"
+   :border       "var(--gray-6)"
+   :divider      "var(--gray-5)"
+   :muted-icon   "var(--gray-5)"
+   :surface      "var(--color-panel-solid)"
+   :row-hover    "var(--gray-2)"
+   :row-selected "var(--indigo-2)"})
+
 ;; Single source of truth for both the bar color and the tooltip wording.
 (def segment-states
-  {"done"   {:bg "var(--green-9)"  :text "complete"}
-   "active" {:bg "var(--indigo-9)" :text "action required"}
-   "locked" {:bg "var(--gray-4)"   :text "complete previous steps first"}})
+  {"done"   {:bg (:done colors)    :text "complete"}
+   "active" {:bg (:pending colors) :text "action required"}
+   "locked" {:bg (:locked colors)  :text "complete previous steps first"}})
 
 ;; Drives the per-row "Set up admin / Provision roles / Manage" buttons and
 ;; the stage-banner action button. `:handler-key` is looked up in the props
@@ -43,19 +59,13 @@
 (def stage-action
   {:needs-admin {:row-label   "Set up admin"
                  :banner-verb "Set up"
-                 :handler-key :on-open-bulk-admin
-                 :variant     "ghost"
-                 :color       nil}
+                 :handler-key :on-open-bulk-admin}
    :needs-roles {:row-label   "Provision roles"
                  :banner-verb "Provision"
-                 :handler-key :on-open-bulk-roles
-                 :variant     "ghost"
-                 :color       nil}
+                 :handler-key :on-open-bulk-roles}
    :ready       {:row-label   "Configured"
                  :banner-verb nil
-                 :handler-key nil
-                 :variant     "ghost"
-                 :color       "gray"}})
+                 :handler-key nil}})
 
 
 (def ^:private valid-permissions
@@ -318,18 +328,17 @@
                   :variant "soft" :color "indigo" :icon :rocket :label "Apply"
                   :cancel? true}})
 
-(defn row-bg [stage selected? hovered?]
+;; Rows are white: the stage reads from the Admin account and Setup progress
+;; columns, never from a row tint alone (hoop-ui skill: no status by color).
+(defn row-bg [_stage selected? hovered?]
   (cond
-    selected? "var(--indigo-2)"
-    hovered?  "var(--indigo-1)"
-    (= stage :needs-admin) "var(--amber-1)"
-    (= stage :needs-roles) "var(--blue-1)"
-    :else "var(--green-1)"))
+    selected? (:row-selected colors)
+    hovered?  (:row-hover colors)
+    :else (:surface colors)))
 
 (defn make-default-config []
   {:method "manual" :username "admin" :password ""})
 
-(def funnel-accent  ["var(--gray-8)" "var(--amber-9)" "var(--blue-9)"])
 (def funnel-step-id ["01" "02" "03"])
 
 (defn pluralize
