@@ -231,6 +231,22 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 		}
 	})
 
+	t.Run("two literals share one generic plan", func(t *testing.T) {
+		checks := func() int { return strings.Count(logs.String(), `"msg":"resource check"`) }
+		before := checks()
+		for _, stmt := range []string{"SELECT v FROM big WHERE id = 21", "SELECT v FROM big WHERE id = 22 /* app='e2e' */"} {
+			if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+				t.Fatalf("%s: %v", stmt, err)
+			}
+		}
+		if n := checks() - before; n != 1 {
+			t.Fatalf("%d checks for two literals of one shape, want 1", n)
+		}
+		if in := model.input(t, "WHERE id = 21"); !strings.Contains(in, "Index Scan on big using big_pkey") {
+			t.Fatalf("no generic plan in the model input:\n%s", in)
+		}
+	})
+
 	t.Run("a DELETE inside a transaction gets cached facts and sends no check", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
 		defer cancel()

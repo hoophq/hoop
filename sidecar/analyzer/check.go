@@ -60,9 +60,24 @@ func checkable(op inspect.Operation) bool {
 
 func (e *Evaluator) UsesResourceCheck() bool { return e.cfg.ResourceCheck }
 
+// tableEntry and planEntry keep the rendered lines, so a cache hit renders
+// nothing.
+type tableEntry struct {
+	facts inspect.TableFacts
+	line  string
+}
+
 type planEntry struct {
-	nodes []inspect.PlanNode
+	lines []string
 	err   string
+}
+
+// planShape is the text the check plans and the key its plan is cached under.
+type planShape struct {
+	key string
+	// text is CheckWant.PlanText; empty plans the statement.
+	text   string
+	params int
 }
 
 func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext) string {
@@ -74,7 +89,7 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	if len(tables) == 0 || rc.Skips(stmt) {
 		return ""
 	}
-	facts := make(map[string]inspect.TableFacts, len(tables))
+	facts := make(map[string]tableEntry, len(tables))
 	var missing []string
 	var plan planEntry
 	havePlan := false
@@ -86,43 +101,43 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			missing = append(missing, t)
 		}
 	}
-	if key := planKey(scope, stmt.Text, tables, facts); key != "" {
+	shape := e.shapeOf(scope, stmt)
+	if key := planKey(scope, shape.key, tables, facts); key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
 
 	if (len(missing) > 0 || !havePlan) && e.budget.available(e.cfg.MaxCalls, e.cfg.RateLimit) {
-		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: maxParam(stmt), Timeout: CheckTimeout}
+		want := inspect.CheckWant{Tables: missing, Plan: !havePlan, Params: shape.params, PlanText: shape.text, Timeout: CheckTimeout}
 		res, err := e.runCheck(ctx, rc, stmt, want, ec)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
 			scope := rc.Scope()
 			if res.TablesErr == "" {
 				for _, f := range res.Tables {
-					facts[f.Name] = f
+					entry := tableEntry{facts: f, line: tableLine(f)}
+					facts[f.Name] = entry
 					if scope != "" && f.Resolved {
-						e.facts.put(checkKey(scope, f.Name), f)
+						e.facts.put(checkKey(scope, f.Name), entry)
 					}
 				}
 			}
 			if want.Plan {
-				plan, havePlan = planEntry{nodes: res.Plan, err: res.PlanErr}, true
-				if key := planKey(scope, stmt.Text, tables, facts); key != "" && !res.Retry {
-					e.plans.put(key, plan)
-				}
+				plan, havePlan = planEntry{lines: planLines(res.Plan), err: res.PlanErr}, true
+				e.storePlan(scope, stmt, shape, tables, facts, plan, res)
 			}
 		}
 	}
 
-	var known []inspect.TableFacts
+	var tl []string
 	for _, t := range tables {
 		if f, ok := facts[t]; ok {
-			known = append(known, f)
+			tl = append(tl, f.line)
 		}
 	}
-	var nodes []inspect.PlanNode
+	var pl []string
 	if havePlan {
-		nodes = plan.nodes
+		pl = plan.lines
 	}
-	block := renderCheckBlock(known, nodes)
+	block := renderCheckBlock(tl, pl)
 	if block == "" || e.cfg.Redact == nil {
 		return block
 	}
@@ -139,17 +154,69 @@ func checkKey(scope, name string) string {
 
 // planKey is empty when the plan must not be cached: no role, or a table
 // whose name the search path or the role could resolve elsewhere.
-func planKey(scope, text string, tables []string, facts map[string]inspect.TableFacts) string {
+func planKey(scope, shape string, tables []string, facts map[string]tableEntry) string {
 	if scope == "" {
 		return ""
 	}
 	for _, t := range tables {
-		if !facts[t].Resolved {
+		if !facts[t].facts.Resolved {
 			return ""
 		}
 	}
-	sum := sha256.Sum256([]byte(text))
+	return shapeKey(scope, shape)
+}
+
+func shapeKey(scope, shape string) string {
+	sum := sha256.Sum256([]byte(shape))
 	return checkKey(scope, string(sum[:]))
+}
+
+// shapeOf plans a Postgres statement that has literals and no binds as a
+// generic plan of its text with the literals as $n, so one plan serves every
+// value. A shape whose generic plan failed uses its own text until the mark
+// expires.
+func (e *Evaluator) shapeOf(scope string, stmt inspect.Statement) planShape {
+	if stmt.Protocol == inspect.Postgres && scope != "" {
+		if text, n, ok := lexer.Parameterize(stmt.Text); ok && n > 0 {
+			if key, ok := lexer.PlanKey(text, lexer.Postgres); ok {
+				generic := planShape{key: "generic\x00" + key, text: text, params: n}
+				if _, failed := e.noGeneric.get(shapeKey(scope, generic.key)); !failed {
+					return generic
+				}
+			}
+		}
+	}
+	return textShape(stmt)
+}
+
+func textShape(stmt inspect.Statement) planShape {
+	if stmt.Protocol != inspect.Postgres {
+		return planShape{key: stmt.Text}
+	}
+	key, ok := lexer.PlanKey(stmt.Text, lexer.Postgres)
+	if !ok {
+		key = stmt.Text
+	}
+	return planShape{key: "text\x00" + key, params: maxParam(stmt)}
+}
+
+// storePlan caches a plan under its shape. A generic plan that failed, or that
+// the server could not run (PostgreSQL 11 plans the statement instead),
+// marks its shape so the next statement plans its own text.
+func (e *Evaluator) storePlan(scope string, stmt inspect.Statement, shape planShape, tables []string, facts map[string]tableEntry, plan planEntry, res inspect.CheckResult) {
+	if res.Retry || scope == "" {
+		return
+	}
+	if shape.text != "" && (!res.Generic || res.PlanErr != "") {
+		e.noGeneric.put(shapeKey(scope, shape.key), struct{}{})
+		if res.Generic {
+			return
+		}
+		shape = textShape(stmt)
+	}
+	if key := planKey(scope, shape.key, tables, facts); key != "" {
+		e.plans.put(key, plan)
+	}
 }
 
 func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, error) {
@@ -226,19 +293,9 @@ const (
 // renderCheckBlock writes numbers to two significant digits, so the verdict
 // cache key, which hashes the block, survives small statistics drift. The
 // plan keeps up to half the room, so many tables cannot push it out.
-func renderCheckBlock(tables []inspect.TableFacts, plan []inspect.PlanNode) string {
-	if len(tables) == 0 && len(plan) == 0 {
+func renderCheckBlock(tl, pl []string) string {
+	if len(tl) == 0 && len(pl) == 0 {
 		return ""
-	}
-	var tl, pl []string
-	for _, t := range tables {
-		tl = append(tl, tableLine(t))
-	}
-	if len(plan) > 0 {
-		pl = append(pl, "Plan:")
-		for _, n := range plan {
-			pl = append(pl, strings.Repeat("  ", n.Depth+1)+planLine(n))
-		}
 	}
 	room := MaxCheckBlockBytes - len(checkHeader)
 	head := fitLines(tl, room-min(linesSize(pl), room/2))
@@ -312,6 +369,18 @@ func tableLine(t inspect.TableFacts) string {
 		idx[i] = clean(x.Name) + " (" + kind + clean(x.Definition) + ")"
 	}
 	return line + ", indexes: " + strings.Join(idx, ", ")
+}
+
+func planLines(plan []inspect.PlanNode) []string {
+	if len(plan) == 0 {
+		return nil
+	}
+	pl := make([]string, 0, len(plan)+1)
+	pl = append(pl, "Plan:")
+	for _, n := range plan {
+		pl = append(pl, strings.Repeat("  ", n.Depth+1)+planLine(n))
+	}
+	return pl
 }
 
 func planLine(n inspect.PlanNode) string {

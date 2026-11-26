@@ -50,7 +50,7 @@ func (b SQLBuilder) Protocol() inspect.Protocol { return b.Protocol_ }
 // sees it named. They cost a handful of tokens.
 func (b SQLBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 	text := strings.TrimSpace(stmt.Text)
-	if text == "" {
+	if text == "" || noSQLToken(stmt.Protocol, text) {
 		return Content{}, false
 	}
 
@@ -83,6 +83,18 @@ func (b SQLBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) 
 // operation it reported. What remains still contains literals in the raw
 // text, so they are stripped here too: `WHERE id = 1` and `WHERE id = 2` are
 // one shape, and classifying both is money spent to learn the same thing.
+// noSQLToken reports whether text is only comments and semicolons, which the
+// server runs as nothing: a driver's "-- ping".
+func noSQLToken(p inspect.Protocol, text string) bool {
+	switch text[0] {
+	case '-', '/', '#', ';':
+	default:
+		return false
+	}
+	shape, ok := StatementShape(string(p), text)
+	return ok && strings.Trim(shape, "; ") == ""
+}
+
 func sqlCacheKey(stmt inspect.Statement) string {
 	shape := stripSQLLiterals(strings.ToLower(normalizeSpace(stmt.Text)))
 	h := sha256.New()

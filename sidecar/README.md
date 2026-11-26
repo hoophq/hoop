@@ -1403,6 +1403,9 @@ included, and `exclude` with nothing else to narrow is refused. A control
 plane serves `any` and `exclude` only to a sidecar that reports
 `analyzer_trigger_items`.
 
+A SQL statement with only comments and semicolons (a driver's `-- ping`) is
+not classified, as if the trigger did not select it.
+
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
 top-level value and replace it when the block names them; `rate_limit` and
@@ -1455,9 +1458,18 @@ small table and high on a large unindexed one.
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
 - Each lane keeps its own cache. Size and indexes are cached 30 s per
-  database, current role and table; a plan per the same scope and a hash of
-  the statement text. A lock or timeout error is not cached. The verdict
-  cache key includes the check.
+  database, current role and table; a plan per the same scope and the
+  statement's shape. Comments and spacing do not change the shape; an
+  optimizer hint (`/*+ ... */`) does. A lock or timeout error is not cached.
+  The verdict cache key includes the check.
+- A statement with literals and no `$n` parameters gets a generic plan of its
+  text with `$n` in place of each literal that is compared (`=`, `<>`, `<`,
+  `<=`, `>`, `>=`), bounds a `BETWEEN`, or is an item of an `IN` or `VALUES`
+  list, so `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals
+  stay: `LIMIT`, `LIKE`, typed literals, function arguments. A generic plan
+  estimates `col < $1` at a fixed share of the table, whatever the value.
+- When the server cannot build the generic plan (a type it cannot infer,
+  PostgreSQL 11), that shape is planned with its literals until 30 s pass.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no
