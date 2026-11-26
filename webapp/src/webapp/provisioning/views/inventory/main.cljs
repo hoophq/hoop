@@ -29,7 +29,7 @@
          (let [state    (data/get-segment-state (:key seg) resource)
                {:keys [bg text]} (get data/segment-states state)]
            ^{:key (:key seg)}
-           [:> Tooltip {:content (str (:label seg) " — " text)}
+           [:> Tooltip {:content (str (:label seg) ": " text)}
             [:> Box {:style {:flex          "1 1 0"
                              :height        7
                              :background    bg
@@ -92,37 +92,42 @@
                       (str count-val " selected")
                       (str "all " count-val))
           manage?   (= tab :manage)
-          color     (if manage? "amber" "blue")]
+;; Both stages wait for the user: amber. Indigo is only the action
+          ;; (hoop-ui skill: indigo is never a status).
+          color     "amber"]
       [shared/callout-bar
        {:color    color
         :icon     (if manage? [:> UserCog {:size 18}] [:> Key {:size 18}])
         :title    (if manage? "Admin accounts needed" "Role provisioning needed")
-        :subtitle (str (data/pluralize total-in-stage "resource")
-                       (if manage?
-                         " need an admin account before Hoop can provision roles."
-                         " have an admin account but haven't had roles provisioned."))
+        :subtitle (str (data/pluralize total-in-stage "Resource")
+                       (let [one? (= 1 total-in-stage)]
+                         (if manage?
+                           (str (if one? " needs" " need")
+                                " an admin account before Hoop can provision roles.")
+                           (str (if one? " has" " have")
+                                " an admin account but no roles provisioned yet."))))
         :actions  [:<>
                    [:> Button {:size "2" :variant "outline" :radius "full"
-                               :color (if manage? "amber" "gray")
+                               :color "gray" :highContrast true
                                :on-click on-import-csv}
                     [:> Upload {:size 14}] " Import CSV"]
-                   [:> Button {:size "2" :radius "full" :color (if manage? "amber" "indigo")
+                   [:> Button {:size "2" :radius "full" :variant "soft"
                                :on-click on-action}
                     (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
-                    (str " " (if manage? "Set up " "Provision ") label-str " →")]]}])))
+                    (str " " (if manage? "Set up " "Provision ") label-str)]]}])))
 
 (defn job-status-bar [{:keys [job on-view on-dismiss]}]
   (let [done     (data/count-by-status (:items job) "done")
         failed   (data/count-by-status (:items job) "failed")
         total    (count (:items job))
         running? (< (+ done failed) total)
-        color    (cond running? "indigo" (pos? failed) "amber" :else "green")
+        color    (cond running? "gray" (pos? failed) "red" :else "green")
         icon     (cond
                    running?      [shared/spinner {:color color :size 14}]
                    (pos? failed) [:> AlertCircle {:size 14}]
                    :else         [:> Check {:size 14}])
         title    (str (if (= (:type job) :admin-setup) "Admin setup" "Role provisioning")
-                      " — " (second (re-find #"— (.+)" (:label job))))
+                      ": " (second (re-find #"— (.+)" (:label job))))
         progress (if running?
                    (str (+ done failed) " / " total " processed")
                    (str done " succeeded" (when (pos? failed) (str ", " failed " failed"))))]
@@ -134,11 +139,13 @@
                 [:> Text {:size "2" :weight "medium"} title]
                 [:> Text {:size "2" :color "gray"} progress]]
       :actions [:<>
-                [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                [:> Button {:size "1" :variant "ghost" :radius "full" :on-click on-view}
                  (if running? "View progress" "View results")]
                 (when-not running?
-                  [:> Button {:size "1" :variant "ghost" :color "gray" :on-click on-dismiss}
-                   [:> X {:size 12}]])]}]))
+                  [:> Tooltip {:content "Dismiss"}
+                   [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                               :aria-label "Dismiss" :on-click on-dismiss}
+                    [:> X {:size 12}]]])]}]))
 
 (defn plan-job-banner
   "Shows the active plan-job status when the user navigates back to the inventory
@@ -169,10 +176,10 @@
             total     (count items)
             all-done  (and (not busy?) (zero? ready))
             all-success? (and all-done (zero? failed) (zero? cancelled))
-            color     (cond busy?          "indigo"
-                            (pos? failed)  "amber"
+            color     (cond busy?          "gray"
+                            (pos? failed)  "red"
                             all-done       "green"
-                            (pos? ready)   "blue"
+                            (pos? ready)   "amber"
                             :else          "gray")
             icon      (cond
                         busy?        [shared/spinner {:color color :size 14}]
@@ -188,8 +195,8 @@
                            (when (pos? skipped)   (str ", " skipped   " skipped"))
                            (when (pos? cancelled) (str ", " cancelled " cancelled")))
             progress  (cond
-                        planning (str "Planning — " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
-                        applying (str "Applying — " applied-or-skipped "/" total)
+                        planning (str "Planning " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
+                        applying (str "Applying " applied-or-skipped "/" total)
                         all-done (str applied-or-skipped " applied" suffix)
                         :else    (str ready " ready to apply" suffix))]
         (when-not all-success?
@@ -201,12 +208,13 @@
                       [:> Text {:size "2" :weight "medium"} "Role provisioning"]
                       [:> Text {:size "2" :color "gray"} progress]]
             :actions [:<>
-                      [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                      [:> Button {:size "1" :variant "ghost" :radius "full" :on-click on-view}
                        (if busy? "View progress" "View results")]
                       (when (and (not busy?) on-dismiss)
-                        [:> Button {:size "1" :variant "ghost" :color "gray"
-                                    :on-click on-dismiss}
-                         [:> X {:size 12}]])]}])))))
+                        [:> Tooltip {:content "Dismiss"}
+                         [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                                     :aria-label "Dismiss" :on-click on-dismiss}
+                          [:> X {:size 12}]]])]}])))))
 
 (defn floating-action-bar
   "Bottom-floating action bar shown when at least one resource is selected.
@@ -235,7 +243,7 @@
    [:> Text {:size "2" :weight "medium"} (str count-val " selected")]
    [:> Box {:style {:width 1 :height 16 :background "var(--gray-6)"}}]
    (when (pos? admin-count)
-     [:> Button {:size "2" :radius "full" :color "amber" :variant "soft" :on-click on-add-admin}
+     [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-add-admin}
       [:> UserCog {:size 14}] (str " Manage (" admin-count ")")])
    (when (pos? roles-count)
      [:> Button {:size "2" :radius "full" :variant "soft" :on-click on-configure-roles}
