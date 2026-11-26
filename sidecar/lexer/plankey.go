@@ -38,12 +38,16 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 		if unique == nil || k < 0 || !toks[k].isName() || !unique(folded(sql, toks[k], spans[k])) {
 			return false
 		}
+		first := k
 		if k > 0 && isPunct(toks[k-1], ".") {
-			return k > 1 && toks[k-2].isName() && slices.Contains(names, folded(sql, toks[k-2], spans[k-2])) &&
-				(k < 3 || !isPunct(toks[k-3], "."))
+			if k < 2 || !toks[k-2].isName() || !slices.Contains(names, folded(sql, toks[k-2], spans[k-2])) {
+				return false
+			}
+			first = k - 2
 		}
-		// In x::id, id is a type.
-		return k == 0 || !isPunct(toks[k-1], ":")
+		// In w - id the value meets an expression, which can have statistics;
+		// in x::id, id is a type.
+		return first == 0 || !isOperator(toks[first-1]) && !isPunct(toks[first-1], ".", ":")
 	}
 	insert := len(toks) > 0 && toks[0].isWord("insert")
 	update := len(toks) > 0 && toks[0].isWord("update")
