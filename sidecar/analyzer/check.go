@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,7 +94,7 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			missing = append(missing, t)
 		}
 	}
-	shape, _ := planShape(stmt, uniqueKeys(tables, facts))
+	shape, _ := planShape(stmt, tables, facts)
 	if key := planKey(scope, shape, tables, facts); key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
@@ -116,7 +117,7 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 				plan, havePlan = planEntry{lines: planLines(res.Plan), err: res.PlanErr}, true
 				// An error can come from a replaced value (22P02), so a shape
 				// caches only a plan.
-				shape, replaced := planShape(stmt, uniqueKeys(tables, facts))
+				shape, replaced := planShape(stmt, tables, facts)
 				if key := planKey(scope, shape, tables, facts); key != "" && !res.Retry && !(replaced && res.PlanErr != "") {
 					e.plans.put(key, plan)
 				}
@@ -167,15 +168,20 @@ func planKey(scope, shape string, tables []string, facts map[string]tableEntry) 
 // planShape is what a plan is cached under: the statement without comments,
 // with $n in place of each literal whose value cannot change the plan
 // (lexer.Parameterize). The plan of one such statement serves them all.
-// replaced reports that a literal became $n.
-func planShape(stmt inspect.Statement, unique func(string) bool) (shape string, replaced bool) {
+// replaced reports that a literal became $n. A table with a rewrite rule keeps
+// every literal: a rule can make a VALUES or SET value a filter on another table.
+// At maxCheckTables a table can be cut, so its rules are unknown.
+func planShape(stmt inspect.Statement, tables []string, facts map[string]tableEntry) (shape string, replaced bool) {
 	if stmt.Protocol != inspect.Postgres {
 		return stmt.Text, false
 	}
-	text, n, ok := lexer.Parameterize(stmt.Text, unique)
+	text, n, ok := stmt.Text, 0, false
+	if len(tables) < maxCheckTables && !slices.ContainsFunc(tables, func(t string) bool { return facts[t].facts.Rules }) {
+		text, n, ok = lexer.Parameterize(stmt.Text, uniqueKeys(tables, facts))
+	}
 	prefix := "shape\x00"
 	if !ok {
-		text, prefix = stmt.Text, "text\x00"
+		text, n, prefix = stmt.Text, 0, "text\x00"
 	}
 	key, ok := lexer.PlanKey(text, lexer.Postgres)
 	if !ok {

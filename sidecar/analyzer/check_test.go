@@ -358,6 +358,43 @@ func TestOnlyAWholeValidUniqueIndexIsAKey(t *testing.T) {
 	}
 }
 
+func TestATableWithARuleKeepsItsLiterals(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	f := chk.tables["orders"]
+	f.Rules = true
+	chk.tables["orders"] = f
+	ec := &policy.EvalContext{ResourceCheck: chk}
+	for _, s := range []string{"open", "closed", "open"} {
+		ev.EvaluateWith(sqlStmt("INSERT INTO orders (note) VALUES ('"+s+"')", inspect.OpInsert, "orders"), ec)
+	}
+	for _, id := range []string{"1", "2"} {
+		ev.EvaluateWith(sqlStmt("UPDATE orders SET note = 'a' WHERE id = "+id, inspect.OpUpdate, "orders"), ec)
+	}
+	if n := len(chk.checks()); n != 4 {
+		t.Fatalf("%d checks, want a plan per text", n)
+	}
+}
+
+func TestAStatementAtTheTableCapKeepsItsLiterals(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	tables := []string{"orders"}
+	for i := 2; i <= 8; i++ {
+		name := fmt.Sprintf("t%d", i)
+		tables = append(tables, name)
+		chk.tables[name] = inspect.TableFacts{Name: name, Found: true, Resolved: true}
+	}
+	ec := &policy.EvalContext{ResourceCheck: chk}
+	for _, s := range []string{"a", "b"} {
+		text := "UPDATE orders SET note = '" + s + "' FROM " + strings.Join(tables[1:], ", ")
+		ev.EvaluateWith(sqlStmt(text, inspect.OpUpdate, tables...), ec)
+	}
+	if n := len(chk.checks()); n != 2 {
+		t.Fatalf("%d checks, want a plan per text", n)
+	}
+}
+
 func TestAShapeDoesNotCacheAPlanError(t *testing.T) {
 	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
 	chk := bigOrders()

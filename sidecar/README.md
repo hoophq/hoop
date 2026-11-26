@@ -1472,7 +1472,9 @@ small table and high on a large unindexed one.
   So `WHERE id = 1` and `WHERE id = 2` share one plan. Other literals stay:
   a range or a skewed column changes the plan's row estimate.
 - A statement whose strings read differently under
-  `standard_conforming_strings = off` is keyed by its exact text.
+  `standard_conforming_strings = off` is keyed by its exact text. A
+  statement on a table with a rewrite rule (or a view), or with 8 tables or
+  more, keeps all its literals.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no
