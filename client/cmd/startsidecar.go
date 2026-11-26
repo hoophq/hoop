@@ -344,8 +344,17 @@ needs a restart.`,
 			daemon.WithBootLog(bootLogFor(format, os.Stderr)),
 		}
 		if sidecarValidateFlag {
-			// A check, not a boot: report a plane that is down now.
+			// A check, not a boot: report a plane that is down now, and
+			// leave the health port to the sidecar this pod already runs.
 			setupOpts = append(setupOpts, daemon.WithoutBootRetry())
+		} else {
+			// A boot: answer the probes while the plane is waited for.
+			hl, herr := daemon.ListenHealth()
+			if herr != nil {
+				return herr
+			}
+			defer func() { _ = hl.Close() }()
+			setupOpts = append(setupOpts, daemon.WithHealthListener(hl))
 		}
 		var reviewer *sidecartui.Reviewer
 		var demoLanes []string

@@ -73,6 +73,33 @@ config:
     api_listen: '127.0.0.1:19002'
 ```
 
+`/readyz` answers 200 once a config is loaded and every lane serves, and its
+JSON body says what is not: `config_loaded`, `lanes_open` with each lane's
+state, `valid_license`, `connected_to_control_plane`. A control plane lost
+after boot shows in the body only; it never makes the pod unready. The
+kubelet never shows a probe's body; read it through a port-forward, which
+stays in the foreground, so run the two commands in two terminals:
+
+```sh
+kubectl port-forward deploy/<deployment> 19000   # terminal 1
+curl -s localhost:19000/readyz                    # terminal 2
+```
+
+`<deployment>` is `<release>-hoopsidecar`, or `<release>` itself when the
+release name already contains `hoopsidecar` (`fullnameOverride` replaces
+both); `kubectl get deploy -l app.kubernetes.io/instance=<release>` prints it.
+
+Under `controlPlane.url`, the admin server binds only after the first
+handshake, so while the sidecar waits for the control plane the probes on
+19000 read a refused connection: the startup probe counts it as not started,
+and the pod is not ready. The chart keeps every probe on 19000, because images
+older than ENG-852 serve no other health port.
+
+The container sets `terminationMessagePolicy: FallbackToLogsOnError`. When the
+relay exits with an error, `kubectl describe pod` shows the end of its log as
+the termination message: a refused token, a config this build cannot load, a
+control plane that did not answer within 5 minutes.
+
 **Lane ports are not declared on the pod.** A `containerPort` is informational
 in Kubernetes, and a lane bound to a unix socket has no port at all.
 
