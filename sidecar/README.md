@@ -1574,8 +1574,39 @@ small table and high on a large unindexed one.
   check failed`, `resource check incomplete` or `resource check cancelled`
   with the SQLSTATE. Every
   statement it sends starts with `/* hoop sidecar resource check */`.
-- Other protocols accept the field and do nothing. A control plane serves it
-  only to a sidecar that reports `analyzer_resource_check`.
+- Lanes other than postgres and http accept the field and do nothing. A
+  control plane serves it only to a sidecar that reports
+  `analyzer_resource_check`.
+
+**On an http lane, `resource_check: true` reads the target first.** Before a
+`PUT`, `PATCH` or `DELETE` that the trigger selects, the sidecar sends a `GET`
+of the same URL and puts its status and the start of its body in the prompt,
+so `DELETE /orders/1` can rate high on an open order and low on a closed one.
+
+- The `GET` carries the client's headers, after the lane's own changes (Via,
+  `origin`, a caller token removed). It drops the body, connection,
+  conditional, `Range`, `Idempotency-Key` and method-override headers, and
+  adds `Accept-Encoding: identity`, `Connection: close` and
+  `Hoop-Resource-Check: 1`.
+- It goes on a new upstream connection, closed after it, within 500 ms. The
+  client never sees it.
+- The sidecar reads at most 4 KiB of the body. Before the body reaches the
+  prompt, every value the lane hides becomes `[redacted]`: `Authorization`,
+  `Proxy-Authorization`, `Cookie`, the identity or caller-token header,
+  headers outside `http.headers` and sensitive query parameters. A value
+  shorter than 8 bytes is replaced where it stands alone, not inside a
+  longer word. A value the 4 KiB cut or the end of the read splits is
+  replaced or dropped. A header outside `http.headers` that is not a credential
+  stays when shorter than 4 bytes (`DNT: 1`). Then `send` redaction runs on
+  the block. An encoded or binary body is not read.
+- The prompt block keeps 2 KiB. A check needs room in `max_calls` and
+  `rate_limit` but spends neither. A failed check classifies as without it
+  and logs `resource check failed` or `resource check incomplete`.
+- Nothing is cached but the verdict, whose key includes the block. Other
+  methods, WebSocket messages and SQL read from request bodies are not
+  checked.
+- An API whose `GET` has side effects (a counter, a read receipt) keeps
+  `resource_check` off on that lane.
 
 **A request with no body is still classified.** On a REST API the path is
 the operation: `GET /api/v1/namespaces/prod/secrets/db-root` says what a
@@ -5280,6 +5311,13 @@ unless set) and `body_truncated` set, under `capture_body`. What is held
 and bounded is only a body masking must rewrite as one unit; see [Masking
 and PII](#masking-and-pii). Before this, every http lane cut a response at
 8 MiB with a 403 (ENG-946).
+
+**An idle upstream that closes is dialed again.** The lane dials the
+upstream when a client connects. When the upstream closes that connection
+before either side sent a byte, for example at its read-header timeout
+while the analyzer judges the request, the lane dials once more and sends
+the request there. An upstream that answers first (a 408) or closes after a
+request ends the client's connection, as before.
 
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug

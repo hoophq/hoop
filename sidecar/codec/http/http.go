@@ -356,6 +356,15 @@ func (c *Codec) TakeCredential(stmt *inspect.Statement) (string, bool) {
 	return c.creds.take(stmt)
 }
 
+// NewResourceCheck is libhoop's, and also hides the credential header when
+// only the lifting allowlisted it.
+func (c *Codec) NewResourceCheck() inspect.ResourceCheck {
+	if c.creds.header == "" || c.creds.keep {
+		return c.Inspector.NewResourceCheck()
+	}
+	return c.Inspector.NewResourceCheckHiding(c.creds.header)
+}
+
 // The gate finds these by type assertion, so losing one is silent at
 // runtime: without Duplex the relay would split the connection over two
 // instances and never see a WebSocket message the client sends, and without
@@ -369,6 +378,7 @@ var _ interface {
 	Filter(inspect.Direction, []byte) ([]byte, error)
 	TakeCredential(*inspect.Statement) (string, bool)
 	AuthenticateCallers(func(string) error) error
+	NewResourceCheck() inspect.ResourceCheck
 } = (*Codec)(nil)
 
 func init() {

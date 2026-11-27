@@ -788,20 +788,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 
 	upstream, err := s.dialUpstream(ctx)
 	if err != nil {
-		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
-		span.fail(err)
-		if s.cfg.Audit != nil {
-			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
-				// The one audit write that happens outside a Gate, so it
-				// reports its own failure into the same counters.
-				if s.cfg.Metrics != nil {
-					s.cfg.Metrics.AuditError()
-				}
-				if s.cfg.Telemetry != nil {
-					s.cfg.Telemetry.AuditError()
-				}
-			}
-		}
+		s.dialFailed(ctx, sess, span, log, err)
 		return
 	}
 	defer upstream.Close()
@@ -897,8 +884,21 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// share one upstream clock: the client pump stamps what it forwards,
 	// the server pump reads the stamp when the answer arrives.
 	clock := newUpstreamClock(s.cfg.Protocol, s.cfg.Telemetry)
+	if s.cfg.Protocol == inspect.HTTP {
+		upstream = newRedialConn(upstream, func() (net.Conn, error) {
+			log.Debug("the upstream closed the connection before the first request; dialing again")
+			c, err := s.dialUpstream(connCtx)
+			if err != nil {
+				s.dialFailed(connCtx, sess, span, log, err)
+			}
+			return c, err
+		})
+	}
 	var side *sidePath
-	if g.HasResourceCheck() {
+	switch {
+	case g.CheckOwnsConnection():
+		g.AttachSidePath(dialSidePath{s: s, connCtx: connCtx})
+	case g.HasResourceCheck():
 		side = newSidePath(s, upstream, connCtx, endConn, log)
 		g.AttachSidePath(side)
 	}
@@ -917,6 +917,24 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}()
 
 	wg.Wait()
+}
+
+func (s *Server) dialFailed(ctx context.Context, sess *session.Session, span *sessionSpan, log *slog.Logger, err error) {
+	log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
+	span.fail(err)
+	if s.cfg.Audit == nil {
+		return
+	}
+	if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
+		// The one audit write that happens outside a Gate, so it
+		// reports its own failure into the same counters.
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.AuditError()
+		}
+		if s.cfg.Telemetry != nil {
+			s.cfg.Telemetry.AuditError()
+		}
+	}
 }
 
 // connIdentity is the identity an accepted connection carries before any

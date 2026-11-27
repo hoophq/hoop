@@ -25,6 +25,7 @@ type fakeChecker struct {
 	planErr string
 	retry   bool
 	wants   []inspect.CheckWant
+	target  *inspect.TargetFacts
 
 	// scope defaults to one database and role; unknown empties it.
 	scope   string
@@ -65,6 +66,9 @@ func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect
 	}
 	if want.Plan {
 		res.Plan, res.PlanErr = f.plan, f.planErr
+	}
+	if want.Target {
+		res.Target = f.target
 	}
 	return res, f.err
 }

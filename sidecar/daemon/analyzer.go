@@ -1014,7 +1014,12 @@ func (ac *analyzerDeps) resourceCheckLog(name string) func(analyzer.ResourceChec
 	}
 	log := ac.log.With("analyzer", name)
 	return func(ev analyzer.ResourceCheckEvent) {
-		attrs := []any{"duration", ev.Duration.Round(time.Millisecond).String(), "tables", ev.Tables, "plan", ev.Plan}
+		attrs := []any{"duration", ev.Duration.Round(time.Millisecond).String()}
+		if ev.Target {
+			attrs = append(attrs, "target", true)
+		} else {
+			attrs = append(attrs, "tables", ev.Tables, "plan", ev.Plan)
+		}
 		switch {
 		case errors.Is(ev.Err, policy.ErrCheckNotReady):
 			log.Debug("resource check skipped; cached facts only", append(attrs, "reason", ev.Err.Error())...)
@@ -1022,6 +1027,8 @@ func (ac *analyzerDeps) resourceCheckLog(name string) func(analyzer.ResourceChec
 			log.Info("resource check cancelled", append(attrs, "tables_error", ev.TablesErr, "plan_error", ev.PlanErr)...)
 		case ev.Err != nil:
 			log.Info("resource check failed; classified without it", append(attrs, "error", ev.Err.Error())...)
+		case ev.TargetErr != "":
+			log.Info("resource check incomplete", append(attrs, "target_error", ev.TargetErr)...)
 		case ev.TablesErr != "" || ev.PlanErr != "":
 			log.Info("resource check incomplete", append(attrs, "tables_error", ev.TablesErr, "plan_error", ev.PlanErr)...)
 		default:
