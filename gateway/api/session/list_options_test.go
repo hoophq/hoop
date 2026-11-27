@@ -58,6 +58,19 @@ func TestParseSessionListOptions(t *testing.T) {
 			},
 		},
 		{
+			msg: "it accepts a tag selector and a connection pattern",
+			qs:  "tag_selector=env%3Dprd%2Cteam!%3Ddata&connection=%25-prd-%25",
+			want: func(o models.SessionOption) models.SessionOption {
+				o.TagSelector, o.ConnectionName = "env=prd,team!=data", "%-prd-%"
+				return o
+			},
+		},
+		{
+			msg:  "a blank tag selector is unset",
+			qs:   "tag_selector=",
+			want: func(o models.SessionOption) models.SessionOption { return o },
+		},
+		{
 			msg:  "a blank status, verb or input is unset",
 			qs:   "status=&verb=&input=",
 			want: func(o models.SessionOption) models.SessionOption { return o },
@@ -135,6 +148,8 @@ func TestParseSessionListOptions(t *testing.T) {
 		{msg: "an unknown verb is rejected", qs: "verb=plain-exec", wantErr: `invalid "verb" option: "plain-exec" is not one of connect, exec`},
 		// The scan cost grows with the pattern length; Postgres rejects NUL and
 		// invalid UTF-8 with an error the handler would turn into a 500.
+		{msg: "a tag selector without an operator is rejected", qs: "tag_selector=env", wantErr: `invalid "tag_selector" option: invalid tag selector "env"`},
+		{msg: "a tag selector without a key is rejected", qs: "tag_selector=%3Dprd", wantErr: `invalid "tag_selector" option: invalid tag selector "=prd", the key must not be empty`},
 		{msg: "an input over the cap is rejected", qs: "input=" + strings.Repeat("a", 257), wantErr: `invalid "input" option: must be at most 256 bytes, got 257`},
 		{msg: "an input with a NUL byte is rejected", qs: "input=%00", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},
 		{msg: "an input that is not UTF-8 is rejected", qs: "input=%FF", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},
@@ -181,6 +196,7 @@ func TestParseSessionListOptionsCoversEveryAdvertisedOption(t *testing.T) {
 		openapi.SessionOptionStatus:              "open",
 		openapi.SessionOptionVerb:                "connect",
 		openapi.SessionOptionInput:               "delete",
+		openapi.SessionOptionTagSelector:         "env=prd",
 	}
 
 	baseline := models.NewSessionOption()

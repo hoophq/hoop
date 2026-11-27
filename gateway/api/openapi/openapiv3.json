@@ -22256,9 +22256,17 @@
             }
           },
           {
-            "description": "Filter by connection's name",
+            "description": "Filter by connection's name, case-sensitive. % matches any characters and _ one character (e.g. %-prd-%, URL-encoded as %25-prd-%25)",
             "in": "query",
             "name": "connection",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by the current tags of the session's connection, supports '=' and '!=' (e.g. key1=value1,key2!=value2). All conditions must match.",
+            "in": "query",
+            "name": "tag_selector",
             "schema": {
               "type": "string"
             }

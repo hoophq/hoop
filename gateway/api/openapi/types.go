@@ -1369,6 +1369,7 @@ const (
 	SessionOptionStatus              SessionOptionKey = "status"
 	SessionOptionVerb                SessionOptionKey = "verb"
 	SessionOptionInput               SessionOptionKey = "input"
+	SessionOptionTagSelector         SessionOptionKey = "tag_selector"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
@@ -1388,6 +1389,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionStatus,
 	SessionOptionVerb,
 	SessionOptionInput,
+	SessionOptionTagSelector,
 }
 
 type SessionStatusType string
