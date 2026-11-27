@@ -943,7 +943,7 @@ func (e *Evaluator) ruleTurn(ctx context.Context, stmt inspect.Statement, ec *po
 	}
 	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, principal(ec))
 	memoKey := ruleMemoKey(rl, content)
-	if m, ok := e.cache.decision(c.key, memoKey); ok && m.rules != nil {
+	if m, ok := e.decision(c, memoKey); ok && m.rules != nil {
 		return ruleOutcome{decision: m.rules}
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
@@ -963,7 +963,7 @@ func (e *Evaluator) ruleTurn(ctx context.Context, stmt inspect.Statement, ec *po
 	if err != nil {
 		return failedRules(rulesUndecided, err)
 	}
-	e.cache.remember(c.key, memoKey, agentMemo{rules: d})
+	e.remember(c, memoKey, agentMemo{rules: d})
 	return ruleOutcome{decision: d}
 }
 

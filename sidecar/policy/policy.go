@@ -225,6 +225,10 @@ type EvalContext struct {
 	// ResourceCheck is nil when the lane's codec has no check.
 	ResourceCheck ResourceChecker
 
+	// Conn is what evaluators keep for the connection between its
+	// statements. Nil keeps nothing.
+	Conn *ConnState
+
 	// review is the hold a producer asked for, run by the outermost Chain
 	// after every evaluator allowed (ADR-0030). depth is how many Chains
 	// are evaluating on this context; only the outermost runs the review,

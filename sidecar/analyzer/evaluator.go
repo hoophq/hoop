@@ -921,6 +921,11 @@ type classified struct {
 	// key is the cache key of an ok or cached classification. The
 	// hand-off decisions live on its entry.
 	key string
+
+	// memo is the connection's prepared-statement memo, nil for other
+	// statements. It keys on the database and the exact text, not the shape.
+	memo    *cache
+	textKey string
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
@@ -943,6 +948,13 @@ func (e *Evaluator) classify(
 	}
 	builder, ok := BuilderFor(stmt.Protocol)
 	if !ok {
+		return classified{}
+	}
+	switch stmt.Metadata[inspect.MetadataPrepared] {
+	case inspect.PreparedRelease:
+		preparedMemo(e, stmt, ec).unpin(preparedKey(e.promptKey, stmt))
+		return classified{}
+	case inspect.PreparedReset:
 		return classified{}
 	}
 
@@ -974,12 +986,21 @@ func (e *Evaluator) classify(
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
+	memo, textKey := preparedMemo(e, stmt, ec), preparedKey(e.promptKey, stmt)
 	if block := e.resourceBlock(ctx, stmt, ec); block != "" {
 		text += "\n\n" + block
 		cacheKey += ":" + fingerprint(block)
+		memo = nil
+	}
+	if stmt.Metadata[inspect.MetadataPrepared] == inspect.PreparedPrepare {
+		memo.pin(textKey)
+	}
+	if res, hit := memo.get(textKey); hit {
+		return classified{res: res, text: text, status: StatusCached, key: cacheKey, memo: memo, textKey: textKey}
 	}
 	if cached, hit := e.cache.get(cacheKey); hit {
-		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
+		memo.put(textKey, cached)
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, memo: memo, textKey: textKey}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//
@@ -1018,7 +1039,8 @@ func (e *Evaluator) classify(
 	}
 
 	e.cache.put(cacheKey, *res)
-	return classified{res: *res, text: text, status: StatusOK, key: cacheKey}
+	memo.put(textKey, *res)
+	return classified{res: *res, text: text, status: StatusOK, key: cacheKey, memo: memo, textKey: textKey}
 }
 
 // failure renders a classification error according to the fail mode.

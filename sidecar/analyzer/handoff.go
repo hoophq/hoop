@@ -296,7 +296,7 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 		return handoffDecision{action: ActionRequireReview, reason: pin.reason, rules: pin.rules,
 			pin: pinRef{key: pinKey, reason: pin.reason, rules: pin.rules, reviewID: pin.reviewID}}
 	}
-	if m, ok := e.cache.decision(c.key, memoKey); ok {
+	if m, ok := e.decision(c, memoKey); ok {
 		d := handoffDecision{action: m.action, reason: m.reason}
 		if rl != nil {
 			d.rules = ruleOutcome{decision: m.rules}
@@ -347,7 +347,7 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	// A turn whose rule part failed is not cached: the next statement
 	// asks again rather than repeating a failure.
 	if rl == nil || d.rules.decision != nil {
-		e.cache.remember(c.key, memoKey, agentMemo{action: d.action, reason: d.reason, rules: d.rules.decision})
+		e.remember(c, memoKey, agentMemo{action: d.action, reason: d.reason, rules: d.rules.decision})
 	}
 	return withPin(d, pinKey)
 }

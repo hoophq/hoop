@@ -128,15 +128,19 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		}
 	}
 
-	var tl []string
-	for _, t := range tables {
-		if f, ok := facts[t]; ok {
-			tl = append(tl, f.line)
-		}
-	}
 	var pl []string
 	if havePlan {
 		pl = plan.lines
+	}
+	var tl []string
+	for _, t := range tables {
+		if f, ok := facts[t]; ok {
+			line := f.line
+			if len(pl) > 0 && sizeInPlan(f.facts) {
+				line += "; see the plan"
+			}
+			tl = append(tl, line)
+		}
 	}
 	block := renderCheckBlock(tl, pl)
 	if block == "" || e.cfg.Redact == nil {
@@ -249,12 +253,18 @@ func (e *Evaluator) reportCheck(ev ResourceCheckEvent) {
 	}
 }
 
+var checkDialects = map[inspect.Protocol]lexer.Dialect{
+	inspect.Postgres: lexer.Postgres,
+	inspect.MySQL:    lexer.MySQL,
+	inspect.MSSQL:    lexer.MSSQL,
+}
+
 // checkTables keeps a quoted name's case, which stmt.Tables folds for policy
 // rules: "Orders" and orders are two relations.
 func checkTables(stmt inspect.Statement) []string {
 	in := stmt.Tables
-	if stmt.Protocol == inspect.Postgres {
-		if a := lexer.Analyze(stmt.Text, lexer.Postgres); len(a.Relations) == len(in) {
+	if d, ok := checkDialects[stmt.Protocol]; ok {
+		if a := lexer.Analyze(stmt.Text, d); len(a.Relations) == len(in) {
 			in = make([]string, len(a.Relations))
 			for i, r := range a.Relations {
 				in[i] = r.Name
@@ -337,6 +347,10 @@ func clean(s string) string {
 	}, s)
 }
 
+func sizeInPlan(t inspect.TableFacts) bool {
+	return t.Found && (t.Kind == "view" || t.Kind == "foreign table")
+}
+
 func tableLine(t inspect.TableFacts) string {
 	if !t.Found {
 		return "Table " + clean(t.Name) + ": not found"
@@ -344,7 +358,9 @@ func tableLine(t inspect.TableFacts) string {
 	label := "Table"
 	switch t.Kind {
 	case "view", "foreign table":
-		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size of its own; see the plan"
+		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size of its own"
+	case "temporary table", "synonym":
+		return strings.ToUpper(t.Kind[:1]) + t.Kind[1:] + " " + clean(t.Name) + ": no size in the catalog"
 	case "partitioned table", "materialized view":
 		label = strings.ToUpper(t.Kind[:1]) + t.Kind[1:]
 	}

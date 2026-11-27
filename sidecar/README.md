@@ -1512,14 +1512,15 @@ A sidecar older than 1.198.0 cannot decode `rate_limit`, so the control plane
 refuses to serve a document that carries it to one.
 
 **`resource_check: true` gives the model the database's own estimates.** On
-a postgres lane, before a select, insert, update or delete that the trigger
-selects, the sidecar reads the size and indexes of each table the statement
-names and its `EXPLAIN` plan (never `ANALYZE`), on the client's own
-connection. The prompt then carries lines such as `Table orders: about 12M
-rows, 3.1 GB, indexes: ...` and the plan, so one SELECT can rate low on a
-small table and high on a large unindexed one.
+a postgres, mysql or mssql lane, before a select, insert, update or delete
+that the trigger selects, the sidecar reads the size and indexes of each
+table the statement names, on the client's own connection. On postgres, and
+on mysql for a select, it also reads the `EXPLAIN` plan (never `ANALYZE`). The prompt then
+carries lines such as `Table orders: about 12M rows, 3.1 GB, indexes: ...`
+and the plan, so one SELECT can rate low on a small table and high on a large
+unindexed one.
 
-- The check is one write, read-only and local to its own transaction:
+- On postgres, the check is one write, read-only and local to its own transaction:
   `transaction_read_only`, `lock_timeout` and `statement_timeout` bound it to
   500 ms. Past that the sidecar sends a CancelRequest on a new connection; an
   upstream that does not finish within 2 s more has the client connection
@@ -1568,12 +1569,58 @@ small table and high on a large unindexed one.
 - A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, with the parameter
   types the client sent, on PostgreSQL 12 or later.
+- On mysql, the check runs on MySQL 5.7.20 or later (never MariaDB), before
+  a `COM_QUERY` only, when the last OK packet shows autocommit on and no
+  open transaction. A failed `SET` of its limits gives no facts. Sizes come from
+  `information_schema.TABLES`, indexes from `information_schema.STATISTICS`.
+  During the check `lock_wait_timeout` is 1 s, `transaction_read_only` is on
+  and `max_execution_time` is 400 ms; all three are restored after. The plan
+  is read for a select only, because `EXPLAIN` runs the statement's functions
+  and subqueries; it runs as a prepared statement whose text exists only if
+  both limits hold, so it cannot run a second statement or write. The catalog
+  read ignores `sql_select_limit`. MySQL has no cancel, so an upstream that does not
+  answer within 2.5 s has the client connection closed. A temporary table is
+  named as such, without a size. The session keeps the check's user
+  variables (`@_hoop_chk_*`), set to `NULL`.
+- On mssql, the check is one SQL batch before a SQL batch only: outside a
+  transaction (`metadata["mssql.transaction"]` is `0`), with MARS off, on
+  TDS 7.2 or later. Sizes come from `sys.partitions` and
+  `sys.allocation_units`, indexes from `sys.indexes`, which needs SQL Server
+  2017 or later. The read runs in `sp_executesql` with `SET ROWCOUNT 0`,
+  which ends with it, and leaves `@@IDENTITY` as it was. It reads no plan:
+  `SHOWPLAN` changes the session. It reads nothing while
+  `IMPLICIT_TRANSACTIONS` is on. Past 500 ms the sidecar sends an attention
+  and drains the reply. A temporary table or synonym is named as such,
+  without a size. A table in another database or on a linked server gets
+  no line: the catalog views are the current database's.
+- On mysql and mssql nothing is cached: the database a name resolves in and
+  a temporary table that hides it can change without the sidecar seeing it.
+- A statement that reads the previous result gets no check, and neither do
+  the others in the same client write: on mysql `ROW_COUNT()`,
+  `FOUND_ROWS()`, `@@warning_count`, `@@error_count`, `GET DIAGNOSTICS`,
+  `last_query_cost`, `optimizer_trace`, `profiling`, `session_status`,
+  `status_by_thread`, and `SHOW` with `WARNINGS`, `ERRORS`, `STATUS` or
+  `PROFILE`; on mssql `@@ROWCOUNT`, `ROWCOUNT_BIG()`, `@@ERROR`,
+  `@@FETCH_STATUS` and `@@CURSOR_ROWS`. Words count outside literals, quoted
+  names and comments (inside a mysql `/*!` comment too); a text with an
+  unterminated literal or comment gets no check. On mysql the scan follows
+  the session's `NO_BACKSLASH_ESCAPES` and reads `"..."` with and without
+  `ANSI_QUOTES`. A session status counter
+  still counts the check's own statements.
+- Every check of a client write runs before its first statement, so a write
+  that changes what a later name resolves to gets no check: on mysql, a write
+  of more than one statement where one starts with `USE`, `CREATE`, `DROP`,
+  `ALTER`, `RENAME`, `TRUNCATE`, `CALL` or `EXECUTE`, or names `sql_mode`; on mssql, a batch with `USE`, `CREATE`,
+  `DROP`, `ALTER` or `TRUNCATE` before a select, insert, update, delete,
+  merge or `EXEC`.
+- A MySQL prepared statement (`COM_STMT_*`) and an MSSQL RPC request get no
+  check.
 - The prompt block is capped at 2 KiB. A check needs room in the lane's
   `max_calls` and `rate_limit` but spends neither.
 - A failed or partial check classifies as without it and logs `resource
   check failed`, `resource check incomplete` or `resource check cancelled`
-  with the SQLSTATE. Every
-  statement it sends starts with `/* hoop sidecar resource check */`.
+  with the SQLSTATE or error number. Every statement it sends starts with
+  `/* hoop sidecar resource check */`.
 - Other protocols accept the field and do nothing. A control plane serves it
   only to a sidecar that reports `analyzer_resource_check`.
 
@@ -4727,6 +4774,16 @@ the codec keeps the prepare's text against that id and attributes the execute
 to it. A prepare the codec never saw — a connection adopted mid-flight — makes
 the execute an `unknown` operation, which a rule naming `unknown` refuses.
 That is the fail-closed direction.
+
+**The analyzer classifies a prepared statement once per connection.** Each
+`COM_STMT_EXECUTE` and `COM_STMT_FETCH` reuses the verdict of its
+`COM_STMT_PREPARE` (`ai_status: cached`), with the hand-off and rule agents'
+decisions, and a new hold still runs. `COM_STMT_CLOSE` and `COM_STMT_RESET`
+run nothing and are not classified. Codecs mark these steps with the
+`sql.prepared` metadata key (`prepare`, `run`, `release`, `reset`). The memo
+keys on the database and the exact text. It keeps the text of every open
+statement, up to 1024 open texts, and the last 256 closed ones; past that, a
+text asks the model again.
 
 **Three negotiated features are refused rather than forwarded**, each with
 `ErrStreamUnsafe`, which the gate turns into a denial regardless of policy:

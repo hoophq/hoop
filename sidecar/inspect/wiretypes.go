@@ -35,7 +35,9 @@ type (
 	SQLAnalysis   = codectypes.SQLAnalysis
 
 	ResourceCheck = codectypes.ResourceCheck
+	ChunkStopper  = codectypes.ChunkStopper
 	CheckResponse = codectypes.CheckResponse
+	InBandCancel  = codectypes.InBandCancel
 	CheckWant     = codectypes.CheckWant
 	CheckResult   = codectypes.CheckResult
 	TableFacts    = codectypes.TableFacts
@@ -137,6 +139,15 @@ const (
 	// MetadataSQLIncomplete names the metadata key carrying why a scan could
 	// not finish. Present only when Operation is OpUnknown for that reason.
 	MetadataSQLIncomplete = codectypes.MetadataSQLIncomplete
+
+	// MetadataPrepared names a prepared statement's step: PreparedPrepare,
+	// PreparedRun, PreparedRelease (a close) or PreparedReset; the last two run
+	// nothing.
+	MetadataPrepared = codectypes.MetadataPrepared
+	PreparedPrepare  = codectypes.PreparedPrepare
+	PreparedRun      = codectypes.PreparedRun
+	PreparedRelease  = codectypes.PreparedRelease
+	PreparedReset    = codectypes.PreparedReset
 
 	// MetadataMySQLConnectAttrPrefix prefixes the metadata key of a MySQL
 	// connection attribute the codec keeps, followed by the attribute name.
