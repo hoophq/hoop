@@ -511,7 +511,15 @@ func ValidateSessionTagSelector(v string) error {
 	case !utf8.ValidString(v) || strings.ContainsRune(v, 0):
 		return errors.New("must be valid UTF-8 without NUL bytes")
 	}
-	if n := strings.Count(v, ",") + 1; n > MaxSessionListTagSelectorConditions {
+	// Blank segments are formatting noise to parseTagSelector, so they do
+	// not count.
+	n := 0
+	for _, segment := range strings.Split(v, ",") {
+		if strings.TrimSpace(segment) != "" {
+			n++
+		}
+	}
+	if n > MaxSessionListTagSelectorConditions {
 		return fmt.Errorf("must have at most %d conditions, got %d", MaxSessionListTagSelectorConditions, n)
 	}
 	_, err := parseTagSelector(v)

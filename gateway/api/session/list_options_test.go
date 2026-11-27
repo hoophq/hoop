@@ -66,6 +66,14 @@ func TestParseSessionListOptions(t *testing.T) {
 			},
 		},
 		{
+			msg: "blank segments do not count toward the condition cap",
+			qs:  "tag_selector=" + strings.Repeat("a%3D1%2C", 16),
+			want: func(o models.SessionOption) models.SessionOption {
+				o.TagSelector = strings.Repeat("a=1,", 16)
+				return o
+			},
+		},
+		{
 			msg:  "a blank tag selector is unset",
 			qs:   "tag_selector=",
 			want: func(o models.SessionOption) models.SessionOption { return o },
