@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const trackEvent = vi.fn()
+const trackEvent = vi.fn(() => Promise.resolve())
 const getSignupUrl = vi.fn()
 vi.mock('@/stores/useUserStore', () => ({ useUserStore: { getState: () => ({ trackEvent }) } }))
 vi.mock('@/services/auth', () => ({ authService: { getSignupUrl: (...args) => getSignupUrl(...args) } }))
@@ -92,6 +92,18 @@ describe('signup start', () => {
     await startIdpSignup()
     expect(trackEvent).toHaveBeenCalledWith('SignUp - start signup')
     expect(getSignupUrl).toHaveBeenCalledWith('https://gateway.test/signup/callback')
+    expect(replace).toHaveBeenCalledWith('https://idp.test/signup')
+  })
+
+  it('waits for Segment before it leaves the page', async () => {
+    let delivered
+    trackEvent.mockReturnValueOnce(new Promise((resolve) => (delivered = resolve)))
+    getSignupUrl.mockResolvedValue('https://idp.test/signup')
+    const started = startIdpSignup()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(replace).not.toHaveBeenCalled()
+    delivered()
+    await started
     expect(replace).toHaveBeenCalledWith('https://idp.test/signup')
   })
 

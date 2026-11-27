@@ -1,13 +1,16 @@
 (ns webapp.events.clarity
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.shell :as shell]))
 
 (rf/reg-event-fx
  :clarity->verify-environment
  (fn [{:keys [db]} [_ user]]
    (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))
          hostname (.-hostname js/window.location)
-         clarity-available? (and (exists? js/window.clarity)
+         ;; The React shell starts and stops Clarity (services/clarity.js).
+         clarity-available? (and (not (shell/react-shell?))
+                                 (exists? js/window.clarity)
                                  (= (type js/window.clarity) js/Function))]
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, always stop clarity

@@ -211,9 +211,10 @@ export const useUserStore = create((set, get) => ({
     })
   },
 
+  // Resolves once Segment took the event, or at once when tracking is off.
   trackEvent: (event, properties) => {
-    if (!get().analyticsTracking) return
-    analyticsTrack(event, properties).catch((err) => {
+    if (!get().analyticsTracking) return Promise.resolve()
+    return analyticsTrack(event, properties).catch((err) => {
       console.warn('[analytics] track failed:', err)
     })
   },

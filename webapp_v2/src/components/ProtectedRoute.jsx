@@ -69,7 +69,10 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
         // otherwise stay blocked until a full reload.
         if (!useUserStore.getState().serverInfoLoaded) {
           const serverInfo = await authService.getServerInfo().catch(() => null)
-          if (serverInfo) setServerInfo(serverInfo)
+          if (serverInfo) {
+            setServerInfo(serverInfo)
+            initMonitoring(useUserStore.getState().user)
+          }
         }
 
         // Get feature flag
