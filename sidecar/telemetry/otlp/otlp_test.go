@@ -123,6 +123,35 @@ func TestMetricsReachTheCollector(t *testing.T) {
 	}
 }
 
+// A policy stage takes microseconds. It must land under the first bound,
+// 50µs, not in a 1ms bucket that reads as p95 0.95ms (ENG-1272).
+func TestAMicrosecondPolicyStageLandsInTheFirstBucket(t *testing.T) {
+	rcv := newReceiver(t)
+	exp := mustNew(t, httpConfig(rcv.srv.URL))
+	l := exp.Lane("pg-prod", "postgres").(*lane)
+	opt := l.stageOpt(stageKey{stage: telemetry.StagePolicy, engine: telemetry.EngineRules, outcome: telemetry.OutcomeAllow})
+	for _, d := range []time.Duration{10 * time.Microsecond, 20 * time.Microsecond} {
+		l.e.stageDuration.Record(context.Background(), d.Seconds(), opt...)
+	}
+	shutdown(t, exp)
+
+	var policy *point
+	for _, p := range rcv.metric("hoop.sidecar.statement.duration") {
+		if p.attrs["hoop.stage"] == "policy" {
+			policy = &p
+		}
+	}
+	if policy == nil {
+		t.Fatalf("no policy point in %v", rcv.metric("hoop.sidecar.statement.duration"))
+	}
+	if len(policy.bounds) == 0 || policy.bounds[0] != 0.00005 {
+		t.Fatalf("first bound = %v, want 50µs", policy.bounds)
+	}
+	if policy.value != 2 || policy.buckets[0] != 2 {
+		t.Errorf("count = %v, buckets = %v; want both samples in the first bucket, (0, 50µs]", policy.value, policy.buckets)
+	}
+}
+
 // An mcp lane counts each message by method, tool and decision; a response
 // carries no method.
 func TestMCPMessagesCountByToolAndDecision(t *testing.T) {

@@ -3197,6 +3197,19 @@ sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum{hoop_stage=
 The first is p99 per lane and stage; the second is the share of a lane's
 time the sidecar itself costs.
 
+The bucket bounds, in seconds: 0.00005, 0.0001, 0.00025, 0.0005, 0.001,
+0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300
+and 600. A local policy stage takes microseconds and lands in the first
+bucket. A quantile interpolates inside its bucket, so a stage under 50µs
+reads between 0 and 50µs; `_sum` over `_count` gives its mean.
+
+Older builds start the bounds at 0.001. During a rollout the bounds under
+1ms count only upgraded sidecars, so a quantile summed over the fleet is
+wrong: equal traffic at 20µs from old and new builds reads p95 about
+950µs. Until every sidecar runs the new bounds, add `service_version` to
+the `by` clause (a label when the collector turns resource attributes into
+labels), or read only the bounds from 1ms up.
+
 ### Traces
 
 `traces.sample_ratio` above zero opens one span per exchange — `hoop.session`
