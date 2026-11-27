@@ -132,10 +132,6 @@ func withoutRule(bound []models.BoundRule, name string) []models.BoundRule {
 // would refuse), and that nothing a rule contributes lands outside the
 // hot-reloadable sections.
 func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models.BoundRule) (daemon.Config, error) {
-	if len(guardrails) == 0 && len(masking) == 0 && len(analyzers) == 0 {
-		return cfg, nil
-	}
-
 	// Copy the listener slice before writing into it. cfg shares its backing
 	// array with the row the middleware loaded, and composing in place would
 	// leave the next request reading a document with rules already folded in
@@ -254,6 +250,13 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 			return cfg, fmt.Errorf("analyzer rule %q: %w", b.RuleName, err)
 		}
 		listeners[idx].Analyzer = mergeAnalyzerBlock(listeners[idx].Analyzer, block)
+	}
+	// A lane block with no action is the base of a bound rule. With no rule it
+	// does nothing, and the sidecar refuses it.
+	for i, l := range listeners {
+		if a := l.Analyzer; a != nil && claimed[l.Name] == "" && a.HighRisk == "" && a.MediumRisk == "" && a.LowRisk == "" {
+			listeners[i].Analyzer = nil
+		}
 	}
 	return cfg, nil
 }
@@ -431,6 +434,31 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 		return ErrSidecarAnalyzerInvalid{Reason: strings.Join(problems, "; ")}
 	}
 	return nil
+}
+
+// CheckStoredSidecarConfiguration is CheckSidecarConfiguration for a stored
+// document, with its bound analyzer rules folded in as they are served. A
+// binding to a missing lane is left to the binding check.
+func CheckStoredSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
+	cfg := daemon.Config(sc.Configuration)
+	orgID, err := uuid.Parse(sc.OrgID)
+	if err != nil {
+		return fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+	}
+	bound, err := models.ListBoundRulesForSidecar(db, orgID, sc.ID)
+	if err != nil {
+		return fmt.Errorf("%w: failed loading the rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+	}
+	var analyzers []models.BoundRule
+	for _, b := range bound.Analyzers {
+		if slices.ContainsFunc(cfg.Listeners, func(l daemon.ListenerConfig) bool { return l.Name == b.ListenerName }) {
+			analyzers = append(analyzers, b)
+		}
+	}
+	if cfg, err = foldSidecarRules(cfg, nil, nil, analyzers); err != nil {
+		return ErrSidecarBindingBroken{Reason: err.Error()}
+	}
+	return CheckSidecarConfiguration(cfg)
 }
 
 // CheckComposedSidecarConfiguration refuses a configuration write whose served

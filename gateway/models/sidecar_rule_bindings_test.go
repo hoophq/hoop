@@ -1297,7 +1297,8 @@ func TestAnImportKeepsAnExistingApprovalRule(t *testing.T) {
 }
 
 // An analyzer block with only overrides decides nothing, so it stays in the
-// lane rather than becoming a rule that allows everything.
+// lane rather than becoming a rule that allows everything. With no rule bound
+// it is not served: the sidecar refuses a block that names no action.
 func TestAnImportKeepsAnOverrideOnlyAnalyzerBlock(t *testing.T) {
 	startTestDB(t)
 	sc := newTestSidecar(t, "budget-edge")
@@ -1308,8 +1309,15 @@ func TestAnImportKeepsAnOverrideOnlyAnalyzerBlock(t *testing.T) {
 	if bound, _ := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(testOrgID), sc.ID); len(bound) != 0 {
 		t.Errorf("want no rule for an override-only block, got %+v", bound)
 	}
-	if a := composedLane(t, sc, "appdb").Analyzer; a == nil || a.MaxCalls != 40 {
+	stored, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if a := stored.Configuration.Listeners[0].Analyzer; a == nil || a.MaxCalls != 40 {
 		t.Errorf("the lane lost its block: %+v", a)
+	}
+	if a := composedLane(t, sc, "appdb").Analyzer; a != nil {
+		t.Errorf("served a block with no action: %+v", a)
 	}
 }
 

@@ -333,3 +333,87 @@ func TestImportRefusesAColumnMaskRuleInAnMCPLaneBlock(t *testing.T) {
 		t.Fatalf("want a names-columns refusal and no items, got %v, %d items", err, len(items))
 	}
 }
+
+// A lane block with no override keeps nothing once its decision moves to the
+// rule item, and the sidecar refuses an analyzer block that names no action.
+func TestSplitDropsALaneAnalyzerLeftEmpty(t *testing.T) {
+	cfg, err := ParseSidecarConfiguration(json.RawMessage(`{
+		"analyzer": {"provider": "gemini", "model": "m"},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": "0.0.0.0:15432", "upstream": "db:5432",
+			"analyzer": {
+				"trigger": {"operations": ["update", "delete"]},
+				"high": "block", "medium": "warn", "low": "allow", "message": "refused"
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSidecarConfiguration(cfg); err != nil {
+		t.Fatalf("the file itself was refused: %v", err)
+	}
+
+	stripped, items, err := SplitSidecarConfiguration("edge", cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := stripped.Listeners[0].Analyzer; a != nil {
+		t.Errorf("the lane kept an empty analyzer block: %+v", a)
+	}
+	if err := CheckSidecarConfiguration(stripped); err != nil {
+		t.Errorf("the stored document was refused: %v", err)
+	}
+
+	var bound []models.BoundRule
+	for _, it := range items {
+		if it.Kind == SidecarRuleAnalyzer {
+			bound = append(bound, models.BoundRule{RuleName: it.Name, ListenerName: "appdb", Spec: it.Spec})
+		}
+	}
+	folded, err := foldSidecarRules(stripped, nil, nil, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := folded.Listeners[0].Analyzer
+	if a == nil || a.HighRisk != "block" || a.MediumRisk != "warn" || a.Message != "refused" || a.Trigger == nil {
+		t.Errorf("appdb analyzer after the fold: %+v", a)
+	}
+	if err := CheckSidecarConfiguration(folded); err != nil {
+		t.Errorf("the served document was refused: %v", err)
+	}
+}
+
+func TestFoldLeavesOutALaneAnalyzerBaseWithNoRule(t *testing.T) {
+	base := func() *daemon.LaneAnalyzerConfig { return &daemon.LaneAnalyzerConfig{MaxCalls: 50} }
+	cfg := daemon.Config{
+		Analyzer: &daemon.AnalyzerConfig{Provider: "gemini", Model: "m"},
+		Listeners: []daemon.ListenerConfig{
+			{Name: "bound", Protocol: "postgres", Listen: "0.0.0.0:15432", Upstream: "db:5432", Analyzer: base()},
+			{Name: "unbound", Protocol: "postgres", Listen: "0.0.0.0:15433", Upstream: "db:5432", Analyzer: base()},
+			{Name: "own", Protocol: "postgres", Listen: "0.0.0.0:15434", Upstream: "db:5432",
+				Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "warn"}},
+		},
+	}
+	rule := models.BoundRule{RuleName: "r", ListenerName: "bound", Spec: json.RawMessage(`{"high":"block"}`)}
+
+	folded, err := foldSidecarRules(cfg, nil, nil, []models.BoundRule{rule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := folded.Listeners[0].Analyzer; a == nil || a.HighRisk != "block" || a.MaxCalls != 50 {
+		t.Errorf("bound lane: %+v", a)
+	}
+	if a := folded.Listeners[1].Analyzer; a != nil {
+		t.Errorf("unbound lane served a block with no action: %+v", a)
+	}
+	if a := folded.Listeners[2].Analyzer; a == nil || a.HighRisk != "warn" {
+		t.Errorf("a lane's own block: %+v", a)
+	}
+	if cfg.Listeners[1].Analyzer == nil {
+		t.Error("the fold wrote into the stored document")
+	}
+	if err := CheckSidecarConfiguration(folded); err != nil {
+		t.Errorf("the served document was refused: %v", err)
+	}
+}

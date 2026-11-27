@@ -220,7 +220,8 @@ function maskRows(listener, config, boundRules) {
 function analyzerRows(listener, config, boundRules) {
   const { block, deprecated } = laneAnalyzer(listener, config)
   const rows = distributedRules(boundRules, listener, FEATURE_KIND['ai-analyzer'])
-  if (block) {
+  // A block with no action only holds overrides for a bound rule; alone the gateway does not serve it.
+  if (block && ['high', 'medium', 'low'].some((level) => block[level])) {
     rows.push({ id: 'analyzer-block', name: 'Analyzer', detail: analyzerDetail(block), source: SOURCE_LISTENER })
   }
   for (const [i, entry] of deprecated.entries()) {
