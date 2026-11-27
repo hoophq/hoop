@@ -283,12 +283,21 @@ export const APPROVERS = [
 // readLevelApprover reads `approvers.<level>` of a stored analyzer spec. It is
 // null when the level has no entry: the spec's approval_rule decides that hold.
 // `routing` is the human level's AI routing (ENG-663) as stored, else null.
+// `notify` is how a human level with groups tells its approvers, else null.
 export function readLevelApprover(spec, level) {
   const entry = spec?.approvers?.[level]
   if (entry?.type === APPROVER_HUMAN) {
-    return { approver: APPROVER_HUMAN, groups: entry.groups ?? [], prompt: '', routing: entry.routing ?? null }
+    return {
+      approver: APPROVER_HUMAN,
+      groups: entry.groups ?? [],
+      prompt: '',
+      routing: entry.routing ?? null,
+      notify: entry.notify ?? null,
+    }
   }
-  if (entry?.type === APPROVER_AI) return { approver: APPROVER_AI, groups: [], prompt: entry.prompt ?? '', routing: null }
+  if (entry?.type === APPROVER_AI) {
+    return { approver: APPROVER_AI, groups: [], prompt: entry.prompt ?? '', routing: null, notify: null }
+  }
   return null
 }
 

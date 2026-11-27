@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { notifyFallbackLabel } from '@/pages/Reviews/helpers'
+import { ROUTING_GROUPS, notifyFallbackLabel, routingModeLabel } from '@/pages/Reviews/helpers'
 
 describe('the notification fallback of a routed review', () => {
   it('names each known cause and says the post as without routing reached a channel', () => {
@@ -38,6 +38,26 @@ describe('the notification fallback of a routed review', () => {
   it('shows a cause this build does not know as sent', () => {
     expect(notifyFallbackLabel('new_cause', true)).toBe(
       'The routed notifications reached nobody (new_cause). Posted as without routing.',
+    )
+  })
+})
+
+describe('the routing mode of a review', () => {
+  it('names each mode, and a level with groups and notify as By groups', () => {
+    expect(routingModeLabel('ai')).toBe('AI routing')
+    expect(routingModeLabel('static')).toBe('Static routing used')
+    expect(routingModeLabel(ROUTING_GROUPS)).toBe('By groups')
+  })
+
+  it('names no AI agent and no routing in the fallback of a By groups review', () => {
+    expect(notifyFallbackLabel('no_target', false, 'dm', ROUTING_GROUPS)).toBe(
+      'No approver of the groups could be reached. No approver of the selected groups could get a direct message.',
+    )
+    expect(notifyFallbackLabel('not_delivered', true, 'channel', ROUTING_GROUPS)).toBe(
+      'Every notification failed. Posted as without notify settings.',
+    )
+    expect(notifyFallbackLabel('new_cause', false, 'both', ROUTING_GROUPS)).toBe(
+      'The notifications reached nobody (new_cause). The post as without notify settings reached nobody either.',
     )
   })
 })

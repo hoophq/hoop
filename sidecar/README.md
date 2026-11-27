@@ -1725,6 +1725,7 @@ An `approvers.<level>` entry has these keys:
 | `type` | `human` or `ai_agent`. Required |
 | `groups` | who may approve a `human` level. Empty: the administrators |
 | `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
+| `notify` | how the approvers of a `human` level with `groups` are told; see below. `routing` has its own |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
 
 A `human` level files its approval request with the risk level and no
@@ -1746,6 +1747,8 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `prompt` on a `human` level | no agent reads it |
 | a blank entry in `groups` | it matches no group |
 | `groups` and `routing` on one entry | they are alternatives |
+| `notify` and `routing` on one entry | a level with routing sets `routing.notify` |
+| `notify` on an `ai_agent` level | nobody would tell those people |
 | a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
 
@@ -1839,6 +1842,37 @@ cannot read `routing`, and the control plane refuses to serve it a block that
 sets one, naming the capability. There is no downgrade: static `groups` or an
 `approval_rule` would page other people.
 
+**Telling the approvers of fixed groups (`notify`).** A `human` level with
+`groups` posts its approval request in the listener's Slack channels, or in
+the organization default channel. `notify` changes who is told, with no AI
+agent:
+
+```yaml
+      approvers:
+        high:
+          type: human
+          groups: [payments-approvers]
+          notify:
+            slack: {delivery: dm}
+```
+
+It has the keys of `routing.notify`, and nothing selects among them:
+
+| `delivery` | Who is told |
+|---|---|
+| `dm` (default) | every active or invited user of the groups, by direct message. No channel gets a post, also when no user can be reached |
+| `channel` | every channel in `channels_candidates` that is a channel of the listener, or the default channel. With none: the channels a level without `notify` posts to |
+| `both` | both |
+
+A user with no Slack ID is not reached, and the approval request records it.
+The groups still decide who may approve: `notify` changes only who is told.
+
+The sidecar does nothing with `notify`. A sidecar that reports
+`analyzer_level_approvers` and not `analyzer_approver_notify` is served the
+block without it, and the control plane still acts on it. A sidecar that
+cannot read `approvers` is refused a block that sets `notify`: under the
+`approval_rule` its hold would post in a channel.
+
 **The approval agent (`type: ai_agent`).** The lane's own provider and model
 decide in the sidecar, at once, with no wait and no poll. Nothing is filed
 with the control plane: the decision is recorded in the statement's audit
@@ -1919,8 +1953,8 @@ otherwise none, and only administrators approve. So no one approves a level
 on an older sidecar that they could not approve on a new one: more
 oversight, not less. A block with `approvers` and no `approval_rule` is
 refused to such a sidecar, naming the capability and the release that adds
-it. So is a block whose `approvers` set `routing`, with or without an
-`approval_rule`.
+it. So is a block whose `approvers` set `routing` or `notify`, with or
+without an `approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects
