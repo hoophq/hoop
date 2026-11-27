@@ -657,7 +657,7 @@ func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWo
 func (c Config) PgMaxOpenConns() int { return c.pgMaxOpenConns }
 
 // OTLPExport is where the gateway pushes its OpenTelemetry signals, nil
-// when OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+// when HOOP_OTEL_EXPORTER_OTLP_ENDPOINT is unset.
 func (c Config) OTLPExport() *OTLPExport { return c.otlp }
 
 // SlackSocketSlots is how many gateway replicas may open a Slack socket per

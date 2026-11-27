@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
@@ -61,9 +62,22 @@ import (
 
 // Run boots the gateway.
 func Run() {
+	// First, before appconfig.Load and any goroutine: the OpenTelemetry SDK
+	// reads OTEL_* by itself, and a platform can inject them. The gateway
+	// reads HOOP_OTEL_*. `hoop standalone` runs its agent in this process,
+	// so that agent loses OTEL_* too.
+	droppedOTEL, dropErr := telemetry.DropOTELEnv()
 	bootstrap.Start()
 	ver := version.Get()
 	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
+
+	if dropErr != nil {
+		log.Warnf("failed removing OTEL_* variables from the environment, reason=%v", dropErr)
+	}
+	if len(droppedOTEL) > 0 {
+		log.Infof("ignored %d OTEL_* variables from the environment; the gateway reads HOOP_OTEL_*, names=%s",
+			len(droppedOTEL), strings.Join(droppedOTEL, ","))
+	}
 
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)

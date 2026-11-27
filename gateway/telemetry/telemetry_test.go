@@ -298,7 +298,7 @@ func TestResource(t *testing.T) {
 	for _, kv := range res.Attributes() {
 		attrs[string(kv.Key)] = kv.Value.Emit()
 	}
-	assert.Equal(t, "hoop-control-plane", attrs["service.name"], "OTEL_SERVICE_NAME wins")
+	assert.Equal(t, "hoop-control-plane", attrs["service.name"], "HOOP_OTEL_SERVICE_NAME wins")
 	assert.Equal(t, "prod", attrs["deployment.environment"])
 }
 
