@@ -232,9 +232,9 @@ sub, which resource setup/configure and the activation journey still consume.
 | Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — `components/ConfirmDialog` exists (ENG-911); older pages still build ad-hoc confirmations |
 | Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` |
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ✅ Yes — `features/NativeConnections/` drawer + `stores/useNativeAccessStore`. The draggable card is replaced by the drawer plus an active-session badge on the header button. CLJS stands down via `react-shell?`; the namespaces are deleted in a follow-up once the drawer has baked |
-| org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
-| Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
-| Clipboard copy/cut blocking | `events/clipboard.cljs` | 🔶 Partial — React hides copy buttons but has no document-level listeners (roadmap Parity track) |
+| org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ✅ Yes — `features/OrgInvitationDialog`, mounted in `GatewayLayout` (ENG-1317). CLJS under the shell no longer renders its copy |
+| Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ✅ Yes — `services/sentry.js` and `services/clarity.js`, started by `useUserStore.initMonitoring` (ENG-1317); `track()` in `services/analytics.js`. CLJS under the shell starts no Sentry client |
+| Clipboard copy/cut blocking | `events/clipboard.cljs` | ✅ Yes — `hooks/useClipboardBlock`, mounted in `App.jsx` (ENG-1317). CLJS under the shell adds no listeners |
 
 ---
 
@@ -295,7 +295,6 @@ blocks"); full props in `COMPONENTS.md`.
 
 ### In Progress / Known Gaps 🔄
 - Older pages build ad-hoc confirmations instead of `components/ConfirmDialog`
-- Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
 
 ### Migration order
 

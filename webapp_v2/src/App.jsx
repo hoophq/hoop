@@ -2,6 +2,7 @@ import { Toaster } from 'sonner'
 import { useEffect } from 'react'
 import Router from './Router'
 import OriginSurvey from '@/features/OriginSurvey'
+import { useClipboardBlock } from '@/hooks/useClipboardBlock'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 
 // Clears the global header so toasts never cover the Native Connections button
@@ -13,6 +14,7 @@ import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStor
 const TOAST_OFFSET = { top: 'calc(var(--app-shell-header-offset, 0rem) + 1.5rem)' }
 
 function App() {
+  useClipboardBlock()
 
   useEffect(() => {
     useConnectionsMetadataStore.getState().load()

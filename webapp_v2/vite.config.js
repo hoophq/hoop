@@ -64,10 +64,19 @@ function cljsStaticAssets() {
   };
 }
 
-export default defineConfig({
+// Same DSNs as the CLJS builds in webapp/shadow-cljs.edn: dev for `vite`,
+// release for `vite build`. SENTRY_DSN overrides both.
+const SENTRY_DSN = {
+  serve: 'https://38e03773be6b0d77219d6678a90ed6a5@o4504559799566336.ingest.us.sentry.io/4508377639092224',
+  build: 'https://b2bf390e5cd94bfc83c0005312d796fd@o919346.ingest.sentry.io/6707471',
+};
+
+export default defineConfig(({ command }) => ({
   define: {
     __BUILD_ID__: JSON.stringify(Date.now().toString()),
-    __SEGMENT_WRITE_KEY__: JSON.stringify(process.env.SEGMENT_WRITE_KEY || '043Lv52mAcoGOHWVq7n3bxZAVvocyqx0')
+    __SEGMENT_WRITE_KEY__: JSON.stringify(process.env.SEGMENT_WRITE_KEY || '043Lv52mAcoGOHWVq7n3bxZAVvocyqx0'),
+    __SENTRY_DSN__: JSON.stringify(process.env.SENTRY_DSN || SENTRY_DSN[command]),
+    __SENTRY_SAMPLE_RATE__: JSON.stringify(process.env.SENTRY_SAMPLE_RATE || '1.0')
   },
   plugins: [react(), cljsStaticAssets()],
   resolve: {
@@ -105,4 +114,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));

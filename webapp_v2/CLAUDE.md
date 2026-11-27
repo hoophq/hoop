@@ -297,7 +297,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 6. **OAuth Signup**: On `/signup/callback`, extract token, redirect to `/signup` for org setup
 
 ### Environment Variables
-Env vars (`VITE_API_URL`, `SEGMENT_WRITE_KEY`, `API_URL`, `VITE_CLJS_URL`): see the table in `README.md` (Environment Variables).
+Env vars (`VITE_API_URL`, `SEGMENT_WRITE_KEY`, `SENTRY_DSN`, `SENTRY_SAMPLE_RATE`, `API_URL`, `VITE_CLJS_URL`): see the table in `README.md` (Environment Variables).
 
 ## Re-frame Interop (CLJS ↔ React)
 

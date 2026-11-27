@@ -52,6 +52,7 @@ export async function identify(user, mode) {
 // Segment event names are KPIs read in the dashboards; CLJS sends the same ones.
 export const EVENTS = {
   ACTIVATION_FEATURE_CTA: 'Activation Journey - Feature CTA',
+  SIGNUP_START: 'SignUp - start signup',
 }
 
 // Same properties as the CLJS :segment->track, which adds the hostname.

@@ -13,7 +13,7 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
+  const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics, initMonitoring } = useUserStore()
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   // A remount with the session already loaded (React <-> CLJS route switch)
   // renders at once; the effect below still refreshes the flags.
@@ -60,6 +60,7 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
             setServerInfo(serverInfo)
             initIntercom(userData)
             initAnalytics(userData)
+            initMonitoring(userData)
           }
         }
 
