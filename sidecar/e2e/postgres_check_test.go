@@ -231,6 +231,46 @@ func TestPostgresResourceCheckReachesTheModel(t *testing.T) {
 		}
 	})
 
+	t.Run("two keys of one shape share one plan", func(t *testing.T) {
+		checks := func() int { return strings.Count(logs.String(), `"msg":"resource check"`) }
+		before := checks()
+		for _, stmt := range []string{"SELECT v FROM big WHERE id = 21", "SELECT v FROM big WHERE id = 22 /* app='e2e' */"} {
+			if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+				t.Fatalf("%s: %v", stmt, err)
+			}
+		}
+		if n := checks() - before; n != 1 {
+			t.Fatalf("%d checks for two literals of one shape, want 1", n)
+		}
+		if in := model.input(t, "WHERE id = 21"); !strings.Contains(in, "Index Scan on big using big_pkey") {
+			t.Fatalf("no index scan in the model input:\n%s", in)
+		}
+	})
+
+	t.Run("a table with a rule gets a plan per value", func(t *testing.T) {
+		for _, stmt := range []string{
+			"CREATE TABLE ruled (s text)",
+			"CREATE RULE ruled_ins AS ON INSERT TO ruled DO INSTEAD DELETE FROM big WHERE v = NEW.s",
+		} {
+			if err := pgExec(t, direct, stmt); err != nil {
+				t.Fatalf("%s: %v", stmt, err)
+			}
+		}
+		checks := func() int { return strings.Count(logs.String(), `"msg":"resource check"`) }
+		before := checks()
+		for _, stmt := range []string{"INSERT INTO ruled VALUES ('none-1')", "INSERT INTO ruled VALUES ('none-2')"} {
+			if err := pgExec(t, conn, stmt, pgx.QueryExecModeSimpleProtocol); err != nil {
+				t.Fatalf("%s: %v", stmt, err)
+			}
+		}
+		if n := checks() - before; n != 2 {
+			t.Fatalf("%d checks, want one per value", n)
+		}
+		if in := model.input(t, "'none-1'"); !strings.Contains(in, "Seq Scan on big") {
+			t.Fatalf("the rule's scan is not in the model input:\n%s", in)
+		}
+	})
+
 	t.Run("a DELETE inside a transaction gets cached facts and sends no check", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), stmtTimeout)
 		defer cancel()

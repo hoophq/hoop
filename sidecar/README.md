@@ -1471,6 +1471,11 @@ included, and `exclude` with nothing else to narrow is refused. A control
 plane serves `any` and `exclude` only to a sidecar that reports
 `analyzer_trigger_items`.
 
+On a postgres, mysql, mssql, oracle, clickhouse or spanner lane, a statement with only
+comments and semicolons (a driver's `-- ping`) is not classified, as if the
+trigger did not select it. A MySQL `/*! */`, MariaDB `/*M! */` or TiDB
+`/*T! */` comment runs, so it is classified.
+
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
 top-level value and replace it when the block names them; `rate_limit` and
@@ -1523,9 +1528,29 @@ small table and high on a large unindexed one.
   flight. Otherwise the model gets the cached size and indexes, without a
   plan.
 - Each lane keeps its own cache. Size and indexes are cached 30 s per
-  database, current role and table; a plan per the same scope and a hash of
-  the statement text. A lock or timeout error is not cached. The verdict
-  cache key includes the check.
+  database, current role and table; a plan per the same scope and the
+  statement's shape. A lock or timeout error is not cached. The verdict cache
+  key includes the check.
+- The shape drops comments and spacing; an optimizer hint (`/*+ ... */`)
+  stays. It also drops each literal whose value cannot change the plan: a
+  value that `UPDATE ... SET` assigns or an `INSERT`'s own `VALUES` list
+  holds, and a string or integer compared with `=`, `<>` or `!=` to, or
+  listed in `IN` after, a column that a valid, whole unique index covers
+  alone. That column must stand outside any expression (`w - id` keeps its
+  literal) and be bare or carry the table's name or alias, in a
+  `SELECT`, `UPDATE` or `DELETE` that reads one table without children: no
+  join, subquery, `VALUES` or function in `FROM`.
+  So `WHERE id = 1` and `WHERE id = 2` share one plan. The literal must be
+  the whole value, with an optional `::type`: in `'f' AND x` or `1 + x` the
+  planner can fold it into another plan. Other literals stay: a range or a
+  skewed column changes the plan's row estimate.
+- A statement whose strings read differently under
+  `standard_conforming_strings = off` is keyed by its exact text. A
+  statement on a table with a rewrite rule (or a view), or with 8 tables or
+  more, keeps all its literals. A statement over 16 KiB is keyed by its
+  exact text.
+- A shared plan can show 1 row where the statement's own values give 0,
+  such as `id = 5 AND id = 6` or a value that a `CHECK` constraint excludes.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no
