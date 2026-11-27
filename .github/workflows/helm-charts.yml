@@ -214,7 +214,11 @@ jobs:
             --set readinessProbe.initialDelaySeconds=15 \
             --set startupProbe.enabled=true --set startupProbe.failureThreshold=720)
           got=$(echo "$out" | probe readinessProbe)
-          for want in 'path: /hoop/api/healthz' 'scheme: HTTPS' 'initialDelaySeconds: 15' 'failureThreshold: 3'; do
+          # The whole handler: Kubernetes refuses an httpGet with no port.
+          want=$'          httpGet:\n            path: /hoop/api/healthz\n            port: api\n            scheme: HTTPS'
+          [ "$(echo "$got" | grep -A3 -x '          httpGet:')" = "$want" ] \
+            || { echo "::error::the readinessProbe httpGet set in values did not reach the pod whole:"; echo "$got"; exit 1; }
+          for want in 'initialDelaySeconds: 15' 'failureThreshold: 3'; do
             echo "$got" | grep -q "$want" \
               || { echo "::error::a readinessProbe set in values lost '$want' on the way to the pod"; exit 1; }
           done
