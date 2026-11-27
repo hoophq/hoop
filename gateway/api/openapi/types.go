@@ -1764,10 +1764,12 @@ type Review struct {
 	Routing *ReviewRouting `json:"routing,omitempty" readonly:"true"`
 }
 
-// ReviewRouting is the AI routing decision of an approval request (ENG-663).
+// ReviewRouting is how an approval request found its approvers and who was
+// told: the AI routing decision (ENG-663), or the notify of a level with
+// static groups.
 type ReviewRouting struct {
-	// ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request
-	Mode string `json:"mode" enums:"ai,static" readonly:"true" example:"ai"`
+	// ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request. groups: the level has static groups and notify, and no AI was asked
+	Mode string `json:"mode" enums:"ai,static,groups" readonly:"true" example:"ai"`
 	// Why the AI routing fell back. Set with mode static
 	FallbackCause string `json:"fallback_cause,omitempty" enums:"no_provider,timeout,provider_error,no_tool_call,refusal,invalid_decision,no_valid_group" readonly:"true" example:"timeout"`
 	// Detail of the fallback: fixed text per cause. Provider errors, database errors and the model's own words are in the gateway log only

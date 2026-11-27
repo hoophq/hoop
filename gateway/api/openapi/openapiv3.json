@@ -6474,10 +6474,11 @@
             "type": "array"
           },
           "mode": {
-            "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request",
+            "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request. groups: the level has static groups and notify, and no AI was asked",
             "enum": [
               "ai",
-              "static"
+              "static",
+              "groups"
             ],
             "example": "ai",
             "readOnly": true,

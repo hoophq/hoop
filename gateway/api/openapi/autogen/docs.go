@@ -19551,11 +19551,12 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "mode": {
-                    "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request",
+                    "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request. groups: the level has static groups and notify, and no AI was asked",
                     "type": "string",
                     "enum": [
                         "ai",
-                        "static"
+                        "static",
+                        "groups"
                     ],
                     "readOnly": true,
                     "example": "ai"

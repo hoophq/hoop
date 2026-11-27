@@ -249,6 +249,11 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 	if approver != nil && approver.Routing != nil {
 		filing.routing = approver.Routing
 	}
+	// A level with static groups and notify plans who is told at the same
+	// point. Its groups stay the approver's.
+	if approver != nil && approver.Routing == nil && len(approver.Notify) > 0 {
+		filing.notify = &daemon.ApprovalRouting{Candidates: approver.Groups, Notify: approver.Notify}
+	}
 	// The limits are those of the block's approval_rule: an older build files
 	// this level under that rule, so both builds get the same limits.
 	if ruleName != "" {
@@ -320,6 +325,15 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 				return
 			}
 			filing.policy = services.ReviewPolicyForGroups(sidecar.OrgID, decision.Groups)
+			filing.routingRecord = decision.Record
+		}
+		if filing.notify != nil && decision == nil {
+			decision, err = notifyFiling(c.Request.Context(), sidecar, req, filing)
+			if err != nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+					"failed planning the notifications of the sidecar approval request")
+				return
+			}
 			filing.routingRecord = decision.Record
 		}
 
@@ -763,6 +777,22 @@ func routeFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.Sidec
 	})
 }
 
+// notifyFiling plans who a new review of a level with static groups and
+// notify tells. No model is asked: every approver of the groups, and the
+// channels the notify keys allow.
+func notifyFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
+	filing sidecarFiling) (*approvalrouting.RouteDecision, error) {
+	return approvalrouting.NotifyGroups(context.WithoutCancel(ctx), models.DB, approvalrouting.RouteInput{
+		OrgID:        sidecar.OrgID,
+		Principal:    req.Principal,
+		SidecarID:    sidecar.ID,
+		ListenerName: req.ListenerName,
+		Protocol:     filing.protocol,
+		RiskLevel:    filing.level,
+		Routing:      *filing.notify,
+	})
+}
+
 // routingCard is the review message newSlackReviewRequest describes, for
 // any integration.
 func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) approvalrouting.ReviewCard {
@@ -1116,6 +1146,9 @@ type sidecarFiling struct {
 	protocol string
 	// routing is the level's AI routing; nil files to the policy as is.
 	routing *daemon.ApprovalRouting
+	// notify is the level's static groups and notify, as the routing shape
+	// NotifyGroups reads; nil notifies as a level without notify.
+	notify *daemon.ApprovalRouting
 	// routingRecord is the routing decision the review stores.
 	routingRecord *models.ReviewRouting
 }
