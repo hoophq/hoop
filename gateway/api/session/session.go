@@ -1159,6 +1159,7 @@ func Provision(c *gin.Context) {
 		Status:               string(openapi.SessionStatusOpen),
 		ExitCode:             nil,
 		CorrelationID:        req.CorrelationID,
+		Origin:               proto.SessionOriginAPI,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}

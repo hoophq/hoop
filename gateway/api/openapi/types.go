@@ -1546,6 +1546,9 @@ type Session struct {
 	IdentityType string `json:"identity_type" enums:"user,machine,sidecar" example:"user"`
 	// The machine identity ID if this session was created by a machine identity
 	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
+	// The product surface that started this session. Absent for sessions
+	// created before this value was recorded.
+	Origin string `json:"origin,omitempty" enums:"cli,webapp,api,mcp,runbooks,proxymanager,agent,sidecar,unknown" example:"cli"`
 }
 
 type ProvisionSession struct {

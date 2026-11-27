@@ -21521,6 +21521,22 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "origin": {
+                    "description": "The product surface that started this session. Absent for sessions\ncreated before this value was recorded.",
+                    "type": "string",
+                    "enum": [
+                        "cli",
+                        "webapp",
+                        "api",
+                        "mcp",
+                        "runbooks",
+                        "proxymanager",
+                        "agent",
+                        "sidecar",
+                        "unknown"
+                    ],
+                    "example": "cli"
+                },
                 "recording_format": {
                     "description": "How to render the event stream. Absent for recordings created before\nthis field was persisted; clients should keep their legacy viewer.\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output\n* ssh - hoop SSH frames; pty channels carry terminal output",
                     "enum": [

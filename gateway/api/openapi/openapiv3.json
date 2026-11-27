@@ -8444,6 +8444,22 @@
             "format": "uuid",
             "type": "string"
           },
+          "origin": {
+            "description": "The product surface that started this session. Absent for sessions\ncreated before this value was recorded.",
+            "enum": [
+              "cli",
+              "webapp",
+              "api",
+              "mcp",
+              "runbooks",
+              "proxymanager",
+              "agent",
+              "sidecar",
+              "unknown"
+            ],
+            "example": "cli",
+            "type": "string"
+          },
           "recording_format": {
             "allOf": [
               {
