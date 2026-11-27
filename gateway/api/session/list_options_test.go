@@ -150,6 +150,9 @@ func TestParseSessionListOptions(t *testing.T) {
 		// invalid UTF-8 with an error the handler would turn into a 500.
 		{msg: "a tag selector without an operator is rejected", qs: "tag_selector=env", wantErr: `invalid "tag_selector" option: invalid tag selector "env"`},
 		{msg: "a tag selector without a key is rejected", qs: "tag_selector=%3Dprd", wantErr: `invalid "tag_selector" option: invalid tag selector "=prd", the key must not be empty`},
+		{msg: "a tag selector with a NUL byte is rejected", qs: "tag_selector=env%3D%00", wantErr: `invalid "tag_selector" option: must be valid UTF-8 without NUL bytes`},
+		{msg: "a tag selector over the length cap is rejected", qs: "tag_selector=env%3D" + strings.Repeat("a", 1021), wantErr: `invalid "tag_selector" option: must be at most 1024 bytes, got 1025`},
+		{msg: "a tag selector over the condition cap is rejected", qs: "tag_selector=" + strings.Repeat("a%3D1%2C", 16) + "a%3D1", wantErr: `invalid "tag_selector" option: must have at most 16 conditions, got 17`},
 		{msg: "an input over the cap is rejected", qs: "input=" + strings.Repeat("a", 257), wantErr: `invalid "input" option: must be at most 256 bytes, got 257`},
 		{msg: "an input with a NUL byte is rejected", qs: "input=%00", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},
 		{msg: "an input that is not UTF-8 is rejected", qs: "input=%FF", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},

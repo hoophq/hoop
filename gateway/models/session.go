@@ -494,6 +494,30 @@ func ValidateSessionInputFilter(v string) error {
 	return nil
 }
 
+// MaxSessionListTagSelectorLength and MaxSessionListTagSelectorConditions
+// bound the tag selector: each condition adds a tag lookup per connection.
+const (
+	MaxSessionListTagSelectorLength     = 1024
+	MaxSessionListTagSelectorConditions = 16
+)
+
+// ValidateSessionTagSelector reports why v cannot be a session tag selector.
+// NUL is refused here: PostgreSQL text cannot hold it, so it would fail in the
+// query instead of as a bad option.
+func ValidateSessionTagSelector(v string) error {
+	switch {
+	case len(v) > MaxSessionListTagSelectorLength:
+		return fmt.Errorf("must be at most %d bytes, got %d", MaxSessionListTagSelectorLength, len(v))
+	case !utf8.ValidString(v) || strings.ContainsRune(v, 0):
+		return errors.New("must be valid UTF-8 without NUL bytes")
+	}
+	if n := strings.Count(v, ",") + 1; n > MaxSessionListTagSelectorConditions {
+		return fmt.Errorf("must have at most %d conditions, got %d", MaxSessionListTagSelectorConditions, n)
+	}
+	_, err := parseTagSelector(v)
+	return err
+}
+
 // sessionInputPattern makes v a LIKE pattern that matches it anywhere. Only %
 // stays a wildcard: _ and the \ escape character match themselves.
 func sessionInputPattern(v string) string {
@@ -767,6 +791,9 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 	}
 	if err := ValidateSessionInputFilter(opt.Input); err != nil {
 		return nil, fmt.Errorf("invalid input filter: %w", err)
+	}
+	if err := ValidateSessionTagSelector(opt.TagSelector); err != nil {
+		return nil, fmt.Errorf("invalid tag selector filter: %w", err)
 	}
 	tagSelectorJSON, err := parseTagSelector(opt.TagSelector)
 	if err != nil {

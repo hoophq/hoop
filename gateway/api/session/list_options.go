@@ -127,7 +127,7 @@ func parseSessionListOptions(qs url.Values) (models.SessionOption, error) {
 			}
 			option.Input = queryOptVal
 		case openapi.SessionOptionTagSelector:
-			if err := models.ValidateTagSelector(queryOptVal); err != nil {
+			if err := models.ValidateSessionTagSelector(queryOptVal); err != nil {
 				return option, invalidOption(optKey, "%v", err)
 			}
 			option.TagSelector = queryOptVal

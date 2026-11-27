@@ -131,5 +131,7 @@ func TestListSessionsTagSelectorAndConnectionPattern(t *testing.T) {
 	t.Run("an invalid selector is an error", func(t *testing.T) {
 		_, _, err := list(func(o *models.SessionOption) { o.TagSelector = "env" })
 		assert.ErrorContains(t, err, "invalid tag selector")
+		_, _, err = list(func(o *models.SessionOption) { o.TagSelector = "env=\x00" })
+		assert.ErrorContains(t, err, "without NUL bytes", "a NUL must not reach the database")
 	})
 }
