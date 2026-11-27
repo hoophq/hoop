@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// slackChannelsSidecar returns the sidecar the path names, or answers the
+// sidecarOfPath returns the sidecar the path names, or answers the
 // request and returns nil.
-func slackChannelsSidecar(c *gin.Context) *models.Sidecar {
+func sidecarOfPath(c *gin.Context) *models.Sidecar {
 	ctx := storagev2.ParseContext(c)
 	item, err := models.GetSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
 	if err != nil {
@@ -98,7 +98,7 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 //	@Failure		404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID}/slack-channels [get]
 func GetSlackChannels(c *gin.Context) {
-	sidecar := slackChannelsSidecar(c)
+	sidecar := sidecarOfPath(c)
 	if sidecar == nil {
 		return
 	}
@@ -123,7 +123,7 @@ func GetSlackChannels(c *gin.Context) {
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID}/slack-channels [put]
 func PutSlackChannels(c *gin.Context) {
-	sidecar := slackChannelsSidecar(c)
+	sidecar := sidecarOfPath(c)
 	if sidecar == nil {
 		return
 	}

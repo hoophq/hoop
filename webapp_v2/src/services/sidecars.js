@@ -38,6 +38,11 @@ import api from './api'
 // `slackChannels` reads where the reviews of each listener are posted:
 // `{ listeners: [{ name, channels }] }`. `updateSlackChannels` sets only the
 // listeners in the body; the others keep their channels.
+//
+// `getOwners` reads who answers for a sidecar: `{ owners: [{ email, matched }] }`.
+// `matched` is true when exactly one Hoop user has that email. `putOwners`
+// replaces the whole list (an empty one removes every owner) and answers the
+// same shape; 422 for an entry that is not an email, or more than 20.
 export const sidecarsService = {
   list: () => api.get('/sidecars'),
   get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`),
@@ -48,6 +53,8 @@ export const sidecarsService = {
   slackChannels: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`),
   updateSlackChannels: (nameOrId, body) =>
     api.put(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`, body),
+  getOwners: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/owners`),
+  putOwners: (nameOrId, owners) => api.put(`/sidecars/${encodeURIComponent(nameOrId)}/owners`, { owners }),
   // A sidecar started with no token shows a code; approving it creates the
   // sidecar in this organization with the token the sidecar made for itself.
   getLogin: (code) => api.get(`/sidecars/login/${encodeURIComponent(code)}`),
