@@ -242,3 +242,22 @@ inspect_decide := {"denied": true, "rule": "ai-unavailable", "message": msg} if 
 	count(inspect_pii_hits) > 0
 	msg := sprintf("do not put %v in a query; it lands in the database's own logs", [concat(", ", sort(inspect_pii_hits))])
 } else := {"allow": true}
+
+# ============================================================== credentials
+# hoop-inspect asks this rule which pool entry a verified login gets:
+# credentials.select.opa on the appdb lane of
+# credentials/config-credentials.yaml, at /v1/data/envoy/authz/credential.
+# The lane's statements reach the same rule, so the last branch allows them.
+credential_login if object.get(input, ["metadata", "phase"], "") == "login"
+
+credential_groups := split(object.get(input, ["context", "groups"], ""), ",")
+
+credential := {"allow": true, "credential": "rw"} if {
+	credential_login
+	"dba" in credential_groups
+} else := {"allow": true, "credential": "ro"} if {
+	credential_login
+	"developers" in credential_groups
+} else := {"denied": true, "message": "no credential is mapped to your groups"} if {
+	credential_login
+} else := {"allow": true}

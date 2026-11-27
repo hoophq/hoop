@@ -1,9 +1,6 @@
 package daemon
 
-import (
-	"slices"
-	"strings"
-)
+import "slices"
 
 // HasPool reports whether a lane terminates its login.
 func (l ListenerConfig) HasPool() bool {
@@ -37,17 +34,4 @@ func passthrough(users []string) func(user string) bool {
 		return nil
 	}
 	return func(user string) bool { return slices.Contains(users, user) }
-}
-
-// validateRuleKey refuses a When key the selector would never read.
-func validateRuleKey(key string) bool {
-	switch {
-	case key == "identity.subject", key == "identity.email", key == "identity.groups":
-		return true
-	case strings.HasPrefix(key, "identity.attributes."):
-		return len(key) > len("identity.attributes.")
-	case strings.HasPrefix(key, "context."):
-		return len(key) > len("context.")
-	}
-	return false
 }

@@ -21,8 +21,9 @@ What a GitOps reconciler sends the control plane for one sidecar, in order. Ever
           {"name": "ro", "source": "secret_files", "user_file": "/run/secrets/appdb-ro/user", "password_file": "/run/secrets/appdb-ro/password"},
           {"name": "rw", "source": "secret_files", "user_file": "/run/secrets/appdb-rw/user", "password_file": "/run/secrets/appdb-rw/password"}
         ],
-        "select": {"rules": [{"when": {"identity.groups": "dba"}, "credential": "rw"}, {"credential": "ro"}]}
+        "select": {"opa": true}
       },
+      "opa": {"url": "http://opa.policy.svc:8181/v1/data/hoop/credential"},
       "context": {"env": "prod", "team": "payments"},
       "propagate": {"application_name": "{{.Principal}} via {{.Context.team}}"}
     }]

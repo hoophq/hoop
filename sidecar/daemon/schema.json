@@ -231,7 +231,7 @@
       "key": "context",
       "type": "map",
       "label": "Lane context",
-      "help": "Facts about this listener, such as env: prod. A credential rule matches them as context.<key>."
+      "help": "Facts about this listener, such as env: prod. An OPA policy that selects the credential reads them in input.context."
     },
     {
       "key": "idle_timeout_sec",

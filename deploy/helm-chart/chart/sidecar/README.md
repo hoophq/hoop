@@ -466,10 +466,8 @@ config:
         pool:
           - {name: ro, source: secret_files, user_file: /run/secrets/appdb-ro/user, password_file: /run/secrets/appdb-ro/password}
           - {name: rw, source: secret_files, user_file: /run/secrets/appdb-rw/user, password_file: /run/secrets/appdb-rw/password}
-        select:
-          rules:
-            - {when: {identity.groups: dba}, credential: rw}
-            - {credential: ro}
+        select: {opa: true}
+      opa: {url: http://opa.policy.svc.cluster.local:8181/v1/data/hoop/credential}
 ```
 
 Every entry is mounted read-only at `defaultMode: 0400`; the relay refuses a

@@ -11,7 +11,7 @@ where the sidecar propagates it.
 ```
 psql    ──TLS──> envoy :5432 ──TLS──> hoop-inspect :15432 ──TLS──> appdb
  user=alice@example.com                jwt                        as appuser (rw) or app_ro (ro)
- password=<id token>                   select by group            application_name = "alice@example.com via demo"
+ password=<id token>                   opa picks by group         application_name = "alice@example.com via demo"
 
 kubectl ──TLS──> envoy :443  ──h2c──> hoop-inspect :16443 ──TLS──> fake-google ──> k3s
  token: <id token>                     jwt                        as the gateway service account,
@@ -42,10 +42,11 @@ certificate without the `iamcredentials.googleapis.com` and
 ## What the demo shows
 
 1. **Swap.** alice logs in as `alice@example.com` with her ID token. The
-   sidecar verifies it against the issuer's JWKS, the selector maps group
-   `dba` to the `rw` pool entry, and the upstream login is `appuser` from
-   two files under `/run/hoop-creds`. `pg_stat_activity` names the person
-   in `application_name` through `propagate.application_name`.
+   sidecar verifies it against the issuer's JWKS, the lane's OPA rule
+   `credential` (`opa/authz.rego`) maps group `dba` to the `rw` pool entry,
+   and the upstream login is `appuser` from two files under
+   `/run/hoop-creds`. `pg_stat_activity` names the person in
+   `application_name` through `propagate.application_name`.
 2. **Least privilege by group.** bob's token selects `ro`: the database sees
    `app_ro` and refuses an `INSERT` itself; the sidecar's guardrail refused
    the `DELETE` before it.

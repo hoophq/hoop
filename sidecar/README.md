@@ -4244,10 +4244,8 @@ listeners:
       pool:
         - {name: rw, source: secret_files, user_file: appdb-rw/user, password_file: appdb-rw/password}
         - {name: ro, source: secret_files, user: app_ro, password_file: appdb-ro/password}
-      select:
-        rules:                     # first match wins; no match refuses the login
-          - {when: {identity.groups: dba, context.env: prod}, credential: rw}
-          - {credential: ro}
+      select: {opa: true}
+    opa: {url: http://opa:8181/v1/data/hoop/credential}
     context: {env: prod}
     propagate: {application_name: "{{.Principal}} via {{.Context.env}}"}
 ```
@@ -4262,12 +4260,14 @@ listeners:
 | `vault` | `path`: a KV path (`secret/data/<name>` on v2, `secret/<name>` on v1) read at every login, with `user_key`/`password_key` (default `user`/`password`) or a literal `user`; or a database engine path (`database/creds/<role>`) that mints a user for the session and revokes its lease when the session ends; not valid on http, grpc, spanner or clickhouse, which cannot revoke it. `credentials.vault` names `addr` (https), `auth` (`kubernetes` with `role`, the pod's service account token; or `token_file`), `ca_file`, `namespace`. A token in the config is refused | user and password |
 | `gcp_secret_manager` | `secret`: `projects/<p>/secrets/<s>/versions/<v>`, read at every login with the pod's Workload Identity; the payload is the password when `user` is set, else a JSON document with `user` and `password` | user and password |
 
-A `when` key is `identity.subject`, `identity.email`, `identity.groups`
-(contains), `identity.attributes.<k>` (`namespace`, `pod`,
-`service_account` from a Kubernetes token) or `context.<k>`. `select.opa:
-true` asks the lane's OPA endpoint instead: a `login` statement whose
-`input.context` carries the identity, answered with `credential` beside
-`allow`. One or the other.
+Without OPA, `select.rules` holds exactly one rule, `{credential: <name>}`,
+and every verified identity gets it. `select.opa: true` asks the lane's OPA
+endpoint instead, with a `login` statement: `input.metadata.phase` is
+`login`, `input.metadata.pool` lists the entry names, and `input.context`
+carries `principal`, `subject`, `email`, `groups` joined by commas, the
+identity attributes and the lane `context`. The answer names `credential`
+beside `allow`; a denial, or an allow that names no credential, refuses the
+login. One or the other.
 
 On an http lane the request's `Authorization` is swapped per request, so a
 pooled connection in front swaps per caller; `propagate.impersonate_user`
