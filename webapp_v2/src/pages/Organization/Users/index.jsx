@@ -28,6 +28,8 @@ import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { formatFullDate, formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
+import { useUserStore } from '@/stores/useUserStore'
+import { SLACK_CONNECT_FLAG } from '@/features/SlackConnect/helpers'
 import { STATUS_FILTER_OPTIONS, STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
 
 const CREATE_PREFIX = '__new__:'
@@ -238,6 +240,8 @@ export default function Users() {
   const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  // With Connect Slack on, an admin sees here who Hoop can reach in Slack.
+  const showSlack = useUserStore((s) => Boolean(s.featureFlags?.[SLACK_CONNECT_FLAG]))
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
   // The form reads the groups and the auth method. The page waits for both:
@@ -442,6 +446,7 @@ export default function Users() {
                   <Table.Th>Email</Table.Th>
                   <Table.Th>Groups</Table.Th>
                   <Table.Th>Status</Table.Th>
+                  {showSlack && <Table.Th>Slack</Table.Th>}
                   <Table.Th>Last login</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -461,6 +466,17 @@ export default function Users() {
                         {user.status ?? '—'}
                       </Badge>
                     </Table.Td>
+                    {showSlack && (
+                      <Table.Td>
+                        {user.slack_id ? (
+                          <Tooltip label={`Slack ID ${user.slack_id}`}>
+                            <Text size="sm" span>Connected</Text>
+                          </Tooltip>
+                        ) : (
+                          <Text size="sm" c="dimmed">Not connected</Text>
+                        )}
+                      </Table.Td>
+                    )}
                     <Table.Td>
                       {user.last_login_at ? (
                         <Tooltip label={formatFullDate(user.last_login_at)}>
