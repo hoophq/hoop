@@ -81,6 +81,47 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			spec: `{"rules":[]}`,
 			want: "enforce nothing",
 		},
+		{
+			// A "*" stands for one whole segment, and a gRPC service name is
+			// one segment: the rule would load and deny nothing.
+			name: "an http_resource pattern that matches no gRPC call",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/repro.v1.*/Upload"]}]}`,
+			want: `resource "/repro.v1.*/Upload" matches no request as written`,
+		},
+		{
+			name: "an http_resource pattern that matches no HTTP request",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/api/v1*/users"]}]}`,
+			want: `resource "/api/v1*/users" matches no request as written`,
+		},
+		{
+			name: "an http_resource pattern for a gRPC service",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/repro.v1.Alpha/*"]}]}`,
+		},
+		{
+			name: "an http_resource pattern for an HTTP subtree",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/api/v1/**"]}]}`,
+		},
+		{
+			// The HTTP codec turns /reports/12345.pdf into /reports/*.pdf.
+			name: "an http_resource pattern naming a normalized file name",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/reports/*.pdf"]}]}`,
+		},
+		{
+			// A rule also matches the resource before its dot segments resolve.
+			name: "an http_resource pattern with a dot segment",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_resource","resources":["/admin/../public"]}]}`,
+		},
+		{
+			name: "an http_status rule, which reads no resources",
+			kind: SidecarRuleGuardrail,
+			spec: `{"rules":[{"name":"r","type":"http_status","statuses":["5xx"],"resources":["/api/v1*/users"]}]}`,
+		},
 
 		// ---- masking: the sidecar's vocabulary, not the gateway's ---------
 		{
@@ -140,6 +181,23 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			kind: SidecarRuleAnalyzer,
 			spec: `{"trigger":{"operations":["update"]}}`,
 			want: "names no action",
+		},
+		{
+			name: "a trigger resource that matches no gRPC call",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"trigger":{"resources":["/repro.v1.*/Upload"]},"high":"block"}`,
+			want: `trigger.resources "/repro.v1.*/Upload" matches no request as written`,
+		},
+		{
+			name: "a trigger item resource that matches no HTTP request",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"trigger":{"any":[{"resources":["/api/v1*/users"]}]},"high":"block"}`,
+			want: `trigger.any[0].resources "/api/v1*/users" matches no request as written`,
+		},
+		{
+			name: "trigger resources that can match",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"trigger":{"resources":["/repro.v1.Alpha/*"],"any":[{"resources":["/api/v1/**"]}]},"high":"block"}`,
 		},
 		// ---- hand-off levels: the sidecar's own refusals, at save --------
 		{

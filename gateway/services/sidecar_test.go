@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -249,5 +250,56 @@ func TestCheckSidecarConfigurationLimits(t *testing.T) {
 	// answers an invalid Status, which grants nothing, so the caps hold.
 	if err := CheckSidecarConfigurationLimits(cfg, json.RawMessage(`{"not":"a license"}`)); err == nil {
 		t.Error("an unverifiable licence must not lift the caps")
+	}
+}
+
+// A rule written inside the sidecar's own configuration, on a lane or in its
+// rule_library, gets the sidecar's refusal at the save: a resource pattern
+// that matches nothing would load, deny nothing, and let the call it names
+// reach the upstream. A pattern a request can reach still saves.
+func TestCheckSidecarConfigurationRefusesAnInertResourcePattern(t *testing.T) {
+	const rule = `{"name":"deny-upload","type":"http_resource","resources":["%s"]}`
+	for _, tc := range []struct {
+		protocol, bad string
+		good          []string
+	}{
+		{"grpc", "/repro.v1.*/Upload", []string{"/repro.v1.Alpha/*", "/**"}},
+		{"http", "/api/v1*/users", []string{"/api/v1/**", "/reports/*.pdf", "/admin/../public", "/api/users?limit=10"}},
+	} {
+		for site, doc := range map[string]func(string) string{
+			"lane": func(p string) string {
+				return `{"listeners":[{"name":"api","protocol":"` + tc.protocol +
+					`","listen":":8443","upstream":"svc:443","guardrails":{"rules":[` + fmt.Sprintf(rule, p) + `]}}]}`
+			},
+			"rule_library": func(p string) string {
+				return `{"rule_library":{"guardrails":[` + fmt.Sprintf(rule, p) + `]},` +
+					`"listeners":[{"name":"api","protocol":"` + tc.protocol + `","listen":":8443","upstream":"svc:443"}]}`
+			},
+		} {
+			name := tc.protocol + "/" + site
+			cfg, err := ParseSidecarConfiguration(json.RawMessage(doc(tc.bad)))
+			if err != nil {
+				t.Fatalf("%s: unexpected parse error: %v", name, err)
+			}
+			err = CheckSidecarConfiguration(cfg)
+			var invalid ErrSidecarConfigInvalid
+			if !errors.As(err, &invalid) {
+				t.Fatalf("%s: want ErrSidecarConfigInvalid so the handler answers 422, got %v", name, err)
+			}
+			want := `deny-upload: resource "` + tc.bad + `" matches no request as written`
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: refusal = %v, want it to contain %q", name, err, want)
+			}
+
+			for _, good := range tc.good {
+				cfg, err = ParseSidecarConfiguration(json.RawMessage(doc(good)))
+				if err != nil {
+					t.Fatalf("%s: unexpected parse error: %v", name, err)
+				}
+				if err := CheckSidecarConfiguration(cfg); err != nil {
+					t.Errorf("%s: %s was refused: %v", name, good, err)
+				}
+			}
+		}
 	}
 }

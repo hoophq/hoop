@@ -98,6 +98,9 @@ func (r Rule) validateHTTP() error {
 		if len(r.Resources) == 0 {
 			return fmt.Errorf("%s: http_resource rule with no resources", r.Name)
 		}
+		if err := r.ValidateResources(); err != nil {
+			return err
+		}
 	case MatchHTTPStatus:
 		if len(r.Statuses) == 0 {
 			return fmt.Errorf("%s: http_status rule with no statuses", r.Name)
@@ -108,6 +111,9 @@ func (r Rule) validateHTTP() error {
 			}
 		}
 	case MatchHTTPHeader:
+		if err := r.ValidateResources(); err != nil {
+			return err
+		}
 		if len(r.Headers) == 0 && len(r.HeadersNot) == 0 {
 			return fmt.Errorf("%s: http_header rule with neither headers nor headers_not", r.Name)
 		}
@@ -117,6 +123,28 @@ func (r Rule) validateHTTP() error {
 					return fmt.Errorf("%s: http_header rule with an empty header name", r.Name)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// ValidateResources refuses a resource pattern no request can reach, on the
+// rule types that read resources: http_resource, and http_header as a scope.
+// Loaded, the rule would never fire, so the request it was written to deny
+// would reach the upstream. The message is the one http.sql.fields gives.
+//
+// Exported for rule_library: a library rule is compiled per lane, where a
+// failure drops the rule with a note instead of refusing the config, so the
+// config check has to ask this on its own.
+func (r Rule) ValidateResources() error {
+	switch r.Type {
+	case MatchHTTPResource, MatchHTTPHeader:
+	default:
+		return nil
+	}
+	for _, p := range r.Resources {
+		if err := ValidRulePattern(p); err != nil {
+			return fmt.Errorf("%s: resource %q matches no request as written: %v", r.Name, p, err)
 		}
 	}
 	return nil
@@ -338,6 +366,55 @@ func ValidResourcePattern(pattern string) error {
 		}
 	}
 	return nil
+}
+
+// ValidRulePattern says why a rule's resource pattern can never match a
+// request, or returns nil. It is the check for every pattern a rule, an
+// analyzer trigger or match_ignore names.
+//
+// It refuses less than ValidResourcePattern, the http.sql.fields check, so a
+// rule that works today keeps loading:
+//   - A segment that mixes "*" with other text is refused, except "*.ext",
+//     the form the HTTP codec gives a dynamic segment with a file extension
+//     (/reports/12345.pdf arrives as /reports/*.pdf). See normalizedSegment.
+//     Any other such segment is compared as text, so it matches only a client
+//     that sends that literal star, which a rule cannot be written for.
+//   - "**" anywhere but the trailing "/**" is refused: it is compared as text.
+//   - "." and ".." segments are accepted: an http_resource rule also matches
+//     the resource before its dot segments resolve (Rule.matchesResource).
+//     A trigger and match_ignore read the resolved form only, and accept them
+//     too, so one pattern language holds for every site.
+func ValidRulePattern(pattern string) error {
+	segs := strings.Split(strings.Trim(pattern, "/"), "/")
+	for i, s := range segs {
+		switch {
+		case !strings.Contains(s, "*"), s == "*", normalizedSegment(s):
+		case s == "**" && i == len(segs)-1 && strings.HasSuffix(pattern, "/**"):
+		case s == "**":
+			return errors.New(`"**" stands only as the trailing /**`)
+		default:
+			return fmt.Errorf("segment %q: \"*\" stands for one whole segment, or for the name "+
+				"in a normalized file name such as *.pdf", s)
+		}
+	}
+	return nil
+}
+
+// normalizedSegment reports whether s is "*." and a file extension, the form
+// the HTTP codec gives a dynamic segment that carries one: libhoop's
+// v2/codec/http normalizeSegment keeps an extension of one to five letters.
+// TestRulePatternAcceptsTheCodecsNormalizedForms holds the two together.
+func normalizedSegment(s string) bool {
+	ext, ok := strings.CutPrefix(s, "*.")
+	if !ok || len(ext) == 0 || len(ext) > 5 {
+		return false
+	}
+	for i := range len(ext) {
+		if c := ext[i] | 0x20; c < 'a' || c > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // matchResource compares a normalized resource against a pattern.

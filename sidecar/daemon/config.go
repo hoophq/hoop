@@ -1881,12 +1881,14 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 		}
 	}
 
-	// Local rule compilation is checked at build time against the real
-	// scanner, not here: a pii rule needs one, and NewRules without it fails
-	// for the wrong reason. Rules with no pii type can still be compiled
-	// early, which catches a bad regex before a port is bound.
-	if len(localRules) > 0 && !anyPII(localRules) {
-		if _, err := policy.NewRules(localRules); err != nil {
+	// Local rule compilation is checked here as if a scanner were attached:
+	// whether one is comes from the host, and build checks it against the
+	// real one. Everything else about the rules is refused now, before a
+	// port is bound and on the control plane's save, which runs this and
+	// never builds a lane: a pii rule beside an http_resource rule whose
+	// pattern matches nothing must not hide that pattern from the plane.
+	if len(localRules) > 0 {
+		if err := policy.ValidateRules(localRules, true); err != nil {
 			problems = append(problems, name+": "+err.Error())
 		}
 	}

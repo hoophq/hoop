@@ -54,6 +54,11 @@ func (m MatchIgnore) Validate() error {
 		if strings.TrimSpace(r) == "" {
 			return fmt.Errorf("resources[%d] is empty", i)
 		}
+		// It would ignore the fields on no request: the item loads and
+		// does nothing. The message is the one http.sql.fields gives.
+		if err := policy.ValidRulePattern(r); err != nil {
+			return fmt.Errorf("resources[%d] %q matches no request as written: %v", i, r, err)
+		}
 	}
 	for i, method := range m.Methods {
 		if strings.TrimSpace(method) == "" {

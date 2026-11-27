@@ -1559,7 +1559,7 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 		where := fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name)
 		problems = append(problems, validateRiskActions(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
-		problems = append(problems, validateTriggerItems(r.Trigger, where)...)
+		problems = append(problems, validateTrigger(r.Trigger, where)...)
 		problems = append(problems, validateGatedExclude(r.Trigger, gated, where)...)
 		problems = append(problems, refuseRuleFormHold(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
@@ -1707,7 +1707,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	problems = append(problems, validateLevelApprovers(la, where)...)
 	problems = append(problems, validateLevelHandoffs(la, where)...)
 	problems = append(problems, validateLevelAIRules(la, where)...)
-	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
+	problems = append(problems, validateTrigger(la.Trigger, where)...)
 
 	switch la.Send {
 	case "", SendRaw, SendRedacted, SendRefuse:
@@ -1824,19 +1824,23 @@ func (la *LaneAnalyzerConfig) reserves() bool {
 	return la != nil && la.SpendApprovalOn == SpendOnAccepted
 }
 
-// validateTriggerItems refuses a trigger item that names no field. It would
+// validateTrigger refuses a trigger item that names no field. It would
 // check nothing and so match every statement, which an operator writing
 // "any" or "exclude" never means.
 //
 // It also refuses an item operation no codec reports: a typo there matches
 // nothing, so its condition never classifies or never excludes. The flat
-// lists keep their old, unchecked reading, because a deployed config may
-// carry a value that would now refuse to load.
-func validateTriggerItems(t *policy.AITrigger, where string) []string {
+// operations list keeps its old, unchecked reading, because a deployed config
+// may carry a value that would now refuse to load.
+//
+// A resource pattern that matches no request is refused everywhere, the flat
+// list included: the statement it names is never classified, or never
+// excluded. The message is the one http.sql.fields gives.
+func validateTrigger(t *policy.AITrigger, where string) []string {
 	if t == nil {
 		return nil
 	}
-	var problems []string
+	problems := triggerResourceProblems(t.Resources, where+": trigger.resources")
 	for _, list := range [...]struct {
 		name  string
 		items []policy.AITriggerItem
@@ -1854,6 +1858,21 @@ func validateTriggerItems(t *policy.AITrigger, where string) []string {
 						where, list.name, i, op))
 				}
 			}
+			problems = append(problems, triggerResourceProblems(item.Resources,
+				fmt.Sprintf("%s: trigger.%s[%d].resources", where, list.name, i))...)
+		}
+	}
+	return problems
+}
+
+// triggerResourceProblems runs policy.ValidRulePattern over one list of
+// trigger resources.
+func triggerResourceProblems(patterns []string, where string) []string {
+	var problems []string
+	for _, p := range patterns {
+		if err := policy.ValidRulePattern(p); err != nil {
+			problems = append(problems, fmt.Sprintf(
+				"%s %q matches no request as written: %v", where, p, err))
 		}
 	}
 	return problems

@@ -124,6 +124,10 @@ func (l *RuleLibrary) maskEntries() ([]maskEntry, error) {
 // validate refuses a library a level could not name rules from: a rule with
 // no name, or two with one name. Each rule's own validity is checked where
 // the lane is built, and an invalid one is warned about and ignored.
+//
+// A resource pattern no request can reach is the exception, refused here:
+// at build it would only drop the rule with a note, and a deny rule that
+// silently goes missing lets its request through.
 func (l *RuleLibrary) validate() []string {
 	if l == nil {
 		return nil
@@ -139,6 +143,9 @@ func (l *RuleLibrary) validate() []string {
 			problems = append(problems, fmt.Sprintf("rule_library.guardrails names %q twice", r.Name))
 		}
 		seen[r.Name] = true
+		if err := r.ValidateResources(); err != nil {
+			problems = append(problems, fmt.Sprintf("rule_library.guardrails[%d]: %v", i, err))
+		}
 	}
 	masks, err := l.maskEntries()
 	if err != nil {
