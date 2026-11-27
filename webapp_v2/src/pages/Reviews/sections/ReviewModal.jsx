@@ -34,6 +34,7 @@ import { useReviewStore } from '../store'
 import {
   HANDOFF_ROUTE,
   ROUTING_AI,
+  ROUTING_GROUPS,
   STATUS,
   canApprove,
   canReject,
@@ -50,6 +51,7 @@ import {
   reviewRouting,
   reviewSource,
   riskLevel,
+  routingModeLabel,
   statusLabel,
 } from '../helpers'
 
@@ -182,12 +184,14 @@ function GrayBadges({ items }) {
   )
 }
 
-// RoutingSection shows how an AI-routed review found its approvers
-// (ENG-663): the AI's decision, or the static routing it fell back to.
+// RoutingSection shows how a review found its approvers: the AI's decision
+// (ENG-663), the static routing it fell back to, or, for a level with groups
+// and notify, who was told.
 function RoutingSection({ routing }) {
   const ai = routing.mode === ROUTING_AI
+  const fellBack = !ai && routing.mode !== ROUTING_GROUPS
   const groups = list(routing.groups)
-  const candidates = list(routing.candidates)
+  const candidates = routing.mode === ROUTING_GROUPS ? [] : list(routing.candidates)
   const notified = list(routing.notified_users)
   const channels = list(routing.channels)
   const unreachable = list(routing.unreachable)
@@ -202,7 +206,7 @@ function RoutingSection({ routing }) {
       <Stack gap="md">
         <DetailRow icon={Route} label="Mode">
           <Badge variant="light" color={ai ? 'indigo' : 'gray'} fullLabel>
-            {ai ? 'AI routing' : 'Static routing used'}
+            {routingModeLabel(routing.mode)}
           </Badge>
         </DetailRow>
 
@@ -212,13 +216,13 @@ function RoutingSection({ routing }) {
           </DetailRow>
         )}
 
-        {!ai && (
+        {fellBack && (
           <DetailRow icon={MessageSquareText} label="Cause">
             <Text size="sm">{fallbackCauseLabel(routing.fallback_cause)}</Text>
           </DetailRow>
         )}
 
-        {!ai && routing.fallback_detail && (
+        {fellBack && routing.fallback_detail && (
           <DetailRow icon={ScrollText} label="Detail" align="flex-start">
             <Text size="sm" c="dimmed">
               {routing.fallback_detail}
@@ -321,6 +325,7 @@ function RoutingSection({ routing }) {
                 routing.notify_fallback,
                 routing.notify_fallback_posted,
                 routing.notify_fallback_delivery,
+                routing.mode,
               )}
             </Text>
           </DetailRow>
