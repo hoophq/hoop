@@ -130,40 +130,31 @@ func TestSignInCompletesTheProfileFromUserInfo(t *testing.T) {
 		assert.True(t, uinfo.MustSyncGroups, "the groups of the userinfo answer replace the stored ones")
 	})
 
-	t.Run("a complete ID token needs no userinfo call", func(t *testing.T) {
-		f := newFakeIssuer(t,
-			map[string]any{"sub": "bob", "email": "bob@acme.com", "name": "Bob", "groups": []string{"dba"}},
-			map[string]any{"sub": "bob", "email": "other@acme.com", "name": "Other", "groups": []string{"admin"}})
+	// A provider that sends the email in the ID token keeps today's login:
+	// no userinfo call, and no name or groups taken from it.
+	t.Run("an ID token with an email is left as it is", func(t *testing.T) {
+		userInfo := map[string]any{"sub": "bob", "email": "other@acme.com", "name": "Other", "groups": []string{"admin"}}
+		for name, tc := range map[string]struct {
+			idToken    map[string]any
+			wantName   string
+			wantGroups []string
+		}{
+			"complete":  {map[string]any{"sub": "bob", "email": "bob@acme.com", "name": "Bob", "groups": []string{"dba"}}, "Bob", []string{"dba"}},
+			"no groups": {map[string]any{"sub": "bob", "email": "bob@acme.com", "name": "Bob"}, "Bob", nil},
+			"no name":   {map[string]any{"sub": "bob", "email": "bob@acme.com", "groups": []string{"dba"}}, "", []string{"dba"}},
+		} {
+			t.Run(name, func(t *testing.T) {
+				f := newFakeIssuer(t, tc.idToken, userInfo)
 
-		_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
-		require.NoError(t, err)
-		assert.Equal(t, "bob@acme.com", uinfo.Email)
-		assert.Equal(t, []string{"dba"}, uinfo.Groups)
-		assert.Zero(t, f.userInfoCalls.Load())
-	})
-
-	t.Run("the ID token keeps its email and takes the groups", func(t *testing.T) {
-		f := newFakeIssuer(t,
-			map[string]any{"sub": "bob", "email": "bob@acme.com", "name": "Bob"},
-			map[string]any{"sub": "bob", "email": "other@acme.com", "name": "Other", "groups": []string{"dba"}})
-
-		_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
-		require.NoError(t, err)
-		assert.Equal(t, "bob@acme.com", uinfo.Email)
-		assert.Equal(t, "Bob", uinfo.Profile)
-		assert.Equal(t, []string{"dba"}, uinfo.Groups)
-	})
-
-	t.Run("the ID token has the email and the groups, the name is at userinfo", func(t *testing.T) {
-		f := newFakeIssuer(t,
-			map[string]any{"sub": "bob", "email": "bob@acme.com", "groups": []string{"dba"}},
-			map[string]any{"sub": "bob", "email": "other@acme.com", "name": "Bob", "groups": []string{"admin"}})
-
-		_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
-		require.NoError(t, err)
-		assert.Equal(t, "Bob", uinfo.Profile)
-		assert.Equal(t, "bob@acme.com", uinfo.Email)
-		assert.Equal(t, []string{"dba"}, uinfo.Groups)
+				_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
+				require.NoError(t, err)
+				assert.Equal(t, "bob@acme.com", uinfo.Email)
+				assert.Equal(t, tc.wantName, uinfo.Profile)
+				assert.Equal(t, tc.wantGroups, uinfo.Groups)
+				assert.Equal(t, tc.wantGroups != nil, uinfo.MustSyncGroups)
+				assert.Zero(t, f.userInfoCalls.Load())
+			})
+		}
 	})
 
 	t.Run("the answer of another subject is not used", func(t *testing.T) {
@@ -180,13 +171,14 @@ func TestSignInCompletesTheProfileFromUserInfo(t *testing.T) {
 
 	t.Run("a failing userinfo endpoint leaves the ID token's values", func(t *testing.T) {
 		f := newFakeIssuer(t,
-			map[string]any{"sub": "bob", "email": "bob@acme.com"},
+			map[string]any{"sub": "bob", "name": "Bob"},
 			map[string]any{"error": "unavailable"})
 		f.userInfoStatus = http.StatusServiceUnavailable
 
 		_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
 		require.NoError(t, err)
-		assert.Equal(t, "bob@acme.com", uinfo.Email)
+		assert.Empty(t, uinfo.Email)
+		assert.Equal(t, "Bob", uinfo.Profile)
 		assert.False(t, uinfo.MustSyncGroups, "the stored groups stay when the provider sent none")
 	})
 }
