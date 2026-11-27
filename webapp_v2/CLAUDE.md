@@ -237,8 +237,9 @@ useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
 - A page that must not miss an event keeps a slow poll: the stream is
   best effort (one replica, no replay, reconnects after 3-8s).
 - Users: the sidecar setup wizard (`pages/Sidecars/Setup`), approval
-  notifications (`features/ApprovalNotifications`) and the sidebar pending
-  approvals count (`layout/Sidebar/usePendingApprovalsCount`).
+  notifications (`features/ApprovalNotifications`), the sidebar pending
+  approvals count (`layout/Sidebar/usePendingApprovalsCount`) and the
+  "Connect Slack" modal (`features/SlackConnect`).
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 

@@ -497,6 +497,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.PatchSlackID)
+	// Every role links its own Slack user: see the role note below.
+	r.GET("/users/self/slack/link",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.GetSlackLink)
+	r.POST("/users/self/slack/link",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.PostSlackLink)
 	// Every role answers the onboarding origin survey, which is what
 	// ReadOnlyAccessRole grants: omitting the role middleware would deny
 	// auditors, since isGroupAllowed only lets that group through routes that

@@ -1,7 +1,8 @@
 import { Group, Stack, Text, UnstyledButton } from '@mantine/core'
-import { ChevronDown, LogOut, MessageCircleQuestion } from 'lucide-react'
+import { ChevronDown, Link2, LogOut, MessageCircleQuestion } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import ActionMenu from '@/components/ActionMenu'
+import { useSlackConnect } from '@/features/SlackConnect/useSlackConnect'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { getUserDisplayName } from '@/utils/user'
@@ -13,6 +14,7 @@ export function UserMenu() {
   const navigate = useNavigate()
   const { user, gatewayVersion, analyticsTracking } = useUserStore()
   const { logout } = useAuthStore()
+  const { canConnect: canConnectSlack, openModal: openSlackConnect } = useSlackConnect()
 
   const handleLogout = () => {
     logout()
@@ -53,6 +55,16 @@ export function UserMenu() {
           )}
         </Stack>
       </ActionMenu.Label>
+
+      {canConnectSlack && (
+        <ActionMenu.Item
+          className={classes.menuItem}
+          leftSection={<Link2 size={16} aria-hidden="true" />}
+          onClick={openSlackConnect}
+        >
+          Connect Slack
+        </ActionMenu.Item>
+      )}
 
       <ActionMenu.Item
         id="intercom-support-trigger"

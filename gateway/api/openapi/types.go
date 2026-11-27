@@ -109,6 +109,26 @@ type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }
 
+// UserSlackLink is the state of the user's link to a Slack user.
+type UserSlackLink struct {
+	// True when the user can link a Slack user with a one-time code: the
+	// feature is on and the Slack integration runs
+	Available bool `json:"available"`
+	// True when the user has a Slack user
+	Linked bool `json:"linked"`
+}
+
+// UserSlackLinkCode is the one-time code that links the user to the Slack
+// user that sends it to the Hoop bot.
+type UserSlackLinkCode struct {
+	// The one-time code
+	Code string `json:"code" example:"K7P29QXD"`
+	// The command to send in Slack
+	Command string `json:"command" example:"/hoop link K7P29QXD"`
+	// When the code stops working
+	ExpiresAt time.Time `json:"expires_at" example:"2026-01-01T10:10:00Z"`
+}
+
 // UserSignupOriginRequest carries the answer to the onboarding
 // "How did you hear about Hoop?" survey. A user may answer only once.
 type UserSignupOriginRequest struct {

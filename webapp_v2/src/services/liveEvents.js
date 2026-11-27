@@ -5,6 +5,7 @@ import api, { storeRenewedToken } from './api'
 export const LIVE_EVENTS = {
   SIDECAR_CHECKED_IN: 'sidecar.checked_in',
   REVIEW_CREATED: 'review.created',
+  USER_SLACK_LINKED: 'user.slack_linked',
 }
 
 export const liveEventsService = {

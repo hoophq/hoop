@@ -74,6 +74,8 @@ func TestEachEventTypeReachesItsOwnAudience(t *testing.T) {
 		Type: liveevents.ReviewCreated, ID: "rev-1",
 		Audience: &liveevents.Audience{Groups: []string{"dba"}, OwnerID: "owner-1"},
 	})
+	// Only the user who linked Slack hears of it, an admin included.
+	liveevents.Publish(org, liveevents.Event{Type: liveevents.UserSlackLinked, ID: "auditor-1"})
 
 	for name, tc := range map[string]struct {
 		frames <-chan string
@@ -82,7 +84,7 @@ func TestEachEventTypeReachesItsOwnAudience(t *testing.T) {
 		"admin":    {admin, []string{`{"type":"sidecar.checked_in","id":"sc-1"}`}},
 		"reviewer": {reviewer, []string{`{"type":"review.created","id":"rev-1"}`}},
 		"owner":    {owner, nil},
-		"auditor":  {auditor, nil},
+		"auditor":  {auditor, []string{`{"type":"user.slack_linked","id":"auditor-1"}`}},
 	} {
 		got := drain(tc.frames)
 		if strings.Join(got, "|") != strings.Join(tc.want, "|") {

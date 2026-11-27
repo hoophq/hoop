@@ -1163,6 +1163,8 @@ Non-obvious notes only:
   `page`/`page_size`, which switches `GET /users` to the `{ pages, data }`
   envelope; `email` matches a part, ignoring case. For admins and auditors
   each user carries `last_login_at`, `null` when no sign-in was recorded.
+  `getSlackLink()` and `createSlackLinkCode()` are the user's own Slack link
+  (`/users/self/slack/link`); `features/SlackConnect` owns them.
 - `aiSessionAnalyzer.js` — `getProvider()` answers **404 when the org never
   configured a provider**; that is "not set up", not an error. Rule names are
   user-supplied path segments, so every interpolation is `encodeURIComponent`d.

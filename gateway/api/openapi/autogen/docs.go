@@ -12909,6 +12909,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/self/slack/link": {
+            "get": {
+                "description": "Whether the user has a Slack user, and whether the user can link one with a one-time code.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Get Own Slack Link",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserSlackLink"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Make the one-time code the user sends to the Hoop bot in Slack as ` + "`" + `/hoop link \u003ccode\u003e` + "`" + `. Hoop links the Slack user that sends it. A new code replaces the user's previous one.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Create Own Slack Link Code",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserSlackLinkCode"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/users/{emailOrID}": {
             "get": {
                 "description": "Get user by email or subject id",
@@ -23430,6 +23486,39 @@ const docTemplate = `{
                     "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
                     "type": "string",
                     "example": "Saw it in a conference talk"
+                }
+            }
+        },
+        "openapi.UserSlackLink": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "description": "True when the user can link a Slack user with a one-time code: the\nfeature is on and the Slack integration runs",
+                    "type": "boolean"
+                },
+                "linked": {
+                    "description": "True when the user has a Slack user",
+                    "type": "boolean"
+                }
+            }
+        },
+        "openapi.UserSlackLinkCode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "The one-time code",
+                    "type": "string",
+                    "example": "K7P29QXD"
+                },
+                "command": {
+                    "description": "The command to send in Slack",
+                    "type": "string",
+                    "example": "/hoop link K7P29QXD"
+                },
+                "expires_at": {
+                    "description": "When the code stops working",
+                    "type": "string",
+                    "example": "2026-01-01T10:10:00Z"
                 }
             }
         },

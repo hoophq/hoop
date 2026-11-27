@@ -89,6 +89,8 @@ func allowed(ctx *storagev2.Context, ev liveevents.Event) bool {
 	switch ev.Type {
 	case liveevents.ReviewCreated:
 		return ev.Audience.Allows(ctx.UserID, ctx.UserGroups, ctx.IsAdmin())
+	case liveevents.UserSlackLinked:
+		return ev.ID == ctx.UserID
 	default:
 		return ctx.IsAdmin()
 	}
