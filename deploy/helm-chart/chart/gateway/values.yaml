@@ -525,7 +525,11 @@ resources:
 # last, after config, migrations and the default organization. So the pod is
 # Ready only when the gateway serves, and `helm --wait` fails on a gateway
 # that does not start. With deploymentStrategy Recreate, a failed upgrade
-# still removes the old pod: use `helm upgrade --wait --atomic`.
+# still removes the old pod. Use `helm upgrade --wait --timeout <longer than
+# your longest migration>`, not `--atomic`: a rollback during a migration
+# leaves the database dirty. If the wait fails, look at the pod first; run
+# `helm rollback` only when the gateway crashes or does not answer after it
+# started, never while a migration still runs.
 #
 # With no handler, a probe opens a TCP connection to the container port `api`
 # (8009). This works with TLS on or off and with any API_URL path. If you

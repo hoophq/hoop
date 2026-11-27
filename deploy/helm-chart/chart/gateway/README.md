@@ -39,8 +39,12 @@ gateway that does not start. The `hoopgateway` container has no liveness probe:
 it can restart a busy gateway.
 
 With `deploymentStrategy: Recreate`, a failed upgrade still removes the old
-pod. Use `helm upgrade --wait --atomic`: a failed wait then rolls back to the
-last release.
+pod. Use `helm upgrade --wait --timeout <longer than your longest migration>`.
+Helm's default timeout is 5 minutes. Do not use `--atomic`: a rollback during
+a migration stops it halfway, the database stays dirty, and the gateway does
+not start until you fix it by hand. If the wait fails, look at the pod first.
+Run `helm rollback` only when the gateway crashes, or does not answer after it
+started; never while a migration still runs.
 
 | Value | Default | Description |
 |---|---|---|
