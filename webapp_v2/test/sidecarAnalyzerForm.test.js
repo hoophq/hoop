@@ -21,6 +21,7 @@ const {
   ROUTING_STATIC,
   emptyRouting,
   readRouting,
+  notifyToSpec,
   routingToSpec,
   routingModePatch,
   candidateSelection,
@@ -165,6 +166,86 @@ describe('the candidate groups of an AI-routed level', () => {
     const human = { ...stored, approver: 'human' }
     expect(human.routing.mode).toBeNull()
     expect(routingModePatch(human, ROUTING_STATIC, GROUPS, true).groups).toEqual(GROUPS)
+  })
+})
+
+describe('the notify of a By groups level', () => {
+  const level = (approver) => ({ high: 'require_approval', approvers: { high: approver } })
+  const roundTrip = (approver) => formToSpec(specToForm(level(approver), 'r', []), 'r').approvers.high
+
+  it('loads a stored notify into the form and saves it back as stored', () => {
+    const dm = { type: 'human', groups: ['engineering'], notify: { slack: { delivery: 'dm' } } }
+    const form = specToForm(level(dm), 'r', [])
+    expect(form.approval.high.routing.mode).toBe(ROUTING_STATIC)
+    expect(form.approval.high.routing.notify.slack).toMatchObject({ on: true, delivery: 'dm', channels: [] })
+    expect(form.approval.high).not.toHaveProperty('notify')
+    expect(formToSpec(form, 'r').approvers.high).toEqual(dm)
+
+    const channel = {
+      type: 'human',
+      groups: ['engineering'],
+      notify: { slack: { delivery: 'channel', channels_candidates: ['C123'] }, teams: { delivery: 'both' } },
+    }
+    expect(roundTrip(channel)).toEqual(channel)
+    // No group means the administrators; notify stays.
+    const admins = { type: 'human', notify: { slack: { delivery: 'both' } } }
+    expect(roundTrip(admins)).toEqual(admins)
+  })
+
+  it('names the dm delivery of an entry stored empty, and keeps the keys it does not edit', () => {
+    expect(roundTrip({ type: 'human', groups: ['engineering'], notify: { slack: {} } }).notify).toEqual({
+      slack: { delivery: 'dm' },
+    })
+    const other = { pagerduty: { service: 'P1' }, slack: { delivery: 'channel', thread: true } }
+    expect(roundTrip({ type: 'human', notify: other }).notify).toEqual(other)
+  })
+
+  it('writes no notify for a level that sets none', () => {
+    const stored = { type: 'human', groups: ['engineering'] }
+    expect(roundTrip(stored)).toEqual(stored)
+    expect(roundTrip(stored)).not.toHaveProperty('notify')
+    expect(roundTrip({ type: 'human' })).toEqual({ type: 'human' })
+    // A switched-off integration writes nothing.
+    const form = specToForm(level({ type: 'human', notify: { slack: { delivery: 'dm' } } }), 'r', [])
+    form.approval.high.routing.notify.slack.on = false
+    expect(formToSpec(form, 'r').approvers.high).toEqual({ type: 'human' })
+  })
+
+  it('moves notify to the other shape on a change of "How approval is done"', () => {
+    const notify = { slack: { delivery: 'channel', channels_candidates: ['C123'] } }
+    const form = specToForm(level({ type: 'human', groups: ['engineering'], notify }), 'r', [])
+    const stat = form.approval.high
+
+    form.approval.high = { ...stat, ...routingModePatch(stat, ROUTING_AI, GROUPS, true) }
+    const routed = formToSpec(form, 'r').approvers.high
+    expect(routed).toEqual({ type: 'human', routing: { candidates: ['engineering'], notify } })
+    expect(routed).not.toHaveProperty('notify')
+
+    const ai = form.approval.high
+    form.approval.high = { ...ai, ...routingModePatch(ai, ROUTING_STATIC, GROUPS, true) }
+    const back = formToSpec(form, 'r').approvers.high
+    expect(back).toEqual({ type: 'human', groups: ['engineering'], notify })
+    expect(back).not.toHaveProperty('routing')
+  })
+
+  it('keeps the notify of an AI-routed level inside routing, with dm left out', () => {
+    const stored = { type: 'human', routing: { notify: { slack: {} } } }
+    expect(roundTrip(stored)).toEqual(stored)
+    // To By groups: the same delivery, now named.
+    const form = specToForm(level(stored), 'r', [])
+    const ai = form.approval.high
+    form.approval.high = { ...ai, ...routingModePatch(ai, ROUTING_STATIC, GROUPS, true) }
+    expect(formToSpec(form, 'r').approvers.high).toEqual({
+      type: 'human',
+      groups: GROUPS,
+      notify: { slack: { delivery: 'dm' } },
+    })
+  })
+
+  it('reads the notify of a level only when it has no routing', () => {
+    expect(readRouting(null, { slack: { delivery: 'both' } }).notify.slack).toMatchObject({ on: true, delivery: 'both' })
+    expect(readRouting(null, null).notify.slack.on).toBe(false)
+    expect(notifyToSpec(emptyRouting(ROUTING_STATIC), true)).toBeNull()
   })
 })
 
