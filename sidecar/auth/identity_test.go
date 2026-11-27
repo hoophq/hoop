@@ -55,50 +55,33 @@ func TestTheEngineLinksTheBuiltInsAndRefusesAnUnlinkedVerifier(t *testing.T) {
 	}
 }
 
-// Rules are first match wins over the identity and the lane context; no
-// match is a refusal, and an OPA lane reads the credential the policy named.
+// A lane without OPA gives every identity its one credential; an OPA lane
+// reads the credential the policy named.
 func TestCredentialSelection(t *testing.T) {
 	a := &laneAuth{
-		lane: "appdb",
-		pool: []daemon.CredentialEntry{{Name: "rw"}, {Name: "ro"}, {Name: "svc"}},
-		rules: []daemon.CredentialRule{
-			{When: map[string]string{"identity.groups": "dba", "context.env": "prod"}, Credential: "rw"},
-			{When: map[string]string{"identity.attributes.namespace": "payments"}, Credential: "svc"},
-			{When: map[string]string{"identity.email": "carol@example.com"}, Credential: "ro"},
-			{When: map[string]string{"identity.subject": "dan"}, Credential: "missing"},
-		},
-		context: map[string]string{"env": "prod"},
+		lane:       "appdb",
+		pool:       []daemon.CredentialEntry{{Name: "rw"}, {Name: "ro"}},
+		credential: "ro",
 	}
 	ctx := context.Background()
-	for name, tc := range map[string]struct {
-		id   session.Identity
-		want string
-		err  string
-	}{
-		"dba in prod":        {session.Identity{Subject: "alice", Groups: []string{"dev", "dba"}}, "rw", ""},
-		"namespace":          {session.Identity{Subject: "sa", Attributes: map[string]string{"namespace": "payments"}}, "svc", ""},
-		"email":              {session.Identity{Subject: "carol", Email: "carol@example.com"}, "ro", ""},
-		"nobody":             {session.Identity{Subject: "zed"}, "", "no credential rule matches zed"},
-		"rule names a ghost": {session.Identity{Subject: "dan"}, "", `credential "missing" is not in the pool`},
+
+	for name, id := range map[string]session.Identity{
+		"dba":            {Subject: "alice", Groups: []string{"dba"}},
+		"empty identity": {},
 	} {
 		t.Run(name, func(t *testing.T) {
-			e, err := a.selectEntry(ctx, tc.id)
-			if tc.err != "" {
-				if !errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), tc.err) {
-					t.Fatalf("err = %v, want refusal %q", err, tc.err)
-				}
-				return
-			}
-			if err != nil || e.Name != tc.want {
-				t.Fatalf("picked %q, %v; want %q", e.Name, err, tc.want)
+			e, err := a.selectEntry(ctx, id)
+			if err != nil || e.Name != "ro" {
+				t.Fatalf("picked %q, %v; want ro", e.Name, err)
 			}
 		})
 	}
 
-	// Context-only rules serve a none lane, where the identity is empty.
-	b := &laneAuth{pool: []daemon.CredentialEntry{{Name: "pod"}}, rules: []daemon.CredentialRule{{Credential: "pod"}}}
-	if e, err := b.selectEntry(ctx, session.Identity{}); err != nil || e.Name != "pod" {
-		t.Fatalf("an unconditional rule: %q %v", e.Name, err)
+	a.credential = "missing"
+
+	_, err := a.selectEntry(ctx, session.Identity{Subject: "alice"})
+	if !errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), `credential "missing" is not in the pool`) {
+		t.Fatalf("err = %v, want a refusal that names the missing credential", err)
 	}
 
 	// OPA: the login document carries the identity, and the answer names
@@ -160,7 +143,7 @@ func TestAuthenticateComposesTheThreeSteps(t *testing.T) {
 			Identity: &daemon.IdentityConfig{Type: daemon.IdentityJWT, Issuer: f.srv.URL},
 			Credentials: &daemon.CredentialsConfig{
 				Pool:   []daemon.CredentialEntry{{Name: "rw", Source: daemon.SourceSecretFiles, User: "app", PasswordFile: "password"}, {Name: "broken", Source: daemon.SourceSecretFiles, User: "x", PasswordFile: "absent"}},
-				Select: daemon.SelectConfig{Rules: []daemon.CredentialRule{{When: map[string]string{"identity.subject": "alice"}, Credential: "rw"}}},
+				Select: daemon.SelectConfig{Rules: []daemon.CredentialRule{{Credential: "rw"}}},
 			}}},
 	}
 	sources, err := daemon.BuildCredentialSources(cfg, nil)
@@ -187,14 +170,14 @@ func TestAuthenticateComposesTheThreeSteps(t *testing.T) {
 		t.Fatalf("a wrong token: %v", err)
 	}
 
-	a.rules = []daemon.CredentialRule{{Credential: "broken"}}
+	a.credential = "broken"
 	_, _, err = a.Authenticate(context.Background(), "alice", token)
 	if !errors.Is(err, codectypes.ErrLoginRefused) || strings.Contains(err.Error(), "absent") {
 		t.Fatalf("a source failure = %v; want a refusal that names no file", err)
 	}
 
 	// The libhoop form carries the same facts.
-	a.rules = []daemon.CredentialRule{{Credential: "rw"}}
+	a.credential = "rw"
 	cid, ucred, err := a.Authenticator()(context.Background(), "alice", token)
 	if err != nil || cid.Subject != "alice" || ucred.User != "app" || ucred.Password != "s3cret" {
 		t.Fatalf("authenticator: %+v %+v %v", cid, ucred, err)
@@ -203,6 +186,57 @@ func TestAuthenticateComposesTheThreeSteps(t *testing.T) {
 	res, err := a.Swap(context.Background(), "Bearer "+token)
 	if err != nil || res.User != "app" || res.Password != "s3cret" || res.Bearer || res.Identity.Subject != "alice" {
 		t.Fatalf("swap: %+v %v", res, err)
+	}
+}
+
+// buildLaneAuth is reachable without Config.Validate, so it refuses a
+// selection that is not one rule or OPA.
+func TestBuildLaneAuthNeedsOneRuleOrOPA(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "password"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	one := daemon.CredentialRule{Credential: "rw"}
+
+	for name, tc := range map[string]struct {
+		sel  daemon.SelectConfig
+		want string
+	}{
+		"no rule":   {daemon.SelectConfig{}, "credentials.select needs one rule, or opa: true"},
+		"two rules": {daemon.SelectConfig{Rules: []daemon.CredentialRule{one, one}}, "credentials.select needs one rule, or opa: true"},
+		"opa unset": {daemon.SelectConfig{OPA: true}, "credentials.select.opa needs an opa.url on this lane"},
+		"one rule":  {daemon.SelectConfig{Rules: []daemon.CredentialRule{one}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := &daemon.Config{
+				Credentials: &daemon.CredentialSourcesConfig{SecretFiles: &daemon.SecretFilesSourceConfig{Dir: dir}},
+				Listeners: []daemon.ListenerConfig{{Name: "l", Protocol: "postgres", Network: "unix", Listen: filepath.Join(dir, "l.sock"), Upstream: "h:1",
+					Credentials: &daemon.CredentialsConfig{
+						Pool:   []daemon.CredentialEntry{{Name: "rw", Source: daemon.SourceSecretFiles, User: "app", PasswordFile: "password"}},
+						Select: tc.sel,
+					}}},
+			}
+
+			sources, err := daemon.BuildCredentialSources(cfg, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = buildLaneAuth(cfg.Listeners[0], "l", daemon.AuthDeps{}, sources)
+
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("one rule did not build: %v", err)
+				}
+
+				return
+			}
+
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

@@ -448,20 +448,18 @@ type CredentialEntry struct {
 	Secret string `json:"secret,omitempty"`
 }
 
-// SelectConfig picks a pool entry for a verified identity: an ordered rule
-// list, first match wins, or the lane's OPA endpoint naming it as
-// `credential` beside `allow`. One or the other.
+// SelectConfig says which pool entry a verified identity gets. Rules holds
+// exactly one rule, the credential every identity gets; OPA asks the lane's
+// OPA endpoint instead, which names it as `credential` beside `allow`. One
+// or the other.
 type SelectConfig struct {
 	Rules []CredentialRule `json:"rules,omitempty"`
 	OPA   bool             `json:"opa,omitempty"`
 }
 
-// CredentialRule maps an identity to a credential. When is a conjunction over
-// identity.subject, identity.email, identity.groups (contains),
-// identity.attributes.<k> and context.<k>; an empty When matches everyone.
+// CredentialRule names the pool entry a lane without OPA presents.
 type CredentialRule struct {
-	When       map[string]string `json:"when,omitempty"`
-	Credential string            `json:"credential,omitempty"`
+	Credential string `json:"credential,omitempty"`
 }
 
 // PropagateConfig carries the verified identity to the upstream beside the
@@ -590,9 +588,9 @@ type ListenerConfig struct {
 	// CredentialsConfig.
 	Credentials *CredentialsConfig `json:"credentials,omitempty" cap:"credentials" ui:"-"`
 
-	// Context is lane-wide facts the credential selector matches as
-	// context.<k> and a propagate template reads as .Context.<k>.
-	Context map[string]string `json:"context,omitempty" cap:"context" label:"Lane context" help:"Facts about this listener, such as env: prod. A credential rule matches them as context.<key>."`
+	// Context is lane-wide facts an OPA credential policy reads in
+	// input.context and a propagate template reads as .Context.<k>.
+	Context map[string]string `json:"context,omitempty" cap:"context" label:"Lane context" help:"Facts about this listener, such as env: prod. An OPA policy that selects the credential reads them in input.context."`
 
 	// PassthroughUsers are startup users a lane with Identity lets through
 	// unchanged, as a lane without one would: the database authenticates
@@ -2120,28 +2118,32 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 			}
 			problems = append(problems, validatePoolEntry(c.Credentials, l, e, name+": "+where)...)
 		}
+
 		sel := l.Credentials.Select
+
 		switch {
 		case len(sel.Rules) > 0 && sel.OPA:
 			pf("credentials.select names rules and opa; keep one")
-		case len(sel.Rules) == 0 && !sel.OPA:
-			pf("credentials.select needs rules, or opa: true")
+
 		case sel.OPA:
 			if _, opa, _ := c.resolve(l); !opa.enabled() {
 				pf("credentials.select.opa needs an opa.url on this lane")
 			}
+
+		case len(sel.Rules) == 0:
+			pf("credentials.select needs one rule, or opa: true")
+
+		case len(sel.Rules) > 1:
+			pf("credentials.select.rules holds %d rules; without opa a lane presents one credential, keep one rule or set opa: true", len(sel.Rules))
 		}
+
 		for i, r := range sel.Rules {
 			where := fmt.Sprintf("credentials.select.rules[%d]", i)
+
 			if r.Credential == "" {
 				pf("%s: credential is required", where)
 			} else if !names[r.Credential] {
 				pf("%s names credential %q, which is not in the pool", where, r.Credential)
-			}
-			for k := range r.When {
-				if !validateRuleKey(k) {
-					pf("%s: when key %q is not identity.subject, identity.email, identity.groups, identity.attributes.<k> or context.<k>", where, k)
-				}
 			}
 		}
 	}

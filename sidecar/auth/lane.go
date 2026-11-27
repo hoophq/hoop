@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
@@ -29,9 +28,11 @@ type laneAuth struct {
 	verifier     daemon.IdentitySource
 	pool         []daemon.CredentialEntry
 	sources      map[string]daemon.CredentialSource
-	rules        []daemon.CredentialRule
+	// credential is the pool entry every verified identity gets; empty when
+	// opa picks.
+	credential string
 	// opa is the lane's decision endpoint when select.opa names the
-	// credential; nil under rules.
+	// credential; nil when the lane presents one credential.
 	opa     *policy.OPAClient
 	context map[string]string
 	peer    daemon.PeerInfo
@@ -71,7 +72,6 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 		verifier:     verifier,
 		pool:         lc.Credentials.Pool,
 		sources:      map[string]daemon.CredentialSource{},
-		rules:        lc.Credentials.Select.Rules,
 		context:      lc.Context,
 		peer:         deps.Peer,
 		log:          laneLog,
@@ -83,12 +83,24 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 		}
 		a.sources[e.Source] = src
 	}
-	if lc.Credentials.Select.OPA {
+
+	sel := lc.Credentials.Select
+
+	switch {
+	case sel.OPA:
 		if deps.OPA == nil {
 			return nil, errors.New("credentials.select.opa needs an opa.url on this lane")
 		}
+
 		a.opa = deps.OPA
+
+	case len(sel.Rules) == 1:
+		a.credential = sel.Rules[0].Credential
+
+	default:
+		return nil, errors.New("credentials.select needs one rule, or opa: true")
 	}
+
 	return a, nil
 }
 
@@ -144,65 +156,28 @@ func (a *laneAuth) IdentityType() string { return a.identityType }
 
 func (a *laneAuth) PoolSize() int { return len(a.pool) }
 
-// selectEntry picks the pool entry for an identity: the first rule whose
-// every condition holds, or the credential the lane's OPA names. No match
-// is a refusal, not a default: a lane that fell back to its first entry
-// would hand a credential to an identity nobody mapped.
+// selectEntry picks the pool entry for an identity: the credential the
+// lane's OPA names, or the lane's one credential. A name outside the pool
+// is a refusal, not a default.
 func (a *laneAuth) selectEntry(ctx context.Context, id session.Identity) (daemon.CredentialEntry, error) {
-	var name string
-	switch {
-	case a.opa != nil:
+	name := a.credential
+
+	if a.opa != nil {
 		picked, err := a.selectWithOPA(ctx, id)
 		if err != nil {
 			return daemon.CredentialEntry{}, err
 		}
+
 		name = picked
-	default:
-		for _, r := range a.rules {
-			if ruleMatches(r, id, a.context) {
-				name = r.Credential
-				break
-			}
-		}
-		if name == "" {
-			return daemon.CredentialEntry{}, daemon.Refused("no credential rule matches %s", id.Principal())
-		}
 	}
+
 	for _, e := range a.pool {
 		if e.Name == name {
 			return e, nil
 		}
 	}
-	return daemon.CredentialEntry{}, daemon.Refused("credential %q is not in the pool", name)
-}
 
-// ruleMatches reports whether every condition of a rule holds for id. An
-// empty When matches everyone.
-func ruleMatches(r daemon.CredentialRule, id session.Identity, laneCtx map[string]string) bool {
-	for key, want := range r.When {
-		var got string
-		switch {
-		case key == "identity.subject":
-			got = id.Subject
-		case key == "identity.email":
-			got = id.Email
-		case key == "identity.groups":
-			if !slices.Contains(id.Groups, want) {
-				return false
-			}
-			continue
-		case strings.HasPrefix(key, "identity.attributes."):
-			got = id.Attributes[strings.TrimPrefix(key, "identity.attributes.")]
-		case strings.HasPrefix(key, "context."):
-			got = laneCtx[strings.TrimPrefix(key, "context.")]
-		default:
-			return false
-		}
-		if got != want {
-			return false
-		}
-	}
-	return true
+	return daemon.CredentialEntry{}, daemon.Refused("credential %q is not in the pool", name)
 }
 
 // selectWithOPA asks the lane's endpoint for the credential: a login
