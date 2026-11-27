@@ -35,7 +35,7 @@ export default function ResourceProviders() {
               title="MongoDB Atlas"
               badge={
                 <Badge variant="light" color="gray" tag chip>
-                  Soon
+                  SOON
                 </Badge>
               }
               description="Access your Resources on Atlas Database."

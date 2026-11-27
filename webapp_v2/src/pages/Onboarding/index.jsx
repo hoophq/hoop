@@ -19,7 +19,7 @@ export default function Onboarding() {
       connectionsService
         .list({ page: 1, page_size: 1 })
         .then(({ data }) => setHasConnections((data?.data ?? []).length > 0))
-        .catch((err) => setError(err.response?.data?.message ?? err.message)),
+        .catch((err) => setError(err.response?.data?.message ?? '')),
     [],
   )
   const retry = () => {
@@ -32,12 +32,12 @@ export default function Onboarding() {
   }, [isAdmin, check])
 
   if (isAdmin && hasConnections === null) {
-    if (!error) return <PageLoader overlay />
+    if (error === null) return <PageLoader overlay />
     return (
       <OnboardingLayout>
         <EmptyState
           title="Could not load your Resources"
-          description={error}
+          description={error || undefined}
           action={{ label: 'Try again', onClick: retry }}
         />
       </OnboardingLayout>

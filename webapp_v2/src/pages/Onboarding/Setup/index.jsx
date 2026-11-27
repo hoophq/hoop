@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Center, Stack, Text, Title } from '@mantine/core'
 import { BrainCog } from 'lucide-react'
@@ -46,15 +46,25 @@ export default function OnboardingSetup() {
   const navigate = useNavigate()
   const agents = useAgentStore((s) => s.agents)
   const loading = useAgentStore((s) => s.loading)
-  const error = useAgentStore((s) => s.error)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
-  // The store starts with no Agents and not loading: wait for this page's own fetch.
+  // The store starts with no Agents and not loading: wait for this page's own
+  // fetch. Its error is kept whole, for the gateway's message.
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(null)
   const [creatingDemo, setCreatingDemo] = useState(false)
 
+  const load = useCallback(
+    () =>
+      fetchAgents().then((err) => {
+        setLoadError(err)
+        setLoaded(true)
+      }),
+    [fetchAgents],
+  )
+
   useEffect(() => {
-    fetchAgents().then(() => setLoaded(true))
-  }, [fetchAgents])
+    load()
+  }, [load])
 
   const createDemo = async () => {
     setCreatingDemo(true)
@@ -66,7 +76,7 @@ export default function OnboardingSetup() {
       showSnackbar({
         level: 'error',
         text: 'Failed to create the demo Resource',
-        description: err.response?.data?.message ?? err.message,
+        description: err.response?.data?.message,
       })
       return
     }
@@ -87,13 +97,13 @@ export default function OnboardingSetup() {
   }
 
   if (!loaded || loading) return <PageLoader overlay />
-  if (error) {
+  if (loadError) {
     return (
       <OnboardingLayout logout>
         <EmptyState
           title="Could not load your Agents"
-          description={error}
-          action={{ label: 'Try again', onClick: fetchAgents }}
+          description={loadError.response?.data?.message}
+          action={{ label: 'Try again', onClick: load }}
         />
       </OnboardingLayout>
     )
