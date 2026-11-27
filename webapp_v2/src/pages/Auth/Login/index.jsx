@@ -50,7 +50,9 @@ function AuthCard({ children }) {
   )
 }
 
-function Login() {
+// `promptLogin` (/idplogin): the IdP asks for the credentials again, even
+// while its session is open (OIDC prompt, SAML force_authn).
+function Login({ promptLogin = false }) {
   const navigate = useNavigate()
   const { setToken, getAndClearRedirectUrl, isAuthenticated } = useAuthStore()
 
@@ -65,7 +67,7 @@ function Login() {
   const loginErrorOnLoad = useRef(localStorage.getItem('login_error'))
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !promptLogin) {
       const redirectUrl = getAndClearRedirectUrl()
       if (redirectUrl) {
         window.location.href = redirectUrl
@@ -73,7 +75,7 @@ function Login() {
         navigate(POST_LOGIN_PATH)
       }
     }
-  }, [isAuthenticated, navigate, getAndClearRedirectUrl])
+  }, [isAuthenticated, promptLogin, navigate, getAndClearRedirectUrl])
 
   useEffect(() => {
     const loginError = localStorage.getItem('login_error')
@@ -84,7 +86,7 @@ function Login() {
   }, [])
 
   useEffect(() => {
-    if (isAuthenticated) return
+    if (isAuthenticated && !promptLogin) return
 
     const fetchAuthMethod = async () => {
       try {
@@ -99,7 +101,7 @@ function Login() {
         setAuthMethod(method)
 
         if (method !== 'local' && !loginErrorOnLoad.current) {
-          redirectToIdp(method)
+          redirectToIdp(method, { promptLogin })
         }
       } catch (err) {
         console.error('Failed to fetch server info:', err)
@@ -110,7 +112,7 @@ function Login() {
     }
 
     fetchAuthMethod()
-  }, [isAuthenticated])
+  }, [isAuthenticated, promptLogin])
 
   const redirectToIdp = async (method, options = {}) => {
     setLoading(true)

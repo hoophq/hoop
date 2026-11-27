@@ -14,4 +14,6 @@ export const usersService = {
   create: (data) => api.post('/users', data),
   update: (id, data) => api.put(`/users/${id}`, data),
   listGroups: () => api.get('/users/groups'),
+  // The signed-in user's Slack id, from the Slack app's link.
+  updateSlackId: (slackId) => api.patch('/users/self/slack', { slack_id: slackId }),
 }
