@@ -44,6 +44,9 @@ const FlagReviewNotifications = "experimental.review_notifications"
 // `hoop context use` when a gateway omits it: never remove it, flip Default.
 const FlagCLIContexts = "experimental.cli_contexts"
 
+// FlagSlackLookupByEmail is spelled here for the same reason.
+const FlagSlackLookupByEmail = "experimental.slack_lookup_by_email"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -212,6 +215,13 @@ var catalog = map[string]Flag{
 		Name:        FlagReviewNotifications,
 		Description: "Notify approvers in the web app when a request waits for their approval: a toast while they look at the Control Plane, a browser notification when they do not. Only users who can approve the request get it. Needs a Control Plane tab open; browser notifications need the user's permission and HTTPS. With more than one gateway replica, only approvers whose tab is connected to the replica that received the request get it.",
 		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagSlackLookupByEmail: {
+		Name:        FlagSlackLookupByEmail,
+		Description: "After a user signs in with the identity provider, find the Slack user that has the same email and link it to the Hoop user, so direct messages reach a user who never linked Slack. A user with a Slack ID keeps it. Guests, bots, deactivated users, users of another workspace and unconfirmed emails are not linked. Needs the users:read.email scope on the Slack app. When off, a user links Slack from the Slack message or an admin sets the Slack ID on the Users page, as before.",
+		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},

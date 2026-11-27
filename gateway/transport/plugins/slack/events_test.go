@@ -57,7 +57,7 @@ func TestCheckSlackUser(t *testing.T) {
 
 // Enterprise Grid: a user whose home workspace is another one of the same grid
 // org is the same company; one from another grid is not.
-func TestSameWorkspace(t *testing.T) {
+func TestInWorkspace(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
 		userTeam, userGrid string
@@ -71,7 +71,7 @@ func TestSameWorkspace(t *testing.T) {
 		{"bot team unknown", "T2", "", "", "", true},
 	} {
 		u := &slackservice.SlackUser{TeamID: tt.userTeam, EnterpriseID: tt.userGrid}
-		if got := sameWorkspace(u, tt.botTeam, tt.botGrid); got != tt.want {
+		if got := u.InWorkspace(tt.botTeam, tt.botGrid); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
 	}
