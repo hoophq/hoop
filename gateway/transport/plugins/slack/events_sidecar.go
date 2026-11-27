@@ -138,21 +138,15 @@ func checkSlackUser(u *slackservice.SlackUser, botTeamID, botEnterpriseID string
 
 // checkSlackIdentity refuses a deleted user, a bot, a guest, and a user from
 // outside the workspace. It applies to linked users too.
-//
-// botTeamID and botEnterpriseID are the workspace and grid the bot token
-// belongs to. A user of another workspace in the same Enterprise Grid org is
-// accepted; one from outside it is not.
 func checkSlackIdentity(u *slackservice.SlackUser, botTeamID, botEnterpriseID string) string {
-	switch {
-	case u.Deleted:
+	switch u.IdentityRefusal(botTeamID, botEnterpriseID) {
+	case slackservice.RefusalDeactivated:
 		return cpDeactivatedMsg
-	case u.IsBot:
+	case slackservice.RefusalBot:
 		return cpBotMsg
-	case u.IsRestricted || u.IsUltraRestricted:
+	case slackservice.RefusalGuest:
 		return cpGuestMsg
-	case u.IsStranger:
-		return cpOtherWorkspaceMsg
-	case !sameWorkspace(u, botTeamID, botEnterpriseID):
+	case slackservice.RefusalOtherWorkspace:
 		return cpOtherWorkspaceMsg
 	}
 	return ""
@@ -168,13 +162,6 @@ func checkSlackEmail(u *slackservice.SlackUser) string {
 		return cpUnconfirmedMsg
 	}
 	return ""
-}
-
-func sameWorkspace(u *slackservice.SlackUser, botTeamID, botEnterpriseID string) bool {
-	if botTeamID == "" || u.TeamID == "" || u.TeamID == botTeamID {
-		return true
-	}
-	return botEnterpriseID != "" && u.EnterpriseID == botEnterpriseID
 }
 
 // pickApprover requires exactly one hoop user for the email. More than one

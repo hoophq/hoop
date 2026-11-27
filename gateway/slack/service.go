@@ -198,6 +198,12 @@ func IsMissingScope(err error) bool {
 	return errors.As(err, &slackErr) && slackErr.Err == "missing_scope"
 }
 
+// IsUserNotFound reports whether Slack has no user for a lookup.
+func IsUserNotFound(err error) bool {
+	var slackErr slack.SlackErrorResponse
+	return errors.As(err, &slackErr) && slackErr.Err == "users_not_found"
+}
+
 // SlackUser is what an approval needs to know about the Slack user who
 // clicked: who they are by email, and whether Slack still vouches for them.
 type SlackUser struct {
@@ -213,14 +219,7 @@ type SlackUser struct {
 	IsEmailConfirmed  bool
 }
 
-// GetUserInfo reads one Slack user (users.info). The Slack app needs the
-// users:read scope, and users:read.email for the email: without the second
-// one Slack answers the user with an empty email rather than an error.
-func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackUser, error) {
-	u, err := s.apiClient.GetUserInfoContext(ctx, slackID)
-	if err != nil {
-		return nil, fmt.Errorf("failed obtaining slack user %s, err=%w", slackID, err)
-	}
+func newSlackUser(u *slack.User) *SlackUser {
 	return &SlackUser{
 		ID:                u.ID,
 		TeamID:            u.TeamID,
@@ -232,7 +231,29 @@ func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackU
 		IsUltraRestricted: u.IsUltraRestricted,
 		IsStranger:        u.IsStranger,
 		IsEmailConfirmed:  u.IsEmailConfirmed,
-	}, nil
+	}
+}
+
+// GetUserInfo reads one Slack user (users.info). The Slack app needs the
+// users:read scope, and users:read.email for the email: without the second
+// one Slack answers the user with an empty email rather than an error.
+func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackUser, error) {
+	u, err := s.apiClient.GetUserInfoContext(ctx, slackID)
+	if err != nil {
+		return nil, fmt.Errorf("failed obtaining slack user %s, err=%w", slackID, err)
+	}
+	return newSlackUser(u), nil
+}
+
+// LookupUserByEmail reads the Slack user that has this email
+// (users.lookupByEmail). The Slack app needs the users:read.email scope.
+// IsUserNotFound tells no user from a failure.
+func (s *SlackService) LookupUserByEmail(ctx context.Context, email string) (*SlackUser, error) {
+	u, err := s.apiClient.GetUserByEmailContext(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed looking up the slack user by email, err=%w", err)
+	}
+	return newSlackUser(u), nil
 }
 
 type MessageReviewRequest struct {

@@ -224,6 +224,17 @@ func UpdateUser(user *User) error {
 	return DB.Save(&user).Error
 }
 
+// LinkUserSlackID stores slackID on the user when the user has none and no
+// user of the org has it. It reports whether it stored it.
+func LinkUserSlackID(db *gorm.DB, orgID, userID, slackID string) (bool, error) {
+	res := db.Exec(`
+		UPDATE private.users SET slack_id = ?
+		WHERE org_id = ? AND id = ? AND COALESCE(slack_id, '') = ''
+		AND NOT EXISTS (SELECT 1 FROM private.users WHERE org_id = ? AND slack_id = ?)`,
+		slackID, orgID, userID, orgID, slackID)
+	return res.RowsAffected == 1, res.Error
+}
+
 func DeleteUser(orgID, subject string) error {
 	return DB.
 		Where("org_id = ? AND subject = ?", orgID, subject).

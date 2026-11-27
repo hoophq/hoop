@@ -22,6 +22,7 @@ import (
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
@@ -273,6 +274,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 		h.analyticsTrack(isNewUser, userAgent, ctx)
 		recordLogin(uinfo)
+		go slackservice.LinkUserAfterLogin(ctx.OrgID, uinfo.Email)
 		login.Outcome = "success"
 		c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 		return
@@ -301,6 +303,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	h.analyticsTrack(isNewUser, userAgent, ctx)
 	recordLogin(uinfo)
+	go slackservice.LinkUserAfterLogin(ctx.OrgID, uinfo.Email)
 
 	// TODO: add analytics (identify / track)
 	login.Outcome = "success"
