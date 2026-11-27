@@ -473,7 +473,7 @@ type Evaluator struct {
 	budgetLogged sync.Once
 	onBudget     func()
 
-	facts *ttlCache[inspect.TableFacts]
+	facts *ttlCache[tableEntry]
 	plans *ttlCache[planEntry]
 }
 
@@ -587,7 +587,7 @@ func New(cfg Config) (*Evaluator, error) {
 		reviewPoll:   reviewPoll,
 		retryBase:    retryBase,
 		retryCap:     retryCap,
-		facts:        newTTLCache[inspect.TableFacts](checkCacheSize, checkTTL),
+		facts:        newTTLCache[tableEntry](checkCacheSize, checkTTL),
 		plans:        newTTLCache[planEntry](checkCacheSize, checkTTL),
 	}, nil
 }

@@ -231,6 +231,8 @@ type server struct {
 	gone      map[string]time.Time
 	lastPurge time.Time
 	closed    bool
+	// serving is true from the bind until Serve returns; Ready reads it.
+	serving bool
 
 	total, denied atomic.Int64
 
@@ -263,7 +265,13 @@ func (s *server) Serve(ctx context.Context) error {
 		return nil
 	}
 	s.ln, s.srv = ln, srv
+	s.serving = true
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.serving = false
+		s.mu.Unlock()
+	}()
 	s.log.Info("mcp lane listening", "listen", ln.Addr().String(), "upstream", s.lane.Upstream, "transport", s.lane.Transport)
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
@@ -389,6 +397,15 @@ func (s *server) Addr() net.Addr {
 		return nil
 	}
 	return s.ln.Addr()
+}
+
+// Ready reports a bound listener that still serves, for /readyz: false
+// before Serve binds, once Close ran, and after Serve returned. Addr cannot
+// tell the last two: it keeps the bound address after Close.
+func (s *server) Ready() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.serving && !s.closed
 }
 
 func (s *server) Stats() (active, total, denied int64) {

@@ -67,6 +67,7 @@ import (
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/telemetry"
 	"github.com/hoophq/hoop/gateway/transport"
 )
 
@@ -220,6 +221,8 @@ func serveWebUI(route *gin.Engine, baseURL string) {
 func (a *Api) newEngine() *gin.Engine {
 	zaplogger := log.NewDefaultLogger(nil)
 	route := gin.New()
+	// First, so the status it records is the one the recovery below wrote.
+	route.Use(telemetry.HTTPServer())
 	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
 	if os.Getenv("GIN_MODE") == "debug" {
 		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
@@ -282,7 +285,9 @@ func (a *Api) StartAPI() {
 // license lapses keeps its oldest sidecar and the rest stop handshaking
 // (SidecarSeatOnly). Service accounts and identity bindings stay Enterprise.
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
-	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Handshake)
+	// The telemetry hooks go before the auth middleware, so a refused
+	// credential is counted too.
+	r.POST("/sidecars/handshake", telemetry.SidecarHandshake(sidecarOf), r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Handshake)
 	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Configuration)
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
@@ -294,7 +299,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.SettleReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ImportConfiguration)
 	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
-	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)
+	r.POST("/sidecars/events", telemetry.SidecarEvents(sidecarOf), r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)
 
 	// Device-code login: a sidecar with no token asks to join the
 	// organization of the admin who approves its code. Start and poll carry
@@ -366,6 +371,15 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apisidecar.PutSlackChannels)
+}
+
+// sidecarOf names the sidecar a request authenticated as, for the telemetry
+// spans.
+func sidecarOf(c *gin.Context) (sidecarID, orgID string) {
+	if sc := apiroutes.SidecarFromContext(c); sc != nil {
+		return sc.ID, sc.OrgID
+	}
+	return "", ""
 }
 
 // buildSidecarServiceAccountRoutes registers the admin API for the service

@@ -32,6 +32,7 @@ import (
 	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/jobs/credentialsweeper"
+	"github.com/hoophq/hoop/gateway/jobs/featureflagrefresh"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarmirrorstatus"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarsessionreaper"
 	"github.com/hoophq/hoop/gateway/models"
@@ -43,6 +44,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
+	"github.com/hoophq/hoop/gateway/telemetry"
 	"github.com/hoophq/hoop/gateway/transport"
 
 	// plugins
@@ -106,6 +108,16 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 	goMigrateStep.OK("")
+
+	if cfg := appconfig.Get().OTLPExport(); cfg != nil {
+		sqlDB, err := models.DB.DB()
+		if err == nil {
+			err = telemetry.Start(cfg, ver.Version, sqlDB)
+		}
+		if err != nil {
+			log.Fatalf("failed starting the OpenTelemetry export, reason=%v", err)
+		}
+	}
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
@@ -309,6 +321,9 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	// A mirror of a sidecar listener reads offline when its sidecar stops
 	// checking in; the handshake sets it online.
 	go sidecarmirrorstatus.Run(context.Background(), models.DB)
+
+	// A flag change through another replica reaches this one.
+	go featureflagrefresh.Run(context.Background(), models.DB)
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

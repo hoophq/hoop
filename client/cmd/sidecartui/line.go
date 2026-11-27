@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -156,4 +157,23 @@ func quoteValue(s string) string {
 		return fmt.Sprintf("%q", s)
 	}
 	return s
+}
+
+// TextWriter writes the daemon's JSON log lines to w in the text format,
+// each as TextLine renders it. It is for lines the daemon writes before Run,
+// where Run's own conversion does not reach yet: the boot retry
+// (daemon.WithBootLog). slog's handler writes one record per Write; a write
+// that is not a log record passes through unchanged.
+func TextWriter(w io.Writer) io.Writer { return textWriter{w} }
+
+type textWriter struct{ w io.Writer }
+
+func (t textWriter) Write(p []byte) (int, error) {
+	if rec, ok := ParseLog(bytes.TrimRight(p, "\n")); ok {
+		if _, err := fmt.Fprintln(t.w, TextLine(rec)); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
+	return t.w.Write(p)
 }

@@ -161,8 +161,8 @@
                                                 {:job-id      (:id plan-job)
                                                  :resource-id (:resource-id filter-opt)
                                                  :title       (if (:resource-name filter-opt)
-                                                                (str "Sessions — " (:resource-name filter-opt))
-                                                                "Sessions — Role provisioning")}
+                                                                (str "Sessions: " (:resource-name filter-opt))
+                                                                "Sessions: Role provisioning")}
                                                 :job-detail)))}]
        :session-list (let [filtered (filterv
                                      (fn [s]

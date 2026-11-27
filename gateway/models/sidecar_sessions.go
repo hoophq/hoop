@@ -215,7 +215,8 @@ type SidecarSessionStaleness struct {
 
 // staleSidecarSession is the condition both queries apply to the row s.
 // created_at is TIMESTAMP holding UTC; AT TIME ZONE 'UTC' reads it as the
-// instant it is, whatever the server's TimeZone.
+// instant it is, whatever the server's TimeZone. sc.id::text is the
+// expression of idx_sidecars_id_text: change one, change the other.
 const staleSidecarSession = `s.origin = @origin AND s.status = 'open' AND (
 	NOT EXISTS (
 		SELECT 1 FROM private.sidecars sc
@@ -228,16 +229,21 @@ func (st SidecarSessionStaleness) args() map[string]any {
 	return map[string]any{"origin": proto.SessionOriginSidecar, "seen": st.SidecarSeenBefore, "event": st.EventBefore}
 }
 
+// staleSidecarSessionsQuery reads the open sidecar sessions in created_at
+// order (index_sessions_open_sidecar) and finds each one's sidecar through
+// idx_sidecars_id_text.
+const staleSidecarSessionsQuery = `SELECT s.id, s.org_id FROM private.sessions s
+	WHERE ` + staleSidecarSession + `
+	ORDER BY s.created_at
+	LIMIT @limit`
+
 // ListStaleSidecarSessions returns up to limit open sidecar sessions st
 // counts as dead, oldest first.
 func ListStaleSidecarSessions(ctx context.Context, db *gorm.DB, st SidecarSessionStaleness, limit int) ([]StaleSidecarSession, error) {
 	args := st.args()
 	args["limit"] = limit
 	var out []StaleSidecarSession
-	err := db.WithContext(ctx).Raw(`SELECT s.id, s.org_id FROM private.sessions s
-	WHERE `+staleSidecarSession+`
-	ORDER BY s.created_at
-	LIMIT @limit`, args).Scan(&out).Error
+	err := db.WithContext(ctx).Raw(staleSidecarSessionsQuery, args).Scan(&out).Error
 	return out, err
 }
 

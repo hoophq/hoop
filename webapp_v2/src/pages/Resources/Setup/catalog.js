@@ -8,9 +8,8 @@ const SETUP_MAPPINGS = {
   mysql: { type: 'database', subtype: 'mysql' },
   mongodb: { type: 'database', subtype: 'mongodb' },
   mssql: { type: 'database', subtype: 'mssql' },
-  oracle: { type: 'database', subtype: 'oracledb' },
   ssh: { type: 'application', subtype: 'ssh' },
-  tcp: { type: 'application', subtype: 'tcp' },
+  // Roles keep the subtype httpproxy; the metadata entry says web-application.
   httpproxy: { type: 'httpproxy', subtype: 'httpproxy' },
   // A catalog-only entry: it is not in the metadata.
   'linux-vm': { type: 'custom', subtype: 'linux-vm', command: ['bash'] },
@@ -36,6 +35,8 @@ const METADATA_DRIVEN_SUBTYPES = [
   'rdp',
   'git',
   'github',
+  // Manual and Secrets Manager use the metadata form; IAM Federation its own.
+  'bigquery',
   // Its metadata has HOST and PORT, both required, as resources/constants.cljs.
   'tcp',
 ]
@@ -93,12 +94,23 @@ export function setupConfigFor(catalogId, connections = []) {
   return { type: config.type, subtype: config.subtype, command: config.command ?? null }
 }
 
+// /resources/:name/add-role adds roles of the resource's own type and subtype.
+// Linux VM is the only one with a command the metadata does not carry.
+export function setupConfigForResource(resource) {
+  const mapped = Object.values(SETUP_MAPPINGS).find((m) => m.subtype === resource.subtype && m.command)
+  return { type: resource.type, subtype: resource.subtype, command: mapped?.command ?? null }
+}
+
 export function isReactSetup(config) {
   return REACT_SETUP_SUBTYPES.has(config.subtype)
 }
 
 // The metadata entry of a subtype: the CLJS wizard reads its fields, name and
-// command by subtype, not by catalog id.
+// command by subtype, not by catalog id. httpproxy is found by its id (Q22).
 export function metadataForSubtype(connections = [], subtype) {
-  return connections.find((c) => c.resourceConfiguration?.subtype === subtype) ?? null
+  return (
+    connections.find((c) => c.resourceConfiguration?.subtype === subtype) ??
+    connections.find((c) => c.id === subtype) ??
+    null
+  )
 }

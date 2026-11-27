@@ -6,7 +6,9 @@ const fixture = (name) =>
 const { connections } = fixture('metadata')
 
 const agentsService = { list: vi.fn(), create: vi.fn() }
-const resourcesService = { get: vi.fn(), create: vi.fn() }
+const resourcesService = { get: vi.fn(), create: vi.fn(), remove: vi.fn() }
+const connectionsService = { list: vi.fn(), create: vi.fn(), deleteConnection: vi.fn() }
+const federationService = { save: vi.fn(), test: vi.fn() }
 const showSnackbar = vi.fn()
 
 vi.mock('@/services/agents', () => ({ agentsService }))
@@ -17,7 +19,8 @@ vi.mock('@/services/attributes', () => ({
 vi.mock('@/services/protectionProfiles', () => ({
   protectionProfilesService: { get: vi.fn(async () => ({ profile: null, attribute_name: null })) },
 }))
-vi.mock('@/services/connections', () => ({ connectionsService: { list: vi.fn() } }))
+vi.mock('@/services/connections', () => ({ connectionsService }))
+vi.mock('@/services/federation', () => ({ federationService }))
 vi.mock('@/services/guardrails', () => ({ guardrailsService: { list: vi.fn() } }))
 vi.mock('@/services/dataMasking', () => ({ dataMaskingService: { list: vi.fn() } }))
 vi.mock('@/services/aiSessionAnalyzer', () => ({
@@ -25,7 +28,7 @@ vi.mock('@/services/aiSessionAnalyzer', () => ({
 }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar }))
 
-const { setupConfigFor, isReactSetup, metadataForSubtype, hiddenByFlags } = await import(
+const { setupConfigFor, setupConfigForResource, isReactSetup, metadataForSubtype, hiddenByFlags } = await import(
   '@/pages/Resources/Setup/catalog'
 )
 const { defaultAuthMode } = await import('@/pages/Roles/Configure/utils/mcpGateway')
@@ -34,7 +37,7 @@ const { buildCreatePayload } = await import('@/pages/Resources/Setup/payload')
 const { secretOf } = await import('@/pages/Resources/Setup/roleCredentials')
 const { buildCards, ctaPath } = await import('@/pages/Resources/Setup/activation')
 const { jsonCredentialToField } = await import('@/utils/connectionsMetadataMapper')
-const { encodeSecretForSource, sourceFromEncodedValue, SOURCES } = await import(
+const { decodeSecretValue, encodeSecretForSource, sourceFromEncodedValue, SOURCES } = await import(
   '@/pages/Roles/Configure/utils/secretsCodec'
 )
 const { CONNECTION_METHODS } = await import('@/utils/connectionPolicy')
@@ -76,6 +79,18 @@ function begin(catalogId, { name, agentId, profile = PROFILE }) {
   useResourceSetupStore.setState({ profile })
 }
 
+// Picks IAM Federation and fills the form the way FederationSection does.
+function federate(index, { oauth = false, json, project }) {
+  store().setRoleMethod(role(index).id, CONNECTION_METHODS.IAM_FEDERATION)
+  const credentials = role(index).credentials.getState()
+  if (oauth) credentials.setFederationProvider('gcp_oauth')
+  credentials.setFederationForm({ admin_credentials_json: json })
+  credentials.setFederationProjectId(project)
+}
+
+const decoded = (secret) =>
+  Object.fromEntries(Object.entries(secret).map(([k, v]) => [k, decodeSecretValue(v)]))
+
 function payload() {
   const { name, setup, agentId, roles, profile } = store()
   return buildCreatePayload({
@@ -101,8 +116,8 @@ describe('setupConfigFor', () => {
     ['kubernetes-token', { type: 'custom', subtype: 'kubernetes', command: ['bash'] }],
     ['python-scripts', { type: 'custom', subtype: 'python', command: ['python3', '-'] }],
     ['linux-vm', { type: 'custom', subtype: 'linux-vm', command: ['bash'] }],
-    ['oracle', { type: 'database', subtype: 'oracledb', command: null }],
-    ['tcp', { type: 'application', subtype: 'tcp', command: null }],
+    ['webapps-and-apis', { type: 'application', subtype: 'tcp', command: null }],
+    ['httpproxy', { type: 'httpproxy', subtype: 'httpproxy', command: null }],
   ])('resolves %s', (id, config) => {
     expect(setupConfigFor(id, connections)).toEqual(config)
   })
@@ -113,9 +128,24 @@ describe('setupConfigFor', () => {
     expect(setupConfigFor('not-a-catalog-id', connections)).toBeNull()
   })
 
+  it('has no keys for ids the catalog does not list (Q23)', () => {
+    expect(setupConfigFor('oracle', connections)).toBeNull()
+    expect(setupConfigFor('tcp', connections)).toBeNull()
+  })
+
   it('resolves a mapped id before the metadata loads', () => {
     expect(setupConfigFor('linux-vm', undefined)).toEqual({ type: 'custom', subtype: 'linux-vm', command: ['bash'] })
     expect(setupConfigFor('aws-ssm-script', undefined)).toBeNull()
+  })
+})
+
+describe('every catalog id', () => {
+  // Every id of the real connections-metadata.json, type and subtype only.
+  const catalog = fixture('catalog-ids').connections
+  const ids = [...catalog.map((c) => c.id), 'linux-vm']
+
+  it.each(ids)('%s renders the React wizard', (id) => {
+    expect(isReactSetup(setupConfigFor(id, catalog))).toBe(true)
   })
 })
 
@@ -136,9 +166,25 @@ describe('isReactSetup', () => {
     ['claude-code', true],
     ['mcp', true],
     ['mcpproxy', true],
-    ['bigquery', false],
+    ['bigquery', true],
   ])('%s renders React: %s', (id, react) => {
     expect(isReactSetup(setupConfigFor(id, connections))).toBe(react)
+  })
+})
+
+describe('metadataForSubtype', () => {
+  it('finds httpproxy by its catalog id: its metadata says web-application (Q22)', () => {
+    expect(metadataForSubtype(connections, 'httpproxy')?.id).toBe('httpproxy')
+  })
+
+  it('finds kubernetes-token, with its token fields, by subtype (Q23)', () => {
+    const entry = metadataForSubtype(connections, setupConfigFor('kubernetes-token', connections).subtype)
+    expect(entry?.id).toBe('kubernetes-token')
+    expect(entry.resourceConfiguration.credentials.length).toBeGreaterThan(0)
+  })
+
+  it('answers null for a subtype with no metadata', () => {
+    expect(metadataForSubtype(connections, 'linux-vm')).toBeNull()
   })
 })
 
@@ -572,6 +618,476 @@ describe('POST /resources matches the CLJS wizard: Claude Code, MCP, MCP Gateway
       description: 'flow expired',
     })
     expect(store().step).toBe('success')
+  })
+})
+
+// Fixtures recorded from the CLJS wizard on origin/main for the same input.
+describe('POST /resources matches the CLJS wizard: BigQuery', () => {
+  const agentId = '618bd713-4223-5529-88b3-39540114f32f'
+  const SA = '{"type":"service_account","client_email":"admin@p1.iam.gserviceaccount.com"}'
+  const OAUTH = '{"client_id":"x.apps.googleusercontent.com","client_secret":"s"}'
+  const start = (name) => {
+    begin('bigquery', { name, agentId, profile: null })
+    store().setRoleName(role(0).id, `${name}-role`)
+  }
+
+  it('Manual: the key file and the project', () => {
+    start('bq-manual')
+    type(0, 'GOOGLE_APPLICATION_CREDENTIALS', SA)
+    type(0, 'CLOUDSDK_CORE_PROJECT', 'p1')
+    expect(payload()).toEqual(fixture('bigquery-manual'))
+  })
+
+  it('IAM Federation, gcp_iam: the project and the key as the fallback secret', () => {
+    start('bq-fed-iam')
+    federate(0, { json: SA, project: 'p1' })
+    expect(payload()).toEqual(fixture('bigquery-federation-iam'))
+  })
+
+  it('IAM Federation, gcp_oauth: the project only, never the OAuth client', () => {
+    start('bq-fed-oauth')
+    federate(0, { oauth: true, json: OAUTH, project: 'p2' })
+    expect(payload()).toEqual(fixture('bigquery-federation-oauth'))
+  })
+
+  it('IAM Federation over typed values: the federation project wins, a typed key stays', () => {
+    start('bq-then-oauth')
+    type(0, 'GOOGLE_APPLICATION_CREDENTIALS', SA)
+    type(0, 'CLOUDSDK_CORE_PROJECT', 'p1')
+    federate(0, { oauth: true, json: OAUTH, project: 'p3' })
+    expect(payload()).toEqual(fixture('bigquery-manual-then-oauth'))
+  })
+
+  describe('gcp_iam over earlier input', () => {
+    const TYPED = '{"type":"service_account","client_email":"typed@p.iam.gserviceaccount.com","private_key":"k1"}'
+    const FED = '{"type":"service_account","client_email":"fed@p.iam.gserviceaccount.com","private_key":"k2"}'
+    const startRecorded = (variant) => {
+      const name = `qa916-bq-pay-${variant}`
+      begin('bigquery', { name, agentId: '43bb5bee-844a-50f7-b9c4-bc68f3e4d862', profile: null })
+      store().setRoleName(role(0).id, `${name}-role`)
+    }
+
+    it('the federation key replaces a typed key', () => {
+      startRecorded('manual-then-iam')
+      type(0, 'GOOGLE_APPLICATION_CREDENTIALS', TYPED)
+      type(0, 'CLOUDSDK_CORE_PROJECT', 'p1')
+      federate(0, { json: FED, project: 'p-fed' })
+      expect(payload()).toEqual(fixture('bigquery-manual-then-iam'))
+    })
+
+    it('manual values replace Secrets Manager references', () => {
+      startRecorded('sm-then-iam')
+      store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+      type(0, 'GOOGLE_APPLICATION_CREDENTIALS', TYPED)
+      type(0, 'CLOUDSDK_CORE_PROJECT', 'secret/bq:project')
+      federate(0, { json: FED, project: 'p-fed' })
+      expect(payload()).toEqual(fixture('bigquery-sm-then-iam'))
+    })
+
+    it('fallback "static": the same POST and PUT', async () => {
+      startRecorded('fed-static')
+      federate(0, { json: FED, project: 'p-fed' })
+      role(0).credentials.getState().setFederationForm({ fallback_policy: 'static' })
+      expect(payload()).toEqual(fixture('bigquery-federation-static'))
+
+      useResourceSetupStore.setState({ roleOptions: 'ready' })
+      resourcesService.create.mockResolvedValueOnce({ data: {} })
+      federationService.save.mockResolvedValueOnce({ data: {} })
+      await store().submit(connections)
+      // CLJS also sends `enabled`; the gateway ignores it.
+      const { enabled: _ignored, ...put } = fixture('bigquery-federation-static.put')
+      expect(federationService.save).toHaveBeenCalledWith('qa916-bq-pay-fed-static-role', put)
+    })
+  })
+
+  it('gives each federation role its own form (Q20)', () => {
+    start('bq-two')
+    store().addRole()
+    federate(0, { json: SA, project: 'p1' })
+    federate(1, { oauth: true, json: OAUTH, project: 'p2' })
+    const [first, second] = payload().roles
+    expect(decoded(first.secret)).toEqual({
+      'envvar:CLOUDSDK_CORE_PROJECT': 'p1',
+      'filesystem:GOOGLE_APPLICATION_CREDENTIALS': SA,
+    })
+    expect(decoded(second.secret)).toEqual({ 'envvar:CLOUDSDK_CORE_PROJECT': 'p2' })
+    expect(role(0).credentials.getState().federation.form.builtin_provider).toBe('gcp_iam')
+  })
+})
+
+describe('BigQuery create: federation save and rollback', () => {
+  const SA = '{"type":"service_account"}'
+  const OAUTH = '{"client_id":"x"}'
+  const calls = []
+
+  // Three roles: two federated, one Manual.
+  function threeRoles() {
+    begin('bigquery', { name: 'bq', agentId: 'a1', profile: null })
+    store().addRole()
+    store().addRole()
+    ;['bq-a', 'bq-b', 'bq-c'].forEach((name, i) => store().setRoleName(role(i).id, name))
+    federate(0, { json: SA, project: 'p1' })
+    federate(1, { oauth: true, json: OAUTH, project: 'p2' })
+    type(2, 'CLOUDSDK_CORE_PROJECT', 'p3')
+    useResourceSetupStore.setState({ roleOptions: 'ready' })
+  }
+
+  beforeEach(() => {
+    calls.length = 0
+    resourcesService.create.mockImplementation(async () => {
+      calls.push('POST /resources')
+      return { data: {} }
+    })
+    federationService.save.mockImplementation(async (name) => {
+      calls.push(`PUT ${name}`)
+      return { data: {} }
+    })
+    connectionsService.deleteConnection.mockImplementation(async (name) => {
+      calls.push(`DELETE /connections/${name}`)
+    })
+    resourcesService.remove.mockImplementation(async (name) => {
+      calls.push(`DELETE /resources/${name}`)
+    })
+  })
+
+  it('saves one federation config per federation role, then finishes', async () => {
+    threeRoles()
+    await store().submit(connections)
+    expect(calls).toEqual(['POST /resources', 'PUT bq-a', 'PUT bq-b'])
+    expect(federationService.save).toHaveBeenCalledWith('bq-a', {
+      hook_source: 'builtin',
+      builtin_provider: 'gcp_iam',
+      admin_credentials_json: SA,
+      extra_config: { project_id: 'p1' },
+      identity_source_attribute: '$.user.email',
+      identity_target_template: '{user.email}',
+      fallback_policy: 'deny',
+      token_ttl_seconds: 3600,
+    })
+    expect(federationService.save.mock.calls[1][1]).toMatchObject({
+      builtin_provider: 'gcp_oauth',
+      admin_credentials_json: OAUTH,
+      extra_config: { project_id: 'p2' },
+    })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'success', text: 'Resource created.' })
+    expect(store().step).toBe('success')
+  })
+
+  it('a failed save deletes every role, then the resource, and names the role', async () => {
+    threeRoles()
+    federationService.save.mockImplementation(async (name) => {
+      calls.push(`PUT ${name}`)
+      if (name === 'bq-b') throw { response: { data: { message: 'unsupported placeholder {user.handle}' } } }
+      return { data: {} }
+    })
+    await store().submit(connections)
+    expect(calls.slice(0, 3)).toEqual(['POST /resources', 'PUT bq-a', 'PUT bq-b'])
+    expect(calls.slice(3, 6).sort()).toEqual([
+      'DELETE /connections/bq-a',
+      'DELETE /connections/bq-b',
+      'DELETE /connections/bq-c',
+    ])
+    expect(calls[6]).toBe('DELETE /resources/bq')
+    expect(showSnackbar).toHaveBeenCalledTimes(1)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'IAM Federation setup failed for bq-b. The resource was not created.',
+      description: 'unsupported placeholder {user.handle}',
+    })
+    expect(store()).toMatchObject({ step: 'roles', submitting: false })
+  })
+
+  it('names what the rollback could not delete', async () => {
+    threeRoles()
+    federationService.save.mockRejectedValue(new Error('boom'))
+    connectionsService.deleteConnection.mockImplementation(async (name) => {
+      calls.push(`DELETE /connections/${name}`)
+      if (name === 'bq-c') throw new Error('busy')
+    })
+    await store().submit(connections)
+    expect(resourcesService.remove).not.toHaveBeenCalled()
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'IAM Federation setup failed for bq-a, bq-b. Could not delete bq-c, bq: delete them before you try again.',
+      description: 'boom',
+    })
+  })
+
+  it('rolls back after the admin left the wizard, without a toast', async () => {
+    threeRoles()
+    const pending = []
+    federationService.save.mockImplementation(() => new Promise((_, reject) => pending.push(reject)))
+    const submitting = store().submit(connections)
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    store().start(setupConfigFor('postgres', connections))
+    pending.forEach((reject) => reject(new Error('late')))
+    await submitting
+    expect(resourcesService.remove).toHaveBeenCalledWith('bq')
+    expect(showSnackbar).not.toHaveBeenCalled()
+  })
+
+  it('saves the federation config as submitted, even if the form changes during the POST', async () => {
+    threeRoles()
+    let release
+    resourcesService.create.mockImplementation(() => new Promise((resolve) => (release = () => resolve({ data: {} }))))
+    const submitting = store().submit(connections)
+    role(0).credentials.getState().setFederationProjectId('edited')
+    release()
+    await submitting
+    expect(federationService.save.mock.calls[0][1].extra_config).toEqual({ project_id: 'p1' })
+  })
+
+  it('a resource with no federation role sends no PUT', async () => {
+    begin('bigquery', { name: 'bq-plain', agentId: 'a1', profile: null })
+    useResourceSetupStore.setState({ roleOptions: 'ready' })
+    await store().submit(connections)
+    expect(federationService.save).not.toHaveBeenCalled()
+    expect(store().step).toBe('success')
+  })
+})
+
+// Fixtures recorded from the CLJS add-role page on origin/main for the same input.
+describe('/resources/:name/add-role', () => {
+  const agentId = 'b09d0134-4125-5c2f-83b8-e85300706509'
+  const resource = (name, type, subtype) => ({ name, type, subtype, agent_id: agentId })
+  const PG = resource('ar-pg', 'database', 'postgres')
+  const BQ = resource('ar-bq', 'custom', 'bigquery')
+  const SA = '{"type":"service_account","client_email":"admin@p1.iam.gserviceaccount.com"}'
+  const reader = { HOST: 'pg.internal', USER: 'reader', PASS: 'pw', PORT: '5432', DB: 'app' }
+  const calls = []
+
+  function startOn(target) {
+    store().startAddRole(target)
+    useResourceSetupStore.setState({ roleOptions: 'ready', profile: null })
+  }
+  const fill = (index, values) => Object.entries(values).forEach(([env, value]) => type(index, env, value))
+  const posted = () => connectionsService.create.mock.calls.map(([body]) => body)
+  const gatewayError = (message) => ({ response: { data: { message } } })
+
+  beforeEach(() => {
+    calls.length = 0
+    connectionsService.create.mockImplementation(async (body) => {
+      calls.push(`POST ${body.name}`)
+      return { name: body.name }
+    })
+    federationService.save.mockImplementation(async (name) => {
+      calls.push(`PUT ${name}`)
+      return { data: {} }
+    })
+    connectionsService.deleteConnection.mockImplementation(async (name) => {
+      calls.push(`DELETE ${name}`)
+    })
+  })
+
+  it('creates roles of the resource type; Linux VM keeps its command', () => {
+    expect(setupConfigForResource(PG)).toEqual({ type: 'database', subtype: 'postgres', command: null })
+    expect(setupConfigForResource(resource('vm', 'custom', 'linux-vm'))).toEqual({
+      type: 'custom',
+      subtype: 'linux-vm',
+      command: ['bash'],
+    })
+  })
+
+  it.each([
+    ['postgres', true],
+    ['bigquery', true],
+    ['ssh', true],
+    ['web-application', false],
+  ])('renders React for a %s resource: %s', (subtype, react) => {
+    expect(isReactSetup(setupConfigForResource(resource('r', 'custom', subtype)))).toBe(react)
+  })
+
+  it('starts on the roles step with the resource name, its agent and one role', () => {
+    store().startAddRole(PG)
+    expect(store()).toMatchObject({ step: 'roles', name: 'ar-pg', agentId, resource: PG })
+    expect(store().roles).toHaveLength(1)
+    expect(role(0).name).toMatch(/^ar-pg-role-\d{4}$/)
+  })
+
+  it('postgres, two roles: one POST /connections each, with resource_name', async () => {
+    startOn(PG)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    store().setRoleName(role(1).id, 'ar-pg-write')
+    fill(0, reader)
+    fill(1, { ...reader, USER: 'writer' })
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-postgres-two'))
+    expect(store().step).toBe('success')
+    expect(store().createdRoles.map((r) => r.name)).toEqual(['ar-pg-read', 'ar-pg-write'])
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'success', text: '2 role(s) created' })
+  })
+
+  it('ssh, password', async () => {
+    startOn(resource('ar-ssh', 'application', 'ssh'))
+    store().setRoleName(role(0).id, 'ar-ssh-ops')
+    typeKey(0, 'envvar:HOST', 'ssh.internal')
+    typeKey(0, 'envvar:PORT', '2222')
+    typeKey(0, 'envvar:USER', 'ubuntu')
+    typeKey(0, 'envvar:PASS', 'pw')
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-ssh-password'))
+  })
+
+  it('bigquery, Manual', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-manual')
+    fill(0, { GOOGLE_APPLICATION_CREDENTIALS: SA, CLOUDSDK_CORE_PROJECT: 'p1' })
+    await store().addRoles(connections)
+    expect(posted()).toEqual(fixture('add-role-bigquery-manual'))
+    expect(federationService.save).not.toHaveBeenCalled()
+  })
+
+  it('a federation role sends the fallback secret, then saves its config (Q12)', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    await store().addRoles(connections)
+    expect(calls).toEqual(['POST ar-bq-fed', 'PUT ar-bq-fed'])
+    expect(decoded(posted()[0].secret)).toEqual({
+      'envvar:CLOUDSDK_CORE_PROJECT': 'p1',
+      'filesystem:GOOGLE_APPLICATION_CREDENTIALS': SA,
+    })
+    expect(federationService.save.mock.calls[0][1]).toMatchObject({
+      builtin_provider: 'gcp_iam',
+      admin_credentials_json: SA,
+      extra_config: { project_id: 'p1' },
+    })
+    expect(store().step).toBe('success')
+  })
+
+  it('the federation PUT carries the values the POST was built from (Q12)', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    let release
+    connectionsService.create.mockImplementation(
+      (body) => new Promise((resolve) => (release = () => resolve({ name: body.name }))),
+    )
+    const adding = store().addRoles(connections)
+    role(0).credentials.getState().setFederationProjectId('edited')
+    release()
+    await adding
+    expect(decoded(posted()[0].secret)['envvar:CLOUDSDK_CORE_PROJECT']).toBe('p1')
+    expect(federationService.save.mock.calls[0][1].extra_config).toEqual({ project_id: 'p1' })
+  })
+
+  it('a failed federation save deletes that role only and names it (Q12, Q13)', async () => {
+    startOn(BQ)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    store().setRoleName(role(1).id, 'ar-bq-manual')
+    federate(0, { json: SA, project: 'p1' })
+    fill(1, { CLOUDSDK_CORE_PROJECT: 'p2' })
+    federationService.save.mockRejectedValueOnce(gatewayError('bad template'))
+    await store().addRoles(connections)
+    expect(calls).toEqual(['POST ar-bq-fed', 'POST ar-bq-manual', 'DELETE ar-bq-fed'])
+    expect(resourcesService.remove).not.toHaveBeenCalled()
+    expect(store()).toMatchObject({
+      step: 'success',
+      failedRoles: [{ name: 'ar-bq-fed', error: 'IAM Federation setup failed: bad template' }],
+    })
+    expect(store().createdRoles.map((r) => r.name)).toEqual(['ar-bq-manual'])
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-bq-fed',
+      description: 'IAM Federation setup failed: bad template',
+    })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '1 role(s) created, 1 failed' })
+  })
+
+  it('two roles with one name: only the one the gateway took counts as created (Q13)', async () => {
+    startOn(PG)
+    store().addRole()
+    store().setRoleName(role(0).id, 'ar-pg-dup')
+    store().setRoleName(role(1).id, 'ar-pg-dup')
+    fill(0, reader)
+    fill(1, reader)
+    connectionsService.create
+      .mockResolvedValueOnce({ name: 'ar-pg-dup' })
+      .mockRejectedValueOnce(gatewayError('already exists'))
+    await store().addRoles(connections)
+    expect(store().createdRoles).toHaveLength(1)
+    expect(store().failedRoles).toEqual([{ id: role(1).id, name: 'ar-pg-dup', error: 'already exists' }])
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '1 role(s) created, 1 failed' })
+  })
+
+  it('says so when the role it could not configure is still there', async () => {
+    startOn(BQ)
+    store().setRoleName(role(0).id, 'ar-bq-fed')
+    federate(0, { json: SA, project: 'p1' })
+    federationService.save.mockRejectedValueOnce(gatewayError('bad template'))
+    connectionsService.deleteConnection.mockRejectedValueOnce(new Error('offline'))
+    await store().addRoles(connections)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-bq-fed',
+      description:
+        'IAM Federation setup failed: bad template Could not delete the role: delete it before you try again.',
+    })
+  })
+
+  it('stays on the roles step when no role was created (Q13)', async () => {
+    startOn(PG)
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    fill(0, reader)
+    connectionsService.create.mockRejectedValueOnce(gatewayError('connection already exists'))
+    await store().addRoles(connections)
+    expect(store()).toMatchObject({ step: 'roles', submitting: false, createdRoles: [] })
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'error',
+      text: 'Failed to create role: ar-pg-read',
+      description: 'connection already exists',
+    })
+    expect(showSnackbar).toHaveBeenCalledWith({ level: 'warning', text: '0 role(s) created, 1 failed' })
+  })
+
+  it('warns about an MCP OAuth login the gateway did not attach', async () => {
+    startOn(PG)
+    store().setRoleName(role(0).id, 'ar-pg-read')
+    connectionsService.create.mockResolvedValueOnce({ name: 'ar-pg-read', mcp_oauth_warning: 'flow expired' })
+    await store().addRoles(connections)
+    expect(showSnackbar).toHaveBeenCalledWith({
+      level: 'warning',
+      text: 'MCP OAuth login not attached to ar-pg-read',
+      description: 'flow expired',
+    })
+  })
+
+  it('drops a save that answers after a new run started', async () => {
+    let answer
+    connectionsService.create.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    startOn(PG)
+    const saving = store().addRoles(connections)
+    startOn(BQ)
+    answer({ name: 'x' })
+    await saving
+    expect(store()).toMatchObject({ name: 'ar-bq', step: 'roles', createdRoles: [] })
+    expect(showSnackbar).not.toHaveBeenCalled()
+  })
+
+  it('reads the resource: found, not found (Q8), or an error', async () => {
+    resourcesService.get.mockResolvedValueOnce({ data: PG })
+    await store().loadTarget('ar-pg')
+    expect(store().target).toMatchObject({ name: 'ar-pg', status: 'ready', resource: PG })
+
+    resourcesService.get.mockRejectedValueOnce({ response: { status: 404 } })
+    await store().loadTarget('nope')
+    expect(store().target).toMatchObject({ name: 'nope', status: 'not-found', resource: null })
+
+    resourcesService.get.mockRejectedValueOnce({ response: { status: 500, data: { message: 'boom' } } })
+    await store().loadTarget('ar-pg')
+    expect(store().target).toMatchObject({ status: 'error', error: 'boom' })
+  })
+
+  it('drops a resource read once the page is left', async () => {
+    let answer
+    resourcesService.get.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const loading = store().loadTarget('ar-pg')
+    store().clearTarget()
+    answer({ data: PG })
+    await loading
+    expect(store().target.status).toBe('idle')
   })
 })
 

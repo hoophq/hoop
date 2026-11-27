@@ -74,7 +74,7 @@ export default function TerminalAccessTab({ connection }) {
       />
 
       <Stack gap="md">
-        <Stack gap="xs">
+        <Stack gap="xsAlt">
           <Title order={4}>Guardrails</Title>
           <Text size="sm" c="dimmed">
             Create custom rules to guide and protect usage within your
@@ -102,7 +102,7 @@ export default function TerminalAccessTab({ connection }) {
       </Stack>
 
       <Stack gap="md">
-        <Stack gap="xs">
+        <Stack gap="xsAlt">
           <Title order={4}>Jira Templates</Title>
           <Text size="sm" c="dimmed">
             Optimize and automate workflows with Jira Integration.
@@ -129,7 +129,7 @@ export default function TerminalAccessTab({ connection }) {
       </Stack>
 
       <Stack gap="md">
-        <Stack gap="xs">
+        <Stack gap="xsAlt">
           <Title order={4}>Require specific metadata</Title>
           <Text size="sm" c="dimmed">
             Include mandatory metadata to be filled before executing
