@@ -113,4 +113,10 @@ describe('the approver of a held level in the analyzer summary', () => {
       'Every statement · high: hold (Human: Sidecar owners, dba)',
     )
   })
+
+  it('mentions escalation when escalate is set', () => {
+    expect(detail({ type: 'human', owners: true, escalate: { after_sec: 900, groups: ['risk'] } })).toBe(
+      'Every statement · high: hold (Human: Sidecar owners; escalates to risk after 15m)',
+    )
+  })
 })

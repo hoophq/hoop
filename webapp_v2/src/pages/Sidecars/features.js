@@ -63,9 +63,13 @@ function notifyDetail(notify) {
 function approverDetail(read, sep) {
   if (!read) return 'approval rule'
   if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  const esc =
+    read.escalate?.after_sec && Array.isArray(read.escalate?.groups) && read.escalate.groups.length > 0
+      ? `; escalates to ${read.escalate.groups.join(', ')} after ${Math.round(read.escalate.after_sec / 60)}m`
+      : ''
   if (read.routing) {
     const candidates = Array.isArray(read.routing.candidates) ? read.routing.candidates : []
-    return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}`
+    return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}${esc}`
   }
   const notify = notifyDetail(read.notify)
   const who = read.owners
@@ -73,7 +77,7 @@ function approverDetail(read, sep) {
     : read.groups.length > 0
       ? read.groups.join(', ')
       : 'administrators'
-  return `Human${sep}${who}${notify ? ` by ${notify}` : ''}`
+  return `Human${sep}${who}${notify ? ` by ${notify}` : ''}${esc}`
 }
 
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold

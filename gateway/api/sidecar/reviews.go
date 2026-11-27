@@ -260,6 +260,10 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 		filing.notify = &daemon.ApprovalRouting{Candidates: approver.Groups, Notify: notifyMap}
 		filing.includeOwners = approver.Owners
 	}
+	if approver != nil && approver.Escalate != nil {
+		filing.escalateAfterSec = approver.Escalate.AfterSec
+		filing.escalateGroups = models.StripReservedReviewGroups(services.NormalizeReviewerGroups(approver.Escalate.Groups))
+	}
 	// The limits are those of the block's approval_rule: an older build files
 	// this level under that rule, so both builds get the same limits.
 	if ruleName != "" {
@@ -812,21 +816,21 @@ func notifyFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.Side
 func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) approvalrouting.ReviewCard {
 	msg := newSlackReviewRequest(sidecar, rev, listenerName, display)
 	return approvalrouting.ReviewCard{
-		ReviewID:        msg.ID,
-		SessionID:       msg.SessionID,
-		Requester:       msg.Name,
-		RequesterEmail:  msg.Email,
-		RequesterGroups: msg.UserGroups,
-		Connection:      msg.Connection,
-		ConnectionType:  msg.ConnectionType,
-		Sidecar:         sidecar.Name,
-		Listener:        listenerName,
-		RiskLevel:       rev.RiskLevel.String,
-		Statement:       msg.Script,
-		ApprovalURL:     msg.WebappURL,
+		ReviewID:          msg.ID,
+		SessionID:         msg.SessionID,
+		Requester:         msg.Name,
+		RequesterEmail:    msg.Email,
+		RequesterGroups:   msg.UserGroups,
+		Connection:        msg.Connection,
+		ConnectionType:    msg.ConnectionType,
+		Sidecar:           sidecar.Name,
+		Listener:          listenerName,
+		RiskLevel:         rev.RiskLevel.String,
+		Statement:         msg.Script,
+		ApprovalURL:       msg.WebappURL,
 		Groups:            msg.ApprovalGroups,
 		ChannelNoticeOnly: models.ReviewHasSidecarOwners(rev.ReviewGroups),
-		ExpiresAt:       msg.ExpiresAt,
+		ExpiresAt:         msg.ExpiresAt,
 	}
 }
 
@@ -1170,6 +1174,9 @@ type sidecarFiling struct {
 	notify *daemon.ApprovalRouting
 	// includeOwners marks a level with approvers.<level>.owners set.
 	includeOwners bool
+	// escalateAfterSec and escalateGroups are copied onto the review at filing.
+	escalateAfterSec int
+	escalateGroups   []string
 	// routingRecord is the routing decision the review stores.
 	routingRecord *models.ReviewRouting
 }
@@ -1277,9 +1284,26 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		// Fixed at filing like the policy, so a rule edit moves no live review.
 		ExpiresAt:      models.SidecarReviewDeadline(now, filing.pendingTTL),
 		ApprovalTTLSec: copyInt(filing.approvalTTL),
+		EscalateAt:     escalationDeadline(now, filing.escalateAfterSec, filing.escalateGroups),
+		EscalateGroups: escalationGroups(filing.escalateAfterSec, filing.escalateGroups),
 
 		CreatedAt: now,
 	}
+}
+
+func escalationDeadline(now time.Time, afterSec int, groups []string) *time.Time {
+	if afterSec <= 0 || len(groups) == 0 {
+		return nil
+	}
+	t := now.Add(time.Duration(afterSec) * time.Second)
+	return &t
+}
+
+func escalationGroups(afterSec int, groups []string) pq.StringArray {
+	if afterSec <= 0 || len(groups) == 0 {
+		return nil
+	}
+	return pq.StringArray(groups)
 }
 
 func copyInt(v *int) *int {

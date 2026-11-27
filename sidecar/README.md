@@ -1727,6 +1727,7 @@ An `approvers.<level>` entry has these keys:
 | `owners` | when true, the sidecar's owners may approve a `human` level, beside any `groups`. With `groups` empty, only the owners approve. Default delivery is Slack direct messages, with no organization default channel |
 | `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
 | `notify` | how the approvers of a `human` level with `groups` are told; see below. `routing` has its own |
+| `escalate` | after `after_sec` seconds (60 to 604800) with no decision, adds `groups` to the review and sends their members a Slack direct message |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
 
 A `human` level files its approval request with the risk level and no
@@ -1752,6 +1753,7 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `notify` on an `ai_agent` level | nobody would tell those people |
 | `owners` and `routing` on one entry | they are alternatives |
 | `owners` on an `ai_agent` level | nobody would ask those people |
+| `escalate` on an `ai_agent` level, delay out of range, or empty/blank `escalate.groups` | invalid escalation |
 | a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
 
@@ -1892,6 +1894,17 @@ The sidecar does nothing with `owners`. A sidecar that reports
 block without it, and the control plane still acts on it. A sidecar that
 cannot read `approvers` is refused a block that sets `owners`.
 
+**Escalating unanswered approval requests (`escalate`).** Setting
+`escalate: {after_sec: 900, groups: [risk]}` on a `human` level adds those
+groups to a pending review when nobody decides within `after_sec` seconds and
+notifies their members by Slack direct message (never a channel). Reviews
+that were already decided or expired are not escalated.
+
+The sidecar does nothing with `escalate`. A sidecar that reports
+`analyzer_level_approvers` and not `analyzer_approver_escalate` is served the
+block without it, and the control plane still runs the escalation. A sidecar
+that cannot read `approvers` is refused a block that sets `escalate`.
+
 **The approval agent (`type: ai_agent`).** The lane's own provider and model
 decide in the sidecar, at once, with no wait and no poll. Nothing is filed
 with the control plane: the decision is recorded in the statement's audit
@@ -1972,8 +1985,8 @@ otherwise none, and only administrators approve. So no one approves a level
 on an older sidecar that they could not approve on a new one: more
 oversight, not less. A block with `approvers` and no `approval_rule` is
 refused to such a sidecar, naming the capability and the release that adds
-it. So is a block whose `approvers` set `routing`, `notify` or `owners`, with
-or without an `approval_rule`.
+it. So is a block whose `approvers` set `routing`, `notify`, `owners` or
+`escalate`, with or without an `approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects

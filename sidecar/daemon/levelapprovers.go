@@ -56,6 +56,11 @@ type LevelApprover struct {
 	// owners approve, not the administrators. The control plane reads it; the
 	// sidecar files the level and never the owners.
 	Owners bool `json:"owners,omitempty" cap:"analyzer_approver_owners"`
+
+	// Escalate adds Groups to a pending review and notifies their members by
+	// direct message when nobody decides within AfterSec seconds. The control
+	// plane reads it; the sidecar files the level and never the escalation.
+	Escalate *ApprovalEscalation `json:"escalate,omitempty" cap:"analyzer_approver_escalate"`
 }
 
 // CapabilityApprovalRouting means this build decodes approvers.<level>.routing.
@@ -75,6 +80,27 @@ const CapabilityApproverNotify = "analyzer_approver_notify"
 // decode approvers at all is refused: it files under approval_rule, which
 // lets other groups approve and posts in a channel.
 const CapabilityApproverOwners = "analyzer_approver_owners"
+
+// CapabilityApproverEscalate means this build decodes approvers.<level>.escalate.
+// The sidecar does nothing with the key, so ServeLevelApprovers serves a
+// build without it the document with the key removed. A build that does not
+// decode approvers at all is refused: under approval_rule the escalation
+// would not run.
+const CapabilityApproverEscalate = "analyzer_approver_escalate"
+
+// Bounds of ApprovalEscalation.AfterSec: one minute to seven days, matching
+// the sidecar review TTL bounds on the control plane.
+const (
+	MinEscalationDelaySec = 60
+	MaxEscalationDelaySec = 604800
+)
+
+// ApprovalEscalation sends a pending approval request to more groups by
+// direct message when nobody decides within AfterSec seconds.
+type ApprovalEscalation struct {
+	AfterSec int      `json:"after_sec,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
+}
 
 // ApprovalRouting is the AI routing of a human level's approval request.
 type ApprovalRouting struct {
@@ -137,6 +163,12 @@ func (a *LevelApprovers) notifies() bool {
 func (a *LevelApprovers) hasOwners() bool {
 	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
 		func(l *LevelApprover) bool { return l != nil && l.Owners })
+}
+
+// escalates reports a block where some level sets escalate.
+func (a *LevelApprovers) escalates() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && l.Escalate != nil })
 }
 
 // routedLevels lists the held levels whose human approver sets routing:
@@ -309,6 +341,7 @@ func validateLevelApprovers(la *LaneAnalyzerConfig, where string) []string {
 		problems = append(problems, validateRouting(a, at)...)
 		problems = append(problems, validateNotify(a, at)...)
 		problems = append(problems, validateOwners(a, at)...)
+		problems = append(problems, validateEscalate(a, at)...)
 	}
 	return problems
 }
@@ -378,6 +411,33 @@ func validateOwners(a *LevelApprover, at string) []string {
 	if a.Type == analyzer.ApproverAIAgent {
 		problems = append(problems, fmt.Sprintf("%s: owners name people nobody asks, "+
 			"and the type is %q", at, analyzer.ApproverAIAgent))
+	}
+	return problems
+}
+
+// validateEscalate refuses an escalation on ai_agent, an out-of-range delay,
+// an empty group list, or a blank group.
+func validateEscalate(a *LevelApprover, at string) []string {
+	e := a.Escalate
+	if e == nil {
+		return nil
+	}
+	var problems []string
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: escalate names people nobody asks, "+
+			"and the type is %q", at, analyzer.ApproverAIAgent))
+	}
+	if e.AfterSec < MinEscalationDelaySec || e.AfterSec > MaxEscalationDelaySec {
+		problems = append(problems, fmt.Sprintf("%s: escalate.after_sec must be between %d and %d seconds, got %d",
+			at, MinEscalationDelaySec, MaxEscalationDelaySec, e.AfterSec))
+	}
+	if len(e.Groups) == 0 {
+		problems = append(problems, fmt.Sprintf("%s: escalate.groups is required", at))
+	}
+	for i, g := range e.Groups {
+		if strings.TrimSpace(g) == "" {
+			problems = append(problems, fmt.Sprintf("%s: escalate.groups[%d] is blank", at, i))
+		}
 	}
 	return problems
 }
@@ -455,7 +515,8 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 	if hs.grants(CapabilityLevelApprovers, since) {
 		stripNotify := !hs.grants(CapabilityApproverNotify, since)
 		stripOwners := !hs.grants(CapabilityApproverOwners, since)
-		if !stripNotify && !stripOwners {
+		stripEscalate := !hs.grants(CapabilityApproverEscalate, since)
+		if !stripNotify && !stripOwners && !stripEscalate {
 			return cfg
 		}
 		return mapLevelApprovers(cfg, func(a *LevelApprover) bool {
@@ -468,13 +529,18 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 				a.Owners = false
 				changed = true
 			}
+			if stripEscalate && a.Escalate != nil {
+				a.Escalate = nil
+				changed = true
+			}
 			return changed
 		})
 	}
 	var listeners []ListenerConfig
 	for i, l := range cfg.Listeners {
 		if l.Analyzer == nil || l.Analyzer.Approvers == nil || l.Analyzer.ApprovalRule == "" ||
-			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() || l.Analyzer.Approvers.hasOwners() {
+			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() ||
+			l.Analyzer.Approvers.hasOwners() || l.Analyzer.Approvers.escalates() {
 			continue
 		}
 		if listeners == nil {

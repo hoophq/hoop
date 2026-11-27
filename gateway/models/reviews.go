@@ -110,6 +110,12 @@ type Review struct {
 	// from the rule at filing. A gateway review sets neither.
 	ExpiresAt      *time.Time `gorm:"column:expires_at"`
 	ApprovalTTLSec *int       `gorm:"column:approval_ttl_sec"`
+	// EscalateAt is when an unanswered pending review escalates to
+	// EscalateGroups by direct message; nil means no escalation. EscalatedAt
+	// is stamped once by ClaimDueEscalations.
+	EscalateAt     *time.Time     `gorm:"column:escalate_at"`
+	EscalateGroups pq.StringArray `gorm:"column:escalate_groups;type:text[]"`
+	EscalatedAt    *time.Time     `gorm:"column:escalated_at;->"`
 
 	// ReservedAt is when a sidecar reserved this approval to settle it after
 	// the upstream answers. Set only while the review is PROCESSING.

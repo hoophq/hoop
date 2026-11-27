@@ -45,6 +45,26 @@ export const APPROVER_RULE = 'approval_rule'
 // (`approvers.<level>.notify`). `groupsChosen` marks `groups` as a By groups
 // selection, stored or made, so an empty one means the administrators and is
 // not seeded again.
+const emptyEscalate = () => ({ on: false, afterMinutes: 15, groups: [] })
+
+const readEscalate = (raw) => {
+  if (!raw || typeof raw !== 'object') return emptyEscalate()
+  const sec = Number(raw.after_sec)
+  return {
+    on: true,
+    afterMinutes: sec > 0 ? Math.max(1, Math.round(sec / 60)) : 15,
+    groups: Array.isArray(raw.groups) ? raw.groups.filter((g) => typeof g === 'string' && g !== '') : [],
+  }
+}
+
+const escalateToSpec = (esc) => {
+  if (!esc?.on) return null
+  const afterSec = Math.round(Number(esc.afterMinutes) * 60)
+  const groups = (esc.groups ?? []).map((g) => g.trim()).filter(Boolean)
+  if (afterSec < 60 || groups.length === 0) return null
+  return { after_sec: afterSec, groups }
+}
+
 const emptyApproval = () => ({
   approver: APPROVER_AI,
   groups: [],
@@ -52,6 +72,7 @@ const emptyApproval = () => ({
   groupsChosen: false,
   prompt: '',
   routing: emptyRouting(),
+  escalate: emptyEscalate(),
 })
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
 
@@ -162,9 +183,15 @@ export function specToForm(spec, ruleName, reviewers) {
       // Only a person's entry has a way to approve; an AI agent's one turns
       // into a person with no mode yet, like a new hold.
       const human = read.approver === APPROVER_HUMAN
-      const { notify, ...approver } = read
+      const { notify, escalate, ...approver } = read
       const routing = human ? readRouting(read.routing, notify) : emptyRouting()
-      form.approval[level] = { ...emptyApproval(), ...approver, routing, groupsChosen: human && routing.mode === ROUTING_STATIC }
+      form.approval[level] = {
+        ...emptyApproval(),
+        ...approver,
+        routing,
+        escalate: human ? readEscalate(escalate) : emptyEscalate(),
+        groupsChosen: human && routing.mode === ROUTING_STATIC,
+      }
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
@@ -207,13 +234,19 @@ export const humanLevelsWithoutMode = (f) =>
 // (humanLevelsWithoutMode).
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
-    if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
+    const escalate = escalateToSpec(approval.escalate)
+    if (approval.routing.mode === ROUTING_AI) {
+      const entry = { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
+      if (escalate) entry.escalate = escalate
+      return entry
+    }
     if (approval.routing.mode !== ROUTING_STATIC) return null
     const entry = { type: APPROVER_HUMAN }
     if (approval.owners) entry.owners = true
     if (approval.groups.length > 0) entry.groups = approval.groups
     const notify = notifyToSpec(approval.routing, true)
     if (notify) entry.notify = notify
+    if (escalate) entry.escalate = escalate
     return entry
   }
   if (approval.approver === APPROVER_AI) {

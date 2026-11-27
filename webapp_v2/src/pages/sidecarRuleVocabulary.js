@@ -294,10 +294,19 @@ export function readLevelApprover(spec, level) {
       prompt: '',
       routing: entry.routing ?? null,
       notify: entry.notify ?? null,
+      escalate: entry.escalate ?? null,
     }
   }
   if (entry?.type === APPROVER_AI) {
-    return { approver: APPROVER_AI, groups: [], owners: false, prompt: entry.prompt ?? '', routing: null, notify: null }
+    return {
+      approver: APPROVER_AI,
+      groups: [],
+      owners: false,
+      prompt: entry.prompt ?? '',
+      routing: null,
+      notify: null,
+      escalate: null,
+    }
   }
   return null
 }

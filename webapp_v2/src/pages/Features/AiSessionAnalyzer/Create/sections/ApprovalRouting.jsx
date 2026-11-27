@@ -5,6 +5,7 @@ import { Sparkles, UsersRound } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Code from '@/components/Code'
 import MultiSelect from '@/components/MultiSelect'
+import NumberInput from '@/components/NumberInput'
 import SegmentedControl from '@/components/SegmentedControl'
 import Select from '@/components/Select'
 import Switch from '@/components/Switch'
@@ -328,6 +329,45 @@ export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, 
             <Notify routing={routing} onRoute={setRoute} />
           </>
         )
+      )}
+      {isRoutingMode(routing.mode) && (
+        <Stack gap="sm">
+          <Switch
+            label="Escalate if unanswered"
+            description="Add more groups and send their members a Slack direct message when nobody decides in time."
+            checked={Boolean(approval.escalate?.on)}
+            onChange={(event) =>
+              onChange({
+                escalate: {
+                  afterMinutes: approval.escalate?.afterMinutes ?? 15,
+                  groups: approval.escalate?.groups ?? [],
+                  on: event.currentTarget.checked,
+                },
+              })
+            }
+          />
+          {approval.escalate?.on && (
+            <Stack gap="sm">
+              <NumberInput
+                label="Escalate after (minutes)"
+                description="Between 1 minute and 7 days."
+                min={1}
+                max={10080}
+                value={approval.escalate.afterMinutes}
+                onChange={(value) =>
+                  onChange({ escalate: { ...approval.escalate, afterMinutes: value === '' ? '' : Number(value) } })
+                }
+              />
+              <MultiSelect
+                label="Escalation groups"
+                placeholder="Select groups"
+                data={groupOptions}
+                value={approval.escalate.groups}
+                onChange={(groups) => onChange({ escalate: { ...approval.escalate, groups } })}
+              />
+            </Stack>
+          )}
+        </Stack>
       )}
     </Stack>
   )

@@ -271,6 +271,26 @@ describe('sidecar owners as approvers', () => {
   })
 })
 
+describe('escalation of unanswered holds', () => {
+  it('round-trips escalate when on and omits it when off', () => {
+    const spec = {
+      high: 'require_approval',
+      approvers: {
+        high: { type: 'human', owners: true, escalate: { after_sec: 900, groups: ['risk'] } },
+      },
+    }
+    const form = specToForm(spec, 'r', [])
+    expect(form.approval.high.escalate).toEqual({ on: true, afterMinutes: 15, groups: ['risk'] })
+    expect(formToSpec(form, 'r').approvers.high).toEqual({
+      type: 'human',
+      owners: true,
+      escalate: { after_sec: 900, groups: ['risk'] },
+    })
+    form.approval.high.escalate.on = false
+    expect(formToSpec(form, 'r').approvers.high).toEqual({ type: 'human', owners: true })
+  })
+})
+
 describe('a level card', () => {
   it('is configured once its approver is chosen, and a person has a way to approve', () => {
     expect(approverConfigured({ approver: 'ai_agent', routing: emptyRouting() })).toBe(true)
