@@ -232,11 +232,17 @@ func TestUnlinkedProviderNamesWhatIsLinked(t *testing.T) {
 	}
 }
 
-// fail_open defaults to TRUE here, unlike every other evaluator, because a
-// classifier that denies during a provider outage takes the database down.
-func TestFailOpenDefaultsTrue(t *testing.T) {
-	if !(&AnalyzerConfig{}).failOpen() {
-		t.Error("fail_open defaulted to false")
+// fail_open defaults to FALSE, as every other evaluator does (ENG-1265): an
+// unclassified statement is denied unless an operator chose otherwise.
+func TestFailOpenDefaultsFalse(t *testing.T) {
+	if (&AnalyzerConfig{}).failOpen() {
+		t.Error("fail_open defaulted to true")
+	}
+	if (*AnalyzerConfig)(nil).failOpen() {
+		t.Error("a missing analyzer section resolved fail_open to true")
+	}
+	if !(&AnalyzerConfig{FailOpen: new(true)}).failOpen() {
+		t.Error("an explicit fail_open=true was ignored")
 	}
 	if (&AnalyzerConfig{FailOpen: new(false)}).failOpen() {
 		t.Error("an explicit fail_open=false was ignored")

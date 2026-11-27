@@ -1411,7 +1411,7 @@ analyzer:                      # one provider serves every lane; the rest are
   # credentials_file omitted -> Application Default Credentials.
   # Under GKE Workload Identity there is then no credential on disk at all.
   timeout_sec: 10
-  fail_open: true              # the default, and see below
+  fail_open: false             # the default, and see below
   send: redacted               # raw | redacted | refuse
   max_input_bytes: 8192
   cache: {size: 4096, ttl_sec: 900}
@@ -1608,10 +1608,15 @@ nothing removes one.
 **Only requests are classified.** By the time a response comes back a write
 has already happened, and read-side exposure is masking's job.
 
-**`fail_open` defaults to true here**, the opposite of every other evaluator.
-A classifier that denies whenever its provider has an outage takes the
-database down with it. Set it false where the classification is a compliance
-requirement, and accept that a provider outage then stops traffic.
+**`fail_open` defaults to false**, as every other evaluator does. A statement
+the analyzer could not classify because the provider failed (error, timeout,
+refusal) is denied. Set it true to allow those statements unscored during a
+provider outage. A lane that holds statements for approval denies them
+whatever `fail_open` says. A spent `max_calls` budget or a `rate_limit` hit is
+not a provider failure and does not follow `fail_open`: a holding lane denies,
+a lane that only warns or blocks allows. Before ENG-1265 the default was true:
+a config that omits the key now denies on a provider failure, and an older
+sidecar still allows.
 
 **`send: redacted` rewrites every detected value as its entity class** before
 the statement leaves the process. A relay whose job is keeping taxpayer ids

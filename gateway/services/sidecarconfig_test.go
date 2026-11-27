@@ -272,7 +272,8 @@ func TestTwoAnalyzerRulesOnOneListenerAreRefused(t *testing.T) {
 // Replacing the block whole reverts two properties silently. `send: refuse`
 // falls back to the inherited default, so statement text the operator kept
 // away from a model vendor is posted to one; `fail_open: false` falls back to
-// true, so a provider outage starts allowing what the block existed to deny.
+// the inherited value, true on a sidecar section that sets it, so a provider
+// outage starts allowing what the block existed to deny.
 // The document still validates and the lane still reports an analyzer, so
 // nothing anywhere reports the downgrade.
 func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {

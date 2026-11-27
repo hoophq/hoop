@@ -231,8 +231,22 @@ func TestRenderMigratedKeepsMeaningfulEmptiness(t *testing.T) {
 	} else if len(gc.Rules) != 0 {
 		t.Errorf("the lane's empty rules override was pruned away:\n%s", doc)
 	}
-	if reloaded.Analyzer.failOpen() {
+	// Absent and false resolve alike in this build, but a sidecar from before
+	// ENG-1265 reads an absent key as fail-open. Only the key keeps it closed.
+	if f := reloaded.Analyzer.FailOpen; f == nil || *f {
 		t.Errorf("the explicit fail_open: false was pruned away:\n%s", doc)
+	}
+
+	on := true
+	cfg.Analyzer.FailOpen = &on
+	if doc, err = RenderMigrated(cfg); err != nil {
+		t.Fatalf("RenderMigrated: %v", err)
+	}
+	if reloaded, err = LoadConfigBytes(doc); err != nil {
+		t.Fatalf("the rendered document does not load: %v\n%s", err, doc)
+	}
+	if !reloaded.Analyzer.failOpen() {
+		t.Errorf("the explicit fail_open: true was pruned away:\n%s", doc)
 	}
 }
 

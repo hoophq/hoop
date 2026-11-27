@@ -137,7 +137,13 @@ func TestMCPCallerTokenNeverLeavesTheLane(t *testing.T) {
 		_, _ = io.WriteString(w, `{"result":{"allow":true}}`)
 	}))
 	modelURL := serveRecorded(t, &model, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "low"}}}})
+		// A real verdict: the analyzer fails closed by default (ENG-1265), so
+		// a reply with no risk tool would deny the call this test needs.
+		writeJSON(w, http.StatusOK, map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"tool_calls": []any{map[string]any{
+				"function": map[string]string{"name": "report_low_risk", "arguments": `{"title":"echo","explanation":"e2e"}`},
+			}}},
+		}}})
 	}))
 
 	dir := t.TempDir()

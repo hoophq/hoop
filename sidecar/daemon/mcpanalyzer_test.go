@@ -311,14 +311,16 @@ func TestMCPLaneHoldNeedsAPlane(t *testing.T) {
 }
 
 // A provider failure behaves as on a postgres lane: fail_open allows the
-// call and records ai_status error, fail_open false refuses it.
+// call and records ai_status error; fail_open false, or no fail_open at all
+// (the default is closed, ENG-1265), refuses it.
 func TestMCPLaneAnalyzerProviderFailure(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
 		block   string
 		allowed bool
 	}{
-		{`{"high":"block"}`, true},
+		{`{"high":"block"}`, false},
+		{`{"high":"block","fail_open":true}`, true},
 		{`{"high":"block","fail_open":false}`, false},
 	} {
 		var logs bytes.Buffer
@@ -347,6 +349,37 @@ func TestMCPLaneAnalyzerProviderFailure(t *testing.T) {
 		sql := inspect.Statement{Protocol: inspect.Postgres, Direction: inspect.FromClient, Text: "DELETE FROM t", Operation: inspect.OpDelete}
 		if denied := lanes[0].policy.Evaluate(sql).Denied; denied == v.Allowed {
 			t.Errorf("%s: the postgres lane denied=%v, the mcp lane allowed=%v", c.block, denied, v.Allowed)
+		}
+	}
+}
+
+// A listener block's fail_open overrides the top-level one in both
+// directions, and with neither set a provider failure denies (ENG-1265).
+func TestLaneFailOpenOverridesTopLevel(t *testing.T) {
+	for _, c := range []struct {
+		top, lane string
+		denied    bool
+	}{
+		{``, ``, true},
+		{`,"fail_open":true`, ``, false},
+		{`,"fail_open":false`, ``, true},
+		{`,"fail_open":true`, `,"fail_open":false`, true},
+		{`,"fail_open":false`, `,"fail_open":true`, false},
+		{``, `,"fail_open":true`, false},
+	} {
+		doc := `{"analyzer":{"provider":"stub","model":"m"` + c.top + `},"listeners":[{"name":"appdb","protocol":"postgres","listen":"127.0.0.1:15432","upstream":"db:5432","analyzer":{"high":"block"` + c.lane + `}}]}`
+		cfg, err := LoadConfigBytes([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.lic = licensed(t)
+		lanes, err := buildLanes(cfg, nil, &analyzerDeps{cfg: cfg.Analyzer, provider: &toolRiskProvider{err: errors.New("provider down")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sql := inspect.Statement{Protocol: inspect.Postgres, Direction: inspect.FromClient, Text: "DELETE FROM t", Operation: inspect.OpDelete}
+		if denied := lanes[0].policy.Evaluate(sql).Denied; denied != c.denied {
+			t.Errorf("top %q lane %q: denied=%v, want %v", c.top, c.lane, denied, c.denied)
 		}
 	}
 }

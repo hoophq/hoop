@@ -325,7 +325,7 @@ analyzer:
   # credentials_file omitted -> Application Default Credentials.
   # On GKE with Workload Identity there is then no credential on disk at all.
   timeout_sec: 10
-  fail_open: true                  # the default; see below
+  fail_open: false                 # the default; see below
   send: redacted                   # raw | redacted | refuse
   cache: {size: 4096, ttl_sec: 900}
   max_calls: 500
@@ -489,17 +489,19 @@ Once loaded, the key is held in a type that renders `[REDACTED]` through
 `%v`, JSON marshalling and structured logs alike, and `/config` reports the
 endpoint host and whether a custom prompt is set, never the credential.
 
-### The fail-open default
+### The fail-closed default
 
-This evaluator defaults to `fail_open: true`, while the local rules and OPA
-fail closed. It depends on a third-party API rather than a service you run,
-and refusing every `UPDATE` during a vendor outage turns "we could not score
-this statement" into "the database is down".
+This evaluator defaults to `fail_open: false`, as the local rules and OPA do.
+A statement the model could not classify because the provider failed (error,
+timeout, refusal) is denied. The error reaches the audit trail.
 
-The local rules and OPA still ran and still allowed, so a silent analyzer
-means "guarded by everything except the optional expensive layer". The error
-still reaches the audit trail. Set `fail_open: false` where the classification
-is a compliance requirement.
+Set `fail_open: true` to allow those statements during a provider outage. The
+local rules and OPA still run, so a silent analyzer then means "guarded by
+everything except the model". A lane that holds statements for approval
+denies them whatever `fail_open` says. A spent `max_calls` budget or a
+`rate_limit` hit does not follow `fail_open`: a holding lane denies, other
+lanes allow. Before ENG-1265 the default was `true`; an older sidecar still
+reads an omitted key that way.
 
 ### Writing your own prompt
 
@@ -579,5 +581,5 @@ statement text is there either way.
 - [ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md) — the code
   path behind each command, a per-command runbook and a troubleshooting table.
   [Risk analysis](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer)
-  covers the fail-open default, the cache key, and the half of the prompt a
+  covers the fail-open default (now fail-closed, ENG-1265), the cache key, and the half of the prompt a
   config cannot replace.

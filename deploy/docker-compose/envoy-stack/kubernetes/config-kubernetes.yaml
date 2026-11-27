@@ -46,7 +46,7 @@ pii:
 #   model: claude-sonnet-4-5
 #   credentials_file: /run/secrets/anthropic-api-key   # a PATH, mode 0600
 #   timeout_sec: 10
-#   fail_open: true
+#   fail_open: false   # the default: an unclassified statement is denied
 #   send: redacted
 #   max_input_bytes: 8192
 #   cache: {size: 4096, ttl_sec: 900}
