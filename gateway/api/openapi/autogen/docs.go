@@ -9302,8 +9302,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by connection's name",
+                        "description": "Filter by connection's name, case-sensitive. % matches any characters and _ one character (e.g. %-prd-%, URL-encoded as %25-prd-%25)",
                         "name": "connection",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by the current tags of the session's connection, supports '=' and '!=' (e.g. key1=value1,key2!=value2). All conditions must match.",
+                        "name": "tag_selector",
                         "in": "query"
                     },
                     {

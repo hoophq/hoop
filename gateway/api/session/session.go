@@ -425,7 +425,8 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Tags			Sessions
 //	@Produce		json
 //	@Param			user			query		string	false	"Filter by user's subject id"
-//	@Param			connection		query		string	false	"Filter by connection's name"
+//	@Param			connection		query		string	false	"Filter by connection's name, case-sensitive. % matches any characters and _ one character (e.g. %-prd-%, URL-encoded as %25-prd-%25)"
+//	@Param			tag_selector	query		string	false	"Filter by the current tags of the session's connection, supports '=' and '!=' (e.g. key1=value1,key2!=value2). All conditions must match."
 //	@Param			type			query		string	false	"Filter by connection's type"
 //	@Param			review.approver	query		string	false	"Filter by the approver email of an approval request"
 //	@Param			review.status	query		string	false	"Filter by the approval status"

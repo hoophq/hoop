@@ -130,10 +130,14 @@ type SessionOption struct {
 	Verb   string
 	// Input is a case-insensitive LIKE pattern matched anywhere in the session
 	// input.
-	Input     string
-	Offset    int
-	Limit     int
-	CountMode SessionCountMode
+	Input string
+	// TagSelector keeps the sessions whose connection, by name, currently has
+	// the tags it selects. Same syntax as the connection tag_selector; blank
+	// is unset.
+	TagSelector string
+	Offset      int
+	Limit       int
+	CountMode   SessionCountMode
 }
 
 func NewSessionOption() SessionOption {
@@ -490,6 +494,38 @@ func ValidateSessionInputFilter(v string) error {
 	return nil
 }
 
+// MaxSessionListTagSelectorLength and MaxSessionListTagSelectorConditions
+// bound the tag selector: each condition adds a tag lookup per connection.
+const (
+	MaxSessionListTagSelectorLength     = 1024
+	MaxSessionListTagSelectorConditions = 16
+)
+
+// ValidateSessionTagSelector reports why v cannot be a session tag selector.
+// NUL is refused here: PostgreSQL text cannot hold it, so it would fail in the
+// query instead of as a bad option.
+func ValidateSessionTagSelector(v string) error {
+	switch {
+	case len(v) > MaxSessionListTagSelectorLength:
+		return fmt.Errorf("must be at most %d bytes, got %d", MaxSessionListTagSelectorLength, len(v))
+	case !utf8.ValidString(v) || strings.ContainsRune(v, 0):
+		return errors.New("must be valid UTF-8 without NUL bytes")
+	}
+	// Blank segments are formatting noise to parseTagSelector, so they do
+	// not count.
+	n := 0
+	for _, segment := range strings.Split(v, ",") {
+		if strings.TrimSpace(segment) != "" {
+			n++
+		}
+	}
+	if n > MaxSessionListTagSelectorConditions {
+		return fmt.Errorf("must have at most %d conditions, got %d", MaxSessionListTagSelectorConditions, n)
+	}
+	_, err := parseTagSelector(v)
+	return err
+}
+
 // sessionInputPattern makes v a LIKE pattern that matches it anywhere. Only %
 // stays a wildcard: _ and the \ escape character match themselves.
 func sessionInputPattern(v string) string {
@@ -587,6 +623,39 @@ type sessionListShape struct {
 	sessionConditions []string
 }
 
+// sessionListTagSelectorCondition mirrors the tag_selector clause of
+// ListConnections: every condition must hold for a connection of the org
+// with the session's connection name.
+const sessionListTagSelectorCondition = `s.connection IN (
+			SELECT c.name FROM private.connections c
+			WHERE c.org_id = @org_id AND NOT EXISTS (
+				SELECT 1 FROM json_to_recordset((@tag_selector)::JSON) AS tsk(key TEXT, op TEXT, val TEXT)
+				WHERE NOT EXISTS (
+					SELECT 1 FROM private.connection_tags_association cta
+					JOIN private.connection_tags ct ON ct.id = cta.tag_id
+					WHERE cta.connection_id = c.id
+					AND ct.key = tsk.key
+					AND CASE
+						WHEN tsk.op = '=' THEN ct.value = tsk.val
+						WHEN tsk.op = '!=' THEN ct.value != tsk.val
+						ELSE false
+					END
+				)
+			)
+		)`
+
+// hasTagSelectorConditions reports whether selector holds a condition. A
+// selector of blank segments selects nothing to filter on, as in
+// ListConnections. An invalid one counts: ListSessions rejects it first.
+func hasTagSelectorConditions(selector string) bool {
+	for _, segment := range strings.Split(selector, ",") {
+		if strings.TrimSpace(segment) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func newSessionListShape(isAuditorOrAdmin bool, opt SessionOption) sessionListShape {
 	sh := sessionListShape{
 		isAdmin: isAuditorOrAdmin,
@@ -635,6 +704,9 @@ func newSessionListShape(isAuditorOrAdmin bool, opt SessionOption) sessionListSh
 	}
 	if opt.Input != "" {
 		sh.sessionConditions = append(sh.sessionConditions, sessionListInputCondition)
+	}
+	if hasTagSelectorConditions(opt.TagSelector) {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListTagSelectorCondition)
 	}
 	sh.needsReviews = !sh.isAdmin || sh.reviewStatusActive || sh.approverActive
 
@@ -728,6 +800,13 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 	if err := ValidateSessionInputFilter(opt.Input); err != nil {
 		return nil, fmt.Errorf("invalid input filter: %w", err)
 	}
+	if err := ValidateSessionTagSelector(opt.TagSelector); err != nil {
+		return nil, fmt.Errorf("invalid tag selector filter: %w", err)
+	}
+	tagSelectorJSON, err := parseTagSelector(opt.TagSelector)
+	if err != nil {
+		return nil, err
+	}
 
 	sessionList := &SessionList{Items: []Session{}}
 	// Prepare lowercase jira issue keys array
@@ -754,6 +833,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		"start_date":            opt.StartDate,
 		"end_date":              opt.EndDate,
 		"input_pattern":         sessionInputPattern(opt.Input),
+		"tag_selector":          tagSelectorJSON,
 		"user_id":               userId,
 		// One more row than the caller asked for: its presence is what proves
 		// there is a next page, without a second query and without relying on
