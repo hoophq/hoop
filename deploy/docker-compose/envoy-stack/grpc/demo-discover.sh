@@ -28,10 +28,10 @@ if ! curl -sf http://localhost:19000/healthz >/dev/null; then
     exit 1
 fi
 
-# Every lane makes its first attempt at startup; /readyz answers once each
-# attempt ended, whatever it found.
+# Every lane makes its first attempt at startup; /readyz answers 200 once each
+# attempt ended, whatever it found. The body is JSON: read the status code.
 for _ in $(seq 1 30); do
-    [ "$(curl -s http://localhost:19000/readyz)" = "ready" ] && break
+    curl -sf -o /dev/null http://localhost:19000/readyz && break
     sleep 1
 done
 

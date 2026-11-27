@@ -158,6 +158,70 @@ func TestMCPMessagesCountByToolAndDecision(t *testing.T) {
 	}
 }
 
+// Handshakes count by kind and outcome. A failure is a log record when
+// events are on, and only the count when they are off. The record holds the
+// kind and the outcome and nothing else: a failed handshake's message can
+// carry the plane's response body or a redirect Location.
+func TestControlPlaneHandshakesCountByKindAndOutcome(t *testing.T) {
+	send := func(exp telemetry.Exporter) {
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeBoot, Outcome: telemetry.HandshakeOK})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeOK})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError})
+		exp.ControlPlaneHandshake(telemetry.Handshake{Kind: telemetry.HandshakeHeartbeat, Outcome: telemetry.HandshakeError})
+	}
+
+	rcv := newReceiver(t)
+	cfg := httpConfig(rcv.srv.URL)
+	cfg.Events = &telemetry.EventsConfig{Enabled: true}
+	exp := mustNew(t, cfg)
+	send(exp)
+	shutdown(t, exp)
+
+	got := map[string]float64{}
+	for _, p := range rcv.metric("hoop.sidecar.control_plane.handshakes") {
+		got[p.attrs["hoop.handshake.kind"]+" "+p.attrs["hoop.outcome"]] = p.value
+	}
+	want := map[string]float64{"boot ok": 1, "heartbeat ok": 1, "heartbeat error": 2}
+	if len(got) != len(want) {
+		t.Fatalf("points %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%q = %v, want %v", k, got[k], v)
+		}
+	}
+
+	recs := rcv.logRecords()
+	if len(recs) != 2 {
+		t.Fatalf("got %d log records, want one per failure", len(recs))
+	}
+	if body := anyString(recs[0].Body); body != "control_plane_handshake" {
+		t.Errorf("body = %q, want control_plane_handshake", body)
+	}
+	if recs[0].SeverityNumber != logspb.SeverityNumber_SEVERITY_NUMBER_WARN {
+		t.Errorf("severity = %v, want WARN", recs[0].SeverityNumber)
+	}
+	attrs := logAttrs(recs[0])
+	if want := map[string]string{"hoop.handshake.kind": "heartbeat", "hoop.outcome": "error"}; len(attrs) != len(want) ||
+		attrs["hoop.handshake.kind"] != "heartbeat" || attrs["hoop.outcome"] != "error" {
+		t.Errorf("attributes = %v, want exactly %v", attrs, want)
+	}
+	if s := exp.Stats(); s.EventsSent != 0 {
+		t.Errorf("EventsSent = %d: a handshake record is not an audit event", s.EventsSent)
+	}
+
+	rcv = newReceiver(t)
+	exp = mustNew(t, httpConfig(rcv.srv.URL))
+	send(exp)
+	shutdown(t, exp)
+	if ps := rcv.metric("hoop.sidecar.control_plane.handshakes"); len(ps) != 3 {
+		t.Errorf("with events off: points %v, want 3", ps)
+	}
+	if recs := rcv.logRecords(); len(recs) != 0 {
+		t.Errorf("with events off: %d log records, want none", len(recs))
+	}
+}
+
 func logAttrs(r *logspb.LogRecord) map[string]string { return attrMap(r.Attributes) }
 
 func TestEventsAreRedactedByDefault(t *testing.T) {
@@ -440,5 +504,76 @@ func TestALaneRecorderFollowsItsProtocol(t *testing.T) {
 	moved, ok := exp.Lane("reports", "mysql").(*lane)
 	if !ok || moved.protocol != "mysql" {
 		t.Fatalf("recorder for the re-added lane = %+v, want protocol mysql", moved)
+	}
+}
+
+// What a backend sees follows the protocol as well: the statement counter
+// is filed under the protocol of the recorder that counted it, across
+// postgres -> mysql -> postgres, and the connections gauge reports the
+// protocol the process snapshot names, not the one of a recorder cached
+// under the same lane name.
+func TestALaneRecorderExportsItsCurrentProtocol(t *testing.T) {
+	rcv := newReceiver(t)
+	exp := mustNew(t, httpConfig(rcv.srv.URL))
+	exp.ObserveProcess(func() telemetry.ProcessSnapshot {
+		return telemetry.ProcessSnapshot{Lanes: []telemetry.LaneStats{{Lane: "reports", Protocol: "mysql", Active: 1, Total: 1}}}
+	})
+	ctx := context.Background()
+	stmt := inspect.Statement{Direction: inspect.FromClient, Operation: inspect.OpSelect, Text: "SELECT 1"}
+	for _, protocol := range []string{"postgres", "mysql", "postgres"} {
+		_, end := exp.Lane("reports", protocol).BeginStatement(ctx, stmt)
+		end(telemetry.Verdict{})
+	}
+	shutdown(t, exp)
+
+	// A periodic export can land before the one Shutdown flushes, so the
+	// receiver can hold several collections. Sums are cumulative and come
+	// in arrival order: the last point per protocol is the total.
+	got := map[string]float64{}
+	for _, p := range rcv.metric("hoop.sidecar.statements") {
+		if p.attrs["hoop.lane"] != "reports" || p.attrs["hoop.verdict"] != telemetry.OutcomeAllow {
+			t.Errorf("statement point = %+v", p)
+		}
+		got[p.attrs["hoop.protocol"]] = p.value
+	}
+	if want := map[string]float64{"postgres": 2, "mysql": 1}; len(got) != len(want) || got["postgres"] != 2 || got["mysql"] != 1 {
+		t.Errorf("statements by protocol = %v, want %v", got, want)
+	}
+	gauge := rcv.metric("hoop.sidecar.connections.active")
+	if len(gauge) == 0 {
+		t.Fatal("no connections.active point")
+	}
+	for _, p := range gauge {
+		if p.attrs["hoop.protocol"] != "mysql" {
+			t.Errorf("connections.active point = %+v, want it under mysql", p)
+		}
+	}
+}
+
+// hoop.verdict on a log record keeps the spellings a backend query names:
+// "allow" on a statement, "deny" on a violation.
+func TestEventVerdictsKeepTheirSpellings(t *testing.T) {
+	rcv := newReceiver(t)
+	cfg := httpConfig(rcv.srv.URL)
+	cfg.Events = &telemetry.EventsConfig{Enabled: true}
+	exp := mustNew(t, cfg)
+	sink := exp.AuditSink(audit.SinkOptions{})
+	ctx := context.Background()
+	for _, ev := range []audit.Event{
+		{Kind: audit.KindStatement, Allowed: true, Statement: "SELECT 1"},
+		{Kind: audit.KindViolation, Allowed: false, Statement: "DELETE FROM users"},
+	} {
+		if err := sink.Write(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shutdown(t, exp)
+
+	got := map[string]string{}
+	for _, r := range rcv.logRecords() {
+		got[anyString(r.Body)] = logAttrs(r)["hoop.verdict"]
+	}
+	if want := map[string]string{"statement": "allow", "violation": "deny"}; got["statement"] != "allow" || got["violation"] != "deny" {
+		t.Errorf("verdicts by kind = %v, want %v", got, want)
 	}
 }

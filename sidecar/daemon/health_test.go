@@ -30,7 +30,8 @@ func TestHealthListenerServesOnlyProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serveHealth(ctx, addr, healthState{lanes: &laneSet{lanes: []runningLane{{name: "desktops", endpoint: lane}}}}, slog.New(slog.DiscardHandler))
+		done <- serveHealth(ctx, addr, servingHealth(runningLane{name: "desktops", protocol: "ica", endpoint: lane}),
+			slog.New(slog.DiscardHandler))
 	}()
 
 	base := "http://" + addr
@@ -82,7 +83,7 @@ func TestHealthListenerReturnsBindFailure(t *testing.T) {
 	}
 	defer held.Close()
 
-	err = serveHealth(context.Background(), held.Addr().String(), healthState{lanes: &laneSet{}}, slog.New(slog.DiscardHandler))
+	err = serveHealth(context.Background(), held.Addr().String(), newHealthStatus(), slog.New(slog.DiscardHandler))
 	if err == nil || !strings.Contains(err.Error(), HealthListenEnv) {
 		t.Fatalf("serveHealth on a held port = %v, want an error naming %s", err, HealthListenEnv)
 	}
@@ -146,7 +147,7 @@ func TestAdminListenerServesProbesAndAPIListenerServesReads(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, apiAddr, &laneSet{}, view, auditChain{}, nil, nil, nil, nil,
-		slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), servingHealth())
 
 	admin, api := "http://"+addr, "http://"+apiAddr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, admin+"/healthz"); return code == http.StatusOK })
@@ -190,7 +191,7 @@ func TestAdminAPIListenBindFailureIsReturned(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- serveAdmin(context.Background(), addr, held.Addr().String(), &laneSet{}, view, auditChain{},
-			nil, nil, nil, nil, slog.New(slog.DiscardHandler), false)
+			nil, nil, nil, nil, slog.New(slog.DiscardHandler), servingHealth())
 	}()
 	select {
 	case err := <-done:
@@ -238,7 +239,7 @@ func TestAdminListenerAloneSaysWhereTheReadRoutesWent(t *testing.T) {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{})
 	go serveAdmin(ctx, addr, "", &laneSet{}, view, auditChain{}, nil, nil, nil, nil,
-		slog.New(slog.DiscardHandler), false)
+		slog.New(slog.DiscardHandler), servingHealth())
 
 	base := "http://" + addr
 	waitFor(t, func() bool { code, _ := httpCall(t, http.MethodGet, base+"/healthz"); return code == http.StatusOK })

@@ -341,6 +341,20 @@ needs a restart.`,
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
 			daemon.WithEntrypoint(analytics.EntrypointCLI),
 			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+			daemon.WithBootLog(bootLogFor(format, os.Stderr)),
+		}
+		if sidecarValidateFlag {
+			// A check, not a boot: report a plane that is down now, and
+			// leave the health port to the sidecar this pod already runs.
+			setupOpts = append(setupOpts, daemon.WithoutBootRetry())
+		} else {
+			// A boot: answer the probes while the plane is waited for.
+			hl, herr := daemon.ListenHealth()
+			if herr != nil {
+				return herr
+			}
+			defer func() { _ = hl.Close() }()
+			setupOpts = append(setupOpts, daemon.WithHealthListener(hl))
 		}
 		var reviewer *sidecartui.Reviewer
 		var demoLanes []string
@@ -350,8 +364,8 @@ needs a restart.`,
 		}
 		var cfg *daemon.Config
 		var det daemon.Plugin
-		setup := func() (err error) {
-			opts := slices.Clip(setupOpts)
+		setup := func(ctx context.Context) (err error) {
+			opts := append(slices.Clip(setupOpts), daemon.WithContext(ctx))
 			// The demo's AI step holds a statement for the person at this
 			// terminal, also when the free plan runs logged in. Read on
 			// every setup: the logged-in first run names the file late.
@@ -364,7 +378,7 @@ needs a restart.`,
 			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, opts...)
 			return err
 		}
-		err = setup()
+		err = setup(cmd.Context())
 		if login != nil && sidecarConfigFlag == "" && errors.Is(err, daemon.ErrPlaneHasNoConfig) {
 			// Logged in, and nothing to run yet: at a terminal the setup
 			// happens here, connected, and the file stays on this machine.
@@ -387,7 +401,7 @@ needs a restart.`,
 						return err
 					}
 					sidecarConfigFlag = boot.ConfigPath
-					err = setup()
+					err = setup(cmd.Context())
 				}
 			}
 			if sidecarConfigFlag == "" {
@@ -952,6 +966,17 @@ func stoppedByPerson(err error) bool {
 	return false
 }
 
+// bootLogFor is where the boot retry writes its lines: they come before
+// sidecartui.Run converts the daemon's output, so the text format and the
+// terminal before the dashboard get them as text here. JSON stays JSON (nil:
+// the daemon's own stderr), for a pipe or a container that parses it.
+func bootLogFor(format sidecartui.Format, stderr io.Writer) io.Writer {
+	if format == sidecartui.FormatJSON {
+		return nil
+	}
+	return sidecartui.TextWriter(stderr)
+}
+
 // useSidecarLogin points the run at the plane, exactly as if the person had
 // typed its URL and the token.
 func useSidecarLogin(login *savedSidecarLogin) error {
@@ -972,7 +997,10 @@ func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
 		daemon.WithControlPlaneURL(planeURL),
 		daemon.WithControlPlaneToken(token),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
-		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For),
+		// A person waits on the page: a plane that is down is reported
+		// now, not after the boot's retry.
+		daemon.WithoutBootRetry())
 	if err != nil {
 		return nil, err
 	}
@@ -997,7 +1025,8 @@ func validateSidecarConfig(path string) (string, error) {
 	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
 		daemon.WithLicense(sidecarLicenseFlag),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
-		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For),
+		daemon.WithoutBootRetry())
 	if err != nil {
 		return "", err
 	}

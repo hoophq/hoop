@@ -26,8 +26,8 @@ require (
 	github.com/hoophq/alcatraz/ner v0.23.0
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261125170310-be44311448fe
-	github.com/hoophq/mcpproxy v0.2.0
+	github.com/hoophq/libhoop v0.0.0-20261127184900-207e7005bfec
+	github.com/hoophq/mcpproxy v0.2.1
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/stretchr/testify v1.11.1

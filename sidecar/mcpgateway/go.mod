@@ -6,7 +6,7 @@ go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/mcpproxy v0.2.0
+	github.com/hoophq/mcpproxy v0.2.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 
@@ -18,7 +18,7 @@ require (
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261125170310-be44311448fe // indirect
+	github.com/hoophq/libhoop v0.0.0-20261127184900-207e7005bfec // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect

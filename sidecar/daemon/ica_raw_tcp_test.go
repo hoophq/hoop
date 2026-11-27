@@ -130,7 +130,7 @@ func TestICARawTCPReadinessAndRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	handleHealth(mux, healthState{lanes: testLaneSet([]endpointServer{&attestedICAServer{state: a}}, 0), icaReadinessJSON: icaReadinessJSONFor(cfg)})
+	handleHealth(mux, servingHealthICA(icaReadinessJSONFor(cfg), testLaneSet([]endpointServer{&attestedICAServer{state: a}}, 0)))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("GET", "/readyz", nil))
 	var body map[string]any

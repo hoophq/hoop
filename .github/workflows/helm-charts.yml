@@ -183,6 +183,30 @@ jobs:
             echo "::error::sidecar chart declared a port other than the admin port 19000"
             exit 1
           fi
+          # The relay retries its first control plane handshake for up to 5
+          # minutes before the admin server binds. A startup probe with less
+          # budget, or none, lets the liveness probe restart it mid-retry.
+          budget=$(echo "$sc" | awk '/startupProbe:/{f=1} f&&/periodSeconds:/{p=$2} f&&/failureThreshold:/{print p*$2; exit}')
+          [ "${budget:-0}" -ge 300 ] \
+            || { echo "::error::sidecar startup probe budget is ${budget:-absent}s, under the 5-minute boot retry"; exit 1; }
+          # The kubelet never shows a probe's body; the log tail on exit is
+          # what `kubectl describe pod` can show of why the relay stopped.
+          echo "$sc" | grep -q 'terminationMessagePolicy: FallbackToLogsOnError' \
+            || { echo "::error::sidecar container lost terminationMessagePolicy: FallbackToLogsOnError"; exit 1; }
+          # The startup probe takes the operator's values whole. ICA probes
+          # /readyz with 180 failures; a moved probe port and custom timing
+          # must reach the startup probe too, not only readiness and liveness.
+          startup() {
+            helm template t "$chart" --show-only templates/deployment.yaml "$@" \
+              | awk '/startupProbe:/{f=1;next} f&&/^        [a-z]/{exit} f' | tr -s ' \n' ' ' | sed 's/^ //; s/ $//'
+          }
+          want='httpGet: path: "/readyz" port: 19000 periodSeconds: 5 timeoutSeconds: 2 failureThreshold: 180'
+          got=$(startup -f deploy/ica-sidecar/examples/gpu/values.yaml)
+          [ "$got" = "$want" ] || { echo "::error::ICA startup probe is '$got', want '$want'"; exit 1; }
+          want='httpGet: path: "/livez" port: 9100 periodSeconds: 10 timeoutSeconds: 4 failureThreshold: 60'
+          got=$(startup --set existingConfigMap=cm --set probe.port=9100 --set probe.startupPath=/livez \
+            --set probe.startupPeriodSeconds=10 --set probe.startupFailureThreshold=60 --set probe.timeoutSeconds=4)
+          [ "$got" = "$want" ] || { echo "::error::overridden startup probe is '$got', want '$want'"; exit 1; }
 
           # Each of these MUST fail to render. A guard that stopped firing ships
           # a Deployment that cannot start, and nothing else in CI would notice.

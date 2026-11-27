@@ -29,7 +29,7 @@ function AgentPicker() {
   const data = sortAgents(agents).map((a) => ({ value: a.id, label: a.name }))
 
   return (
-    <Stack gap="xs">
+    <Stack gap="xsAlt">
       <Title order={5} fw={500}>Agent</Title>
       <Text size="sm" c="dimmed">
         The Agent that runs this Resource Role.
