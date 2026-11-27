@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify, track as analyticsTrack } from '@/services/analytics'
 import { authService } from '@/services/auth'
+import { initClarity } from '@/services/clarity'
 import licenseService from '@/services/license'
+import { initSentry } from '@/services/sentry'
 import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
@@ -209,10 +211,20 @@ export const useUserStore = create((set, get) => ({
     })
   },
 
+  // Resolves once Segment took the event, or at once when tracking is off.
   trackEvent: (event, properties) => {
-    if (!get().analyticsTracking) return
-    analyticsTrack(event, properties).catch((err) => {
+    if (!get().analyticsTracking) return Promise.resolve()
+    return analyticsTrack(event, properties).catch((err) => {
       console.warn('[analytics] track failed:', err)
     })
   },
+
+  initMonitoring: (user) => {
+    const { analyticsTracking, gatewayVersion } = get()
+    initSentry({ analyticsTracking, release: gatewayVersion })
+    initClarity({ analyticsTracking, user })
+  },
+
+  clearPendingOrgInvitations: () =>
+    set((s) => ({ user: s.user && { ...s.user, pending_org_invitations: [] } })),
 }))

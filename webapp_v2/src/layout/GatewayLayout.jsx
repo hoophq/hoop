@@ -9,6 +9,7 @@ import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
 import SessionDetailsHost from '@/features/SessionDetails';
 import ApprovalNotifications from '@/features/ApprovalNotifications';
+import OrgInvitationDialog from '@/features/OrgInvitationDialog';
 
 const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
@@ -121,6 +122,7 @@ function GatewayLayout({ children }) {
       <NativeConnectionsDrawer />
       <SessionDetailsHost />
       <ApprovalNotifications />
+      <OrgInvitationDialog />
     </>
   );
 }

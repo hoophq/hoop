@@ -365,11 +365,11 @@ dies silently).
 |---|---|---|
 | Bridge snackbar fixes | ✅ Done | EVL-104 (PR #1638) unified everything on `showSnackbar` and deleted `useBridgeStore.showSnackbar` |
 | Shared ConfirmDialog | Wave 1 (B1.3) | Needed by every CRUD wave |
-| Sentry init in React | Wave 1 (own S ticket) | Today errors on React routes go unreported unless a CLJS route loaded the bundle. Replicate the CLJS condition from `events/tracking.cljs` (init when gateway `analytics_tracking` is NOT enabled) |
+| Sentry init in React | ✅ Done (ENG-1317) | Today errors on React routes go unreported unless a CLJS route loaded the bundle. Replicate the CLJS condition from `events/tracking.cljs` (init when gateway `analytics_tracking` is NOT enabled) |
 | Segment `track()` | Wave 2 (own S ticket) | Add a `track()` util next to the existing `identify()` in `services/analytics.js`; wire the 8 CLJS `:segment->track` equivalents per page as each page migrates. The util must exist before Wave 3's CRUD pages land |
-| Clipboard copy/cut blocking | Wave 2 (own S ticket) | Gap **today** on React-only routes: CLJS installs document-level copy/cut listeners when `disable_clipboard_copy_cut` is on; React only hides copy buttons. Install/remove the listeners in the React shell keyed on the flag |
-| MS Clarity port | Wave 2–3 (own S ticket) | Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
-| org-migration dialog | Wave 3 (own S ticket) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose) |
+| Clipboard copy/cut blocking | ✅ Done (ENG-1317) | Gap **today** on React-only routes: CLJS installs document-level copy/cut listeners when `disable_clipboard_copy_cut` is on; React only hides copy buttons. Install/remove the listeners in the React shell keyed on the flag |
+| MS Clarity port | ✅ Done (ENG-1317) | Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
+| org-migration dialog | ✅ Done (ENG-1317) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose) |
 | native-client-access | ✅ Done (EVL-171) | Ported ahead of Wave 4; see B4.0 |
 
 **Bridge teardown inventory** (deleted in the Endgame): `utils/clojureDispatch.js`,

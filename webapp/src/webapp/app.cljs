@@ -280,7 +280,7 @@
                ;; in the React Native Connections drawer.
                [command-palette/command-palette]
                [command-palette/keyboard-listener]
-               [org-migration-dialog/main]
+               ;; The React shell owns the org invitation dialog.
                panels]
               ;; Normal mode: full layout with sidebar and cmdk
               [:section

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
+import { startIdpSignup } from '../idpSignup'
 
 function Register() {
   const navigate = useNavigate()
@@ -29,17 +30,28 @@ function Register() {
       return
     }
 
+    // As the CLJS register panel: local stays, SAML signs in, OIDC starts the
+    // IdP signup.
     const checkAuthMethod = async () => {
+      let method
       try {
-        const serverInfo = await authService.getPublicServerInfo()
-        if (serverInfo.auth_method && serverInfo.auth_method !== 'local') {
-          navigate('/login')
-        }
+        method = (await authService.getPublicServerInfo()).auth_method
       } catch {
         // If we can't check, assume local and stay
-      } finally {
-        setCheckingAuthMethod(false)
       }
+      if (!method || method === 'local') {
+        setCheckingAuthMethod(false)
+        return
+      }
+      if (method !== 'saml') {
+        try {
+          await startIdpSignup()
+          return
+        } catch {
+          // The login page shows the IdP error.
+        }
+      }
+      navigate('/login')
     }
 
     checkAuthMethod()

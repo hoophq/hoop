@@ -19,6 +19,7 @@
     "@mantine/hooks": "^8.3.18",
     "@mantine/spotlight": "^8.3.18",
     "@segment/analytics-next": "^1.64.0",
+    "@sentry/browser": "8.41.0",
     "ag-grid-community": "^33.3.2",
     "ag-grid-react": "^33.3.2",
     "asciinema-player": "^3.17.0",

@@ -1,5 +1,6 @@
 (ns webapp.events.clipboard
-  (:require [re-frame.core :as rf]))
+  (:require [re-frame.core :as rf]
+            [webapp.shell :as shell]))
 
 (defonce clipboard-listeners (atom {:copy nil :cut nil :beforecopy nil :beforecut nil}))
 (defonce last-notification (atom 0))
@@ -61,5 +62,6 @@
 (rf/reg-event-fx
  :clipboard/initialize
  (fn [{db :db} _]
+   ;; The React shell blocks the clipboard itself (hooks/useClipboardBlock.js).
    (let [disabled? (get-in db [:gateway->info :data :disable_clipboard_copy_cut] false)]
-     {:clipboard/manage-listeners disabled?})))
+     {:clipboard/manage-listeners (and disabled? (not (shell/react-shell?)))})))

@@ -10,6 +10,7 @@ import { authService } from '@/services/auth'
 import AuthPageLoader from '@/components/AuthPageLoader'
 import { POST_LOGIN_PATH } from '@/modes'
 import { samePagePath } from '@/utils/redirect'
+import { startIdpSignup } from '../idpSignup'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -166,9 +167,7 @@ function Login() {
     }
 
     try {
-      const callbackUrl = `${window.location.origin}/signup/callback`
-      const signupUrl = await authService.getSignupUrl(callbackUrl)
-      window.location.replace(signupUrl)
+      await startIdpSignup()
     } catch {
       setError('Failed to initialize signup')
     }

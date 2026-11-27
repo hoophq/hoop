@@ -949,6 +949,9 @@ Calls `handler({ type, id })` for each live event of `type` from the gateway (`G
 useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
 ```
 
+### `useClipboardBlock()`
+Mounted once in `App.jsx`. While `/serverinfo` reports `disable_clipboard_copy_cut`, it blocks `copy`, `cut`, `beforecopy` and `beforecut` on the whole document and shows one error toast per 2 s, as CLJS `events/clipboard.cljs`. Do not mount it again.
+
 ### `useCountdown(expireAt)`
 Display-only countdown against a shared 1 Hz clock (`utils/tick.js`), which is reference-counted
 so N countdowns cost one interval. Returns `{ remainingMs, label, expired }`; `label` is
@@ -1071,6 +1074,8 @@ Non-obvious notes only:
 - `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
+- `sentry.js`, `clarity.js` — not gateway APIs. Started once by `useUserStore.initMonitoring` after `/serverinfo`, with the CLJS gates: Sentry only while `analytics_tracking` is off, Clarity only while it is on and never on localhost, the demo hosts or the `hoopdev` org.
+- `orgs.js` — `POST /orgs/invitations` (`accept` or `decline`), for `features/OrgInvitationDialog` (mounted in `GatewayLayout`).
 - `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no
   `page_size`: the handler defaults it to 0 and reads 0 as "no pagination", so
   every rule comes back (still inside the `{ pages, data }` envelope). Rule names

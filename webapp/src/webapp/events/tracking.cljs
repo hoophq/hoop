@@ -2,7 +2,8 @@
   (:require
    ["@sentry/browser" :as Sentry]
    [re-frame.core :as rf]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.shell :as shell]))
 
 (rf/reg-event-fx
  :tracking->initialize-if-allowed
@@ -86,7 +87,8 @@
    (let [sentry-dsn config/sentry-dsn
          sentry-sample-rate config/sentry-sample-rate
          analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
-     (when (and sentry-dsn sentry-sample-rate (not analytics-tracking))
+     ;; The React shell starts its own Sentry: a second client sends every error twice.
+     (when (and sentry-dsn sentry-sample-rate (not analytics-tracking) (not (shell/react-shell?)))
        (try
          (.init Sentry #js {:dsn sentry-dsn
                             :release config/app-version

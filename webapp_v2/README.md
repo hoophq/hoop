@@ -142,6 +142,8 @@ everything, so the dev server runs out of the box with no setup (see also
 | `API_URL` | `http://localhost:8009` | Vite dev proxy target for `/api` — same env var the CLJS build reads via shadow-cljs closure-defines |
 | `VITE_CLJS_URL` | `http://localhost:8280` | Vite dev proxy target for CLJS assets (`/js`, `/css`, `/images`, …) |
 | `SEGMENT_WRITE_KEY` | hoop.dev production key | Build-time: Segment write key baked into the bundle at `npm run build`. Same env var as the CLJS bundle, so one setting controls both webapps — override only when pointing a build at a different Segment workspace |
+| `SENTRY_DSN` | CLJS dev DSN (`vite`), release DSN (`vite build`) | Build-time: Sentry DSN baked into the bundle. Same env var and defaults as the CLJS bundle (`webapp/shadow-cljs.edn`) |
+| `SENTRY_SAMPLE_RATE` | `1.0` | Build-time: Sentry error sample rate. Same env var as the CLJS bundle |
 
 ## Authentication
 
