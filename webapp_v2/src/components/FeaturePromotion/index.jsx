@@ -1,11 +1,14 @@
 import { Box, Flex, Image, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import { ArrowUpRight } from 'lucide-react'
 import Button from '@/components/Button'
+import classes from './FeaturePromotion.module.css'
 
 /**
  * Split promotion panel (copy + highlights left, illustration right) shown when a
  * feature is empty (`mode="empty-state"`) or gated (`mode="upgrade-plan"`).
- * `image` is a filename under /images/illustrations/.
+ * `image` is a filename under /images/illustrations/; `imageSrc` a full path.
+ * `title` replaces "Get more with <featureName>". `imagePosition="left"` keeps
+ * the left edge of a cropped image.
  *
  * Usage:
  *   <FeaturePromotion
@@ -19,8 +22,11 @@ import Button from '@/components/Button'
  */
 export default function FeaturePromotion({
   featureName,
+  title,
   mode = 'empty-state',
   image,
+  imageSrc,
+  imagePosition = 'center',
   description,
   featureItems = [],
   onPrimaryClick,
@@ -38,7 +44,7 @@ export default function FeaturePromotion({
       <Stack w="50%" miw="50%" p="xxlAlt" gap="xxlAlt" justify="center">
         <Stack gap="sm">
           <Title order={1} fw={700}>
-            {`Get more with ${featureName}`}
+            {title ?? `Get more with ${featureName}`}
           </Title>
           {description && (
             <Text size="xl" c="dimmed">
@@ -93,13 +99,14 @@ export default function FeaturePromotion({
       </Stack>
 
       <Box w="50%" miw="50%" bg="var(--hoop-tint-indigo)">
-        {image && (
+        {(imageSrc || image) && (
           <Image
-            src={`/images/illustrations/${image}`}
+            src={imageSrc ?? `/images/illustrations/${image}`}
             alt={`${featureName} illustration`}
             h="100%"
             w="100%"
             fit="cover"
+            className={imagePosition === 'left' ? classes.imageLeft : undefined}
           />
         )}
       </Box>

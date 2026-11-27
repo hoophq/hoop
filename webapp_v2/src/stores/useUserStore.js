@@ -54,6 +54,9 @@ export const useUserStore = create((set, get) => ({
   // rename the admin one, so /serverinfo is the source, never a literal.
   adminRoleName: ROLE_ADMIN,
   approverRoleName: ROLE_APPROVER,
+  // /serverinfo auth_method and idp_provider_name, read by the logout.
+  authMethod: null,
+  idpProviderName: null,
   loading: false,
 
   setUser: (user) => {
@@ -93,6 +96,8 @@ export const useUserStore = create((set, get) => ({
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
       adminRoleName: serverInfo?.admin_role_name || ROLE_ADMIN,
       approverRoleName: serverInfo?.approver_role_name || ROLE_APPROVER,
+      authMethod: serverInfo?.auth_method || null,
+      idpProviderName: serverInfo?.idp_provider_name || null,
     })
   },
   /**
@@ -151,6 +156,8 @@ export const useUserStore = create((set, get) => ({
       featureFlagsLoaded: false,
       licenseFeatures: null,
       licenseInfo: null,
+      authMethod: null,
+      idpProviderName: null,
       serverInfoLoaded: false,
       redactProvider: null, 
       apiUrl: null,

@@ -14,6 +14,10 @@ import Setup from '@/pages/Auth/Setup'
 import Register from '@/pages/Auth/Register'
 import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
+import Logout from '@/pages/Auth/Logout'
+import UpgradePlan from '@/pages/UpgradePlan'
+import SlackNewUser from '@/pages/Slack/NewUser'
+import SlackNewOrganization from '@/pages/Slack/NewOrganization'
 
 // React pages (migrated from ClojureScript, or born here)
 import Agents from '@/pages/Agents'
@@ -104,6 +108,9 @@ function Router() {
       <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
+      {/* CLJS still navigates to :logout-hoop and :idplogin-hoop: their bidi entries stay. */}
+      <Route path="/logout" element={<Logout />} />
+      <Route path="/idplogin" element={<Login promptLogin />} />
 
       <Route path="/" element={Home} />
 
@@ -732,6 +739,32 @@ function Router() {
         }
       />
       <Route path="/onboarding/*" element={Onboarding} />
+
+      <Route
+        path="/upgrade-plan"
+        element={
+          <Page>
+            <UpgradePlan />
+          </Page>
+        }
+      />
+      {/* The Slack app opens these after it links a user or a workspace. */}
+      <Route
+        path="/slack/user/new/:slackId"
+        element={
+          <Page>
+            <SlackNewUser />
+          </Page>
+        }
+      />
+      <Route
+        path="/slack/organization/new"
+        element={
+          <Page>
+            <SlackNewOrganization />
+          </Page>
+        }
+      />
 
       {/* Everything else: ClojureScript */}
       <Route path="/*" element={CatchAll} />

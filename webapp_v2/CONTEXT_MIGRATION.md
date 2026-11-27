@@ -120,6 +120,9 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
 | `/integrations/slack` | React | Done — `GatewaySlack` |
+| `/slack/user/new/:slackId`, `/slack/organization/new` | React | Done (ENG-1315). The Slack app opens them after it links a user or a workspace |
+| `/upgrade-plan` | React | Done (ENG-1315). The bidi entry stays: CLJS navigates to `:upgrade-plan` |
+| `/logout`, `/idplogin` | React | Done (ENG-1315). Public routes. `useAuthStore.signOut()` is the CLJS `:auth->logout`; the bidi entries stay: CLJS navigates to `:logout-hoop` and `:idplogin-hoop` |
 | `/integrations/webhooks` | React | Done |
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |
@@ -164,9 +167,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /integrations/authentication
 /client (SQL editor)
 /runbooks (runner)
-/slack/user/new/:id, /slack/organization/new
-/upgrade-plan
-/idplogin, /logout
 ```
 
 Dead bidi entries (route exists, panel deleted — cleanup planned in

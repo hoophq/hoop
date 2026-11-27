@@ -1,6 +1,5 @@
 import { Group, Stack, Text, UnstyledButton } from '@mantine/core'
 import { ChevronDown, LogOut, MessageCircleQuestion } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import ActionMenu from '@/components/ActionMenu'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
@@ -10,14 +9,8 @@ import { UserAvatar } from './UserAvatar'
 import classes from './Header.module.css'
 
 export function UserMenu() {
-  const navigate = useNavigate()
   const { user, gatewayVersion, analyticsTracking } = useUserStore()
-  const { logout } = useAuthStore()
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
+  const signOut = useAuthStore((s) => s.signOut)
 
   // Intercom is booted with custom_launcher_selector pointing at this id, so
   // clicking the item opens the messenger. Without analytics the messenger is
@@ -67,7 +60,7 @@ export function UserMenu() {
         danger
         className={classes.menuItem}
         leftSection={<LogOut size={16} aria-hidden="true" />}
-        onClick={handleLogout}
+        onClick={signOut}
       >
         Log out
       </ActionMenu.Item>

@@ -17,6 +17,22 @@ const clearCookie = (cookieName) => {
 }
 
 const REDIRECT_KEY = 'redirect-after-auth'
+const IDP_PROVIDER_KEY = 'idp-provider-name'
+const AUTH0_LOGOUT_URL = 'https://hoophq.us.auth0.com/v2/logout'
+const AUTH0_CLIENT_ID = 'DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW'
+
+// CLJS :auth->logout: a multi-tenant org that does not use SAML also signs out
+// of Auth0, else the next sign-in reuses its session. Null for every other org.
+export function federatedLogoutUrl({ tenancyType, authMethod, origin }) {
+  if (tenancyType !== 'multitenant' || authMethod === 'saml') return null
+  const params = new URLSearchParams({ client_id: AUTH0_CLIENT_ID, returnTo: `${origin}/login` })
+  return `${AUTH0_LOGOUT_URL}?${params}&federated`
+}
+
+// Where /logout sends the browser: an IdP org must sign in again at the IdP.
+export function postLogoutPath(authMethod) {
+  return !authMethod || authMethod === 'local' ? '/login' : '/idplogin'
+}
 
 // The account a JWT names (`sub`), or null for an opaque token: some OIDC
 // providers hand the browser one.
@@ -72,10 +88,27 @@ export const useAuthStore = create((set, get) => ({
   // Clearing the token is not enough. ProtectedRoute skips /userinfo when the user
   // store already holds someone, so a second sign-in in the same tab would run with the
   // previous account's identity, admin flag and license until a full reload.
+  // The IdP name is kept for the next sign-in: Microsoft Entra gets
+  // prompt=select_account instead of prompt=login (services/auth.js).
   logout: () => {
+    const { idpProviderName } = useUserStore.getState()
+    if (idpProviderName) localStorage.setItem(IDP_PROVIDER_KEY, idpProviderName)
     localStorage.removeItem('jwt-token')
     set({ token: null, isAuthenticated: false })
     useUserStore.getState().clear()
+  },
+
+  // A sign-out the user asked for. A full page load: the CLJS app keeps the
+  // previous user in its own state until the tab reloads.
+  signOut: () => {
+    const { user, authMethod } = useUserStore.getState()
+    const federated = federatedLogoutUrl({
+      tenancyType: user?.tenancy_type,
+      authMethod,
+      origin: window.location.origin,
+    })
+    get().logout()
+    window.location.assign(federated ?? '/logout')
   },
 
   // Save current URL for redirect after auth. Per tab: sessionStorage survives
