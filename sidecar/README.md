@@ -1476,6 +1476,12 @@ comments and semicolons (a driver's `-- ping`) is not classified, as if the
 trigger did not select it. A MySQL `/*! */`, MariaDB `/*M! */` or TiDB
 `/*T! */` comment runs, so it is classified.
 
+**A block tells the client why.** The client's error carries the model's
+title and explanation. Postgres puts the explanation in the `ErrorResponse`
+detail, which psql prints as `DETAIL`. Every other protocol sends
+`<title>: <explanation>` in its one error text. A lane `message` replaces
+both. The audit record keeps the title and never the explanation.
+
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
 top-level value and replace it when the block names them; `rate_limit` and

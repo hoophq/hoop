@@ -48,6 +48,10 @@ type Verdict struct {
 	// leaking rule internals.
 	Message string
 
+	// Detail reaches the end user after Message when Denied. The audit
+	// trail never records it.
+	Detail string
+
 	// Rule identifies which rule produced a denial, for audit correlation.
 	// Empty on allow.
 	Rule string
@@ -130,6 +134,18 @@ func Deny(rule, msg string) Verdict {
 // DenyRule is Deny for a local rule: the rule's type is the source.
 func DenyRule(rule Rule, msg string) Verdict {
 	return Verdict{Denied: true, Message: msg, Rule: rule.Name, Source: string(rule.Type)}
+}
+
+// DenialText is a denial's message and detail on one line, for an error
+// frame with one text field.
+func DenialText(message, detail string) string {
+	switch {
+	case detail == "":
+		return message
+	case message == "":
+		return detail
+	}
+	return message + ": " + detail
 }
 
 // Evaluator produces a verdict for a statement. Rules and OPAClient both

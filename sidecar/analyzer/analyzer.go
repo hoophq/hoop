@@ -269,8 +269,9 @@ type Result struct {
 	// never quote a value the statement contained.
 	Title string
 
-	// Explanation is the model's reasoning. Longer than Title and intended
-	// for the audit trail, not the wire.
+	// Explanation is the model's reasoning, longer than Title. A block
+	// sends it to the client after Title when the lane sets no message. It
+	// never reaches the audit trail.
 	Explanation string
 }
 

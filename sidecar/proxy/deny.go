@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -76,12 +77,23 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 // An HTTP denial that names a review carries it in headers, so a client finds
 // the review without parsing the body. Every other protocol already carries
 // the id in the message, and its error frame has no field for it.
-func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg string, review *policy.Review) []byte {
+//
+// Postgres sends detail in its own ErrorResponse field. Every other frame has
+// one text field, which carries msg and detail on one line.
+func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg, detail string, review *policy.Review) []byte {
+	switch statement.Protocol {
+	case inspect.Postgres:
+		if msg == "" {
+			msg = "denied by policy"
+		}
+		return PostgresErrorDetail(msg, detail)
+	case inspect.Oracle:
+		return oracleDeny(statement.Metadata, msg, detail)
+	}
+	msg = policy.DenialText(msg, detail)
 	switch {
 	case statement.Protocol == inspect.HTTP && review != nil:
 		return HTTPReviewForbidden(msg, *review)
-	case statement.Protocol == inspect.Oracle:
-		return codecoracle.DenyResponse(statement.Metadata, msg)
 	case statement.Protocol == inspect.MongoDB:
 		requestID, err := strconv.ParseInt(
 			statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
@@ -92,6 +104,34 @@ func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg strin
 	default:
 		return w.Deny(statement.Protocol, statement.Direction, msg)
 	}
+}
+
+// oracleMaxText is what an ORA-01031 frame holds of the text: libhoop refuses
+// a message over 254 bytes, and "ORA-01031: " and a newline take 12.
+const oracleMaxText = 242
+
+// oracleDeny cuts the detail to fit one Oracle error. A frame that still
+// refuses the text gets msg alone, so the detail never costs the frame.
+func oracleDeny(meta map[string]string, msg, detail string) []byte {
+	if detail != "" {
+		if frame := codecoracle.DenyResponse(meta, cutText(policy.DenialText(msg, detail), oracleMaxText)); frame != nil {
+			return frame
+		}
+	}
+	return codecoracle.DenyResponse(meta, msg)
+}
+
+// cutText limits s to max bytes on a rune boundary, ending a cut with "...".
+func cutText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	const cutMark = "..."
+	cut := max - len(cutMark)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + cutMark
 }
 
 // TDS token-stream constants for a synthesized server error.
@@ -200,10 +240,16 @@ func ucs2(s string) []byte {
 // close. Reporting ERROR would leave psql waiting for a ReadyForQuery that
 // never arrives, showing the user a hang instead of the message.
 func PostgresError(msg string) []byte {
+	return PostgresErrorDetail(msg, "")
+}
+
+// PostgresErrorDetail is PostgresError with a Detail ('D') field, which psql
+// prints as DETAIL. An empty detail writes no field.
+func PostgresErrorDetail(msg, detail string) []byte {
 	var body []byte
 	field := func(code byte, val string) {
 		body = append(body, code)
-		body = append(body, val...)
+		body = append(body, strings.ReplaceAll(val, "\x00", "")...)
 		body = append(body, 0)
 	}
 
@@ -213,6 +259,9 @@ func PostgresError(msg string) []byte {
 	// policy refused this", and one clients already surface sensibly.
 	field('C', "42501")
 	field('M', msg)
+	if detail != "" {
+		field('D', detail)
+	}
 	body = append(body, 0) // field terminator
 
 	out := make([]byte, 0, 5+len(body))

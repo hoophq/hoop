@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
 )
@@ -466,7 +467,7 @@ func (c *sshConnState) judge(ctx context.Context, phase string, stmt inspect.Sta
 			"phase", phase, "error", d.Err)
 	}
 	if !d.Allowed {
-		return codecssh.Refuse("%s", d.Message)
+		return codecssh.Refuse("%s", policy.DenialText(d.Message, d.Detail))
 	}
 	return nil
 }

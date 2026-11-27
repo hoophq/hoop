@@ -912,8 +912,12 @@ func deniedToolResult(req *jsonrpc.Message, v daemon.MCPVerdict) inspect.Decisio
 	if v.Message != "" {
 		msg += ": " + v.Message
 	}
+	text := msg
+	if v.Detail != "" {
+		text += ": " + v.Detail
+	}
 	reply, err := jsonrpc.NewResult(req.ID, map[string]any{
-		"content": []map[string]any{{"type": "text", "text": msg}},
+		"content": []map[string]any{{"type": "text", "text": text}},
 		"isError": true,
 	})
 	if err != nil {

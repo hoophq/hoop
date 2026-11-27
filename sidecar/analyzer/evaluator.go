@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -257,9 +259,9 @@ type Config struct {
 	// expensive.
 	Trigger Trigger
 
-	// Message overrides the model's Title in the denial the user reads.
-	// Empty uses the Title, which is the more useful default: it tells the
-	// developer what the classifier objected to.
+	// Message overrides the model's Title and Explanation in the denial the
+	// user reads. Empty uses them, which is the more useful default: it
+	// tells the developer what the classifier objected to.
 	Message string
 
 	// Guidance replaces the default risk guidance in the system prompt.
@@ -769,7 +771,30 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	v := policy.Deny(e.cfg.Rule, msg)
 	v.Source = policy.SourceAnalyzer
 	v.Annotations = notes
+	v.Detail = e.blockDetail(res)
 	return v
+}
+
+const maxDetailBytes = 1024
+
+// blockDetail is the explanation a block sends to the client: one line, no
+// control characters. Empty when the lane sets its own message.
+func (e *Evaluator) blockDetail(res Result) string {
+	if e.cfg.Message != "" {
+		return ""
+	}
+	s := strings.Join(strings.FieldsFunc(res.Explanation, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}), " ")
+	if len(s) <= maxDetailBytes {
+		return s
+	}
+	const cutMark = "..."
+	cut := maxDetailBytes - len(cutMark)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + cutMark
 }
 
 // requestApproval holds a statement under its approver: the approval agent
