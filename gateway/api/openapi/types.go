@@ -324,6 +324,26 @@ type SidecarListenerSlackChannels struct {
 	Channels []string `json:"channels" example:"C0987654321"`
 }
 
+// SidecarOwnersRequest replaces the owners of a sidecar.
+type SidecarOwnersRequest struct {
+	// The emails of the owners, in order. An empty list removes them all
+	Owners []string `json:"owners" binding:"required" example:"ana@example.com"`
+}
+
+// SidecarOwners is the people responsible for a sidecar.
+type SidecarOwners struct {
+	// The owners, in the order they were set
+	Owners []SidecarOwner `json:"owners"`
+}
+
+// SidecarOwner is one owner of a sidecar.
+type SidecarOwner struct {
+	// The email of the owner, in lowercase
+	Email string `json:"email" example:"ana@example.com"`
+	// True when exactly one active or invited user has this email
+	Matched bool `json:"matched"`
+}
+
 type SidecarUpdateRequest struct {
 	// The daemon configuration this sidecar serves. Replaces the stored
 	// document entirely.

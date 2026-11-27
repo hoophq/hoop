@@ -132,9 +132,10 @@ function SourceCallout({ fromFile, configured, awaitingFile, reported, editable,
  * `editable`: which side owns the document, and the Global settings rows.
  * Listeners are authored through `listenerActions`, the sidecar is deleted
  * through `onDelete`. The wizard's Overview step passes `editable` only, so a
- * sidecar running its file can move to Hoop there too.
+ * sidecar running its file can move to Hoop there too. `showOwners` adds the
+ * Owners row, for the page that loads them (useSidecarStore.fetchOwners).
  */
-export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete }) {
+export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete, showOwners }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   const fromFile = usesConfigFile(sidecar)
@@ -216,7 +217,12 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
           </Group>
 
           {/* Read-only on the file's config. The key drops an open editor when that flips. */}
-          <GlobalSettings key={String(editable && !fromFile)} sidecar={shown} editable={editable && !fromFile} />
+          <GlobalSettings
+            key={String(editable && !fromFile)}
+            sidecar={shown}
+            editable={editable && !fromFile}
+            showOwners={showOwners}
+          />
 
           {deprecations.length > 0 && (
             <Callout icon={TriangleAlert} tone="warning">

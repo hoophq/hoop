@@ -12177,6 +12177,110 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars/{nameOrID}/owners": {
+            "get": {
+                "description": "The people responsible for the sidecar, by email, and whether each email matches one user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Owners",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarOwners"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replace the owners of the sidecar. An empty list removes them all. An owner is an email; the user with that email can sign in later.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Set Sidecar Owners",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarOwnersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarOwners"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sidecars/{nameOrID}/slack-channels": {
             "get": {
                 "description": "Where the reviews of each listener of the sidecar are posted in Slack.",
@@ -22453,6 +22557,50 @@ const docTemplate = `{
                     "description": "The sidecar's page in the web app, where its listeners are added. Set\nwhen approved.",
                     "type": "string",
                     "example": "https://use.hoop.dev/sidecars/5364ec99-653b-41ba-8165-67a7ba0c2d14"
+                }
+            }
+        },
+        "openapi.SidecarOwner": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "The email of the owner, in lowercase",
+                    "type": "string",
+                    "example": "ana@example.com"
+                },
+                "matched": {
+                    "description": "True when exactly one active or invited user has this email",
+                    "type": "boolean"
+                }
+            }
+        },
+        "openapi.SidecarOwners": {
+            "type": "object",
+            "properties": {
+                "owners": {
+                    "description": "The owners, in the order they were set",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarOwner"
+                    }
+                }
+            }
+        },
+        "openapi.SidecarOwnersRequest": {
+            "type": "object",
+            "required": [
+                "owners"
+            ],
+            "properties": {
+                "owners": {
+                    "description": "The emails of the owners, in order. An empty list removes them all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ana@example.com"
+                    ]
                 }
             }
         },
