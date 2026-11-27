@@ -19,7 +19,7 @@ function MaskedRow({ left, action }) {
   return (
     <Group align="center" gap="md" wrap="nowrap">
       {left}
-      <Stack gap="xs" flex={1}>
+      <Stack gap="xsAlt" flex={1}>
         <Title order={5} fw={500}>
           {TITLE}
         </Title>

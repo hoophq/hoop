@@ -70,7 +70,8 @@ all ICA endpoints to report an initialized inspecting manager, protocol
 validation enabled and no graphics bypass. Loading, draining, configured capacity
 saturation, missing attestation, zero endpoints or any plain proxy listener
 returns HTTP 503. It does not infer readiness from the configured backend name.
-Without this option the existing plaintext `/readyz` API is unchanged.
+Without this option `/readyz` answers with the process status JSON
+(`sidecar/README.md`, "Health and admin listeners"), with the same status codes.
 Keep admin bound to loopback for SSH forwarding, or restrict private pod/admin
 network access when Kubernetes probes require a non-loopback listener.
 

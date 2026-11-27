@@ -1,0 +1,235 @@
+{
+  "connections": [
+    {
+      "id": "apache-cassandra",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "cassandra"
+      }
+    },
+    {
+      "id": "aws-cli",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-cli"
+      }
+    },
+    {
+      "id": "aws-cloudwatch",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-cloudwatch"
+      }
+    },
+    {
+      "id": "aws-ecs",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-ecs"
+      }
+    },
+    {
+      "id": "aws-ssm-script",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-ssm"
+      }
+    },
+    {
+      "id": "bigquery",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "bigquery"
+      }
+    },
+    {
+      "id": "claude-code",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "claude-code"
+      }
+    },
+    {
+      "id": "clojure",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "clojure"
+      }
+    },
+    {
+      "id": "django",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "django"
+      }
+    },
+    {
+      "id": "dynamodb",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "dynamodb"
+      }
+    },
+    {
+      "id": "elixir-IEx",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "elixir"
+      }
+    },
+    {
+      "id": "git",
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "git"
+      }
+    },
+    {
+      "id": "github",
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "github"
+      }
+    },
+    {
+      "id": "grafana",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "grafana"
+      }
+    },
+    {
+      "id": "httpproxy",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "web-application"
+      }
+    },
+    {
+      "id": "kibana",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "kibana"
+      }
+    },
+    {
+      "id": "kubernetes-token",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "kubernetes"
+      }
+    },
+    {
+      "id": "kubernetes-eks",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "kubernetes-eks"
+      }
+    },
+    {
+      "id": "mcp",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcp"
+      }
+    },
+    {
+      "id": "mcpproxy",
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcpproxy"
+      }
+    },
+    {
+      "id": "mssql",
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mssql"
+      }
+    },
+    {
+      "id": "mongodb",
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mongodb"
+      }
+    },
+    {
+      "id": "mysql",
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mysql"
+      }
+    },
+    {
+      "id": "nodejs",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "nodejs"
+      }
+    },
+    {
+      "id": "oracledb",
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "oracledb"
+      }
+    },
+    {
+      "id": "php-artisan",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "php-artisan"
+      }
+    },
+    {
+      "id": "postgres",
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "postgres"
+      }
+    },
+    {
+      "id": "python-scripts",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "python"
+      }
+    },
+    {
+      "id": "redis",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "redis"
+      }
+    },
+    {
+      "id": "remote-desktop",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "rdp"
+      }
+    },
+    {
+      "id": "ruby-on-rails",
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "ruby-on-rails"
+      }
+    },
+    {
+      "id": "ssh",
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "ssh"
+      }
+    },
+    {
+      "id": "webapps-and-apis",
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "tcp"
+      }
+    }
+  ]
+}

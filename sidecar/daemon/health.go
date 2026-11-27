@@ -1,14 +1,9 @@
 package daemon
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"net"
-	"net/http"
 	"strings"
-	"time"
 )
 
 // HealthListenEnv is the address of the health listener: GET /healthz and
@@ -17,7 +12,10 @@ import (
 // It exists so a deployment can probe a port other than admin.listen. Like
 // admin.listen, it serves no audit data or rules: those are on
 // admin.api_listen. It answers whether the process is up and, from /readyz,
-// names the lanes that are not ready yet (or the ICA inspection state).
+// the process status as JSON (or the ICA inspection attestation).
+//
+// The run path binds it at process start (ListenHealth), so it answers while
+// the boot waits for its control plane.
 //
 // An environment variable and never a config key: the probe belongs to the
 // deployment that declares it, not to a document a control plane serves.
@@ -115,66 +113,4 @@ func sameBindHost(a, b string) bool {
 		return ia.Equal(ib)
 	}
 	return strings.EqualFold(a, b)
-}
-
-// healthState is what /readyz reads. The admin listener and the health
-// listener build their routes from one value, so a probe gets the same answer
-// from either. Each probe reads the lanes: a reload adds and removes them.
-type healthState struct {
-	lanes *laneSet
-	// icaReadinessJSON is admin.ica_readiness_json: /readyz answers with the
-	// ICA inspection attestation instead of plain text.
-	icaReadinessJSON bool
-}
-
-// handleHealth mounts /healthz and /readyz on mux.
-func handleHealth(mux *http.ServeMux, h healthState) {
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	})
-
-	// An ica lane's engine loads a model and starts OCR workers after the
-	// socket binds, which can take minutes, and the engine refuses
-	// connections until then. /readyz reports that, separate from
-	// /healthz; other lanes are ready once bound, so it returns 200 for them.
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		endpoints, names := h.lanes.endpoints()
-		if h.icaReadinessJSON {
-			writeICAReadiness(w, endpoints, h.lanes.relayCount())
-			return
-		}
-		if notReady := notReadyEndpoints(endpoints, names); len(notReady) > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ready")
-	})
-}
-
-// serveHealth binds addr and serves the health routes until ctx ends. A bind
-// failure is returned: the platform probes this address, and a process it
-// cannot probe gets restarted in a loop.
-func serveHealth(ctx context.Context, addr string, h healthState, log *slog.Logger) error {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("health listener (%s): %w", HealthListenEnv, err)
-	}
-	mux := http.NewServeMux()
-	handleHealth(mux, h)
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutCtx)
-	}()
-
-	log.Info("health endpoint listening", "listen", ln.Addr().String())
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("health listener: %w", err)
-	}
-	return nil
 }

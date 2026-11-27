@@ -5,7 +5,8 @@
                            Loader2 Upload X]]
    ["papaparse" :as papa]
    ["react" :as react]
-   [clojure.string :as cs]))
+   [clojure.string :as cs]
+   [webapp.provisioning.data :as data]))
 
 
 (defn zebra-bg
@@ -37,31 +38,28 @@
    [:> Callout.Text (if size {:size size} {}) text]])
 
 (defn callout-bar
-  "Color-coded banner with a left accent, leading icon, title/subtitle slot,
-   and an actions slot on the right."
+  "Status banner: a white square card with a gray border. Only the icon takes
+   the status color; the title says the status in words (hoop-ui skill: a
+   status is never color alone, and a page note stays quiet)."
   [{:keys [color icon title subtitle extra actions px py]
     :or   {px "5" py "4"}}]
-  (let [c #(str "var(--" color "-" % ")")]
-    [:> Flex {:align "center" :justify "between" :gap "4"
-              :px px :py py :mb "4"
-              :style {:background    (c 2)
-                      :border-top    (str "1px solid " (c 5))
-                      :border-right  (str "1px solid " (c 5))
-                      :border-bottom (str "1px solid " (c 5))
-                      :border-left   (str "4px solid " (c 9))
-                      :border-radius "var(--radius-3)"}}
-     [:> Flex {:align "center" :gap "3"}
-      (when icon
-        [:> Box {:style {:color       (c 9)
-                         :display     "flex"
-                         :flex-shrink 0}}
-         icon])
-      [:> Flex {:direction "column" :gap "0"}
-       (when title    [:> Text {:size "2" :weight "medium"} title])
-       (when subtitle [:> Text {:size "1" :color "gray"} subtitle])
-       extra]]
-     (when actions
-       [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])]))
+  [:> Flex {:align "center" :justify "between" :gap "4"
+            :px px :py py :mb "4"
+            :style {:background (:surface data/colors)
+                    :border     (str "1px solid " (:border data/colors))}}
+   [:> Flex {:align "center" :gap "3"}
+    (when icon
+      [:> Box {:aria-hidden true
+               :style {:color       (str "var(--" color "-11)")
+                       :display     "flex"
+                       :flex-shrink 0}}
+       icon])
+    [:> Flex {:direction "column" :gap "0"}
+     (when title    [:> Text {:size "2" :weight "medium"} title])
+     (when subtitle [:> Text {:size "2" :color "gray"} subtitle])
+     extra]]
+   (when actions
+     [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])])
 
 (defn bulk-screen-header
   "Back button + heading + resource count badge."
@@ -105,14 +103,16 @@
          [:> Text {:size "1" :color "gray"} label])
        (when paginated?
          [:> Flex {:align "center" :gap "2"}
-          [:> Button {:size "1" :variant "ghost" :color "gray"
+          [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                      :aria-label "Previous page"
                       :disabled (zero? page)
                       :on-click #(on-change (dec page))}
            [:> ChevronLeft {:size 14}]]
           [:> Text {:size "1" :color "gray"}
            (str (inc page) " / " total-pages
                 (when detail (str " (" detail ")")))]
-          [:> Button {:size "1" :variant "ghost" :color "gray"
+          [:> Button {:size "1" :variant "ghost" :color "gray" :radius "full"
+                      :aria-label "Next page"
                       :disabled (>= (inc page) total-pages)
                       :on-click #(on-change (inc page))}
            [:> ChevronRight {:size 14}]]])])))

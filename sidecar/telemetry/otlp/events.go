@@ -12,6 +12,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // exportMaxBatchSize is how many records one export request carries.
@@ -86,9 +87,9 @@ func record(ev audit.Event) log.Record {
 	str(attrDirection, string(ev.Direction))
 	switch ev.Kind {
 	case audit.KindStatement, audit.KindViolation:
-		verdict := "allow"
+		verdict := telemetry.OutcomeAllow
 		if !ev.Allowed {
-			verdict = "deny"
+			verdict = telemetry.OutcomeDeny
 		}
 		attrs = append(attrs, log.String(attrVerdict, verdict))
 	}

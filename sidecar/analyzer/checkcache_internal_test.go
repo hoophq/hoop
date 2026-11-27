@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 func TestTheCheckCacheEvictsTheOldestPastItsSize(t *testing.T) {
@@ -26,18 +28,31 @@ func TestTheCheckCacheEvictsTheOldestPastItsSize(t *testing.T) {
 
 func TestThePlanKeyDoesNotGrowWithTheStatement(t *testing.T) {
 	big := "SELECT * FROM t WHERE id IN (" + strings.Repeat("1,", 50_000) + "1)"
-	key := planKey("db\x00role", big, nil, nil)
+	stmt := func(text string) inspect.Statement { return inspect.Statement{Protocol: inspect.MySQL, Text: text} }
+	key, _ := planKey("db\x00role", stmt(big), nil, nil)
 	if key == "" || len(key) > len("db\x00role")+1+sha256.Size {
 		t.Fatalf("key is %d bytes for a %d-byte statement", len(key), len(big))
 	}
-	if planKey("db\x00role", big, nil, nil) != key {
+	if again, _ := planKey("db\x00role", stmt(big), nil, nil); again != key {
 		t.Fatal("the same statement got two keys")
 	}
-	if planKey("db\x00role", big+" ", nil, nil) == key {
+	if other, _ := planKey("db\x00role", stmt(big+" "), nil, nil); other == key {
 		t.Fatal("two statements got one key")
 	}
-	if planKey("db\x00other", big, nil, nil) == key {
+	if other, _ := planKey("db\x00other", stmt(big), nil, nil); other == key {
 		t.Fatal("two scopes got one key")
+	}
+}
+
+func TestALargeStatementIsKeyedByItsText(t *testing.T) {
+	stmt := func(text string) inspect.Statement { return inspect.Statement{Protocol: inspect.Postgres, Text: text} }
+	small := "INSERT INTO t VALUES (1)"
+	if shape, _ := planShape(stmt(small), nil, nil); shape == small {
+		t.Fatal("a small statement was keyed by its text")
+	}
+	big := small + " -- " + strings.Repeat("x", maxShapeBytes)
+	if shape, replaced := planShape(stmt(big), nil, nil); shape != big || replaced {
+		t.Fatal("a statement over maxShapeBytes was shaped")
 	}
 }
 

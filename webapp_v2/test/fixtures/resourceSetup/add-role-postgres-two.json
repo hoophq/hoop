@@ -1,0 +1,48 @@
+[
+  {
+    "resource_name": "ar-pg",
+    "name": "ar-pg-read",
+    "access_mode_runbooks": "enabled",
+    "command": [],
+    "type": "database",
+    "secret": {
+      "envvar:HOST": "cGcuaW50ZXJuYWw=",
+      "envvar:USER": "cmVhZGVy",
+      "envvar:PASS": "cHc=",
+      "envvar:PORT": "NTQzMg==",
+      "envvar:DB": "YXBw"
+    },
+    "access_mode_connect": "enabled",
+    "redact_types": [],
+    "access_mode_exec": "enabled",
+    "redact_enabled": false,
+    "agent_id": "b09d0134-4125-5c2f-83b8-e85300706509",
+    "access_schema": "enabled",
+    "attributes": [],
+    "reviewers": [],
+    "subtype": "postgres"
+  },
+  {
+    "resource_name": "ar-pg",
+    "name": "ar-pg-write",
+    "access_mode_runbooks": "enabled",
+    "command": [],
+    "type": "database",
+    "secret": {
+      "envvar:HOST": "cGcuaW50ZXJuYWw=",
+      "envvar:USER": "d3JpdGVy",
+      "envvar:PASS": "cHc=",
+      "envvar:PORT": "NTQzMg==",
+      "envvar:DB": "YXBw"
+    },
+    "access_mode_connect": "enabled",
+    "redact_types": [],
+    "access_mode_exec": "enabled",
+    "redact_enabled": false,
+    "agent_id": "b09d0134-4125-5c2f-83b8-e85300706509",
+    "access_schema": "enabled",
+    "attributes": [],
+    "reviewers": [],
+    "subtype": "postgres"
+  }
+]

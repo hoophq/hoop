@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading]]
+   ["@radix-ui/themes" :refer [Box Flex Heading Text]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -470,8 +470,11 @@
 
 (defn- sessions-page []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
-                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
-                              "Sessions"]
+                             [:> Flex {:direction "column" :gap "2"}
+                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+                               "Sessions"]
+                              [:> Text {:as "p" :size "3" :class "text-gray-11"}
+                               "Review who ran what on each Resource, and open a Session to see it."]]
                              [audit/panel]]])
 
 (defmethod routes/panels :sessions-panel []

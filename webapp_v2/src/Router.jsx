@@ -3,6 +3,7 @@ import NotImplemented from '@/components/NotImplemented'
 import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import ByResourceSetup from '@/modes/ByResourceSetup'
+import ByAddRoleSetup from '@/modes/ByAddRoleSetup'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { RULE_KIND_ANALYZER } from '@/utils/ruleTraffic'
 
@@ -21,6 +22,8 @@ import ConfigureRolePage from '@/pages/Roles/Configure'
 import Resources from '@/pages/Resources'
 import ConfigureResource from '@/pages/Resources/Configure'
 import ResourceSetup from '@/pages/Resources/Setup'
+import ResourceAddRole from '@/pages/Resources/Setup/AddRole'
+import ResourceCatalog from '@/pages/Resources/Catalog'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -218,6 +221,14 @@ function Router() {
           </Page>
         }
       />
+      <Route
+        path="/resource-catalog"
+        element={
+          <Page>
+            <ResourceCatalog />
+          </Page>
+        }
+      />
       {/* Families not ported yet keep the CLJS :resource-setup-new panel. */}
       <Route
         path="/resources/new"
@@ -226,6 +237,20 @@ function Router() {
             react={
               <Page adminOnly>
                 <ResourceSetup />
+              </Page>
+            }
+            cljs={CatchAll}
+          />
+        }
+      />
+      {/* Families not ported yet keep the CLJS :add-role-to-resource panel. */}
+      <Route
+        path="/resources/:resourceName/add-role"
+        element={
+          <ByAddRoleSetup
+            react={
+              <Page adminOnly>
+                <ResourceAddRole />
               </Page>
             }
             cljs={CatchAll}

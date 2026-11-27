@@ -1,0 +1,13 @@
+.card {
+  display: block;
+  border-radius: var(--hoop-card-radius);
+}
+
+.card:hover .surface {
+  background-color: var(--hoop-surface-strong);
+}
+
+.toggle {
+  cursor: pointer;
+  user-select: none;
+}

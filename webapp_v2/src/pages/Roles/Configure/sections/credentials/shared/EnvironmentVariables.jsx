@@ -173,7 +173,7 @@ export default function EnvironmentVariables({ connection, availableSources, hid
 
   return (
     <Stack gap="xl">
-      <Stack gap="xs">
+      <Stack gap="xsAlt">
         <Title order={4}>Environment variables</Title>
         <Text size="sm" c="dimmed">
           Include environment variables to be used in your Resource Role.
