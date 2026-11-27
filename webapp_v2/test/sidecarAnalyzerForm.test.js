@@ -249,6 +249,28 @@ describe('the notify of a By groups level', () => {
   })
 })
 
+describe('sidecar owners as approvers', () => {
+  it('round-trips owners alone and beside groups, never beside routing', () => {
+    const spec = {
+      high: 'require_approval',
+      medium: 'require_approval',
+      approvers: {
+        high: { type: 'human', owners: true },
+        medium: { type: 'human', owners: true, groups: ['dba'] },
+      },
+    }
+    const form = specToForm(spec, 'r', [])
+    expect(form.approval.high.owners).toBe(true)
+    expect(form.approval.high.groups).toEqual([])
+    expect(form.approval.medium.owners).toBe(true)
+    expect(form.approval.medium.groups).toEqual(['dba'])
+    expect(formToSpec(form, 'r').approvers).toEqual({
+      high: { type: 'human', owners: true },
+      medium: { type: 'human', owners: true, groups: ['dba'] },
+    })
+  })
+})
+
 describe('a level card', () => {
   it('is configured once its approver is chosen, and a person has a way to approve', () => {
     expect(approverConfigured({ approver: 'ai_agent', routing: emptyRouting() })).toBe(true)

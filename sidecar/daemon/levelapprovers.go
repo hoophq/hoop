@@ -50,6 +50,12 @@ type LevelApprover struct {
 	// The control plane reads it; the sidecar files the level and never the
 	// notify.
 	Notify map[string]NotifyRoute `json:"notify,omitempty" cap:"analyzer_approver_notify"`
+
+	// Owners lets the sidecar's owners approve a human level, alongside any
+	// Groups named on the same entry. Empty Groups with Owners means only the
+	// owners approve, not the administrators. The control plane reads it; the
+	// sidecar files the level and never the owners.
+	Owners bool `json:"owners,omitempty" cap:"analyzer_approver_owners"`
 }
 
 // CapabilityApprovalRouting means this build decodes approvers.<level>.routing.
@@ -62,6 +68,13 @@ const CapabilityApprovalRouting = "analyzer_approval_routing"
 // decode approvers at all is refused: it files under approval_rule, and the
 // control plane would post in a channel what notify keeps out of one.
 const CapabilityApproverNotify = "analyzer_approver_notify"
+
+// CapabilityApproverOwners means this build decodes approvers.<level>.owners.
+// The sidecar does nothing with the key, so ServeLevelApprovers serves a
+// build without it the document with the key removed. A build that does not
+// decode approvers at all is refused: it files under approval_rule, which
+// lets other groups approve and posts in a channel.
+const CapabilityApproverOwners = "analyzer_approver_owners"
 
 // ApprovalRouting is the AI routing of a human level's approval request.
 type ApprovalRouting struct {
@@ -118,6 +131,12 @@ func (a *LevelApprovers) routes() bool {
 func (a *LevelApprovers) notifies() bool {
 	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
 		func(l *LevelApprover) bool { return l != nil && len(l.Notify) > 0 })
+}
+
+// hasOwners reports a block where some level sets owners.
+func (a *LevelApprovers) hasOwners() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && l.Owners })
 }
 
 // routedLevels lists the held levels whose human approver sets routing:
@@ -289,6 +308,7 @@ func validateLevelApprovers(la *LaneAnalyzerConfig, where string) []string {
 		}
 		problems = append(problems, validateRouting(a, at)...)
 		problems = append(problems, validateNotify(a, at)...)
+		problems = append(problems, validateOwners(a, at)...)
 	}
 	return problems
 }
@@ -341,6 +361,23 @@ func validateNotify(a *LevelApprover, at string) []string {
 				problems = append(problems, fmt.Sprintf("%s: notify.%s.channels_candidates[%d] is blank", at, k, i))
 			}
 		}
+	}
+	return problems
+}
+
+// validateOwners refuses owners where nobody would read it or beside routing.
+func validateOwners(a *LevelApprover, at string) []string {
+	if !a.Owners {
+		return nil
+	}
+	var problems []string
+	if a.Routing != nil {
+		problems = append(problems, fmt.Sprintf("%s: owners and routing are alternatives; "+
+			"set owners for the sidecar's owners or routing for AI routing, not both", at))
+	}
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: owners name people nobody asks, "+
+			"and the type is %q", at, analyzer.ApproverAIAgent))
 	}
 	return problems
 }
@@ -416,21 +453,28 @@ func notifyWarnings(at string, notify map[string]NotifyRoute) []string {
 func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 	since := capabilitySince()
 	if hs.grants(CapabilityLevelApprovers, since) {
-		if hs.grants(CapabilityApproverNotify, since) {
+		stripNotify := !hs.grants(CapabilityApproverNotify, since)
+		stripOwners := !hs.grants(CapabilityApproverOwners, since)
+		if !stripNotify && !stripOwners {
 			return cfg
 		}
 		return mapLevelApprovers(cfg, func(a *LevelApprover) bool {
-			if len(a.Notify) == 0 {
-				return false
+			changed := false
+			if stripNotify && len(a.Notify) > 0 {
+				a.Notify = nil
+				changed = true
 			}
-			a.Notify = nil
-			return true
+			if stripOwners && a.Owners {
+				a.Owners = false
+				changed = true
+			}
+			return changed
 		})
 	}
 	var listeners []ListenerConfig
 	for i, l := range cfg.Listeners {
 		if l.Analyzer == nil || l.Analyzer.Approvers == nil || l.Analyzer.ApprovalRule == "" ||
-			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() {
+			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() || l.Analyzer.Approvers.hasOwners() {
 			continue
 		}
 		if listeners == nil {

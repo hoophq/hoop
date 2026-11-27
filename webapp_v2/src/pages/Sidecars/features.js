@@ -68,8 +68,12 @@ function approverDetail(read, sep) {
     return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}`
   }
   const notify = notifyDetail(read.notify)
-  const groups = read.groups.length > 0 ? read.groups.join(', ') : 'administrators'
-  return `Human${sep}${groups}${notify ? ` by ${notify}` : ''}`
+  const who = read.owners
+    ? ['Sidecar owners', ...read.groups].join(', ')
+    : read.groups.length > 0
+      ? read.groups.join(', ')
+      : 'administrators'
+  return `Human${sep}${who}${notify ? ` by ${notify}` : ''}`
 }
 
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold

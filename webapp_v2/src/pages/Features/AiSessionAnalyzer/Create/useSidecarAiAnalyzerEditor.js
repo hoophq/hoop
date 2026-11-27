@@ -48,6 +48,7 @@ export const APPROVER_RULE = 'approval_rule'
 const emptyApproval = () => ({
   approver: APPROVER_AI,
   groups: [],
+  owners: false,
   groupsChosen: false,
   prompt: '',
   routing: emptyRouting(),
@@ -59,6 +60,7 @@ const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level
 const unseededStatic = (approval) =>
   approval.approver === APPROVER_HUMAN &&
   approval.routing.mode === ROUTING_STATIC &&
+  !approval.owners &&
   approval.groups.length === 0 &&
   !approval.groupsChosen
 
@@ -208,6 +210,7 @@ function approverToSpec(approval) {
     if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
     if (approval.routing.mode !== ROUTING_STATIC) return null
     const entry = { type: APPROVER_HUMAN }
+    if (approval.owners) entry.owners = true
     if (approval.groups.length > 0) entry.groups = approval.groups
     const notify = notifyToSpec(approval.routing, true)
     if (notify) entry.notify = notify

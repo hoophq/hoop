@@ -19436,6 +19436,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "readOnly": true,
                     "example": false
+                },
+                "viewer_is_owner": {
+                    "description": "True when the caller is an owner of the review's sidecar and the review allows owners to approve",
+                    "type": "boolean",
+                    "readOnly": true
                 }
             }
         },

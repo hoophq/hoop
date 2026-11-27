@@ -36,6 +36,7 @@ import {
   ROUTING_AI,
   ROUTING_GROUPS,
   STATUS,
+  approverGroupLabel,
   canApprove,
   canReject,
   canRevoke,
@@ -518,7 +519,7 @@ export default function ReviewModal({
             )}
             {review.status === STATUS.PENDING && (
               <Tooltip
-                label={`Only ${(review.review_groups_data ?? []).map((g) => g.group).join(' or ')} can approve this request`}
+                label={`Only ${(review.review_groups_data ?? []).map((g) => approverGroupLabel(g.group)).join(' or ')} can approve this request`}
                 disabled={mayApprove}
               >
                 <span>

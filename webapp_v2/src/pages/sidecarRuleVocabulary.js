@@ -290,13 +290,14 @@ export function readLevelApprover(spec, level) {
     return {
       approver: APPROVER_HUMAN,
       groups: entry.groups ?? [],
+      owners: Boolean(entry.owners),
       prompt: '',
       routing: entry.routing ?? null,
       notify: entry.notify ?? null,
     }
   }
   if (entry?.type === APPROVER_AI) {
-    return { approver: APPROVER_AI, groups: [], prompt: entry.prompt ?? '', routing: null, notify: null }
+    return { approver: APPROVER_AI, groups: [], owners: false, prompt: entry.prompt ?? '', routing: null, notify: null }
   }
   return null
 }

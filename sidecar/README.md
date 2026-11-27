@@ -1724,6 +1724,7 @@ An `approvers.<level>` entry has these keys:
 |---|---|
 | `type` | `human` or `ai_agent`. Required |
 | `groups` | who may approve a `human` level. Empty: the administrators |
+| `owners` | when true, the sidecar's owners may approve a `human` level, beside any `groups`. With `groups` empty, only the owners approve. Default delivery is Slack direct messages, with no organization default channel |
 | `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
 | `notify` | how the approvers of a `human` level with `groups` are told; see below. `routing` has its own |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
@@ -1749,6 +1750,8 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `groups` and `routing` on one entry | they are alternatives |
 | `notify` and `routing` on one entry | a level with routing sets `routing.notify` |
 | `notify` on an `ai_agent` level | nobody would tell those people |
+| `owners` and `routing` on one entry | they are alternatives |
+| `owners` on an `ai_agent` level | nobody would ask those people |
 | a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
 
@@ -1873,6 +1876,22 @@ block without it, and the control plane still acts on it. A sidecar that
 cannot read `approvers` is refused a block that sets `notify`: under the
 `approval_rule` its hold would post in a channel.
 
+**Sidecar owners as approvers (`owners`).** Setting `owners: true` on a `human`
+level lets the sidecar's owners approve its held statements, beside any
+`groups` on the same entry. With `groups` empty, only the owners approve (not
+the administrators).
+
+An owner level defaults to Slack direct messages and never uses the
+organization default channel. When `notify.slack` sets `delivery: channel` or
+`both` with `channels_candidates` from the listener's Slack channels, each
+named channel receives a one-line notice that a review is waiting for the
+owner, with no statement and no buttons.
+
+The sidecar does nothing with `owners`. A sidecar that reports
+`analyzer_level_approvers` and not `analyzer_approver_owners` is served the
+block without it, and the control plane still acts on it. A sidecar that
+cannot read `approvers` is refused a block that sets `owners`.
+
 **The approval agent (`type: ai_agent`).** The lane's own provider and model
 decide in the sidecar, at once, with no wait and no poll. Nothing is filed
 with the control plane: the decision is recorded in the statement's audit
@@ -1953,8 +1972,8 @@ otherwise none, and only administrators approve. So no one approves a level
 on an older sidecar that they could not approve on a new one: more
 oversight, not less. A block with `approvers` and no `approval_rule` is
 refused to such a sidecar, naming the capability and the release that adds
-it. So is a block whose `approvers` set `routing` or `notify`, with or
-without an `approval_rule`.
+it. So is a block whose `approvers` set `routing`, `notify` or `owners`, with
+or without an `approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects

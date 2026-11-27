@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { ROUTING_GROUPS, notifyFallbackLabel, routingModeLabel } from '@/pages/Reviews/helpers'
+import {
+  ROUTING_GROUPS,
+  SIDECAR_OWNERS_GROUP,
+  approverGroupLabel,
+  canApprove,
+  notifyFallbackLabel,
+  routingModeLabel,
+} from '@/pages/Reviews/helpers'
 
 describe('the notification fallback of a routed review', () => {
   it('names each known cause and says the post as without routing reached a channel', () => {
@@ -59,5 +66,14 @@ describe('the routing mode of a review', () => {
     expect(notifyFallbackLabel('new_cause', false, 'both', ROUTING_GROUPS)).toBe(
       'The notifications reached nobody (new_cause). The post as without notify settings reached nobody either.',
     )
+  })
+})
+
+describe('owner approval eligibility', () => {
+  it('admits viewer_is_owner and refuses a real group named sidecar-owners', () => {
+    const rev = { review_groups_data: [{ group: SIDECAR_OWNERS_GROUP }] }
+    expect(canApprove({ ...rev, viewer_is_owner: true }, { groups: [] })).toBe(true)
+    expect(canApprove(rev, { groups: [SIDECAR_OWNERS_GROUP] })).toBe(false)
+    expect(approverGroupLabel(SIDECAR_OWNERS_GROUP)).toBe('Sidecar owners')
   })
 })

@@ -1782,6 +1782,8 @@ type Review struct {
 	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
 	// The AI routing decision. Absent on an approval request with static routing
 	Routing *ReviewRouting `json:"routing,omitempty" readonly:"true"`
+	// True when the caller is an owner of the review's sidecar and the review allows owners to approve
+	ViewerIsOwner bool `json:"viewer_is_owner,omitempty" readonly:"true"`
 }
 
 // ReviewRouting is how an approval request found its approvers and who was

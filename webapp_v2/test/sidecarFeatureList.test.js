@@ -106,4 +106,11 @@ describe('the approver of a held level in the analyzer summary', () => {
       'Every statement · high: hold (Human: AI routing from dba)',
     )
   })
+
+  it('names Sidecar owners when owners is set', () => {
+    expect(detail({ type: 'human', owners: true })).toBe('Every statement · high: hold (Human: Sidecar owners)')
+    expect(detail({ type: 'human', owners: true, groups: ['dba'] })).toBe(
+      'Every statement · high: hold (Human: Sidecar owners, dba)',
+    )
+  })
 })

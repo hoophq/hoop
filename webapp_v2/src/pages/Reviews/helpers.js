@@ -139,13 +139,21 @@ export function ruleLabel(review) {
 export const decidedGroups = (review) =>
   (review?.review_groups_data ?? []).filter((g) => g.status !== STATUS.PENDING)
 
+export const SIDECAR_OWNERS_GROUP = 'sidecar-owners'
+
+export const approverGroupLabel = (group) => (group === SIDECAR_OWNERS_GROUP ? 'Sidecar owners' : group)
+
 // An approval from outside the review's groups answers 200 and changes nothing,
 // so the button is what has to refuse it. `groups` is what /userinfo reports,
 // the same list the backend intersects; the role is the fallback for a gateway
-// that answers none.
+// that answers none. A real group named sidecar-owners never qualifies: the
+// backend sets viewer_is_owner when the caller owns the review's sidecar.
 export function canApprove(review, { groups, role, adminRoleName, approverRoleName }) {
+  if (review?.viewer_is_owner === true) return true
   const mine = groups?.length ? groups : roleToGroups(role, adminRoleName, approverRoleName)
-  return (review?.review_groups_data ?? []).some((g) => mine.includes(g.group))
+  return (review?.review_groups_data ?? []).some(
+    (g) => g.group !== SIDECAR_OWNERS_GROUP && mine.includes(g.group),
+  )
 }
 
 // The gateway appends a group row for an admin who rejects.

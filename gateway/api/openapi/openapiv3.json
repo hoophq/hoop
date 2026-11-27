@@ -6255,6 +6255,11 @@
             "example": false,
             "readOnly": true,
             "type": "boolean"
+          },
+          "viewer_is_owner": {
+            "description": "True when the caller is an owner of the review's sidecar and the review allows owners to approve",
+            "readOnly": true,
+            "type": "boolean"
           }
         },
         "type": "object"

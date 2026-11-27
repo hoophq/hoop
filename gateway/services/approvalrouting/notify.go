@@ -27,6 +27,8 @@ const notifyTimeout = 5 * time.Minute
 type ChannelScope struct {
 	SidecarID    string
 	ListenerName string
+	// NoDefaultChannel omits the org default channel from the returned list.
+	NoDefaultChannel bool
 }
 
 // Channel is one channel an integration can post to.
@@ -48,8 +50,11 @@ type ReviewCard struct {
 	RiskLevel, Title          string
 	Statement                 string
 	ApprovalURL               string
-	Groups                    []string
-	ExpiresAt                 *time.Time
+	Groups    []string
+	ExpiresAt *time.Time
+	// ChannelNoticeOnly posts only a one-line notice (no statement, no
+	// buttons) in channels; direct messages still carry the full card.
+	ChannelNoticeOnly bool
 }
 
 // Targets are where one integration posts.
@@ -110,8 +115,9 @@ type notifyPlan struct {
 	users     []string
 	// approvers are the members of the selected groups that may settle the
 	// review, requester removed, in id order: who the dm fallback reaches.
-	approvers []string
-	routes    []*route
+	approvers         []string
+	routes            []*route
+	noChannelFallback bool
 }
 
 // plan binds the selected users to the routes.
@@ -155,6 +161,9 @@ func (p *notifyPlan) withoutRequester(ctx context.Context, db *gorm.DB, reviewID
 // delivery, and dm means direct messages only. Without a Slack route
 // (teams only), a channel is allowed when a configured route allows one.
 func (p *notifyPlan) fallbackInChannels() bool {
+	if p.noChannelFallback {
+		return false
+	}
 	if r := p.route(IntegrationSlack); r != nil {
 		return r.delivery != DeliveryDM
 	}

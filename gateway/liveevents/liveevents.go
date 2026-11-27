@@ -10,6 +10,7 @@ package liveevents
 
 import (
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -30,19 +31,29 @@ type Event struct {
 	Audience *Audience `json:"-"`
 }
 
-// Audience is who may get an event: a member of one of Groups. OwnerID gets it
-// only as an admin, as the requester of a review approves it only as one.
+// Audience is who may get an event: a member of one of Groups, or a user
+// whose email is in Emails (for a sidecar review its owners may approve).
+// OwnerID gets it only as an admin, as the requester of a review approves it
+// only as one.
 type Audience struct {
 	Groups  []string
+	Emails  []string
 	OwnerID string
 }
 
-func (a *Audience) Allows(userID string, userGroups []string, isAdmin bool) bool {
+func (a *Audience) Allows(userID, userEmail string, userGroups []string, isAdmin bool) bool {
 	if a == nil {
 		return false
 	}
 	if userID == a.OwnerID && !isAdmin {
 		return false
+	}
+	if userEmail != "" {
+		for _, e := range a.Emails {
+			if strings.EqualFold(e, userEmail) {
+				return true
+			}
+		}
 	}
 	for _, g := range userGroups {
 		if slices.Contains(a.Groups, g) {

@@ -249,10 +249,16 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 	if approver != nil && approver.Routing != nil {
 		filing.routing = approver.Routing
 	}
-	// A level with static groups and notify plans who is told at the same
-	// point. Its groups stay the approver's.
-	if approver != nil && approver.Routing == nil && len(approver.Notify) > 0 {
-		filing.notify = &daemon.ApprovalRouting{Candidates: approver.Groups, Notify: approver.Notify}
+	// A level with static groups and notify, or with owners, plans who is
+	// told at the same point. An owner level defaults to Slack direct messages
+	// and never uses the organization default channel.
+	if approver != nil && approver.Routing == nil && (len(approver.Notify) > 0 || approver.Owners) {
+		notifyMap := approver.Notify
+		if approver.Owners && len(notifyMap) == 0 {
+			notifyMap = map[string]daemon.NotifyRoute{daemon.NotifySlack: {Delivery: daemon.DeliveryDM}}
+		}
+		filing.notify = &daemon.ApprovalRouting{Candidates: approver.Groups, Notify: notifyMap}
+		filing.includeOwners = approver.Owners
 	}
 	// The limits are those of the block's approval_rule: an older build files
 	// this level under that rule, so both builds get the same limits.
@@ -740,6 +746,12 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
 	decision *approvalrouting.RouteDecision) {
 	if !decision.Notifies() {
+		// An owner level never falls back to a channel post with the statement.
+		if models.ReviewHasSidecarOwners(rev.ReviewGroups) {
+			log.With("sid", rev.SessionID, "review-id", rev.ID).
+				Warnf("owner review has no configured notify integration; skipping channel post")
+			return
+		}
 		notifySlack(sidecar, rev, listenerName, display, nil)
 		return
 	}
@@ -783,13 +795,15 @@ func routeFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.Sidec
 func notifyFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
 	filing sidecarFiling) (*approvalrouting.RouteDecision, error) {
 	return approvalrouting.NotifyGroups(context.WithoutCancel(ctx), models.DB, approvalrouting.RouteInput{
-		OrgID:        sidecar.OrgID,
-		Principal:    req.Principal,
-		SidecarID:    sidecar.ID,
-		ListenerName: req.ListenerName,
-		Protocol:     filing.protocol,
-		RiskLevel:    filing.level,
-		Routing:      *filing.notify,
+		OrgID:                sidecar.OrgID,
+		Principal:            req.Principal,
+		SidecarID:            sidecar.ID,
+		ListenerName:         req.ListenerName,
+		Protocol:             filing.protocol,
+		RiskLevel:            filing.level,
+		Routing:              *filing.notify,
+		IncludeSidecarOwners: filing.includeOwners,
+		NoDefaultChannel:     filing.includeOwners,
 	})
 }
 
@@ -810,7 +824,8 @@ func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 		RiskLevel:       rev.RiskLevel.String,
 		Statement:       msg.Script,
 		ApprovalURL:     msg.WebappURL,
-		Groups:          msg.ApprovalGroups,
+		Groups:            msg.ApprovalGroups,
+		ChannelNoticeOnly: models.ReviewHasSidecarOwners(rev.ReviewGroups),
 		ExpiresAt:       msg.ExpiresAt,
 	}
 }
@@ -1149,6 +1164,8 @@ type sidecarFiling struct {
 	// notify is the level's static groups and notify, as the routing shape
 	// NotifyGroups reads; nil notifies as a level without notify.
 	notify *daemon.ApprovalRouting
+	// includeOwners marks a level with approvers.<level>.owners set.
+	includeOwners bool
 	// routingRecord is the routing decision the review stores.
 	routingRecord *models.ReviewRouting
 }

@@ -314,6 +314,12 @@ export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, 
       ) : (
         routing.mode === ROUTING_STATIC && (
           <>
+            <Switch
+              label="Sidecar owners can approve"
+              description="Direct messages go to the Sidecar's owners. With no groups selected, only the owners can approve. The default Slack channel is never used."
+              checked={Boolean(approval.owners)}
+              onChange={(event) => onChange({ owners: event.currentTarget.checked, groupsChosen: true })}
+            />
             <ApprovalGroups
               options={groupOptions}
               value={approval.groups}

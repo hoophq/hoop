@@ -63,8 +63,10 @@ func (slackNotifier) Channels(ctx context.Context, db *gorm.DB, orgID string, sc
 			ids = append(ids, r...)
 		}
 	}
-	if def := svc.DefaultChannel(); def != "" {
-		ids = append(ids, def)
+	if !scope.NoDefaultChannel {
+		if def := svc.DefaultChannel(); def != "" {
+			ids = append(ids, def)
+		}
 	}
 	var out []Channel
 	for _, id := range normalizeNames(ids) {
@@ -119,7 +121,7 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 		return fail(causeSlackIDsUnread)
 	}
 
-	destinations := append([]string{}, t.ChannelIDs...)
+	dmDestinations := []string{}
 	userOf := map[string]string{}
 	for _, u := range t.HoopUserIDs {
 		sid := slackIDOf[u]
@@ -128,14 +130,51 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 			continue
 		}
 		userOf[sid] = u
-		destinations = append(destinations, sid)
+		dmDestinations = append(dmDestinations, sid)
 	}
-	destinations = normalizeNames(destinations)
-	if len(destinations) == 0 {
+	channels := normalizeNames(t.ChannelIDs)
+	out.Tried = channels
+
+	if card.ChannelNoticeOnly {
+		dmDestinations = normalizeNames(dmDestinations)
+		if len(dmDestinations) > 0 {
+			res := svc.PostMessageReview(slackReviewRequest(card, dmDestinations))
+			out.Posted += res.Posted
+			for dest, cause := range res.Failed {
+				if u, ok := userOf[dest]; ok {
+					out.Failed[u] = cause
+				}
+			}
+		}
+		notice := ownerChannelNotice(card)
+		for _, ch := range channels {
+			if err := svc.PostMessage(ch, notice); err != nil {
+				out.Failed[ch] = err.Error()
+				continue
+			}
+			out.Posted++
+		}
 		return out
 	}
 
-	req := &slackservice.MessageReviewRequest{
+	destinations := normalizeNames(append(append([]string{}, channels...), dmDestinations...))
+	if len(destinations) == 0 {
+		return out
+	}
+	res := svc.PostMessageReview(slackReviewRequest(card, destinations))
+	out.Posted = res.Posted
+	for dest, cause := range res.Failed {
+		if u, ok := userOf[dest]; ok {
+			out.Failed[u] = cause
+			continue
+		}
+		out.Failed[dest] = cause
+	}
+	return out
+}
+
+func slackReviewRequest(card ReviewCard, destinations []string) *slackservice.MessageReviewRequest {
+	return &slackservice.MessageReviewRequest{
 		ID:             card.ReviewID,
 		SessionID:      card.SessionID,
 		Name:           card.Requester,
@@ -151,17 +190,16 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 		// Only the selected destinations: never the default channel too.
 		DefaultChannelAsFallback: true,
 	}
-	res := svc.PostMessageReview(req)
-	out.Posted = res.Posted
-	out.Tried = normalizeNames(t.ChannelIDs)
-	for dest, cause := range res.Failed {
-		if u, ok := userOf[dest]; ok {
-			out.Failed[u] = cause
-			continue
-		}
-		out.Failed[dest] = cause
+}
+
+// ownerChannelNotice is the one-line channel post for an owner level: it
+// reveals no statement and carries no buttons.
+func ownerChannelNotice(card ReviewCard) string {
+	target := card.Connection
+	if target == "" {
+		target = card.Listener
 	}
-	return out
+	return fmt.Sprintf("An approval request for %s is waiting for the owner.", target)
 }
 
 // slackIDs maps users that may settle a review (models.ApproverStatuses)

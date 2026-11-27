@@ -3,7 +3,9 @@ package approvalrouting
 import (
 	"context"
 	"fmt"
+	"slices"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
@@ -25,9 +27,19 @@ func NotifyGroups(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisi
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
-	groups := normalizeNames(in.Routing.Candidates)
-	if len(groups) == 0 {
-		groups = defaultGroups()
+	var groups []string
+	if in.IncludeSidecarOwners {
+		groups = append(groups, models.ReviewGroupSidecarOwners)
+		for _, g := range normalizeNames(in.Routing.Candidates) {
+			if g != models.ReviewGroupSidecarOwners {
+				groups = append(groups, g)
+			}
+		}
+	} else {
+		groups = normalizeNames(in.Routing.Candidates)
+		if len(groups) == 0 {
+			groups = defaultGroups()
+		}
 	}
 	rc := &routeContext{in: in, candidates: groups}
 	if err := rc.loadRequester(ctx, db); err != nil {
@@ -36,11 +48,17 @@ func NotifyGroups(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisi
 	if err := rc.loadMembers(ctx, db); err != nil {
 		return nil, err
 	}
+	if in.IncludeSidecarOwners {
+		if err := rc.loadSidecarOwners(ctx, db); err != nil {
+			return nil, err
+		}
+	}
 	if err := rc.loadRoutes(ctx, db); err != nil {
 		return nil, err
 	}
 
 	plan := rc.plan(rc.eligibleUsers(), groups)
+	plan.noChannelFallback = in.NoDefaultChannel
 	for _, r := range plan.routes {
 		ids, err := rc.staticChannels(ctx, db, r)
 		if err != nil {
@@ -57,6 +75,37 @@ func NotifyGroups(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisi
 	return d, nil
 }
 
+// loadSidecarOwners adds every unambiguously matched owner of the sidecar to
+// rc.members under models.ReviewGroupSidecarOwners, and logs any owner that
+// matches no single Hoop user.
+func (rc *routeContext) loadSidecarOwners(ctx context.Context, db *gorm.DB) error {
+	ownerIDs, err := models.ListSidecarOwnerUserIDs(db.WithContext(ctx), rc.in.OrgID, rc.in.SidecarID)
+	if err != nil {
+		return fmt.Errorf("failed reading the owners of the sidecar: %w", err)
+	}
+	for _, id := range ownerIDs {
+		if slices.Contains(rc.excluded, id) {
+			continue
+		}
+		rc.groupMembers[models.ReviewGroupSidecarOwners]++
+		m := rc.members[id]
+		if !slices.Contains(m.groups, models.ReviewGroupSidecarOwners) {
+			m.groups = append(m.groups, models.ReviewGroupSidecarOwners)
+		}
+		rc.members[id] = m
+	}
+	owners, err := models.ListSidecarOwners(db.WithContext(ctx), rc.in.OrgID, rc.in.SidecarID)
+	if err == nil {
+		for _, o := range owners {
+			if !o.Matched {
+				log.With("org", rc.in.OrgID, "sidecar", rc.in.SidecarID).
+					Warnf("sidecar owner %s matches no single Hoop user and cannot be notified", o.Email)
+			}
+		}
+	}
+	return nil
+}
+
 // staticChannels are the channels a route posts to when nothing selects.
 // With channels_candidates, every one the integration reaches. Without, what
 // a review without notify posts to: the listener's Slack channels, or the
@@ -66,6 +115,12 @@ func (rc *routeContext) staticChannels(ctx context.Context, db *gorm.DB, r *rout
 		return nil, nil
 	}
 	configured := normalizeNames(rc.in.Routing.Notify[r.integration].ChannelsCandidates)
+	if rc.in.NoDefaultChannel {
+		if len(configured) == 0 {
+			return nil, nil
+		}
+		return r.order, nil
+	}
 	if len(configured) > 0 || r.integration != IntegrationSlack {
 		return r.order, nil
 	}

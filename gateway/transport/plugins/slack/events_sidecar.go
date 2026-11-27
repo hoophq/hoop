@@ -34,6 +34,7 @@ const (
 	cpNoUserMsgFormat    = "No Hoop user has the email %s. Log in to Hoop once, or ask an admin to add you on the Users page."
 	cpAmbiguousMsgFormat = "More than one Hoop user has the email %s. Ask an admin to fix it on the Users page."
 	cpNotInGroupFormat   = "You do not belong to group %q. If you joined it recently, log in to Hoop to refresh your groups."
+	cpNotOwnerMsg        = "You are not an owner of this Sidecar."
 )
 
 // resolveSidecarApprover names the approver of a click on a sidecar review.
@@ -46,7 +47,7 @@ const (
 // Slack vouches for the clicking user on both paths: a link does not outlive
 // the Slack account being deactivated, made a guest, or moved out of the
 // workspace.
-func (p *slackPlugin) resolveSidecarApprover(ev *event) *storagev2.Context {
+func (p *slackPlugin) resolveSidecarApprover(ev *event, rev *models.Review) *storagev2.Context {
 	sid := ev.msg.SessionID
 	linked, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
 	if err != nil {
@@ -65,9 +66,9 @@ func (p *slackPlugin) resolveSidecarApprover(ev *event) *storagev2.Context {
 			_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpInactiveMsg)
 			return nil
 		}
-		return p.sidecarApproverContext(ev, linked)
+		return p.sidecarApproverContext(ev, rev, linked)
 	}
-	return p.resolveEmailApprover(ev, slackUser)
+	return p.resolveEmailApprover(ev, rev, slackUser)
 }
 
 // readSlackUser reads the clicking user from Slack and checks that Slack
@@ -108,7 +109,7 @@ func readSlackUser(ev *event, linked bool) *slackservice.SlackUser {
 // resolveEmailApprover names the approver by the email Slack holds for the
 // clicking user, whom readSlackUser already checked. Returns nil after
 // telling the Slack user why the click was refused.
-func (p *slackPlugin) resolveEmailApprover(ev *event, slackUser *slackservice.SlackUser) *storagev2.Context {
+func (p *slackPlugin) resolveEmailApprover(ev *event, rev *models.Review, slackUser *slackservice.SlackUser) *storagev2.Context {
 	sid := ev.msg.SessionID
 	users, err := models.ListApproverUsersByEmailAndOrg(models.DB, ev.orgID, slackUser.Email)
 	if err != nil {
@@ -122,7 +123,7 @@ func (p *slackPlugin) resolveEmailApprover(ev *event, slackUser *slackservice.Sl
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", refusal)
 		return nil
 	}
-	return p.sidecarApproverContext(ev, approver)
+	return p.sidecarApproverContext(ev, rev, approver)
 }
 
 // checkSlackUser returns why Slack does not vouch for the clicking user, or ""
@@ -193,7 +194,7 @@ func pickApprover(users []models.User, email, loginURL string) (*models.User, st
 // sidecarApproverContext checks that the hoop user belongs to the clicked
 // group and builds the context DoReview reads. SlackID is the clicking user's,
 // which is the one a link on the Users page would hold anyway.
-func (p *slackPlugin) sidecarApproverContext(ev *event, approver *models.User) *storagev2.Context {
+func (p *slackPlugin) sidecarApproverContext(ev *event, rev *models.Review, approver *models.User) *storagev2.Context {
 	sid := ev.msg.SessionID
 	rows, err := models.GetUserGroupsByUserID(approver.ID)
 	if err != nil {
@@ -203,9 +204,27 @@ func (p *slackPlugin) sidecarApproverContext(ev *event, approver *models.User) *
 	}
 	groups := make([]string, 0, len(rows))
 	for _, g := range rows {
-		groups = append(groups, g.Name)
+		if g.Name != models.ReviewGroupSidecarOwners {
+			groups = append(groups, g.Name)
+		}
 	}
-	if !slices.Contains(groups, ev.msg.GroupName) {
+	if ev.msg.GroupName == models.ReviewGroupSidecarOwners {
+		sidecarID := ""
+		if rev != nil && rev.SidecarID.Valid {
+			sidecarID = rev.SidecarID.String
+		}
+		ok, err := models.IsSidecarOwner(models.DB, ev.orgID, sidecarID, approver.Email)
+		if err != nil {
+			log.With("sid", sid).Errorf("failed checking sidecar ownership for %s, err=%v", approver.Email, err)
+			_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpLookupFailedMsg)
+			return nil
+		}
+		if !ok {
+			log.With("sid", sid).Infof("approver %s is not an owner of sidecar %s", approver.Email, sidecarID)
+			_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpNotOwnerMsg)
+			return nil
+		}
+	} else if !slices.Contains(groups, ev.msg.GroupName) {
 		log.With("sid", sid).Infof("approver %s is not on group %q", approver.Email, ev.msg.GroupName)
 		msg := withLoginLink(fmt.Sprintf(cpNotInGroupFormat, ev.msg.GroupName), p.loginURL())
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg)
