@@ -191,6 +191,14 @@ func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
 	log.Infof("received slash command, slackid=%v, domain=%s, command=%v",
 		cmd.UserID, cmd.TeamDomain, cmd.Command)
 
+	if reply, ok := s.linkCommand(cmd); ok {
+		if _, _, err := s.apiClient.PostMessage(cmd.UserID, slack.MsgOptionText(reply, false)); err != nil {
+			log.Warnf("failed sending the link command response, err=%v", err)
+		}
+		s.socketClient.Ack(*ev.Request, nil)
+		return
+	}
+
 	message := fmt.Sprintf("Visit the link to associate your Slack user with Hoop.\n"+
 		"%s/slack/user/new/%s", s.apiURL, cmd.UserID)
 

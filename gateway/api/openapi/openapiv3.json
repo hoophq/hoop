@@ -10357,6 +10357,39 @@
         ],
         "type": "object"
       },
+      "openapi.UserSlackLink": {
+        "properties": {
+          "available": {
+            "description": "True when the user can link a Slack user with a one-time code: the\nfeature is on and the Slack integration runs",
+            "type": "boolean"
+          },
+          "linked": {
+            "description": "True when the user has a Slack user",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.UserSlackLinkCode": {
+        "properties": {
+          "code": {
+            "description": "The one-time code",
+            "example": "K7P29QXD",
+            "type": "string"
+          },
+          "command": {
+            "description": "The command to send in Slack",
+            "example": "/hoop link K7P29QXD",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the code stops working",
+            "example": "2026-01-01T10:10:00Z",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.WebhooksDashboardResponse": {
         "properties": {
           "url": {
@@ -27008,6 +27041,76 @@
           }
         },
         "summary": "Patch User Slack ID",
+        "tags": [
+          "User Management"
+        ]
+      }
+    },
+    "/users/self/slack/link": {
+      "get": {
+        "description": "Whether the user has a Slack user, and whether the user can link one with a one-time code.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.UserSlackLink"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Own Slack Link",
+        "tags": [
+          "User Management"
+        ]
+      },
+      "post": {
+        "description": "Make the one-time code the user sends to the Hoop bot in Slack as `/hoop link \u003ccode\u003e`. Hoop links the Slack user that sends it. A new code replaces the user's previous one.",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.UserSlackLinkCode"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Create Own Slack Link Code",
         "tags": [
           "User Management"
         ]

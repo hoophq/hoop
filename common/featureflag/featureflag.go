@@ -44,6 +44,9 @@ const FlagReviewNotifications = "experimental.review_notifications"
 // `hoop context use` when a gateway omits it: never remove it, flip Default.
 const FlagCLIContexts = "experimental.cli_contexts"
 
+// FlagSlackConnectCode is spelled here for the same reason.
+const FlagSlackConnectCode = "experimental.slack_connect_code"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -212,6 +215,13 @@ var catalog = map[string]Flag{
 		Name:        FlagReviewNotifications,
 		Description: "Notify approvers in the web app when a request waits for their approval: a toast while they look at the Control Plane, a browser notification when they do not. Only users who can approve the request get it. Needs a Control Plane tab open; browser notifications need the user's permission and HTTPS. With more than one gateway replica, only approvers whose tab is connected to the replica that received the request get it.",
 		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagSlackConnectCode: {
+		Name:        FlagSlackConnectCode,
+		Description: "Let a user connect a Slack user without an admin: the web app shows a one-time code, the user sends `/hoop link <code>` to the Hoop bot in Slack, and Hoop links the Slack user that sent it. A user with no Slack user sees a prompt after login and a Connect Slack item in the user menu. Needs the Slack integration. When off, the prompt and the item do not show, and `/hoop link` answers as any other `/hoop` command.",
+		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},

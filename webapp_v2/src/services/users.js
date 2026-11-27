@@ -14,4 +14,8 @@ export const usersService = {
   create: (data) => api.post('/users', data),
   update: (id, data) => api.put(`/users/${id}`, data),
   listGroups: () => api.get('/users/groups'),
+  // → { available, linked }. `available`: the flag is on and the org's Slack integration runs.
+  getSlackLink: () => api.get('/users/self/slack/link'),
+  // → 201 { code, command, expires_at }; replaces the user's previous code. 412 when not available.
+  createSlackLinkCode: () => api.post('/users/self/slack/link'),
 }

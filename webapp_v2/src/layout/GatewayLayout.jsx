@@ -9,6 +9,7 @@ import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
 import SessionDetailsHost from '@/features/SessionDetails';
 import ApprovalNotifications from '@/features/ApprovalNotifications';
+import SlackConnect, { SlackConnectPrompt } from '@/features/SlackConnect';
 
 const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
@@ -98,6 +99,7 @@ function GatewayLayout({ children }) {
 
         <AppShell.Main id="main-content" tabIndex={-1}>
           <LicenseBanner />
+          <SlackConnectPrompt />
           {children}
         </AppShell.Main>
       </AppShell>
@@ -121,6 +123,7 @@ function GatewayLayout({ children }) {
       <NativeConnectionsDrawer />
       <SessionDetailsHost />
       <ApprovalNotifications />
+      <SlackConnect />
     </>
   );
 }

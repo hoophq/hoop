@@ -20,6 +20,9 @@ const (
 	SidecarCheckedIn = "sidecar.checked_in"
 	// ReviewCreated is a review that waits for approval. ID is the review's ID.
 	ReviewCreated = "review.created"
+	// UserSlackLinked is a user who linked a Slack user. ID is the user's
+	// subject, the id /userinfo answers. Only that user gets it.
+	UserSlackLinked = "user.slack_linked"
 )
 
 // Event is one change notice.
