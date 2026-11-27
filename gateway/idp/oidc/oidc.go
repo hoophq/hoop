@@ -314,12 +314,15 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 	return token, uinfo, err
 }
 
-// completeFromUserInfo fills the email, the profile and the groups the ID
-// token lacks from the userinfo endpoint. A provider can keep them out of the
-// ID token and serve them there, as a PingFederate OIDC policy does. The ID
+// completeFromUserInfo fills the email, the name and the groups the ID token
+// lacks from the userinfo endpoint. A provider can keep them out of the ID
+// token and serve them there, as a PingFederate OIDC policy does. The ID
 // token wins where it has a value. A failure leaves uinfo as it is.
+//
+// A missing picture alone does not cause the call: many providers have none,
+// and every login would pay for it.
 func (p *Provider) completeFromUserInfo(uinfo *idptypes.ProviderUserInfo, subject, accessToken string) {
-	if uinfo.Email != "" && uinfo.MustSyncGroups {
+	if uinfo.Email != "" && uinfo.Profile != "" && uinfo.MustSyncGroups {
 		return
 	}
 	if p.oidcProvider.UserInfoEndpoint() == "" {
@@ -327,7 +330,7 @@ func (p *Provider) completeFromUserInfo(uinfo *idptypes.ProviderUserInfo, subjec
 	}
 	ui, err := p.userInfoEndpoint(accessToken)
 	if err != nil {
-		log.With("subject", subject).Warnf("the id_token lacks the email or the groups claim and the userinfo call failed: %v", err)
+		log.With("subject", subject).Warnf("the id_token lacks the email, the name or the groups claim and the userinfo call failed: %v", err)
 		return
 	}
 	// OIDC Core 5.3.2: the answer of another subject must not be used.

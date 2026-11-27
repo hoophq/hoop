@@ -154,6 +154,18 @@ func TestSignInCompletesTheProfileFromUserInfo(t *testing.T) {
 		assert.Equal(t, []string{"dba"}, uinfo.Groups)
 	})
 
+	t.Run("the ID token has the email and the groups, the name is at userinfo", func(t *testing.T) {
+		f := newFakeIssuer(t,
+			map[string]any{"sub": "bob", "email": "bob@acme.com", "groups": []string{"dba"}},
+			map[string]any{"sub": "bob", "email": "other@acme.com", "name": "Bob", "groups": []string{"admin"}})
+
+		_, uinfo, err := f.provider().VerifyIDTokenForCode("the-code")
+		require.NoError(t, err)
+		assert.Equal(t, "Bob", uinfo.Profile)
+		assert.Equal(t, "bob@acme.com", uinfo.Email)
+		assert.Equal(t, []string{"dba"}, uinfo.Groups)
+	})
+
 	t.Run("the answer of another subject is not used", func(t *testing.T) {
 		f := newFakeIssuer(t,
 			map[string]any{"sub": "bob"},
