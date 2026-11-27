@@ -177,6 +177,15 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 	uinfo.Subject = subject
+	// A user is found by email. An empty one would match the same row for
+	// every person, and each sign-in would take over the previous account.
+	if uinfo.Email == "" {
+		login.Outcome = fmt.Sprintf("the identity provider returned no email for subject=%s: "+
+			"release the email claim in the ID token or at the userinfo endpoint", uinfo.Subject)
+		log.Warn(login.Outcome)
+		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+		return
+	}
 	// get the user by its email to get the actual subject of that user. This is necessary
 	// due to the user subject when it's created inside hoop is changed after that user
 	// logs in with the IDP. The email should always come from the IDP as a design of how

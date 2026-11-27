@@ -292,6 +292,7 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 	}
 
 	uinfo = p.parseUserInfo(idTokenClaims)
+	p.completeFromUserInfo(&uinfo, idToken.Subject, token.AccessToken)
 
 	// It's a best effort to sync groups, in case it fails just print the error
 	groups, syncGsuiteGroups, err := p.fetchGsuiteGroups(token.AccessToken, uinfo.Email)
@@ -311,6 +312,43 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 		Infof("token exchanged (oauth2) and id_token verified")
 
 	return token, uinfo, err
+}
+
+// completeFromUserInfo fills the email, the profile and the groups the ID
+// token lacks from the userinfo endpoint. A provider can keep them out of the
+// ID token and serve them there, as a PingFederate OIDC policy does. The ID
+// token wins where it has a value. A failure leaves uinfo as it is.
+func (p *Provider) completeFromUserInfo(uinfo *idptypes.ProviderUserInfo, subject, accessToken string) {
+	if uinfo.Email != "" && uinfo.MustSyncGroups {
+		return
+	}
+	if p.oidcProvider.UserInfoEndpoint() == "" {
+		return
+	}
+	ui, err := p.userInfoEndpoint(accessToken)
+	if err != nil {
+		log.With("subject", subject).Warnf("the id_token lacks the email or the groups claim and the userinfo call failed: %v", err)
+		return
+	}
+	// OIDC Core 5.3.2: the answer of another subject must not be used.
+	if ui.Subject != subject {
+		log.With("subject", subject).Warnf("ignoring the userinfo answer: its subject is %q", ui.Subject)
+		return
+	}
+	if uinfo.Email == "" {
+		uinfo.Email = ui.Email
+		uinfo.EmailVerified = ui.EmailVerified
+	}
+	if uinfo.Profile == "" {
+		uinfo.Profile = ui.Profile
+	}
+	if uinfo.Picture == "" {
+		uinfo.Picture = ui.Picture
+	}
+	if !uinfo.MustSyncGroups && ui.MustSyncGroups {
+		uinfo.Groups = ui.Groups
+		uinfo.MustSyncGroups = true
+	}
 }
 
 // VerifyAccessTokenWithUserInfo verify the access token by querying the OIDC user info endpoint
