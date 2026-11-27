@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// OTLP protocols, as OTEL_EXPORTER_OTLP_PROTOCOL spells them. "http" is
+// OTLP protocols, as HOOP_OTEL_EXPORTER_OTLP_PROTOCOL spells them. "http" is
 // accepted for http/protobuf: it is the sidecar's spelling of the same
 // transport.
 const (
@@ -21,7 +21,7 @@ const (
 	OTLPProtocolHTTP = "http/protobuf"
 )
 
-// Trace samplers, as OTEL_TRACES_SAMPLER spells them.
+// Trace samplers, as HOOP_OTEL_TRACES_SAMPLER spells them.
 var otlpSamplers = map[string]bool{
 	"always_on":                true,
 	"always_off":               true,
@@ -32,9 +32,9 @@ var otlpSamplers = map[string]bool{
 }
 
 // OTLPExport is where the gateway pushes its OpenTelemetry signals. It is
-// read from the standard OTEL_* variables, with the same knobs as the
-// sidecar's telemetry block (protocol, endpoint, headers, TLS), so one
-// collector serves both. Nil means export is off.
+// read from the HOOP_OTEL_* variables, with the same knobs as the sidecar's
+// telemetry block (protocol, endpoint, headers, TLS), so one collector
+// serves both. Nil means export is off.
 type OTLPExport struct {
 	// Protocol is OTLPProtocolGRPC or OTLPProtocolHTTP.
 	Protocol string
@@ -49,7 +49,7 @@ type OTLPExport struct {
 	Headers map[string]string
 	// Timeout bounds one export; Interval is how often metrics go out.
 	Timeout, Interval time.Duration
-	// Sampler is an OTEL_TRACES_SAMPLER value, SamplerArg its ratio.
+	// Sampler is a HOOP_OTEL_TRACES_SAMPLER value, SamplerArg its ratio.
 	// Empty Sampler means no spans are sent.
 	Sampler    string
 	SamplerArg float64
@@ -59,43 +59,49 @@ type OTLPExport struct {
 	Resource    map[string]string
 }
 
-// loadOTLPExport reads the OTEL_* variables. OTEL_EXPORTER_OTLP_ENDPOINT
-// turns export on; every other variable only tunes it, and a malformed one
-// stops startup like any other bad value here.
+// loadOTLPExport reads the HOOP_OTEL_* variables.
+// HOOP_OTEL_EXPORTER_OTLP_ENDPOINT turns export on; every other variable
+// only tunes it, and a malformed one stops startup like any other bad value
+// here.
 //
-//	OTEL_EXPORTER_OTLP_ENDPOINT     a URL; for grpc also host:port, as in the sidecar block
-//	OTEL_EXPORTER_OTLP_PROTOCOL     grpc (default) | http/protobuf
-//	OTEL_EXPORTER_OTLP_HEADERS      k=v,k2=v2, values URL-encoded
-//	OTEL_EXPORTER_OTLP_INSECURE     true sends a host:port endpoint in the clear; a URL's scheme decides for itself
-//	OTEL_EXPORTER_OTLP_CERTIFICATE  PEM file with the collector's CA
-//	OTEL_EXPORTER_OTLP_TIMEOUT      milliseconds, default 10000
-//	OTEL_METRIC_EXPORT_INTERVAL     milliseconds, default 60000
-//	OTEL_TRACES_SAMPLER             unset sends no spans; else a standard sampler name
-//	OTEL_TRACES_SAMPLER_ARG         the ratio of the *traceidratio samplers, 0 to 1
-//	OTEL_SERVICE_NAME               default hoop-gateway
-//	OTEL_RESOURCE_ATTRIBUTES        k=v,k2=v2, values URL-encoded
+// The names are the standard OTEL_* ones with a HOOP_ prefix. The standard
+// names are never read: a platform can inject them into every pod (the EKS
+// CloudWatch Observability add-on does), and an injected value must neither
+// stop the gateway nor turn its export on.
+//
+//	HOOP_OTEL_EXPORTER_OTLP_ENDPOINT     a URL; for grpc also host:port, as in the sidecar block
+//	HOOP_OTEL_EXPORTER_OTLP_PROTOCOL     grpc (default) | http/protobuf
+//	HOOP_OTEL_EXPORTER_OTLP_HEADERS      k=v,k2=v2, values URL-encoded
+//	HOOP_OTEL_EXPORTER_OTLP_INSECURE     true sends a host:port endpoint in the clear; a URL's scheme decides for itself
+//	HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE  PEM file with the collector's CA
+//	HOOP_OTEL_EXPORTER_OTLP_TIMEOUT      milliseconds, default 10000
+//	HOOP_OTEL_METRIC_EXPORT_INTERVAL     milliseconds, default 60000
+//	HOOP_OTEL_TRACES_SAMPLER             unset sends no spans; else a standard sampler name
+//	HOOP_OTEL_TRACES_SAMPLER_ARG         the ratio of the *traceidratio samplers, 0 to 1
+//	HOOP_OTEL_SERVICE_NAME               default hoop-gateway
+//	HOOP_OTEL_RESOURCE_ATTRIBUTES        k=v,k2=v2, values URL-encoded
 func loadOTLPExport() (*OTLPExport, error) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	endpoint := os.Getenv("HOOP_OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
 		return nil, nil
 	}
 	cfg := &OTLPExport{
 		Protocol:    OTLPProtocolGRPC,
-		CAFile:      os.Getenv("OTEL_EXPORTER_OTLP_CERTIFICATE"),
-		ServiceName: os.Getenv("OTEL_SERVICE_NAME"),
-		Sampler:     os.Getenv("OTEL_TRACES_SAMPLER"),
+		CAFile:      os.Getenv("HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE"),
+		ServiceName: os.Getenv("HOOP_OTEL_SERVICE_NAME"),
+		Sampler:     os.Getenv("HOOP_OTEL_TRACES_SAMPLER"),
 	}
-	switch p := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL"); p {
+	switch p := os.Getenv("HOOP_OTEL_EXPORTER_OTLP_PROTOCOL"); p {
 	case "", OTLPProtocolGRPC:
 	case OTLPProtocolHTTP, "http":
 		cfg.Protocol = OTLPProtocolHTTP
 	default:
-		return nil, fmt.Errorf("invalid OTEL_EXPORTER_OTLP_PROTOCOL %q (want grpc|http/protobuf)", p)
+		return nil, fmt.Errorf("invalid HOOP_OTEL_EXPORTER_OTLP_PROTOCOL %q (want grpc|http/protobuf)", p)
 	}
-	if v := os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"); v != "" {
+	if v := os.Getenv("HOOP_OTEL_EXPORTER_OTLP_INSECURE"); v != "" {
 		insecure, err := strconv.ParseBool(v)
 		if err != nil {
-			return nil, fmt.Errorf("invalid OTEL_EXPORTER_OTLP_INSECURE %q (want true|false)", v)
+			return nil, fmt.Errorf("invalid HOOP_OTEL_EXPORTER_OTLP_INSECURE %q (want true|false)", v)
 		}
 		cfg.Insecure = insecure
 	}
@@ -105,35 +111,35 @@ func loadOTLPExport() (*OTLPExport, error) {
 	if cfg.CAFile != "" {
 		pem, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed reading OTEL_EXPORTER_OTLP_CERTIFICATE, reason=%v", err)
+			return nil, fmt.Errorf("failed reading HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE, reason=%v", err)
 		}
 		if !x509.NewCertPool().AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_CERTIFICATE %q holds no PEM certificate", cfg.CAFile)
+			return nil, fmt.Errorf("HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE %q holds no PEM certificate", cfg.CAFile)
 		}
 	}
 	var err error
-	if cfg.Headers, err = parseOTLPPairs("OTEL_EXPORTER_OTLP_HEADERS"); err != nil {
+	if cfg.Headers, err = parseOTLPPairs("HOOP_OTEL_EXPORTER_OTLP_HEADERS"); err != nil {
 		return nil, err
 	}
-	if cfg.Resource, err = parseOTLPPairs("OTEL_RESOURCE_ATTRIBUTES"); err != nil {
+	if cfg.Resource, err = parseOTLPPairs("HOOP_OTEL_RESOURCE_ATTRIBUTES"); err != nil {
 		return nil, err
 	}
-	if cfg.Timeout, err = parseOTLPMillis("OTEL_EXPORTER_OTLP_TIMEOUT", 10*time.Second); err != nil {
+	if cfg.Timeout, err = parseOTLPMillis("HOOP_OTEL_EXPORTER_OTLP_TIMEOUT", 10*time.Second); err != nil {
 		return nil, err
 	}
-	if cfg.Interval, err = parseOTLPMillis("OTEL_METRIC_EXPORT_INTERVAL", 60*time.Second); err != nil {
+	if cfg.Interval, err = parseOTLPMillis("HOOP_OTEL_METRIC_EXPORT_INTERVAL", 60*time.Second); err != nil {
 		return nil, err
 	}
 	if cfg.Sampler != "" && !otlpSamplers[cfg.Sampler] {
-		return nil, fmt.Errorf("invalid OTEL_TRACES_SAMPLER %q (want always_on|always_off|traceidratio|"+
+		return nil, fmt.Errorf("invalid HOOP_OTEL_TRACES_SAMPLER %q (want always_on|always_off|traceidratio|"+
 			"parentbased_always_on|parentbased_always_off|parentbased_traceidratio)", cfg.Sampler)
 	}
 	cfg.SamplerArg = 1
-	if v := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
+	if v := os.Getenv("HOOP_OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		f, err := strconv.ParseFloat(v, 64)
 		// Written so NaN fails it: every comparison with NaN is false.
 		if err != nil || !(f >= 0 && f <= 1) {
-			return nil, fmt.Errorf("invalid OTEL_TRACES_SAMPLER_ARG %q (want a ratio from 0 to 1)", v)
+			return nil, fmt.Errorf("invalid HOOP_OTEL_TRACES_SAMPLER_ARG %q (want a ratio from 0 to 1)", v)
 		}
 		cfg.SamplerArg = f
 	}
@@ -143,13 +149,13 @@ func loadOTLPExport() (*OTLPExport, error) {
 // parseEndpoint accepts what the OpenTelemetry spec says, a URL, and for
 // grpc also host:port, the sidecar block's form, so one value serves both.
 // A URL's scheme decides TLS, as the spec says: http:// sends in the clear
-// and https:// never does, whatever OTEL_EXPORTER_OTLP_INSECURE says. A URL
-// without a port means the scheme's port, 80 or 443, as any URL does.
+// and https:// never does, whatever HOOP_OTEL_EXPORTER_OTLP_INSECURE says.
+// A URL without a port means the scheme's port, 80 or 443, as any URL does.
 //
 // No error names the value: an endpoint can carry a credential, and the
 // error reaches the startup log.
 func (c *OTLPExport) parseEndpoint(endpoint string) error {
-	const env = "invalid OTEL_EXPORTER_OTLP_ENDPOINT: "
+	const env = "invalid HOOP_OTEL_EXPORTER_OTLP_ENDPOINT: "
 	if !strings.Contains(endpoint, "://") {
 		if c.Protocol == OTLPProtocolHTTP {
 			return errors.New(env + "http/protobuf needs a URL, such as http://otel-collector:4318")
@@ -169,9 +175,9 @@ func (c *OTLPExport) parseEndpoint(endpoint string) error {
 	case err != nil:
 		return errors.New(env + "not a valid URL")
 	case u.User != nil:
-		return errors.New(env + "the URL holds a user or password; send credentials in OTEL_EXPORTER_OTLP_HEADERS")
+		return errors.New(env + "the URL holds a user or password; send credentials in HOOP_OTEL_EXPORTER_OTLP_HEADERS")
 	case u.RawQuery != "" || u.ForceQuery:
-		return errors.New(env + "the URL holds a query; send credentials in OTEL_EXPORTER_OTLP_HEADERS")
+		return errors.New(env + "the URL holds a query; send credentials in HOOP_OTEL_EXPORTER_OTLP_HEADERS")
 	case u.Fragment != "":
 		return errors.New(env + "the URL holds a fragment")
 	case u.Scheme != "http" && u.Scheme != "https":

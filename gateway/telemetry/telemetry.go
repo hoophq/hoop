@@ -3,8 +3,12 @@
 // database pool and API latency per route, plus spans on the handshake and
 // the ingest. It is push only: nothing here serves a scrape endpoint.
 //
-// It is off unless OTEL_EXPORTER_OTLP_ENDPOINT is set (appconfig). Off, every
-// hook is one atomic load and a nil check.
+// It is off unless HOOP_OTEL_EXPORTER_OTLP_ENDPOINT is set (appconfig). Off,
+// every hook is one atomic load and a nil check.
+//
+// The SDK reads the standard OTEL_* variables by itself, and a platform can
+// inject those into every pod. gateway.Run removes them from the process
+// first (DropOTELEnv), so only the HOOP_OTEL_* settings shape the export.
 //
 // No global provider is set. The gateway links client libraries that read
 // the global tracer and meter providers (gRPC, cloud SDKs), and their spans
@@ -54,7 +58,7 @@ const SchemaVersion = "1.0"
 const SchemaURL = "https://hoop.dev/schemas/gateway-telemetry/" + SchemaVersion
 
 // ServiceName is the service.name the gateway reports unless
-// OTEL_SERVICE_NAME overrides it.
+// HOOP_OTEL_SERVICE_NAME overrides it.
 const ServiceName = "hoop-gateway"
 
 // scopeName names the meter and the tracer.
@@ -74,7 +78,7 @@ var durationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5,
 // hooks record into.
 type exporter struct {
 	mp *sdkmetric.MeterProvider
-	// tp and tracer are nil when OTEL_TRACES_SAMPLER is unset: the hooks
+	// tp and tracer are nil when HOOP_OTEL_TRACES_SAMPLER is unset: the hooks
 	// then start no span.
 	tp     *sdktrace.TracerProvider
 	tracer trace.Tracer
@@ -95,7 +99,14 @@ var onFatal sync.Once
 // Start builds the exporters cfg names and starts pushing. A nil cfg is
 // export off, and Start does nothing. db is the pool the gauges read; nil
 // registers none.
+//
+// It removes every OTEL_* variable first, whoever calls it, so no
+// OpenTelemetry code here runs while one is set. gateway.Run already did,
+// and logged the names; a second call finds none.
 func Start(cfg *appconfig.OTLPExport, version string, db *sql.DB) error {
+	if _, err := DropOTELEnv(); err != nil {
+		return fmt.Errorf("telemetry: removing OTEL_* from the environment: %w", err)
+	}
 	if cfg == nil {
 		return nil
 	}
@@ -263,8 +274,13 @@ func (e *exporter) shutdown(ctx context.Context) error {
 // buildResource is the resource every signal carries. The SDK's default
 // resource is merged by hand rather than through resource.Merge, which
 // refuses two schema URLs; ours must win. Later keys override earlier
-// ones, and OTEL_SERVICE_NAME beats service.name in OTEL_RESOURCE_ATTRIBUTES,
-// as the OpenTelemetry spec says.
+// ones, and HOOP_OTEL_SERVICE_NAME beats service.name in
+// HOOP_OTEL_RESOURCE_ATTRIBUTES, as the OpenTelemetry spec says for the
+// standard names.
+//
+// resource.Default() reads OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME,
+// once per process. Start removed every OTEL_* before it gets here, so it
+// adds only the SDK attributes and a service.name overridden below.
 func buildResource(cfg *appconfig.OTLPExport, version string) *resource.Resource {
 	attrs := resource.Default().Attributes()
 	attrs = append(attrs,
@@ -285,7 +301,7 @@ func buildResource(cfg *appconfig.OTLPExport, version string) *resource.Resource
 	return resource.NewWithAttributes(SchemaURL, attrs...)
 }
 
-// sampler maps OTEL_TRACES_SAMPLER, which appconfig validated.
+// sampler maps HOOP_OTEL_TRACES_SAMPLER, which appconfig validated.
 func sampler(cfg *appconfig.OTLPExport) sdktrace.Sampler {
 	switch cfg.Sampler {
 	case "always_on":
@@ -315,11 +331,11 @@ func clientTLS(cfg *appconfig.OTLPExport) (*tls.Config, error) {
 	}
 	pem, err := os.ReadFile(cfg.CAFile)
 	if err != nil {
-		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_CERTIFICATE: %w", err)
+		return nil, fmt.Errorf("HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE: %w", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_CERTIFICATE %q: no certificate found", cfg.CAFile)
+		return nil, fmt.Errorf("HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE %q: no certificate found", cfg.CAFile)
 	}
 	tlsCfg.RootCAs = pool
 	return tlsCfg, nil
@@ -345,7 +361,7 @@ func endpointURL(cfg *appconfig.OTLPExport, signalPath string) string {
 // httpClient is the OTLP/HTTP exporters' client: the TLS choice made here,
 // and a recorder that keeps the status of the last answer, so a failed
 // export can name it without its text. The SDK ignores WithTimeout once it
-// is handed a client, so the client carries OTEL_EXPORTER_OTLP_TIMEOUT.
+// is handed a client, so the client carries HOOP_OTEL_EXPORTER_OTLP_TIMEOUT.
 func httpClient(tlsCfg *tls.Config, timeout time.Duration) (*http.Client, *statusRecorder) {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.TLSClientConfig = tlsCfg

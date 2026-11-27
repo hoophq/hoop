@@ -139,7 +139,8 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 - **TLS termination**: `gateway/proxyproto/tlstermination/`
 
 ## Configuration
-- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, `RDP_PII_GUARD_POLICY`, `HOOP_LICENSE`, `ANALYTICS_TRACKING` or `ORG_ID` stops startup. So does a malformed `OTEL_*` variable, but only while `OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset, the others are not read.
+- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, `RDP_PII_GUARD_POLICY`, `HOOP_LICENSE`, `ANALYTICS_TRACKING` or `ORG_ID` stops startup. So does a malformed `HOOP_OTEL_*` variable, but only while `HOOP_OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset, the others are not read.
+- Never read a variable a platform can inject into every pod, such as `OTEL_*`: use a `HOOP_`-prefixed name (`HOOP_OTEL_*`). An injected value must not stop or configure the gateway. `gateway.Run` removes every `OTEL_*` variable from the process first (`telemetry.DropOTELEnv`), so the OTel SDK, which reads them by itself, sees none.
 - `RDP_PII_SNAPSHOT_INTERVAL`, `RDP_PII_SCORE_THRESHOLD`, and `EVENT_ROUTING_WORKERS` fall back to a default instead.
 - `HOOP_LICENSE` (license JSON or a file path) is stored on the default org at every boot. Its analytics mode is set at every boot by `analytics.ModeAtBoot`: no valid enterprise license → `identified`, always; enterprise → `ANALYTICS_TRACKING=enabled` → `identified`, `disabled` → `disabled`, unset → the stored mode (`disabled` for an org created on this boot). `HOOP_LICENSE` and `ANALYTICS_TRACKING=disabled` are not accepted with `ORG_MULTI_TENANT`.
 - `ORG_ID` (UUID) is the id the default org is created with on a fresh database, so `API_KEY=<org-id>|<secret>` can be written before the first boot; an existing org with another id stops startup. Not accepted with `ORG_MULTI_TENANT`.
@@ -179,7 +180,7 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 - **DLP**: Presidio or GCP; configured via env, consumed in agent terminal execution (`agent/controller/terminal.go`).
 - **Review/Approval**: Slack (`gateway/slack/service.go`), Jira (`gateway/jira/`, `gateway/api/integrations/`).
 - **AI Clients**: OpenAI-compatible (`openai`, `azure-openai`, `custom`) + Anthropic for session analysis (`gateway/aianalyzer/`).
-- **Monitoring**: Sentry (error tracking), Honeycomb, Segment (analytics), Intercom. OpenTelemetry: the gateway pushes OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (`gateway/telemetry/`). Push only: add no scrape endpoint.
+- **Monitoring**: Sentry (error tracking), Honeycomb, Segment (analytics), Intercom. OpenTelemetry: the gateway pushes OTLP when `HOOP_OTEL_EXPORTER_OTLP_ENDPOINT` is set (`gateway/telemetry/`). Push only: add no scrape endpoint.
 - **Webhooks**: `gateway/transport/plugins/webhooks/`, configurable via API (`gateway/api/webhooks/`).
 
 ## Deployment

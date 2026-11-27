@@ -168,18 +168,20 @@ config:
   # ORG_ID: ''
   # OpenTelemetry: the gateway pushes its own metrics (sidecar handshakes,
   # session event ingest, database pool, API latency) to an OTLP collector.
-  # Off while the endpoint is empty. Nothing scrapes the gateway.
-  # OTEL_EXPORTER_OTLP_ENDPOINT: 'otel-collector:4317'   # a URL, or host:port for grpc
-  # OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc'                  # grpc | http/protobuf
-  # OTEL_EXPORTER_OTLP_HEADERS: ''                       # k=v,k2=v2, values URL-encoded
-  # OTEL_EXPORTER_OTLP_INSECURE: 'false'                 # true sends a host:port endpoint in the clear
-  # OTEL_EXPORTER_OTLP_CERTIFICATE: ''                   # PEM file with the collector's CA
-  # OTEL_EXPORTER_OTLP_TIMEOUT: '10000'                  # milliseconds per export
-  # OTEL_METRIC_EXPORT_INTERVAL: '60000'                 # milliseconds between exports
-  # OTEL_TRACES_SAMPLER: ''                              # empty sends no spans; e.g. parentbased_traceidratio
-  # OTEL_TRACES_SAMPLER_ARG: ''                          # the ratio, 0 to 1
-  # OTEL_SERVICE_NAME: 'hoop-gateway'
-  # OTEL_RESOURCE_ATTRIBUTES: ''                         # e.g. deployment.environment=prod
+  # Off while the endpoint is empty. Nothing scrapes the gateway. The names
+  # are the standard OTEL_* ones with a HOOP_ prefix: a platform can inject
+  # the standard ones into every pod. A malformed value stops startup.
+  # HOOP_OTEL_EXPORTER_OTLP_ENDPOINT: 'otel-collector:4317'   # a URL, or host:port for grpc
+  # HOOP_OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc'                  # grpc | http/protobuf
+  # HOOP_OTEL_EXPORTER_OTLP_HEADERS: ''                       # k=v,k2=v2, values URL-encoded
+  # HOOP_OTEL_EXPORTER_OTLP_INSECURE: 'false'                 # true sends a host:port endpoint in the clear
+  # HOOP_OTEL_EXPORTER_OTLP_CERTIFICATE: ''                   # PEM file with the collector's CA
+  # HOOP_OTEL_EXPORTER_OTLP_TIMEOUT: '10000'                  # milliseconds per export
+  # HOOP_OTEL_METRIC_EXPORT_INTERVAL: '60000'                 # milliseconds between exports
+  # HOOP_OTEL_TRACES_SAMPLER: ''                              # empty sends no spans; e.g. parentbased_traceidratio
+  # HOOP_OTEL_TRACES_SAMPLER_ARG: ''                          # the ratio, 0 to 1
+  # HOOP_OTEL_SERVICE_NAME: 'hoop-gateway'
+  # HOOP_OTEL_RESOURCE_ATTRIBUTES: ''                         # e.g. deployment.environment=prod
   # Data masking provider: 'mspresidio' (or dataMasking.enabled above),
   # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
   # (in-process pattern engine on the agent, no extra services or

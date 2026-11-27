@@ -106,7 +106,7 @@ func TestDescribeWithholdsOtherErrors(t *testing.T) {
 }
 
 // A collector that never answers: each request is cut at
-// OTEL_EXPORTER_OTLP_TIMEOUT (200ms here), for metrics and traces, and the
+// HOOP_OTEL_EXPORTER_OTLP_TIMEOUT (200ms here), for metrics and traces, and the
 // failure is a timeout. The collector reads the body and holds the answer;
 // it measures how long until the client gives up on the request. The export
 // runs under a 3s deadline, as the periodic reader and the batch processor
