@@ -134,9 +134,14 @@ const (
 )
 
 // stageBuckets are the statement.duration histogram bounds, in seconds. The
-// top end goes to ten minutes because a review hold runs for minutes and a
-// histogram whose last bucket is 10s would file every approval under +Inf.
-var stageBuckets = []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 600}
+// low end starts at 50µs because a local policy stage takes microseconds;
+// with a first bound of 1ms every policy sample interpolated to p95 0.95ms,
+// about 50 times its cost. Each bound is one more series per stage per lane
+// in a Prometheus backend, so the low end stops at four. The top end goes to
+// ten minutes because a review hold runs for minutes and a histogram whose
+// last bucket is 10s would file every approval under +Inf. A changed bound
+// skews a fleet-wide quantile while old and new builds mix (README, Latency).
+var stageBuckets = []float64{0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 600}
 
 // analyzerBuckets fit a model provider's round trip: seconds, not
 // milliseconds, and nothing finer than a quarter second matters.

@@ -103,7 +103,7 @@ func (r *receiver) metric(name string) []point {
 					}
 				case *metricspb.Metric_Histogram:
 					for _, dp := range d.Histogram.DataPoints {
-						out = append(out, point{attrs: attrMap(dp.Attributes), value: float64(dp.Count)})
+						out = append(out, point{attrs: attrMap(dp.Attributes), value: float64(dp.Count), bounds: dp.ExplicitBounds, buckets: dp.BucketCounts})
 					}
 				}
 			}
@@ -187,9 +187,13 @@ func (r *receiver) echoedHeader(name string) string {
 	return r.echoed.Get(name)
 }
 
+// point is one data point. A histogram's value is its count, and bounds
+// and buckets carry its explicit bounds and the count in each bucket.
 type point struct {
-	attrs map[string]string
-	value float64
+	attrs   map[string]string
+	value   float64
+	bounds  []float64
+	buckets []uint64
 }
 
 // attrMap flattens OTLP attributes to strings: ints and string slices are
