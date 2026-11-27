@@ -159,6 +159,83 @@ jobs:
 
           echo "gateway chart renders with credentials only in existingSecret, and its checks fire without it"
 
+      - name: Assert the gateway chart renders its probes
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/gateway
+          base=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+                --set config.API_URL=https://gw.example.tld
+                --set defaultAgent.enabled=true
+                --show-only templates/deployment.yaml)
+          # The fields of one probe of the gateway container, one per line.
+          probe() { awk -v k="        $1:" '$0==k{f=1;next} f&&!/^          /{exit} f'; }
+          tcp=$'          tcpSocket:\n            port: api'
+
+          # Defaults (DEP-308): helm --wait must fail on a gateway that does not
+          # start. Readiness is a TCP check on the API port, which the gateway
+          # opens last. Startup is off: it is a deadline that stops migrations.
+          out=$(helm template t "$chart" "${base[@]}")
+          ready=$'          failureThreshold: 3\n          periodSeconds: 10\n'"$tcp"$'\n          timeoutSeconds: 5'
+          [ "$(echo "$out" | probe readinessProbe)" = "$ready" ] \
+            || { echo "::error::default readinessProbe is not the TCP check:"; echo "$out" | probe readinessProbe; exit 1; }
+          [ "$(echo "$out" | grep -c 'readinessProbe:')" = 1 ] \
+            || { echo "::error::readinessProbe rendered on more than the gateway container"; exit 1; }
+          echo "$out" | grep -q 'startupProbe:' \
+            && { echo "::error::startupProbe rendered by default; it must be opt-in"; exit 1; }
+          # Never a liveness probe: it can restart a busy gateway.
+          echo "$out" | grep -q 'livenessProbe:' \
+            && { echo "::error::the gateway chart renders a livenessProbe"; exit 1; }
+          # The default must not depend on the listener: TLS and an API_URL
+          # path change the HTTP route, not the TCP port.
+          got=$(helm template t "$chart" "${base[@]}" --set config.API_URL=https://gw.example.tld/hoop \
+            --set config.TLS_CERT=x --set config.TLS_KEY=y | probe readinessProbe)
+          [ "$got" = "$ready" ] \
+            || { echo "::error::TLS or an API_URL path changed the default readinessProbe"; exit 1; }
+          # A release from an older chart upgraded with --reuse-values has no
+          # probe key. Null removes the key the same way, and must not remove
+          # the probe.
+          for unset in readinessProbe=null readinessProbe.enabled=null; do
+            got=$(helm template t "$chart" "${base[@]}" --set "$unset" | probe readinessProbe)
+            [ "$got" = "$ready" ] \
+              || { echo "::error::$unset did not render the default readinessProbe"; exit 1; }
+          done
+
+          # Startup, turned on: the TCP check with 1 hour for migrations.
+          got=$(helm template t "$chart" "${base[@]}" --set startupProbe.enabled=true | probe startupProbe)
+          want=$'          failureThreshold: 360\n          periodSeconds: 10\n'"$tcp"$'\n          timeoutSeconds: 5'
+          [ "$got" = "$want" ] \
+            || { echo "::error::startupProbe.enabled=true is not the TCP check with 1 hour:"; echo "$got"; exit 1; }
+
+          # Override: a handler replaces the TCP check, other fields pass through.
+          out=$(helm template t "$chart" "${base[@]}" \
+            --set readinessProbe.httpGet.path=/hoop/api/healthz \
+            --set readinessProbe.httpGet.port=api \
+            --set readinessProbe.httpGet.scheme=HTTPS \
+            --set readinessProbe.initialDelaySeconds=15 \
+            --set startupProbe.enabled=true --set startupProbe.failureThreshold=720)
+          got=$(echo "$out" | probe readinessProbe)
+          # The whole handler: Kubernetes refuses an httpGet with no port.
+          want=$'          httpGet:\n            path: /hoop/api/healthz\n            port: api\n            scheme: HTTPS'
+          [ "$(echo "$got" | grep -A3 -x '          httpGet:')" = "$want" ] \
+            || { echo "::error::the readinessProbe httpGet set in values did not reach the pod whole:"; echo "$got"; exit 1; }
+          for want in 'initialDelaySeconds: 15' 'failureThreshold: 3'; do
+            echo "$got" | grep -q "$want" \
+              || { echo "::error::a readinessProbe set in values lost '$want' on the way to the pod"; exit 1; }
+          done
+          echo "$got" | grep -q 'tcpSocket:' \
+            && { echo "::error::httpGet and the default tcpSocket both rendered: the API server refuses two handlers"; exit 1; }
+          echo "$out" | grep -q 'enabled:' \
+            && { echo "::error::'enabled' reached the pod spec"; exit 1; }
+          echo "$out" | probe startupProbe | grep -q 'failureThreshold: 720' \
+            || { echo "::error::startupProbe.failureThreshold override did not render"; exit 1; }
+
+          # Off: only enabled=false removes the readiness probe.
+          out=$(helm template t "$chart" "${base[@]}" --set readinessProbe.enabled=false)
+          echo "$out" | grep -q 'readinessProbe:' \
+            && { echo "::error::readinessProbe.enabled=false did not remove it"; exit 1; }
+
+          echo "gateway chart renders a TCP readiness probe by default and on --reuse-values, startup opt-in, overrides pass through"
+
       - name: Assert the sidecar chart renders and its guards hold
         run: |
           set -euo pipefail

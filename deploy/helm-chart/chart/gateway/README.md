@@ -30,6 +30,53 @@ Setup steps: "Credentials from an existing Secret" in [../../README.md](../../RE
 |---|---|---|
 | `config.POSTGRES_MAX_OPEN_CONNS` | `50` | Most PostgreSQL connections one pod opens. Past it a query waits in process instead of taking a server slot, so a burst of API requests cannot exhaust `max_connections` for every caller. The database serves the sum over every pod: size the sum at 2-4 x its vCPUs and divide by the pods that can run at once (the control-plane chart does this from `postgresPool.connectionBudget`). |
 
+## Probes
+
+The gateway opens the API port (8009) last, after its config, the database
+migrations and the default organization. The readiness probe checks that port,
+so the pod is Ready only when the gateway serves, and `helm --wait` fails on a
+gateway that does not start. The `hoopgateway` container has no liveness probe:
+it can restart a busy gateway.
+
+With `deploymentStrategy: Recreate`, a failed upgrade still removes the old
+pod. Use `helm upgrade --wait --timeout <longer than your longest migration>`.
+Helm's default timeout is 5 minutes. Do not use `--atomic`: a rollback during
+a migration stops it halfway, the database stays dirty, and the gateway does
+not start until you fix it by hand. If the wait fails, look at the pod first.
+Run `helm rollback` only when the gateway crashes, or does not answer after it
+started; never while a migration still runs.
+
+| Value | Default | Description |
+|---|---|---|
+| `readinessProbe.enabled` | `true` | Only `false` removes the readiness probe. The pod is then Ready when its containers start. |
+| `readinessProbe.periodSeconds` | `10` | Seconds between two checks. |
+| `readinessProbe.timeoutSeconds` | `5` | Seconds one check may take. |
+| `readinessProbe.failureThreshold` | `3` | Failed checks before the Service stops sending traffic to the pod. |
+| `startupProbe.enabled` | `false` | `true` adds a startup probe. It is a deadline: when it ends, the kubelet restarts the container. That stops a migration that runs longer and leaves the database dirty, and the gateway does not start until you fix it by hand. |
+| `startupProbe.periodSeconds` | `10` | Seconds between two checks. |
+| `startupProbe.timeoutSeconds` | `5` | Seconds one check may take. |
+| `startupProbe.failureThreshold` | `360` | Failed checks before the kubelet restarts the container: 1 hour with `periodSeconds: 10`. Set it above your longest migration. |
+
+A field you do not set gets the default above. A release from an older chart,
+upgraded with `--reuse-values`, has no probe values and gets the defaults too.
+
+With no handler, each probe opens a TCP connection to the container port `api`
+(8009). This works with TLS on or off and with any `API_URL` path. If you
+change the gateway's API port with `PORT`, set the same port in the probe. Set
+`httpGet`, `tcpSocket`, `exec` or `grpc` to replace the TCP check. Every other
+Kubernetes probe field goes to the pod as you write it. An `httpGet` probe must
+match the listener: the path is `<API_URL path>/api/healthz`, and with
+`TLS_CERT` and `TLS_KEY` set it needs `scheme: HTTPS`. If not, the pod never
+becomes Ready.
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /api/healthz
+    port: api
+    scheme: HTTPS
+```
+
 ## Entra ID without a client secret
 
 | Value | Default | Description |

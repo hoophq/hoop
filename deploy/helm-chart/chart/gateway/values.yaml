@@ -521,6 +521,43 @@ resources:
       cpu: 512m
       memory: 1Gi
 
+# -- Probes of the gateway container. The gateway opens the API port (8009)
+# last, after config, migrations and the default organization. So the pod is
+# Ready only when the gateway serves, and `helm --wait` fails on a gateway
+# that does not start. With deploymentStrategy Recreate, a failed upgrade
+# still removes the old pod. Use `helm upgrade --wait --timeout <longer than
+# your longest migration>`, not `--atomic`: a rollback during a migration
+# leaves the database dirty. If the wait fails, look at the pod first; run
+# `helm rollback` only when the gateway crashes or does not answer after it
+# started, never while a migration still runs.
+#
+# With no handler, a probe opens a TCP connection to the container port `api`
+# (8009). This works with TLS on or off and with any API_URL path. If you
+# change the API port with PORT, set the same port in the handler. An httpGet
+# probe must also know the route, <API_URL path>/api/healthz, and with
+# TLS_CERT and TLS_KEY it needs `scheme: HTTPS`. A handler you set (httpGet,
+# tcpSocket, exec, grpc) replaces the TCP check. The other fields go to the
+# pod as you write them; a field you do not set gets the default shown.
+#
+# A probe key that is absent or null, as in a release from an older chart
+# upgraded with --reuse-values, gets these defaults.
+#
+# There is no liveness probe: it can restart a busy gateway.
+readinessProbe:
+  # Only false removes it. The pod is then Ready when its containers start.
+  enabled: true
+  # periodSeconds: 10
+  # timeoutSeconds: 5
+  # failureThreshold: 3
+# Off by default. When on, it is a deadline: the kubelet restarts the
+# container when it ends. That stops a migration that runs longer and leaves
+# the database dirty; the gateway then does not start until you fix it.
+startupProbe:
+  enabled: false
+  # periodSeconds: 10
+  # timeoutSeconds: 5
+  # failureThreshold: 360   # 1 hour with periodSeconds 10
+
 # -- Sign in with Entra ID (Azure) without a client secret. Mounts a projected
 # service account token and sets config.IDP_CLIENT_ASSERTION_FILE to it. The
 # app registration needs a federated credential with issuer = the cluster OIDC
