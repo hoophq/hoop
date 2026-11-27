@@ -58,7 +58,8 @@ type SinkOptions struct {
 	// fingerprint instead of the text. On an HTTP event the same policy
 	// covers every field that carries request CONTENT rather than the
 	// resource identity: Body, Target and each Query value are
-	// fingerprinted; Method, Path, Resource and Host stay.
+	// fingerprinted; Method, Path, Resource and Host stay. The analyzer's
+	// reasoning is dropped.
 	//
 	// Some shops cannot store query text at all, because literals embed the
 	// very PII the database is regulated for. A fingerprint still answers
@@ -555,23 +556,31 @@ var (
 )
 
 // redactContentMetadata fingerprints the metadata values that are statement
-// content, leaving every other key alone.
+// content and drops model prose, leaving every other key alone.
 //
 // It copies before writing. A sink in a MultiSink shares the caller's map,
 // and redacting in place would rewrite what the next sink — and the caller —
 // still hold.
 func redactContentMetadata(md map[string]string) map[string]string {
 	var out map[string]string
+	clone := func() {
+		if out == nil {
+			out = maps.Clone(md)
+		}
+	}
 	for _, key := range contentMetadataKeys {
 		v, ok := md[key]
 		if !ok || v == "" {
 			continue
 		}
-		if out == nil {
-			out = make(map[string]string, len(md))
-			maps.Copy(out, md)
-		}
+		clone()
 		out[key] = fingerprint(v)
+	}
+	for _, key := range proseMetadataKeys {
+		if _, ok := md[key]; ok {
+			clone()
+			delete(out, key)
+		}
 	}
 	if out == nil {
 		return md

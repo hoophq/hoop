@@ -828,3 +828,29 @@ func TestRedactStatementsCoversContentMetadata(t *testing.T) {
 		t.Error("the sink redacted the caller's own map")
 	}
 }
+
+func TestRedactStatementsDropsTheModelReasoning(t *testing.T) {
+	meta := map[string]string{
+		MetadataAITitle:       "Deletes every order of acme",
+		MetadataAIExplanation: "It deletes rows where customer = 'acme'.",
+		"resource_check":      "Table orders: about 1.2M rows, 180 MB, no indexes",
+		"risk_level":          "high",
+	}
+	ev := Event{Kind: KindStatement, Statement: "DELETE FROM orders WHERE customer = 'acme'", Metadata: meta}
+
+	got := SinkOptions{RedactStatements: true}.Apply(ev).Metadata
+	if _, ok := got[MetadataAIExplanation]; ok {
+		t.Error("the reasoning was kept")
+	}
+	if got[MetadataAITitle] != meta[MetadataAITitle] || got["resource_check"] != meta["resource_check"] || got["risk_level"] != "high" {
+		t.Errorf("other keys changed: %+v", got)
+	}
+	if len(meta) != 4 {
+		t.Error("the sink rewrote the caller's own map")
+	}
+
+	kept := SinkOptions{}.Apply(ev).Metadata
+	if kept[MetadataAITitle] != meta[MetadataAITitle] || kept[MetadataAIExplanation] != meta[MetadataAIExplanation] {
+		t.Errorf("a sink that records statements dropped the prose: %+v", kept)
+	}
+}

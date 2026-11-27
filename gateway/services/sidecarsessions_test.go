@@ -1205,7 +1205,7 @@ func TestPlanSidecarSessionAIDecisions(t *testing.T) {
 			analyzer.MetadataRiskLevel: "high", analyzer.MetadataApprover: "ai_agent",
 			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReasonCode: "destructive",
 			analyzer.MetadataApprovalReason: "drops",
-			analyzer.MetadataReviewID: "not-a-uuid",
+			analyzer.MetadataReviewID:       "not-a-uuid",
 		}),
 		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataAIStatus: "skipped"}),
 		rated(5, audit.KindError, map[string]string{analyzer.MetadataRiskLevel: "low"}),
@@ -1257,7 +1257,7 @@ func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
 			analyzer.MetadataHandoffDecision: huge, analyzer.MetadataApprover: huge,
 			analyzer.MetadataApprovalDecision: huge, analyzer.MetadataReviewID: huge,
 			analyzer.MetadataApprovalReasonCode: huge,
-			analyzer.MetadataHandoffReason: huge, analyzer.MetadataApprovalReason: huge,
+			analyzer.MetadataHandoffReason:      huge, analyzer.MetadataApprovalReason: huge,
 		}),
 		// An unknown risk level is not a rating: no entry.
 		rated(3, map[string]string{analyzer.MetadataRiskLevel: huge}),
@@ -1292,6 +1292,56 @@ func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
 	assert.Equal(t, sidecarAIDecision{Seq: 8, Timestamp: first.Timestamp, RiskLevel: "low", RiskAction: "defer"},
 		plan.AIDecisions[4], "nor defer")
 	assert.NotContains(t, plan.Sidecar, "ai_decisions_dropped")
+}
+
+func TestPlanSidecarSessionAIDecisionCheck(t *testing.T) {
+	huge := strings.Repeat("x", 1<<20)
+	rated := func(seq int64, md map[string]string) daemon.SessionEvent {
+		md[analyzer.MetadataRiskLevel] = "high"
+		return sidecarEvent(seq, audit.KindStatement, time.Second, func(e *audit.Event) {
+			e.Statement = "SELECT * FROM orders"
+			e.Metadata = md
+		})
+	}
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1), []daemon.SessionEvent{
+		rated(2, map[string]string{
+			analyzer.MetadataAITitle: "Full scan\x00 of a large table", analyzer.MetadataAIExplanation: "No index on status.",
+			analyzer.MetadataResourceCheckStatus: "ran", analyzer.MetadataResourceCheckMS: "12",
+			analyzer.MetadataResourceCheck: "Table orders: about 1.2M rows, 180 MB, no indexes",
+		}),
+		rated(3, map[string]string{
+			analyzer.MetadataResourceCheckStatus: "skipped",
+			analyzer.MetadataResourceCheckReason: "the connection was busy; cached facts only",
+		}),
+		rated(4, map[string]string{
+			analyzer.MetadataAITitle: huge, analyzer.MetadataAIExplanation: huge,
+			analyzer.MetadataResourceCheckStatus: "partial", analyzer.MetadataResourceCheckMS: "-1",
+			analyzer.MetadataResourceCheck: huge, analyzer.MetadataResourceCheckReason: huge,
+		}),
+		rated(5, map[string]string{analyzer.MetadataResourceCheckStatus: huge, analyzer.MetadataResourceCheck: "text",
+			analyzer.MetadataResourceCheckMS: "99999999"}),
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.AIDecisions, 4)
+	twelve := int64(12)
+	assert.Equal(t, "Full scan of a large table", plan.AIDecisions[0].Title)
+	assert.Equal(t, "No index on status.", plan.AIDecisions[0].Explanation)
+	assert.Equal(t, &sidecarResourceCheck{Status: "ran", DurationMS: &twelve,
+		Text: "Table orders: about 1.2M rows, 180 MB, no indexes"}, plan.AIDecisions[0].ResourceCheck)
+	assert.Equal(t, &sidecarResourceCheck{Status: "skipped", Reason: "the connection was busy; cached facts only"},
+		plan.AIDecisions[1].ResourceCheck)
+
+	cut := plan.AIDecisions[2]
+	assert.Len(t, cut.Title, maxSidecarAITitleChars)
+	assert.Len(t, cut.Explanation, maxSidecarAIDecisionReasonChars)
+	assert.Equal(t, &sidecarResourceCheck{Status: "partial", Text: huge[:maxSidecarResourceCheckChars],
+		Reason: huge[:maxSidecarCheckReasonChars]}, cut.ResourceCheck, "a negative duration is dropped")
+	assert.Nil(t, plan.AIDecisions[3].ResourceCheck, "an unknown status stores no check")
+
+	raw, err := json.Marshal(plan.AIDecisions[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"seq":3,"timestamp":"`+plan.AIDecisions[1].Timestamp+`","risk_level":"high",
+		"resource_check":{"status":"skipped","reason":"the connection was busy; cached facts only"}}`, string(raw))
 }
 
 // The list has a byte ceiling as well as a count: an entry that would pass it

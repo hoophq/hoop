@@ -62,6 +62,38 @@ function splitJoined(items) {
 
 export const itemsText = (total) => `${total} ${total === 1 ? 'item' : 'items'}`
 
+// The sidecar analyzer's decisions on a sidecar session, and how many the
+// gateway left out (metadata.sidecar.ai_decisions, sidecarsessions.go).
+export function sidecarDecisions(session) {
+  const sidecar = session?.metadata?.sidecar || {}
+  const decisions = Array.isArray(sidecar.ai_decisions) ? sidecar.ai_decisions : []
+  return { decisions, dropped: Number(sidecar.ai_decisions_dropped) || 0 }
+}
+
+// Sidecar analyzer actions, as the rule form names them.
+const ACTION_LABELS = {
+  allow: 'Allow',
+  warn: 'Warn',
+  block: 'Block',
+  defer: 'Defer to Rego',
+  require_approval: 'Hold for approval',
+  require_review: 'Hold for approval',
+  'ai-handoff': 'Hand off to AI agent',
+}
+
+export const actionLabel = (action) => ACTION_LABELS[action] || action
+
+const CHECK_STATUS = {
+  ran: { label: 'Ran', color: 'green' },
+  partial: { label: 'Partial', color: 'amber' },
+  cancelled: { label: 'Cancelled', color: 'amber' },
+  failed: { label: 'Failed', color: 'red' },
+  cached: { label: 'From cache', color: 'gray' },
+  skipped: { label: 'Did not run', color: 'gray' },
+}
+
+export const checkStatus = (status) => CHECK_STATUS[status] || { label: status || 'Unknown', color: 'gray' }
+
 // What the masking card shows: 'none', 'unlock' or 'report'. A sidecar masks
 // without the gateway's provider, so it shows what it masked, or nothing.
 export function maskingPanel({ sidecar, hasData, presidio }) {

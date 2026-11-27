@@ -25,8 +25,8 @@ func (d *detailReviewer) Claim(_ context.Context, id string) (analyzer.ReviewRes
 }
 
 // The person deciding sees why the statement was held: the reviewer's
-// context carries the verdict. The trail does not: title and explanation are
-// model prose and stay out of the annotations.
+// context carries the verdict. The trail keeps the prose only under the keys a
+// redacting sink drops.
 func TestTheReviewerSeesWhyTheStatementWasHeld(t *testing.T) {
 	rev := &detailReviewer{}
 	ev := fastWait(mustNew(t, analyzer.Config{
@@ -47,6 +47,9 @@ func TestTheReviewerSeesWhyTheStatementWasHeld(t *testing.T) {
 		t.Fatalf("verdict = %+v, want %+v", rev.got[0], want)
 	}
 	for k, val := range v.Annotations {
+		if k == analyzer.MetadataAITitle || k == analyzer.MetadataAIExplanation {
+			continue
+		}
 		if strings.Contains(val, "because reasons") || strings.Contains(val, "dangerous statement") {
 			t.Errorf("model prose reached the trail under %q", k)
 		}

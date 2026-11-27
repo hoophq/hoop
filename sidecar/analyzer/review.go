@@ -268,12 +268,11 @@ type Settler interface {
 // request, so a backend that shows a person the statement can show the
 // reason beside it.
 //
-// It never reaches the audit trail or the control plane. Title and
-// Explanation are model prose, and the trail keeps them out because a model
-// that quotes the statement back would write its values into the record
-// (see Evaluate). The plane's reviewer sends what it always sent; only a
-// reviewer that already shows the statement to the person deciding, the
-// terminal one, reads this.
+// It never reaches the review request. Title and Explanation reach the
+// audit trail through Config.RecordRedact, and a sink that redacts
+// statements drops the explanation. The plane's reviewer sends what it always
+// sent; only a reviewer that already shows the statement to the person
+// deciding, the terminal one, reads this.
 type HoldDetail struct {
 	// Rule names the analyzer rule, or the listener for a block.
 	Rule        string

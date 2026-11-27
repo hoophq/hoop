@@ -9,7 +9,7 @@ const ACTIONS = {
   allow_execution: { color: 'green', label: 'ACTION ALLOWED' },
 }
 
-function RiskBadge({ level }) {
+export function RiskBadge({ level }) {
   if (!level) return null
   return (
     <Badge variant="light" color={RISK_COLORS[level] || 'gray'}>

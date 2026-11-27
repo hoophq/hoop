@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  actionLabel,
   blockedMessage,
   categoriesText,
+  checkStatus,
   infoTypeLabel,
   itemsText,
   maskingAnalytics,
+  sidecarDecisions,
 } from '@/features/SessionDetails/insights/helpers'
 
 describe('blockedMessage', () => {
@@ -96,5 +99,31 @@ describe('masking texts', () => {
     expect(itemsText(0)).toBe('0 items')
     expect(itemsText(1)).toBe('1 item')
     expect(itemsText(6)).toBe('6 items')
+  })
+})
+
+describe('sidecar AI decisions', () => {
+  it('reads the decisions and the dropped count off the session', () => {
+    const decisions = [{ seq: 2, risk_level: 'high' }]
+    expect(sidecarDecisions({ metadata: { sidecar: { ai_decisions: decisions, ai_decisions_dropped: 3 } } })).toEqual({
+      decisions,
+      dropped: 3,
+    })
+    expect(sidecarDecisions({ metadata: { sidecar: { ai_decisions: 'x' } } })).toEqual({ decisions: [], dropped: 0 })
+    expect(sidecarDecisions({})).toEqual({ decisions: [], dropped: 0 })
+  })
+
+  it('names each check status in words', () => {
+    expect(checkStatus('ran')).toEqual({ label: 'Ran', color: 'green' })
+    expect(checkStatus('skipped')).toEqual({ label: 'Did not run', color: 'gray' })
+    expect(checkStatus('failed').color).toBe('red')
+    expect(checkStatus('later')).toEqual({ label: 'later', color: 'gray' })
+  })
+
+  it('labels the actions as the rule form does', () => {
+    expect(actionLabel('require_review')).toBe('Hold for approval')
+    expect(actionLabel('require_approval')).toBe('Hold for approval')
+    expect(actionLabel('block')).toBe('Block')
+    expect(actionLabel('new')).toBe('new')
   })
 })

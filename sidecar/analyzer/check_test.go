@@ -16,15 +16,16 @@ import (
 )
 
 type fakeChecker struct {
-	mu      sync.Mutex
-	ready   bool
-	skip    bool
-	err     error
-	tables  map[string]inspect.TableFacts
-	plan    []inspect.PlanNode
-	planErr string
-	retry   bool
-	wants   []inspect.CheckWant
+	mu        sync.Mutex
+	ready     bool
+	skip      bool
+	err       error
+	tables    map[string]inspect.TableFacts
+	plan      []inspect.PlanNode
+	planErr   string
+	tablesErr string
+	retry     bool
+	wants     []inspect.CheckWant
 
 	// scope defaults to one database and role; unknown empties it.
 	scope   string
@@ -63,8 +64,14 @@ func (f *fakeChecker) Check(_ context.Context, _ inspect.Statement, want inspect
 			res.Tables = append(res.Tables, inspect.TableFacts{Name: t})
 		}
 	}
+	if len(want.Tables) > 0 {
+		res.TablesErr = f.tablesErr
+	}
 	if want.Plan {
-		res.Plan, res.PlanErr = f.plan, f.planErr
+		res.PlanErr = f.planErr
+		if f.planErr == "" {
+			res.Plan = f.plan
+		}
 	}
 	return res, f.err
 }
