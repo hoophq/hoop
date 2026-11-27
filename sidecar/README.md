@@ -1595,7 +1595,8 @@ so `DELETE /orders/1` can rate high on an open order and low on a closed one.
   `Proxy-Authorization`, `Cookie`, the identity or caller-token header,
   headers outside `http.headers` and sensitive query parameters. A value
   shorter than 8 bytes is replaced where it stands alone, not inside a
-  longer word. A header outside `http.headers` that is not a credential
+  longer word. A value the 4 KiB cut or the end of the read splits is
+  replaced or dropped. A header outside `http.headers` that is not a credential
   stays when shorter than 4 bytes (`DNT: 1`). Then `send` redaction runs on
   the block. An encoded or binary body is not read.
 - The prompt block keeps 2 KiB. A check needs room in `max_calls` and
