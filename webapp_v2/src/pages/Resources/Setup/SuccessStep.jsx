@@ -1,44 +1,17 @@
 import { useNavigate } from 'react-router-dom'
-import { Box, Center, Group, Image, Paper, Stack, Text, Title, UnstyledButton } from '@mantine/core'
-import { AlertCircle, Cable, ChevronRight, Monitor, PackagePlus } from 'lucide-react'
+import { Box, Center, Group, Image, Stack, Text, Title } from '@mantine/core'
+import { AlertCircle, Cable, Monitor, PackagePlus } from 'lucide-react'
+import ActionCard from '@/components/ActionCard'
 import Alert from '@/components/Alert'
-import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import { useBridgeStore } from '@/stores/useBridgeStore'
 import { canOpenWebTerminal } from '@/utils/connectionPolicy'
 import ActivationCards from './sections/ActivationCards'
 import { useResourceSetupStore } from './store'
-import classes from './SuccessStep.module.css'
 
-function ActionCard({ icon: Icon, title, badge, description, onClick }) {
-  return (
-    <UnstyledButton onClick={onClick} className={classes.actionCard}>
-      <Paper withBorder p="md" bg="transparent">
-        <Group gap="md" wrap="nowrap">
-          <Avatar size="lg" tile color="gray" variant="light">
-            <Icon size={20} />
-          </Avatar>
-          <Stack gap={2} flex={1}>
-            <Group gap="xs">
-              <Text fw={500}>{title}</Text>
-              {badge && (
-                <Badge variant="light" color="indigo" tag chip>
-                  {badge}
-                </Badge>
-              )}
-            </Group>
-            <Text size="sm" c="dimmed">
-              {description}
-            </Text>
-          </Stack>
-          <ChevronRight size={16} aria-hidden="true" />
-        </Group>
-      </Paper>
-    </UnstyledButton>
-  )
-}
-
-export default function SuccessStep() {
+// `onboarding` adds an exit: the onboarding has no sidebar.
+export default function SuccessStep({ onboarding = false }) {
   const navigate = useNavigate()
   const setup = useResourceSetupStore((s) => s.setup)
   const createdRoles = useResourceSetupStore((s) => s.createdRoles)
@@ -108,7 +81,11 @@ export default function SuccessStep() {
           <ActionCard
             icon={Monitor}
             title="Test Connection on Web Terminal"
-            badge="Recommended"
+            badge={
+              <Badge variant="light" color="indigo" tag chip>
+                Recommended
+              </Badge>
+            }
             description="Start using your resource immediately in your browser"
             onClick={openWebTerminal}
           />
@@ -124,6 +101,14 @@ export default function SuccessStep() {
       <Box>
         <ActivationCards />
       </Box>
+
+      {onboarding && (
+        <Center>
+          <Button variant="default" onClick={() => navigate('/resources')}>
+            Go to Resources
+          </Button>
+        </Center>
+      )}
     </Stack>
   )
 }

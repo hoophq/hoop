@@ -32,7 +32,11 @@ import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
 import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
+import OnboardingStart from '@/pages/Onboarding'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
+import OnboardingResourceProviders from '@/pages/Onboarding/ResourceProviders'
+import OnboardingSetup from '@/pages/Onboarding/Setup'
+import OnboardingLayout from '@/layout/OnboardingLayout'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import Users from '@/pages/Organization/Users'
@@ -713,8 +717,57 @@ function Router() {
         }
       />
 
-      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The rest
-          of the onboarding is ClojureScript. */}
+      {/* Onboarding: no shell (the :auth layout in the legacy app). The CLJS
+          :onboarding panels and the splat below stay until ENG-922, so a
+          rollback is reverting these routes. */}
+      <Route
+        path="/onboarding"
+        element={
+          <Guard>
+            <OnboardingStart />
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/setup"
+        element={
+          <Guard adminOnly>
+            <OnboardingSetup />
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/setup/agent"
+        element={
+          <Guard adminOnly>
+            <OnboardingLayout>
+              <AgentsCreate onboarding />
+            </OnboardingLayout>
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/setup/resource"
+        element={
+          <ByResourceSetup
+            catalogPath="/onboarding/setup"
+            react={
+              <Guard adminOnly>
+                <ResourceSetup onboarding />
+              </Guard>
+            }
+            cljs={<Navigate to="/onboarding/setup" replace />}
+          />
+        }
+      />
+      <Route
+        path="/onboarding/resource-providers"
+        element={
+          <Guard adminOnly>
+            <OnboardingResourceProviders />
+          </Guard>
+        }
+      />
       <Route
         path="/onboarding/protection-rules"
         element={

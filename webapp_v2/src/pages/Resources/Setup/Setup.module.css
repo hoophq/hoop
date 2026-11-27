@@ -31,3 +31,14 @@
   background-color: var(--hoop-surface-raised);
   padding: var(--mantine-spacing-lgAlt);
 }
+
+.topBar {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--hoop-border-subtle);
+}
+
+.steps {
+  flex-shrink: 0;
+  overflow-y: auto;
+  background-color: var(--hoop-surface-subtle);
+}

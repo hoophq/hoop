@@ -13,9 +13,9 @@ import { isReactSetup, setupConfigFor } from '@/pages/Resources/Setup/catalog'
  *
  * `?type=` is a catalog id. A subtype in REACT_SETUP_SUBTYPES renders React;
  * any other known id renders the CLJS wizard. No id, or an unknown one, goes
- * back to the catalog.
+ * back to `catalogPath`.
  */
-export default function ByResourceSetup({ react, cljs }) {
+export default function ByResourceSetup({ react, cljs, catalogPath = '/resource-catalog' }) {
   const [searchParams] = useSearchParams()
   const catalogId = searchParams.get('type')
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
@@ -35,7 +35,7 @@ export default function ByResourceSetup({ react, cljs }) {
       />
     )
   }
-  if (!catalogId) return <Navigate to="/resource-catalog" replace />
+  if (!catalogId) return <Navigate to={catalogPath} replace />
   // A mapped CLJS type needs no metadata, so a failed load does not block it.
   const config = setupConfigFor(catalogId, metadata?.connections)
   if (config && !isReactSetup(config)) return cljs
@@ -49,6 +49,6 @@ export default function ByResourceSetup({ react, cljs }) {
       />
     )
   }
-  if (!config) return <Navigate to="/resource-catalog" replace />
+  if (!config) return <Navigate to={catalogPath} replace />
   return react
 }

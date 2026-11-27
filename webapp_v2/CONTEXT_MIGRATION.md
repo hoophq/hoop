@@ -65,7 +65,7 @@ with `<ByRuleTraffic>`. See `CLAUDE.md`, "Routing, gates and roles".
 
 ### Routing Split (Router.jsx)
 
-The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
+The three product leaves `/`, `/onboarding/*` and `/*` are CLJS. Every `/onboarding` page is React; the splat only catches an unknown path until ENG-922.
 
 | Route | Handler | Status |
 |-------|---------|--------|
@@ -90,8 +90,10 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/settings/attributes/new` | React | Done |
 | `/settings/attributes/edit/:name` | React | Done |
 | `/compliance-packs` | React | Done (`/settings/protection-rules` redirects here) |
-| `/onboarding/protection-rules` | React | Done (chrome-less, above the `/onboarding/*` splat) |
-| `/onboarding/aws-connect` | React | Done (ENG-920). The AWS discovery wizard, chrome-less, above the `/onboarding/*` splat |
+| `/onboarding` | React | Done (ENG-919). Sends an admin of an org with no connection to the protection rules or the setup, everyone else to `/client` |
+| `/onboarding/protection-rules` | React | Done (chrome-less) |
+| `/onboarding/setup`, `/onboarding/setup/agent`, `/onboarding/setup/resource`, `/onboarding/resource-providers` | React | Done (ENG-919). The Agent check, the catalog with the demo, the wizard with its steps on the left. The CLJS panels stay until ENG-922 |
+| `/onboarding/aws-connect` | React | Done (ENG-920). The AWS discovery wizard, chrome-less |
 | `/integrations/aws-connect`, `/integrations/aws-connect/setup` | React | Done (ENG-920). Jobs page and the wizard. The CLJS panels stay until ENG-922 |
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
@@ -104,7 +106,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs; ENG-914: SSH, TCP, Linux VM, HTTP proxy; ENG-915: Claude Code, MCP, MCP Gateway (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type, and a stable page for the MCP OAuth popup return (`?mcp_oauth=`) |
 | `/resources/:resourceName/add-role` | React per family | ENG-917. `modes/ByAddRoleSetup` renders the CLJS page for a subtype outside `REACT_SETUP_SUBTYPES` |
 | `/resources/configure/:resourceName` | React | Done (ENG-912). The CLJS `:configure-resource` panel stays until ENG-922 |
-| `/resource-catalog` | React | Done (ENG-918). The CLJS panel stays until ENG-922; the onboarding catalog (`/onboarding/setup`) stays CLJS until ENG-919 |
+| `/resource-catalog` | React | Done (ENG-918). The CLJS panel stays until ENG-922 |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -153,7 +155,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 
 ```
 /                             home (redirects to onboarding)
-/onboarding/*                 first-run setup (except /onboarding/protection-rules and /onboarding/aws-connect → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
 /resources/new, /resources/:id/add-role (subtypes outside REACT_SETUP_SUBTYPES)
@@ -283,7 +284,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576), the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`) and IAM federation for `custom/bigquery` (ENG-910).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
-- Onboarding Protection Rules (`/onboarding/protection-rules`) and the AWS Connect wizard (`/onboarding/aws-connect`); the rest of `/onboarding/*` is still CLJS
+- Onboarding (`/onboarding/*`): the entry check, Protection Rules, the Agent check, the catalog with the demo, the resource wizard, the providers and the AWS Connect wizard
 - AWS Connect (`/integrations/aws-connect`, `/integrations/aws-connect/setup`)
 - Toast/snackbar parity — `utils/snackbar.jsx` + `Toast.jsx` (same sonner library as CLJS)
 - Page loaders (`PageLoader`, `AuthPageLoader`)

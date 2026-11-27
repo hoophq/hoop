@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   LINUX_VM,
+  ONBOARDING_ENTRIES,
   catalogEntries,
   categoryLabel,
   credentialTypeLabel,
@@ -56,6 +57,13 @@ describe('catalogEntries', () => {
   it('answers Linux VM alone before the metadata loads', () => {
     expect(ids(catalogEntries(undefined, undefined))).toEqual(['linux-vm'])
   })
+
+  it('adds the demo and the discovery only in onboarding', () => {
+    expect(ids(ENTRIES)).not.toContain('postgres-demo')
+    const onboarding = catalogEntries(CONNECTIONS, {}, true)
+    expect(ids(onboarding).slice(-3)).toEqual(['linux-vm', 'postgres-demo', 'aws-discovery'])
+    expect(onboarding.filter((e) => e.action).map((e) => e.id)).toEqual(['postgres-demo', 'aws-discovery'])
+  })
 })
 
 describe('filterEntries', () => {
@@ -102,6 +110,17 @@ describe('popularEntries', () => {
       expect(popularEntries(ENTRIES, { ...NO_FILTERS, ...filters })).toEqual([])
     },
   )
+
+  it('puts the onboarding entries first, then 3 popular types', () => {
+    const onboarding = catalogEntries(CONNECTIONS, {}, true)
+    expect(ids(popularEntries(onboarding, NO_FILTERS, true))).toEqual([
+      ...ids(ONBOARDING_ENTRIES),
+      'postgres',
+      'mysql',
+      'mongodb',
+    ])
+    expect(popularEntries(onboarding, { ...NO_FILTERS, search: 'demo' }, true)).toEqual([])
+  })
 })
 
 describe('groupByCategory', () => {

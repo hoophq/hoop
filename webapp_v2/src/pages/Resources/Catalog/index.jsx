@@ -6,6 +6,7 @@ import Checkbox from '@/components/Checkbox'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import EmptyState from '@/layout/EmptyState'
+import { OnboardingLogo } from '@/layout/OnboardingLayout'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { useUserStore } from '@/stores/useUserStore'
@@ -124,8 +125,9 @@ function Filters({ search, onSearch, categories, onCategories, tags, onToggleTag
   )
 }
 
-// /resource-catalog outside onboarding: every type the wizard creates.
-export default function ResourceCatalog() {
+// /resource-catalog, and /onboarding/setup with `onboarding`: its own entries
+// call onAction(entry) instead of opening the modal.
+export default function ResourceCatalog({ onboarding = false, onAction, setupPath }) {
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
   const error = useConnectionsMetadataStore((s) => s.error)
   const load = useConnectionsMetadataStore((s) => s.load)
@@ -142,12 +144,12 @@ export default function ResourceCatalog() {
   }, [load])
 
   const entries = useMemo(
-    () => catalogEntries(metadata?.connections, featureFlags),
-    [metadata, featureFlags],
+    () => catalogEntries(metadata?.connections, featureFlags, onboarding),
+    [metadata, featureFlags, onboarding],
   )
   const options = useMemo(() => filterOptions(entries), [entries])
   const filters = { search, categories: new Set(categories), tags }
-  const popular = popularEntries(entries, filters)
+  const popular = popularEntries(entries, filters, onboarding)
   const groups = groupByCategory(filterEntries(entries, filters))
 
   if (!metadata) {
@@ -169,6 +171,10 @@ export default function ResourceCatalog() {
       return next
     })
   const open = (entry) => {
+    if (entry.action) {
+      onAction(entry)
+      return
+    }
     setSelected(entry)
     setOpened(true)
   }
@@ -186,6 +192,7 @@ export default function ResourceCatalog() {
       />
       <Stack gap="xxlAlt" flex={1} miw={0}>
         <Stack gap="sm">
+          {onboarding && <OnboardingLogo />}
           <Title order={1}>Getting Started</Title>
           <Text size="md" c="dimmed">
             Set up your environment by selecting your Resource type.
@@ -203,7 +210,13 @@ export default function ResourceCatalog() {
           />
         )}
       </Stack>
-      <DetailModal entry={selected} opened={opened} onClose={() => setOpened(false)} isAdmin={isAdmin} />
+      <DetailModal
+        entry={selected}
+        opened={opened}
+        onClose={() => setOpened(false)}
+        isAdmin={isAdmin}
+        setupPath={setupPath}
+      />
     </Flex>
   )
 }

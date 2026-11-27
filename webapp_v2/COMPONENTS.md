@@ -190,6 +190,24 @@ import MethodCard from '@/components/MethodCard'
 />
 ```
 
+### `ActionCard`
+A card that runs one action or opens one page: icon, title, description and a trailing chevron. Use for a list of next steps (the resource wizard's success step, the onboarding). `image` renders a logo `src` in place of `icon`, `badge` a node next to the title, and `disabled` dims it.
+```jsx
+import ActionCard from '@/components/ActionCard'
+import { PackagePlus } from 'lucide-react'
+
+<ActionCard
+  icon={PackagePlus}
+  title="Add another resource"
+  description="Set up a new resource from scratch"
+  onClick={() => navigate('/resource-catalog')}
+/>
+```
+Differs from `SelectionCard`: it has no selected state.
+
+### `OnboardingLayout` (`src/layout/OnboardingLayout.jsx`)
+The frame of an onboarding page: no sidebar, no header. `logout` adds a "Log out" button top right. Also exports `OnboardingLogo` and `LogoutButton`.
+
 ### `SelectionCard`
 Selectable card for picking a single option from a group (lucide icon + title + description). Use for mutually exclusive choices like the analytics privacy mode in Settings → Infrastructure.
 ```jsx
@@ -332,7 +350,7 @@ A route that exists in the information architecture but has no backend yet. Name
 `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx` only — see `CLAUDE.md`, "Routing, gates and roles".
 
 ### `POST_LOGIN_PATH` / `POST_SETUP_PATH` (`src/modes/`)
-Where an auth page sends the user next: `/client` after login, `/onboarding/setup` after a local org's first sign-up.
+Where an auth page sends the user next: `/client` after login, `/onboarding` after a local org's first sign-up.
 
 ### `useRuleTraffics` (`src/modes/`)
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.

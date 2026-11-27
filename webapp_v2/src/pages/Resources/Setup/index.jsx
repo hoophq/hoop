@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
-import { Box, Group } from '@mantine/core'
+import { Box, Flex, Group, Stack } from '@mantine/core'
+import { BrainCog, PackagePlus, UserRoundCheck } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
+import Stepper from '@/components/Stepper'
 import FullBleed from '@/layout/FullBleed'
+import { LogoutButton, OnboardingLogo } from '@/layout/OnboardingLayout'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { hiddenByFlags, setupConfigFor } from './catalog'
@@ -15,6 +18,39 @@ import SuccessStep from './SuccessStep'
 import classes from './Setup.module.css'
 
 const FORM_ID = 'resource-setup-form'
+
+const ONBOARDING_STEPS = [
+  {
+    step: 'name',
+    label: 'Resource type',
+    description: 'Quickly add your own services and databases or try a demo setup.',
+    icon: PackagePlus,
+  },
+  {
+    step: 'agent',
+    label: 'Set up Agents',
+    description: 'Establish secure communication with your infrastructure.',
+    icon: BrainCog,
+  },
+  {
+    step: 'roles',
+    label: 'Resource Roles',
+    description: 'Configure permissions and usage details for your Resource.',
+    icon: UserRoundCheck,
+  },
+]
+
+function OnboardingSteps({ step }) {
+  return (
+    <Box w={350} pt="xxxlAlt" px="xlAlt" visibleFrom="md" className={classes.steps}>
+      <Stepper orientation="vertical" active={ONBOARDING_STEPS.findIndex((s) => s.step === step)}>
+        {ONBOARDING_STEPS.map(({ step: id, label, description, icon: Icon }) => (
+          <Stepper.Step key={id} label={label} description={description} icon={<Icon size={16} />} />
+        ))}
+      </Stepper>
+    </Box>
+  )
+}
 
 function Footer({ step }) {
   const navigate = useNavigate()
@@ -72,7 +108,8 @@ function Footer({ step }) {
   )
 }
 
-export default function ResourceSetup() {
+// `onboarding`: no shell, a Log out bar and the steps on the left.
+export default function ResourceSetup({ onboarding = false }) {
   const [searchParams] = useSearchParams()
   const catalogId = searchParams.get('type')
   const connections = useConnectionsMetadataStore((s) => s.metadata?.connections)
@@ -94,7 +131,9 @@ export default function ResourceSetup() {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [step])
 
-  if (hiddenByFlags(catalogId, featureFlags)) return <Navigate to="/resource-catalog" replace />
+  if (hiddenByFlags(catalogId, featureFlags)) {
+    return <Navigate to={onboarding ? '/onboarding/setup' : '/resource-catalog'} replace />
+  }
   // The store still holds an earlier run until start() lands.
   if (!setup || current !== setup) return <PageLoader h={400} />
 
@@ -106,7 +145,7 @@ export default function ResourceSetup() {
 
   // The agent step holds its own form (the new agent's name), and forms do not nest.
   let body
-  if (step === 'success') body = <SuccessStep />
+  if (step === 'success') body = <SuccessStep onboarding={onboarding} />
   else if (step === 'agent') body = <AgentStep />
   else {
     body = (
@@ -116,12 +155,32 @@ export default function ResourceSetup() {
     )
   }
 
-  return (
-    <FullBleed>
-      <Box ref={scrollRef} className={classes.scroll}>
-        <Box className={classes.content}>{body}</Box>
-        {step !== 'success' && <Footer step={step} />}
+  const wizard = (
+    <Box ref={scrollRef} className={classes.scroll}>
+      <Box className={classes.content}>
+        {onboarding && step !== 'success' && (
+          <Box mb="xlAlt">
+            <OnboardingLogo />
+          </Box>
+        )}
+        {body}
       </Box>
-    </FullBleed>
+      {step !== 'success' && <Footer step={step} />}
+    </Box>
+  )
+
+  if (!onboarding) return <FullBleed>{wizard}</FullBleed>
+  return (
+    <Stack h="100dvh" gap={0} bg="white">
+      <Group justify="flex-end" px="xl" py="md" className={classes.topBar}>
+        <LogoutButton />
+      </Group>
+      <Flex flex={1} mih={0}>
+        {step !== 'success' && <OnboardingSteps step={step} />}
+        <Box flex={1} miw={0}>
+          {wizard}
+        </Box>
+      </Flex>
+    </Stack>
   )
 }
