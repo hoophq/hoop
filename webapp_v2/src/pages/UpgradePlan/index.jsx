@@ -56,6 +56,7 @@ export default function UpgradePlan() {
         title="Get more for your Resources"
         mode="upgrade-plan"
         imageSrc="/images/upgrade-plan.png"
+        imagePosition="left"
         description="Upgrade to the Enterprise plan and boost your experience."
         featureItems={FEATURES}
         primaryText="Request a demo"

@@ -1,12 +1,14 @@
 import { Box, Flex, Image, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import { ArrowUpRight } from 'lucide-react'
 import Button from '@/components/Button'
+import classes from './FeaturePromotion.module.css'
 
 /**
  * Split promotion panel (copy + highlights left, illustration right) shown when a
  * feature is empty (`mode="empty-state"`) or gated (`mode="upgrade-plan"`).
  * `image` is a filename under /images/illustrations/; `imageSrc` a full path.
- * `title` replaces "Get more with <featureName>".
+ * `title` replaces "Get more with <featureName>". `imagePosition="left"` keeps
+ * the left edge of a cropped image.
  *
  * Usage:
  *   <FeaturePromotion
@@ -24,6 +26,7 @@ export default function FeaturePromotion({
   mode = 'empty-state',
   image,
   imageSrc,
+  imagePosition = 'center',
   description,
   featureItems = [],
   onPrimaryClick,
@@ -103,6 +106,7 @@ export default function FeaturePromotion({
             h="100%"
             w="100%"
             fit="cover"
+            className={imagePosition === 'left' ? classes.imageLeft : undefined}
           />
         )}
       </Box>

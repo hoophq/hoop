@@ -847,7 +847,7 @@ import { FolderLock } from 'lucide-react'
   // docsHref={docsUrl.features.aiDatamasking} docsText="Go to docs" extraInformation="…"
 />
 ```
-Props: `featureName`, `title` (replaces "Get more with <featureName>"), `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `imageSrc` (a full path instead of `image`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+Props: `featureName`, `title` (replaces "Get more with <featureName>"), `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `imageSrc` (a full path instead of `image`), `imagePosition` ('center' | 'left': the edge a cropped image keeps), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
 
 ---
 
