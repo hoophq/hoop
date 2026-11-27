@@ -126,8 +126,8 @@ github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRn
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e h1:HTPuuf+8TZ4U0JgwdB13v7HRT9V0yPlKMTUogvYS1Sc=
 github.com/hoophq/libhoop v0.0.0-20261116180306-7d0f59a5523e/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
-github.com/hoophq/libhoop v0.0.0-20261127191354-0d09c39af92d h1:alFJuyrCKjtdO2aWCJsuRclxfytzfmNg93Ul8kTnLNs=
-github.com/hoophq/libhoop v0.0.0-20261127191354-0d09c39af92d/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261127191815-fa362be4b146 h1:0tGgGbKg0V4E0lCl8In2TU454kn5UW918VvBtm4GDf8=
+github.com/hoophq/libhoop v0.0.0-20261127191815-fa362be4b146/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
