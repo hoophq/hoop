@@ -902,6 +902,10 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 	if connection == "" {
 		connection = listenerName
 	}
+	email := rev.OwnerEmail
+	if email == "" {
+		email = reviewOwnerEmail
+	}
 	return &slackservice.MessageReviewRequest{
 		// ID is load bearing: it becomes the message metadata and the button
 		// ids, and it is how a click finds its way back to this review.
@@ -915,7 +919,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		// saying who may act beats an empty field.
 		Name:           sidecar.Name,
 		UserGroups:     slackplugin.ParseGroups(rev.ReviewGroups),
-		Email:          reviewOwnerEmail,
+		Email:          email,
 		Connection:     connection,
 		ConnectionType: reviewSlackType,
 
@@ -1186,12 +1190,16 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 		return nil, nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
 	}
 
+	ownerEmail := sidecarReviewOwnerEmail(models.DB, sidecar)
+
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
 	sess := newSidecarSession(sidecar, sessionID, display, now)
+	sess.UserEmail = ownerEmail
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, filing, now)
+	rev.OwnerEmail = ownerEmail
 	if mirror != nil {
 		sess.Connection = mirror.Name
 		rev.ConnectionName = mirror.Name
@@ -1202,6 +1210,17 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 		return nil, nil, err
 	}
 	return rev, expiredIDs, nil
+}
+
+// sidecarReviewOwnerEmail returns the sidecar's first owner email when it has
+// owners, else the stand-in reviewOwnerEmail.
+func sidecarReviewOwnerEmail(db *gorm.DB, sidecar *models.Sidecar) string {
+	if db != nil && sidecar != nil {
+		if emails, err := models.ListSidecarOwnerEmails(db, sidecar.OrgID, sidecar.ID); err == nil && len(emails) > 0 {
+			return emails[0]
+		}
+	}
+	return reviewOwnerEmail
 }
 
 // newSidecarSession is the session a sidecar review waits in. Its user is the sidecar.
@@ -1247,7 +1266,6 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		OwnerID:    sidecar.ID,
 		OwnerEmail: reviewOwnerEmail,
 		OwnerName:  ptr.String(sidecar.Name),
-
 		MinApprovals:          &filing.policy.MinApprovals,
 		ReviewGroups:          filing.policy.Groups,
 		ForceApprovalGroups:   filing.forceGroups,

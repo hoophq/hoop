@@ -118,6 +118,7 @@ func TestALevelWithOwners(t *testing.T) {
 		got, err := models.GetReviewByIdOrSidForViewer(models.DB, statusTestOrgID, filed.Review.ID, reviewapi.Viewer(userCtx(ana)))
 		require.NoError(t, err)
 		assert.Equal(t, filed.Review.ID, got.ID)
+		assert.Equal(t, strings.ToLower(ana.Email), got.OwnerEmail)
 
 		_, err = models.GetReviewByIdOrSidForViewer(models.DB, statusTestOrgID, filed.Review.ID, reviewapi.Viewer(userCtx(otherOwner)))
 		assert.ErrorIs(t, err, models.ErrNotFound)
@@ -157,6 +158,8 @@ func TestALevelWithOwners(t *testing.T) {
 			} else {
 				assert.Equal(t, "U-OWN-EVE", p.Channel)
 				assert.Contains(t, p.Blocks, "secret_positions")
+				assert.Contains(t, p.Blocks, strings.ToLower(eve.Email))
+				assert.NotContains(t, p.Blocks, reviewOwnerEmail)
 			}
 		}
 	})
