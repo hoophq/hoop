@@ -26,6 +26,7 @@ const (
 	checkCacheSize     = 4096
 	maxCheckTables     = 8
 	MaxCheckBlockBytes = 2048
+	maxShapeBytes      = 16 << 10
 )
 
 const resourceCheckPrompt = `
@@ -174,9 +175,10 @@ func planKey(scope string, stmt inspect.Statement, tables []string, facts map[st
 // (lexer.Parameterize). The plan of one such statement serves them all.
 // replaced reports that a literal became $n. A table with a rewrite rule keeps
 // every literal: a rule can make a VALUES or SET value a filter on another table.
-// At maxCheckTables a table can be cut, so its rules are unknown.
+// At maxCheckTables a table can be cut, so its rules are unknown. Past
+// maxShapeBytes the shape costs more than the check it saves.
 func planShape(stmt inspect.Statement, tables []string, facts map[string]tableEntry) (shape string, replaced bool) {
-	if stmt.Protocol != inspect.Postgres {
+	if stmt.Protocol != inspect.Postgres || len(stmt.Text) > maxShapeBytes {
 		return stmt.Text, false
 	}
 	text, n, ok := stmt.Text, 0, false

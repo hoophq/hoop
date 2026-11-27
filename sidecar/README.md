@@ -1473,8 +1473,8 @@ plane serves `any` and `exclude` only to a sidecar that reports
 
 On a postgres, mysql, mssql, oracle, clickhouse or spanner lane, a statement with only
 comments and semicolons (a driver's `-- ping`) is not classified, as if the
-trigger did not select it. A MySQL `/*! */` or MariaDB `/*M! */` comment runs,
-so it is classified.
+trigger did not select it. A MySQL `/*! */`, MariaDB `/*M! */` or TiDB
+`/*T! */` comment runs, so it is classified.
 
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
@@ -1547,7 +1547,10 @@ small table and high on a large unindexed one.
 - A statement whose strings read differently under
   `standard_conforming_strings = off` is keyed by its exact text. A
   statement on a table with a rewrite rule (or a view), or with 8 tables or
-  more, keeps all its literals.
+  more, keeps all its literals. A statement over 16 KiB is keyed by its
+  exact text.
+- A shared plan can show 1 row where the statement's own values give 0,
+  such as `id = 5 AND id = 6` or a value that a `CHECK` constraint excludes.
 - Only an existing relation's schema-qualified name, or a name one relation
   in the database has, is cached: the search path and the role can change
   without the sidecar seeing it. Other names get a check each time, and no

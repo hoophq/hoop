@@ -422,11 +422,11 @@ func TestACommentOnlyStatementCallsNoModel(t *testing.T) {
 	if n := p.calls.Load(); n != 0 {
 		t.Fatalf("%d model calls for statements with no SQL token", n)
 	}
-	for _, text := range []string{"/*!50000 DROP TABLE t */", "/*M! DROP TABLE t */", "-- x\nDELETE FROM t"} {
+	for _, text := range []string{"/*!50000 DROP TABLE t */", "/*M! DROP TABLE t */", "/*T! DROP TABLE t */", "-- x\nDELETE FROM t"} {
 		ev.Evaluate(inspect.Statement{Protocol: inspect.MySQL, Direction: inspect.FromClient, Text: text, Operation: inspect.OpDelete})
 	}
-	if n := p.calls.Load(); n != 3 {
-		t.Fatalf("%d model calls, want 3", n)
+	if n := p.calls.Load(); n != 4 {
+		t.Fatalf("%d model calls, want 4", n)
 	}
 }
 

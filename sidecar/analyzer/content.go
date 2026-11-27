@@ -77,15 +77,15 @@ func (b SQLBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) 
 }
 
 // noSQLToken reports whether text is only comments and semicolons, which the
-// server runs as nothing: a driver's "-- ping". MariaDB runs /*M! ... */,
-// which the lexer reads as a comment.
+// server runs as nothing: a driver's "-- ping". MariaDB runs /*M! ... */ and
+// TiDB /*T! ... */, which the lexer reads as comments.
 func noSQLToken(p inspect.Protocol, text string) bool {
 	switch text[0] {
 	case '-', '/', '#', ';':
 	default:
 		return false
 	}
-	if strings.Contains(text, "/*!") || strings.Contains(text, "/*M!") || strings.Contains(text, "/*m!") {
+	if strings.Contains(text, "/*!") || strings.Contains(text, "/*M!") || strings.Contains(text, "/*m!") || strings.Contains(text, "/*T!") {
 		return false
 	}
 	shape, ok := StatementShape(string(p), text)

@@ -44,6 +44,18 @@ func TestThePlanKeyDoesNotGrowWithTheStatement(t *testing.T) {
 	}
 }
 
+func TestALargeStatementIsKeyedByItsText(t *testing.T) {
+	stmt := func(text string) inspect.Statement { return inspect.Statement{Protocol: inspect.Postgres, Text: text} }
+	small := "INSERT INTO t VALUES (1)"
+	if shape, _ := planShape(stmt(small), nil, nil); shape == small {
+		t.Fatal("a small statement was keyed by its text")
+	}
+	big := small + " -- " + strings.Repeat("x", maxShapeBytes)
+	if shape, replaced := planShape(stmt(big), nil, nil); shape != big || replaced {
+		t.Fatal("a statement over maxShapeBytes was shaped")
+	}
+}
+
 func TestTheCheckCacheExpiresAfterItsTTL(t *testing.T) {
 	now := time.Unix(0, 0)
 	c := newTTLCache[int](10, 30*time.Second)

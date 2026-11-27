@@ -77,7 +77,7 @@ func Parameterize(sql string, unique func(column string) bool) (out string, n in
 		}
 		if i > 0 && (t.Kind == Literal || t.Kind == Number && wholeNumber(sql, spans[i])) {
 			op, start := operatorBefore(sql, toks, spans, i)
-			listed := top.list && isPunct(toks[i-1], "(", ",") && ends(i, nil)
+			listed := top.list && isPunct(toks[i-1], "(", ",") && ends(i, nil) && (insert || plainValue(t))
 			assigned := op == "=" && setDepth == len(stack) && start > 1 && toks[start-1].isName() &&
 				(toks[start-2].isWord("set") || isPunct(toks[start-2], ",")) && ends(i, setEnds)
 			keyed := (op == "=" || op == "<>" || op == "!=") && plainValue(t) && key(start-1) && ends(i, keyEnds)
