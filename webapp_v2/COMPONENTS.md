@@ -1043,6 +1043,9 @@ Non-obvious notes only:
   itself, without which a slow response renders an empty body. `clearSelected` belongs in the effect cleanup of every
   page that reads the slot — the details page and the listener form — so a
   revisit cannot open on a record minutes old, or on one already deleted.
+  `owners` (`[{ email, matched }]`, null until loaded), `ownersLoading`, `ownersError`,
+  `fetchOwners(nameOrId)` and `saveOwners(nameOrId, emails)` (`{ ok, owners, error }`) hold
+  the owners of that record; `clearSelected` drops them.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 - `useJiraPromptStore` — the Jira prompt gate (`features/JiraPromptGate`), the
@@ -1143,6 +1146,8 @@ Non-obvious notes only:
   details card's Configuration row, with `last_error` under refused and restart. A
   stale timestamp still reads Connected with its relative last-seen time: there is no
   Offline, and that time beside the badge is what says a sidecar stopped calling.
+  `getOwners(nameOrId)` / `putOwners(nameOrId, emails)` are `/sidecars/:nameOrId/owners`;
+  `pages/Sidecars/owners.js` holds the form checks and `sections/OwnersRow.jsx` the row.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full
