@@ -1569,8 +1569,9 @@ unindexed one.
 - A view or foreign table is named as such, without a size.
 - A statement with `$n` parameters gets a generic plan, with the parameter
   types the client sent, on PostgreSQL 12 or later.
-- On mysql, the check runs before a `COM_QUERY` only, when the last OK
-  packet shows autocommit on and no open transaction. Sizes come from
+- On mysql, the check runs on MySQL 5.7.20 or later (never MariaDB), before
+  a `COM_QUERY` only, when the last OK packet shows autocommit on and no
+  open transaction. A failed `SET` of its limits gives no facts. Sizes come from
   `information_schema.TABLES`, indexes from `information_schema.STATISTICS`.
   During the check `lock_wait_timeout` is 1 s, `transaction_read_only` is on
   and `max_execution_time` is 400 ms; all three are restored after. The plan
@@ -1602,12 +1603,14 @@ unindexed one.
   `PROFILE`; on mssql `@@ROWCOUNT`, `ROWCOUNT_BIG()`, `@@ERROR`,
   `@@FETCH_STATUS` and `@@CURSOR_ROWS`. Words count outside literals, quoted
   names and comments (inside a mysql `/*!` comment too); a text with an
-  unterminated literal or comment gets no check. A session status counter
+  unterminated literal or comment gets no check. On mysql the scan follows
+  the session's `NO_BACKSLASH_ESCAPES` and reads `"..."` with and without
+  `ANSI_QUOTES`. A session status counter
   still counts the check's own statements.
 - Every check of a client write runs before its first statement, so a write
   that changes what a later name resolves to gets no check: on mysql, a write
   of more than one statement where one starts with `USE`, `CREATE`, `DROP`,
-  `ALTER`, `RENAME`, `TRUNCATE`, `CALL` or `EXECUTE`; on mssql, a batch with `USE`, `CREATE`,
+  `ALTER`, `RENAME`, `TRUNCATE`, `CALL` or `EXECUTE`, or names `sql_mode`; on mssql, a batch with `USE`, `CREATE`,
   `DROP`, `ALTER` or `TRUNCATE` before a select, insert, update, delete,
   merge or `EXEC`.
 - A MySQL prepared statement (`COM_STMT_*`) and an MSSQL RPC request get no
