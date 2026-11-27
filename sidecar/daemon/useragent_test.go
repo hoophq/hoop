@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +82,7 @@ func TestControlPlaneHandshakeCarriesTheUserAgent(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if _, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: Version}); err != nil {
+	if _, err := fetchControlPlaneConfig(context.Background(), srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: Version}); err != nil {
 		t.Fatalf("handshake: %v", err)
 	}
 	if want := userAgent("controlplane"); ua != want {

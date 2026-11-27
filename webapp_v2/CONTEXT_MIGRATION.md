@@ -102,7 +102,9 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/roles/:connectionName/configure` | React | Done |
 | `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
 | `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs; ENG-914: SSH, TCP, Linux VM, HTTP proxy; ENG-915: Claude Code, MCP, MCP Gateway (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type, and a stable page for the MCP OAuth popup return (`?mcp_oauth=`) |
+| `/resources/:resourceName/add-role` | React per family | ENG-917. `modes/ByAddRoleSetup` renders the CLJS page for a subtype outside `REACT_SETUP_SUBTYPES` |
 | `/resources/configure/:resourceName` | React | Done (ENG-912). The CLJS `:configure-resource` panel stays until ENG-922 |
+| `/resource-catalog` | React | Done (ENG-918). The CLJS panel stays until ENG-922; the onboarding catalog (`/onboarding/setup`) stays CLJS until ENG-919 |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -154,8 +156,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /onboarding/*                 first-run setup (except /onboarding/protection-rules and /onboarding/aws-connect → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
-/resources/new (types outside REACT_SETUP_SUBTYPES), /resources/:id/add-role
-/resource-catalog
+/resources/new, /resources/:id/add-role (subtypes outside REACT_SETUP_SUBTYPES)
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*

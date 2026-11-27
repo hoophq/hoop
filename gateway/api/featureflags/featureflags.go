@@ -100,7 +100,7 @@ func Update(c *gin.Context) {
 
 	featureflag.Set(orgID, flagName, req.Enabled)
 
-	go transport.SendFeatureFlagUpdateToOrg(orgID)
+	transport.SendFeatureFlagUpdateToOrg(orgID)
 
 	components := make([]string, len(f.Components))
 	for i, comp := range f.Components {

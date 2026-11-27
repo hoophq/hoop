@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -162,6 +164,46 @@ func (o *otelExporter) analyzerOutcome() func(analyzer.Outcome) {
 func (o *otelExporter) observe(snapshot func() telem.ProcessSnapshot) {
 	if o != nil {
 		o.exp.ObserveProcess(snapshot)
+	}
+}
+
+// bootHandshake counts the handshake Setup ran before the exporter existed.
+// A process that reaches Run had it answered.
+func (o *otelExporter) bootHandshake() {
+	o.handshake(telem.HandshakeBoot, nil)
+}
+
+// heartbeat counts one heartbeat's handshake; err nil is HandshakeOK.
+func (o *otelExporter) heartbeat(err error) {
+	o.handshake(telem.HandshakeHeartbeat, err)
+}
+
+func (o *otelExporter) handshake(kind string, err error) {
+	if o != nil {
+		o.exp.ControlPlaneHandshake(telem.Handshake{Kind: kind, Outcome: handshakeOutcome(err)})
+	}
+}
+
+// handshakeOutcome maps a handshake's error onto the fixed outcome set.
+// Only what fetchControlPlaneConfig types today is told apart: no answer
+// (the client's *url.Error, wrapped) and the 412 sentinel. An error status
+// is plain text, so it lands in HandshakeError with the rest. A certificate
+// the client refused is an answer it will refuse again, not an outage, so
+// it is HandshakeError too.
+func handshakeOutcome(err error) string {
+	var urlErr *url.Error
+	var certErr *tls.CertificateVerificationError
+	switch {
+	case err == nil:
+		return telem.HandshakeOK
+	case errors.Is(err, ErrPlaneHasNoConfig):
+		return telem.HandshakeNoConfig
+	case errors.As(err, &certErr):
+		return telem.HandshakeError
+	case errors.As(err, &urlErr):
+		return telem.HandshakeUnreachable
+	default:
+		return telem.HandshakeError
 	}
 }
 

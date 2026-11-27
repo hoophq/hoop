@@ -11,19 +11,19 @@
 
 (defmulti ^:private access-request-badge identity)
 (defmethod ^:private access-request-badge "APPROVED" [_]
-  [:> Badge {:color "green" :size "2"}
+  [:> Badge {:color "green" :size "2" :radius "full"}
    [:> Flex {:gap "1" :align "center"}
     [:> CircleCheckBig {:size 14}]
     "Approved"]])
 
 (defmethod ^:private access-request-badge "PENDING" [_]
-  [:> Badge {:color "yellow" :size "2"}
+  [:> Badge {:color "amber" :size "2" :radius "full"}
    [:> Flex {:gap "1" :align "center"}
     [:> Clock2 {:size 14}]
     "Pending"]])
 
 (defmethod ^:private access-request-badge "REJECTED" [_]
-  [:> Badge {:color "red" :size "2"}
+  [:> Badge {:color "red" :size "2" :radius "full"}
    [:> Flex {:gap "1" :align "center"}
     [:> OctagonX {:size 14}]
     "Rejected"]])
@@ -41,6 +41,7 @@
      [:> Button
       {:size "1"
        :variant "soft"
+       :radius "full"
        :on-click (fn [e]
                    (.stopPropagation e)
                    (rf/dispatch [:navigate :workflow-details
@@ -53,7 +54,7 @@
 (defn- live-badge []
   [:> Tooltip {:content "Session is currently running"}
    [:> Badge {:color "green" :variant "soft" :size "2"
-              :class "animate-pulse"
+              :radius "full"
               :aria-label "Live session"}
     [:> Flex {:gap "1" :align "center"}
      [:span {:class "inline-block w-2 h-2 rounded-full bg-[--green-9]"
@@ -116,7 +117,7 @@
 
       [:> Flex {:gap "1"
                 :align "center"
-                :class "text-xs p-regular rounded-lg bg-gray-100 text-gray-800"}
+                :class "text-xs text-gray-11"}
        [icon/regular {:icon-name "watch-black"
                       :size 4}]
        [:> Box

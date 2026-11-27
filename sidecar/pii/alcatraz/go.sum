@@ -72,8 +72,8 @@ github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f h1:uZY3C1JwxF+7/Fne
 github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265 h1:1nWO16pqrU8XfkRnv1AqDSPsC98tnTx2nNhNLtYxBL8=
 github.com/hoophq/libhoop v0.0.0-20261105210927-03574efc1265/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
-github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3 h1:2J5tTs2djQhFtzraWQl2XAiK5b+JvSfW3CJdIB8KnbQ=
-github.com/hoophq/libhoop v0.0.0-20261124210809-e4c9b0dd93d3/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261126191547-f1c84d5799f6 h1:Tr2yr5etaVHZhvimAHb/7vwfHp/lpaG370QiioELZQc=
+github.com/hoophq/libhoop v0.0.0-20261126191547-f1c84d5799f6/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/janpfeifer/go-benchmarks v0.1.1 h1:gLLy07/JrOKSnMWeUxSnjTdhkglgmrNR2IBDnR4kRqw=
 github.com/janpfeifer/go-benchmarks v0.1.1/go.mod h1:5AagXCOUzevvmYFQalcgoa4oWPyH1IkZNckolGWfiSM=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

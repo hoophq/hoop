@@ -176,10 +176,10 @@ func TestFactsAndPlanAreCachedSeparately(t *testing.T) {
 		t.Fatalf("the same statement checked %d times", n)
 	}
 
-	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 2", inspect.OpSelect, "orders"), ec())
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders LIMIT 5", inspect.OpSelect, "orders"), ec())
 	w := chk.checks()
 	if len(w) != 2 || len(w[1].Tables) != 0 || !w[1].Plan {
-		t.Fatalf("another literal should run only the plan: %+v", w)
+		t.Fatalf("another statement should run only the plan: %+v", w)
 	}
 
 	ev.EvaluateWith(sqlStmt("SELECT * FROM orders o JOIN users u ON u.id = o.uid", inspect.OpSelect, "orders", "users"), ec())
@@ -302,6 +302,138 @@ func TestAParameterizedStatementAsksForAGenericPlan(t *testing.T) {
 		&policy.EvalContext{ResourceCheck: chk})
 	if w := chk.checks(); len(w) != 1 || w[0].Params != 1 {
 		t.Fatalf("checks = %+v", w)
+	}
+}
+
+func TestOneLiteralPlanServesItsShape(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := checkEvaluator(t, p, nil)
+	chk := bigOrders()
+	ec := &policy.EvalContext{ResourceCheck: chk}
+
+	ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = 1", inspect.OpDelete, "orders"), ec)
+	first := lastContent(p)
+	ev.EvaluateWith(sqlStmt("delete from orders\n where id='3' /*traceparent='00-ab-01'*/", inspect.OpDelete, "orders"), ec)
+	if block := first[strings.Index(first, "Resource check"):]; lastContent(p) == first || !strings.HasSuffix(lastContent(p), block) {
+		t.Fatalf("a cached plan rendered another block:\n%s", lastContent(p))
+	}
+	for _, text := range []string{
+		"DELETE FROM orders WHERE id = 2",
+		"UPDATE orders SET note = 'a' WHERE id = 1",
+		"UPDATE orders SET note = 'b' WHERE id = 2",
+	} {
+		ev.EvaluateWith(sqlStmt(text, inspect.OpDelete, "orders"), ec)
+	}
+	if w := chk.checks(); len(w) != 2 {
+		t.Fatalf("checks = %+v, want one per shape", w)
+	}
+
+	for _, text := range []string{
+		"DELETE FROM orders WHERE id > 1",
+		"DELETE FROM orders WHERE id > 2",
+		"DELETE FROM orders WHERE note = 'a'",
+		"DELETE FROM orders WHERE note = 'b'",
+		"DELETE FROM orders WHERE id = 1.5",
+	} {
+		ev.EvaluateWith(sqlStmt(text, inspect.OpDelete, "orders"), ec)
+	}
+	if w := chk.checks(); len(w) != 7 {
+		t.Fatalf("%d checks, want a plan per range, non-key and non-integer literal", len(w))
+	}
+}
+
+func TestOnlyAWholeValidUniqueIndexIsAKey(t *testing.T) {
+	for name, edit := range map[string]func(*inspect.TableFacts){
+		"children": func(f *inspect.TableFacts) { f.Children = true },
+		"invalid":  func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id) invalid" },
+		"partial":  func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id) partial" },
+		"two cols": func(f *inspect.TableFacts) { f.Indexes[0].Definition = "btree (id, note)" },
+	} {
+		ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+		chk := bigOrders()
+		f := chk.tables["orders"]
+		f.Indexes = slices.Clone(f.Indexes)
+		edit(&f)
+		chk.tables["orders"] = f
+		ec := &policy.EvalContext{ResourceCheck: chk}
+		for _, id := range []string{"1", "2", "3"} {
+			ev.EvaluateWith(sqlStmt("DELETE FROM orders WHERE id = "+id, inspect.OpDelete, "orders"), ec)
+		}
+		if n := len(chk.checks()); n != 3 {
+			t.Errorf("%s: %d checks, want a plan per value", name, n)
+		}
+	}
+}
+
+func TestATableWithARuleKeepsItsLiterals(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	f := chk.tables["orders"]
+	f.Rules = true
+	chk.tables["orders"] = f
+	ec := &policy.EvalContext{ResourceCheck: chk}
+	for _, s := range []string{"open", "closed", "open"} {
+		ev.EvaluateWith(sqlStmt("INSERT INTO orders (note) VALUES ('"+s+"')", inspect.OpInsert, "orders"), ec)
+	}
+	for _, id := range []string{"1", "2"} {
+		ev.EvaluateWith(sqlStmt("UPDATE orders SET note = 'a' WHERE id = "+id, inspect.OpUpdate, "orders"), ec)
+	}
+	if n := len(chk.checks()); n != 4 {
+		t.Fatalf("%d checks, want a plan per text", n)
+	}
+}
+
+func TestAStatementAtTheTableCapKeepsItsLiterals(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	tables := []string{"orders"}
+	for i := 2; i <= 8; i++ {
+		name := fmt.Sprintf("t%d", i)
+		tables = append(tables, name)
+		chk.tables[name] = inspect.TableFacts{Name: name, Found: true, Resolved: true}
+	}
+	ec := &policy.EvalContext{ResourceCheck: chk}
+	for _, s := range []string{"a", "b"} {
+		text := "UPDATE orders SET note = '" + s + "' FROM " + strings.Join(tables[1:], ", ")
+		ev.EvaluateWith(sqlStmt(text, inspect.OpUpdate, tables...), ec)
+	}
+	if n := len(chk.checks()); n != 2 {
+		t.Fatalf("%d checks, want a plan per text", n)
+	}
+}
+
+func TestAShapeDoesNotCacheAPlanError(t *testing.T) {
+	ev := checkEvaluator(t, &stubProvider{level: analyzer.RiskLow}, nil)
+	chk := bigOrders()
+	ec := &policy.EvalContext{ResourceCheck: chk}
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders", inspect.OpSelect, "orders"), ec)
+
+	chk.plan, chk.planErr = nil, "SQLSTATE 22P02 (invalid_text_representation)"
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 'x'", inspect.OpSelect, "orders"), ec)
+	chk.plan, chk.planErr = bigOrders().plan, ""
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 5", inspect.OpSelect, "orders"), ec)
+	ev.EvaluateWith(sqlStmt("SELECT * FROM orders WHERE id = 6", inspect.OpSelect, "orders"), ec)
+	if w := chk.checks(); len(w) != 3 {
+		t.Fatalf("%d checks, want the error not shared and the plan shared", len(w))
+	}
+}
+
+func TestACommentOnlyStatementCallsNoModel(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskLow}
+	ev := mustNew(t, analyzer.Config{Provider: p, Trigger: analyzer.Trigger{All: true}})
+	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.Oracle, inspect.ClickHouse, inspect.Spanner} {
+		for _, text := range []string{"-- ping", ";", "/* a */ ; -- b"} {
+			ev.Evaluate(inspect.Statement{Protocol: proto, Direction: inspect.FromClient, Text: text})
+		}
+	}
+	if n := p.calls.Load(); n != 0 {
+		t.Fatalf("%d model calls for statements with no SQL token", n)
+	}
+	for _, text := range []string{"/*!50000 DROP TABLE t */", "/*M! DROP TABLE t */", "/*T! DROP TABLE t */", "-- x\nDELETE FROM t"} {
+		ev.Evaluate(inspect.Statement{Protocol: inspect.MySQL, Direction: inspect.FromClient, Text: text, Operation: inspect.OpDelete})
+	}
+	if n := p.calls.Load(); n != 4 {
+		t.Fatalf("%d model calls, want 4", n)
 	}
 }
 

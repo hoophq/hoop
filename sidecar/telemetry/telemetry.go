@@ -31,7 +31,7 @@ import (
 // resource attribute and in SchemaURL. An attribute or instrument added
 // bumps the minor; one renamed or removed bumps the major, because a
 // dashboard written against the old name goes dark.
-const SchemaVersion = "1.1"
+const SchemaVersion = "1.2"
 
 // SchemaURL identifies the schema on the Resource, the OpenTelemetry way
 // of saying which vocabulary a producer speaks.
@@ -233,6 +233,41 @@ type AnalyzerOutcome struct {
 	Action    string
 }
 
+// Handshake kinds: the one handshake at startup, and the heartbeat that
+// re-runs it on a timer.
+const (
+	HandshakeBoot      = "boot"
+	HandshakeHeartbeat = "heartbeat"
+)
+
+// Handshake outcomes. A fixed set, so a new failure lands in
+// HandshakeError rather than minting a series a dashboard was not
+// written for.
+const (
+	// HandshakeOK is an answered handshake: a document, or a re-import
+	// that landed.
+	HandshakeOK = "ok"
+	// HandshakeUnreachable is no answer: refused, timed out, DNS.
+	HandshakeUnreachable = "unreachable"
+	// HandshakeNoConfig is the plane's 412 that this process could not
+	// answer with an import.
+	HandshakeNoConfig = "no_config"
+	// HandshakeError is every other failure: an error status, a rejected
+	// credential, a body this build cannot read.
+	HandshakeError = "error"
+)
+
+// Handshake is one handshake with the control plane. It carries no error
+// text: a failed handshake's message can hold the plane's response body or
+// a redirect Location, which this process does not control. The sidecar's
+// own log keeps the detail; telemetry gets the fixed outcome.
+type Handshake struct {
+	// Kind is HandshakeBoot or HandshakeHeartbeat.
+	Kind string
+	// Outcome is one of the Handshake* outcomes.
+	Outcome string
+}
+
 // LaneStats is one listener's connection counters, as its server reports
 // them.
 type LaneStats struct {
@@ -266,8 +301,12 @@ type Resource struct {
 
 // Stats is what the exporter reports about itself for GET /stats.
 type Stats struct {
-	// EventsSent and EventsDropped count audit events the log exporter
-	// accepted and dropped. Zero when events are off.
+	// EventsSent counts audit events handed to the log exporter's queue;
+	// EventsDropped counts those the full queue evicted before export. So
+	// EventsSent minus EventsDropped is "accepted and not evicted here":
+	// it includes records still queued and records whose export failed or
+	// the collector refused, which stay counted in EventsSent. Neither
+	// counter shows successful delivery. Zero when events are off.
 	EventsSent, EventsDropped int64
 }
 
@@ -286,6 +325,12 @@ type Exporter interface {
 	// AnalyzerCall and AnalyzerOutcome mirror the analyzer's observers.
 	AnalyzerCall(AnalyzerCall)
 	AnalyzerOutcome(AnalyzerOutcome)
+
+	// ControlPlaneHandshake counts one handshake with the control plane.
+	// A failure also goes out as a log record, when events are on, with
+	// the outcome and no error text: the plane cannot report its own
+	// outage, and its fleet can.
+	ControlPlaneHandshake(Handshake)
 
 	// ObserveProcess registers the callback the gauges read. Called once.
 	ObserveProcess(func() ProcessSnapshot)

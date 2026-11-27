@@ -26,6 +26,7 @@ const (
 	checkCacheSize     = 4096
 	maxCheckTables     = 8
 	MaxCheckBlockBytes = 2048
+	maxShapeBytes      = 16 << 10
 )
 
 const resourceCheckPrompt = `
@@ -153,8 +154,15 @@ func checkable(op inspect.Operation) bool {
 
 func (e *Evaluator) UsesResourceCheck() bool { return e.cfg.ResourceCheck }
 
+// tableEntry and planEntry keep the rendered lines, so a cache hit renders
+// nothing.
+type tableEntry struct {
+	facts inspect.TableFacts
+	line  string
+}
+
 type planEntry struct {
-	nodes []inspect.PlanNode
+	lines []string
 	err   string
 }
 
@@ -173,7 +181,7 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 	if rc.Skips(stmt) {
 		return "", skipped("the statement can change the role or a setting")
 	}
-	facts := make(map[string]inspect.TableFacts, len(tables))
+	facts := make(map[string]tableEntry, len(tables))
 	var missing []string
 	var plan planEntry
 	havePlan := false
@@ -185,7 +193,8 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 			missing = append(missing, t)
 		}
 	}
-	if key := planKey(scope, stmt.Text, tables, facts); key != "" {
+	key, replaced := planKey(scope, stmt, tables, facts)
+	if key != "" {
 		plan, havePlan = e.plans.get(key)
 	}
 
@@ -199,38 +208,50 @@ func (e *Evaluator) resourceBlock(ctx context.Context, stmt inspect.Statement, e
 		res, took, err := e.runCheck(ctx, rc, stmt, want, ec)
 		rec = ranRecord(want, res, err, took)
 		if err == nil || errors.Is(err, policy.ErrCheckCancelled) {
-			scope := rc.Scope()
+			after := rc.Scope()
 			if res.TablesErr == "" {
 				for _, f := range res.Tables {
-					facts[f.Name] = f
-					if scope != "" && f.Resolved {
-						e.facts.put(checkKey(scope, f.Name), f)
+					entry := tableEntry{facts: f, line: tableLine(f)}
+					facts[f.Name] = entry
+					if after != "" && f.Resolved {
+						e.facts.put(checkKey(after, f.Name), entry)
 					}
 				}
 			}
 			if want.Plan {
-				plan, havePlan = planEntry{nodes: res.Plan, err: res.PlanErr}, true
-				if key := planKey(scope, stmt.Text, tables, facts); key != "" && !res.Retry {
+				plan, havePlan = planEntry{lines: planLines(res.Plan), err: res.PlanErr}, true
+				if len(missing) > 0 || after != scope {
+					key, replaced = planKey(after, stmt, tables, facts)
+				}
+				// An error can come from a replaced value (22P02), so a shape
+				// caches only a plan.
+				if key != "" && !res.Retry && !(replaced && res.PlanErr != "") {
 					e.plans.put(key, plan)
 				}
 			}
 		}
 	}
 
-	var known []inspect.TableFacts
+	var tl, plainTL []string
+	withheld := false
 	for _, t := range tables {
 		if f, ok := facts[t]; ok {
-			known = append(known, f)
+			tl = append(tl, f.line)
+			line := f.line
+			if plain, ok := plainDefinitions(f.facts); ok {
+				line, withheld = tableLine(plain), true
+			}
+			plainTL = append(plainTL, line)
 		}
 	}
-	var nodes []inspect.PlanNode
+	var pl []string
 	if havePlan {
-		nodes = plan.nodes
+		pl = plan.lines
 	}
-	block := renderCheckBlock(known, nodes)
+	block := renderCheckBlock(tl, pl)
 	trail := block
-	if plain, withheld := plainDefinitions(known); withheld {
-		trail = renderCheckBlock(plain, nodes)
+	if withheld {
+		trail = renderCheckBlock(plainTL, pl)
 	}
 	if block != "" && e.cfg.Redact != nil {
 		if block = e.cfg.Redact(block); block == RefuseSentinel {
@@ -251,23 +272,17 @@ const withheldDefinition = "definition withheld"
 // plainDefinitions keeps an index definition in the trail only when it is
 // identifiers, as the Postgres check writes it ("btree (a, expression)
 // partial"). Anything else could carry a literal.
-func plainDefinitions(tables []inspect.TableFacts) ([]inspect.TableFacts, bool) {
-	var out []inspect.TableFacts
-	for i, t := range tables {
-		if !slices.ContainsFunc(t.Indexes, func(x inspect.IndexFacts) bool { return !plainDefinition(x.Definition) }) {
-			continue
-		}
-		if out == nil {
-			out = slices.Clone(tables)
-		}
-		out[i].Indexes = slices.Clone(t.Indexes)
-		for j := range out[i].Indexes {
-			if !plainDefinition(out[i].Indexes[j].Definition) {
-				out[i].Indexes[j].Definition = withheldDefinition
-			}
+func plainDefinitions(t inspect.TableFacts) (inspect.TableFacts, bool) {
+	if !slices.ContainsFunc(t.Indexes, func(x inspect.IndexFacts) bool { return !plainDefinition(x.Definition) }) {
+		return t, false
+	}
+	t.Indexes = slices.Clone(t.Indexes)
+	for j := range t.Indexes {
+		if !plainDefinition(t.Indexes[j].Definition) {
+			t.Indexes[j].Definition = withheldDefinition
 		}
 	}
-	return out, out != nil
+	return t, true
 }
 
 func plainDefinition(s string) bool {
@@ -286,18 +301,68 @@ func checkKey(scope, name string) string {
 }
 
 // planKey is empty when the plan must not be cached: no role, or a table
-// whose name the search path or the role could resolve elsewhere.
-func planKey(scope, text string, tables []string, facts map[string]inspect.TableFacts) string {
+// whose name the search path or the role could resolve elsewhere. replaced
+// reports that the shape holds $n in place of a literal.
+func planKey(scope string, stmt inspect.Statement, tables []string, facts map[string]tableEntry) (key string, replaced bool) {
 	if scope == "" {
-		return ""
+		return "", false
 	}
 	for _, t := range tables {
-		if !facts[t].Resolved {
-			return ""
+		if !facts[t].facts.Resolved {
+			return "", false
 		}
 	}
-	sum := sha256.Sum256([]byte(text))
-	return checkKey(scope, string(sum[:]))
+	shape, replaced := planShape(stmt, tables, facts)
+	sum := sha256.Sum256([]byte(shape))
+	return checkKey(scope, string(sum[:])), replaced
+}
+
+// planShape is what a plan is cached under: the statement without comments,
+// with $n in place of each literal whose value cannot change the plan
+// (lexer.Parameterize). The plan of one such statement serves them all.
+// replaced reports that a literal became $n. A table with a rewrite rule keeps
+// every literal: a rule can make a VALUES or SET value a filter on another table.
+// At maxCheckTables a table can be cut, so its rules are unknown. Past
+// maxShapeBytes the shape costs more than the check it saves.
+func planShape(stmt inspect.Statement, tables []string, facts map[string]tableEntry) (shape string, replaced bool) {
+	if stmt.Protocol != inspect.Postgres || len(stmt.Text) > maxShapeBytes {
+		return stmt.Text, false
+	}
+	text, n, ok := stmt.Text, 0, false
+	if len(tables) < maxCheckTables && !slices.ContainsFunc(tables, func(t string) bool { return facts[t].facts.Rules }) {
+		text, n, ok = lexer.Parameterize(stmt.Text, uniqueKeys(tables, facts))
+	}
+	prefix := "shape\x00"
+	if !ok {
+		text, n, prefix = stmt.Text, 0, "text\x00"
+	}
+	key, ok := lexer.PlanKey(text, lexer.Postgres)
+	if !ok {
+		return stmt.Text, false
+	}
+	return prefix + key, n > 0
+}
+
+// uniqueKeys returns the columns that a valid, whole unique index of the
+// statement's one table covers alone, from cached facts (see
+// inspect.IndexFacts.Definition). A table with children has none: its index
+// does not cover their rows, and a partition key picks the partition.
+func uniqueKeys(tables []string, facts map[string]tableEntry) func(string) bool {
+	if len(tables) != 1 || facts[tables[0]].facts.Children {
+		return nil
+	}
+	keys := map[string]bool{}
+	for _, x := range facts[tables[0]].facts.Indexes {
+		col, ok := strings.CutPrefix(x.Definition, "btree (")
+		col, ok2 := strings.CutSuffix(col, ")")
+		if (x.Unique || x.Primary) && ok && ok2 && !strings.Contains(col, ", ") && col != "expression" {
+			keys[col] = true
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return func(c string) bool { return keys[c] }
 }
 
 func (e *Evaluator) runCheck(ctx context.Context, rc policy.ResourceChecker, stmt inspect.Statement, want inspect.CheckWant, ec *policy.EvalContext) (inspect.CheckResult, time.Duration, error) {
@@ -374,19 +439,9 @@ const (
 // renderCheckBlock writes numbers to two significant digits, so the verdict
 // cache key, which hashes the block, survives small statistics drift. The
 // plan keeps up to half the room, so many tables cannot push it out.
-func renderCheckBlock(tables []inspect.TableFacts, plan []inspect.PlanNode) string {
-	if len(tables) == 0 && len(plan) == 0 {
+func renderCheckBlock(tl, pl []string) string {
+	if len(tl) == 0 && len(pl) == 0 {
 		return ""
-	}
-	var tl, pl []string
-	for _, t := range tables {
-		tl = append(tl, tableLine(t))
-	}
-	if len(plan) > 0 {
-		pl = append(pl, "Plan:")
-		for _, n := range plan {
-			pl = append(pl, strings.Repeat("  ", n.Depth+1)+planLine(n))
-		}
 	}
 	room := MaxCheckBlockBytes - len(checkHeader)
 	head := fitLines(tl, room-min(linesSize(pl), room/2))
@@ -460,6 +515,18 @@ func tableLine(t inspect.TableFacts) string {
 		idx[i] = clean(x.Name) + " (" + kind + clean(x.Definition) + ")"
 	}
 	return line + ", indexes: " + strings.Join(idx, ", ")
+}
+
+func planLines(plan []inspect.PlanNode) []string {
+	if len(plan) == 0 {
+		return nil
+	}
+	pl := make([]string, 0, len(plan)+1)
+	pl = append(pl, "Plan:")
+	for _, n := range plan {
+		pl = append(pl, strings.Repeat("  ", n.Depth+1)+planLine(n))
+	}
+	return pl
 }
 
 func planLine(n inspect.PlanNode) string {
