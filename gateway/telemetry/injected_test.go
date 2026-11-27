@@ -98,29 +98,48 @@ var sdkEnv = map[string]string{
 
 const (
 	injectedChildEnv = "HOOP_TELEMETRY_INJECTED_CHILD"
-	childDropped     = "CHILD: dropped %d OTEL_* variables\n"
-	childExportOff   = "CHILD: export off"
-	childExported    = "CHILD: exported"
+	// startOnlyChildEnv makes the child skip DropOTELEnv: Start alone must
+	// remove OTEL_*, whatever the caller did before it.
+	startOnlyChildEnv = "HOOP_TELEMETRY_INJECTED_START_ONLY"
+	childDropped      = "CHILD: dropped %d OTEL_* variables\n"
+	childLeft         = "CHILD: %d OTEL_* variables before Start, %d after\n"
+	childExportOff    = "CHILD: export off"
+	childExported     = "CHILD: exported"
 )
+
+// countOTELEnv is how many OTEL_* variables the process has.
+func countOTELEnv() int {
+	n := 0
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "OTEL_") {
+			n++
+		}
+	}
+	return n
+}
 
 // TestInjectedOTELChild is the gateway the test below starts, in the order
 // gateway.Run boots: DropOTELEnv, appconfig.Load, then, with export on,
-// telemetry.Start, one sidecar handshake, one API request and a flush. It
-// does nothing in a normal run.
+// telemetry.Start, one sidecar handshake, one API request and a flush. With
+// startOnlyChildEnv it skips DropOTELEnv. It does nothing in a normal run.
 func TestInjectedOTELChild(t *testing.T) {
 	if os.Getenv(injectedChildEnv) == "" {
 		t.Skip("run as a child of TestAnInjectedOTELVariableChangesNothing only")
 	}
-	dropped, err := DropOTELEnv()
-	require.NoError(t, err)
-	fmt.Printf(childDropped, len(dropped))
+	if os.Getenv(startOnlyChildEnv) == "" {
+		dropped, err := DropOTELEnv()
+		require.NoError(t, err)
+		fmt.Printf(childDropped, len(dropped))
+	}
 	require.NoError(t, appconfig.Load())
 	cfg := appconfig.Get().OTLPExport()
 	if cfg == nil {
 		fmt.Println(childExportOff)
 		return
 	}
+	before := countOTELEnv()
 	require.NoError(t, Start(cfg, "test", nil))
+	fmt.Printf(childLeft, before, countOTELEnv())
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(HTTPServer())
@@ -174,7 +193,7 @@ func TestAnInjectedOTELVariableChangesNothing(t *testing.T) {
 	}
 	for _, protocol := range []string{appconfig.OTLPProtocolHTTP, appconfig.OTLPProtocolGRPC} {
 		t.Run(protocol+": the export is the same with and without the injected set", func(t *testing.T) {
-			clean := exportWith(t, protocol, nil)
+			clean := exportWith(t, protocol, nil, false)
 			// What the HOOP_OTEL_* set below asks for.
 			assert.Equal(t, 1, clean.MetricsRequests, "one metrics export, the flush: the interval is an hour")
 			assert.Equal(t, 1, clean.TracesRequests, "one traces export, the flush")
@@ -182,7 +201,10 @@ func TestAnInjectedOTELVariableChangesNothing(t *testing.T) {
 			assert.Equal(t, "hoop-test", clean.Resource["deployment.environment"])
 			assert.Equal(t, []string{"1"}, clean.HoopHeader)
 
-			assert.Equal(t, clean, exportWith(t, protocol, injected))
+			assert.Equal(t, clean, exportWith(t, protocol, injected, false))
+			// telemetry.Start without gateway.Run's DropOTELEnv before it:
+			// the export does not depend on the caller's order.
+			assert.Equal(t, clean, exportWith(t, protocol, injected, true))
 		})
 	}
 }
@@ -203,8 +225,9 @@ type exportShape struct {
 }
 
 // exportWith runs the child with a HOOP_OTEL_* set pointing at a local
-// receiver, plus injected, and returns what the receiver got.
-func exportWith(t *testing.T, protocol string, injected map[string]string) exportShape {
+// receiver, plus injected, and returns what the receiver got. With
+// startOnly the child calls Start without DropOTELEnv before it.
+func exportWith(t *testing.T, protocol string, injected map[string]string, startOnly bool) exportShape {
 	t.Helper()
 	var rcv *receiver
 	var endpoint string
@@ -228,8 +251,16 @@ func exportWith(t *testing.T, protocol string, injected map[string]string) expor
 	for k, v := range injected {
 		env[k] = v
 	}
+	if startOnly {
+		env[startOnlyChildEnv] = "1"
+	}
 	out := runInjectedChild(t, env)
-	require.True(t, strings.Contains(out, fmt.Sprintf(childDropped, len(injected))), "the child dropped another count")
+	if startOnly {
+		require.True(t, strings.Contains(out, fmt.Sprintf(childLeft, len(injected), 0)), "Start left OTEL_* in the environment")
+	} else {
+		require.True(t, strings.Contains(out, fmt.Sprintf(childDropped, len(injected))), "the child dropped another count")
+		require.True(t, strings.Contains(out, fmt.Sprintf(childLeft, 0, 0)), "OTEL_* reached Start")
+	}
 	require.True(t, strings.Contains(out, childExported), "the child did not report the export")
 	assert.False(t, strings.Contains(out, "telemetry: "), "the child logged a telemetry warning")
 	return shapeOf(rcv.exports())

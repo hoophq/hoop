@@ -8,7 +8,8 @@ import (
 
 // DropOTELEnv removes every OTEL_* variable from the process environment
 // and returns their names, sorted. gateway.Run calls it first, before
-// appconfig.Load and before any goroutine of its own.
+// appconfig.Load and before any goroutine of its own, and logs the names.
+// Start calls it again, so the export never depends on that order.
 //
 // A platform can inject OTEL_* into every pod (the EKS CloudWatch
 // Observability add-on does), and the OpenTelemetry SDK reads them by

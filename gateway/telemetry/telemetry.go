@@ -99,7 +99,14 @@ var onFatal sync.Once
 // Start builds the exporters cfg names and starts pushing. A nil cfg is
 // export off, and Start does nothing. db is the pool the gauges read; nil
 // registers none.
+//
+// It removes every OTEL_* variable first, whoever calls it, so no
+// OpenTelemetry code here runs while one is set. gateway.Run already did,
+// and logged the names; a second call finds none.
 func Start(cfg *appconfig.OTLPExport, version string, db *sql.DB) error {
+	if _, err := DropOTELEnv(); err != nil {
+		return fmt.Errorf("telemetry: removing OTEL_* from the environment: %w", err)
+	}
 	if cfg == nil {
 		return nil
 	}
@@ -270,6 +277,10 @@ func (e *exporter) shutdown(ctx context.Context) error {
 // ones, and HOOP_OTEL_SERVICE_NAME beats service.name in
 // HOOP_OTEL_RESOURCE_ATTRIBUTES, as the OpenTelemetry spec says for the
 // standard names.
+//
+// resource.Default() reads OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME,
+// once per process. Start removed every OTEL_* before it gets here, so it
+// adds only the SDK attributes and a service.name overridden below.
 func buildResource(cfg *appconfig.OTLPExport, version string) *resource.Resource {
 	attrs := resource.Default().Attributes()
 	attrs = append(attrs,
