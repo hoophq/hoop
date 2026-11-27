@@ -23,6 +23,7 @@ import Resources from '@/pages/Resources'
 import ConfigureResource from '@/pages/Resources/Configure'
 import ResourceSetup from '@/pages/Resources/Setup'
 import ResourceAddRole from '@/pages/Resources/Setup/AddRole'
+import ResourceCatalog from '@/pages/Resources/Catalog'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -217,6 +218,14 @@ function Router() {
         element={
           <Page>
             <Resources />
+          </Page>
+        }
+      />
+      <Route
+        path="/resource-catalog"
+        element={
+          <Page>
+            <ResourceCatalog />
           </Page>
         }
       />
