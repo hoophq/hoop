@@ -117,7 +117,9 @@ function schemaErrors(obj, fields, protocol, prefix, errors) {
     const path = prefix ? `${prefix}.${f.key}` : f.key
     const value = obj?.[f.key]
     if (f.required && f.type !== 'object' && value === undefined) errors[path] = 'Required.'
-    if (f.type === 'integer' && Number(value) < 0) errors[path] = 'Cannot be negative.'
+    if (f.type === 'integer' && Number(value) < (f.min ?? 0)) {
+      errors[path] = f.min ? `Cannot be below ${f.min}.` : 'Cannot be negative.'
+    }
     if (f.type === 'object' && (value !== undefined || f.required)) {
       schemaErrors(value ?? {}, f.fields ?? [], protocol, path, errors)
     }

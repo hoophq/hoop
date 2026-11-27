@@ -56,6 +56,36 @@ func TestListenerSchemaRefusesAnUntaggedField(t *testing.T) {
 	}
 }
 
+// min reaches the form, so it lets -1 through on max_conns and nowhere it
+// is not written; on a field that is not an integer it is a mistake.
+func TestListenerSchemaCarriesMin(t *testing.T) {
+	type block struct {
+		Limit int    `json:"limit" label:"Limit" min:"-1"`
+		Plain int    `json:"plain" label:"Plain"`
+		Name  string `json:"name" label:"Name" min:"-1"`
+	}
+	_, err := schemaFields(reflect.TypeFor[block](), "listeners.x", Protocols(), nil)
+	if err == nil || !strings.Contains(err.Error(), "listeners.x.name: min applies to an integer field only") {
+		t.Fatalf("min on a string field: %v", err)
+	}
+	fields, err := schemaFields(reflect.TypeFor[block](), "listeners.x", Protocols(), []string{"limit", "plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fields[0].Min == nil || *fields[0].Min != -1 || fields[1].Min != nil {
+		t.Errorf("min = %v, %v; want -1 and absent", fields[0].Min, fields[1].Min)
+	}
+	all, err := schemaFields(reflect.TypeFor[ListenerConfig](), "listeners", Protocols(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range all {
+		if f.Key == "max_conns" && (f.Min == nil || *f.Min != MaxConnsUnlimited) {
+			t.Errorf("max_conns min = %v, want -1", f.Min)
+		}
+	}
+}
+
 // Each listener field the form renders is set on a minimal lane of every
 // protocol, and Validate must accept it exactly where its protocols tag says.
 // A tag that drifts from Validate would offer a field the sidecar refuses.

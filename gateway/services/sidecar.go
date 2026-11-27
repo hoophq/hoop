@@ -183,8 +183,9 @@ func (e ErrSidecarConfigInvalid) Error() string { return e.Err.Error() }
 // CheckSidecarConfiguration refuses a configuration the sidecar would refuse,
 // with the daemon's own validation. The files it names live on the sidecar's
 // host, and its analyzer providers and descriptor fetchers are linked into the
-// sidecar's binary, so only the sidecar checks those. A load_from_disk
-// document is not served, so it is not checked.
+// sidecar's binary, so only the sidecar checks those. It also refuses a
+// max_conns below -1, which a sidecar accepts (daemon.MaxConnsProblems). A
+// load_from_disk document is not served, so it is not checked.
 func CheckSidecarConfiguration(cfg daemon.Config) error {
 	if cfg.LoadFromDisk != nil && *cfg.LoadFromDisk {
 		return nil
@@ -194,6 +195,9 @@ func CheckSidecarConfiguration(cfg daemon.Config) error {
 		return err
 	}
 	if problems := cfg.CheckServedAnalyzer(); len(problems) > 0 {
+		return ErrSidecarConfigInvalid{Err: errors.New(problems[0]), Problems: problems}
+	}
+	if problems := daemon.MaxConnsProblems(cfg.Listeners); len(problems) > 0 {
 		return ErrSidecarConfigInvalid{Err: errors.New(problems[0]), Problems: problems}
 	}
 	if err := daemon.CheckConfigBytes(raw); err != nil {
