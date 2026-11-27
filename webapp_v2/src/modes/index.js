@@ -3,10 +3,11 @@ import { samePagePath } from '@/utils/redirect'
 import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 
 // Where an auth page sends the user next. The web terminal is the landing page
-// of a signed-in user. A new local org continues in the CLJS onboarding. With
-// experimental.agents off, GatewayProtectedRoute sends both to Sidecars or Reviews.
+// of a signed-in user. A new local org continues in the onboarding, which starts
+// with the protection rules. With experimental.agents off, GatewayProtectedRoute
+// sends both to Sidecars or Reviews.
 export const POST_LOGIN_PATH = '/client'
-export const POST_SETUP_PATH = '/onboarding/setup'
+export const POST_SETUP_PATH = '/onboarding'
 
 // Sends a person who just signed up back to the page that sent them to auth
 // (ProtectedRoute saved it), as Auth/Callback does after a login, else to

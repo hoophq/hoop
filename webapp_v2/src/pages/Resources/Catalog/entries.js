@@ -18,6 +18,30 @@ export const LINUX_VM = {
 
 const POPULAR = new Set(['postgres', 'mysql', 'mongodb', 'ssh', 'linux-vm'])
 
+// Onboarding only. A click runs the entry's action instead of opening the modal.
+export const ONBOARDING_ENTRIES = [
+  {
+    id: 'postgres-demo',
+    badges: ['new'],
+    name: 'Demo PostgreSQL',
+    description: 'Access a preloaded database to see it in action.',
+    category: 'quickstart',
+    'icon-name': 'postgres',
+    tags: ['demo', 'quickstart', 'postgresql'],
+    action: true,
+  },
+  {
+    id: 'aws-discovery',
+    badges: ['beta'],
+    name: 'Automatic resource discovery',
+    description: 'Access your resources through your infrastructure providers.',
+    category: 'quickstart',
+    'icon-name': 'aws',
+    tags: ['aws', 'discovery', 'automatic', 'beta'],
+    action: true,
+  },
+]
+
 const BADGES = {
   new: { text: 'NEW', color: 'green' },
   beta: { text: 'BETA', color: 'gray' },
@@ -35,8 +59,12 @@ function capitalize(text) {
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase()
 }
 
-export function catalogEntries(connections = [], featureFlags = {}) {
-  return [...connections.filter((entry) => !hiddenByFlags(entry.id, featureFlags)), LINUX_VM]
+export function catalogEntries(connections = [], featureFlags = {}, onboarding = false) {
+  return [
+    ...connections.filter((entry) => !hiddenByFlags(entry.id, featureFlags)),
+    LINUX_VM,
+    ...(onboarding ? ONBOARDING_ENTRIES : []),
+  ]
 }
 
 export function hasFilters({ search, categories, tags }) {
@@ -57,9 +85,11 @@ export function filterEntries(entries, { search, categories, tags }) {
   )
 }
 
-export function popularEntries(entries, filters) {
+// Onboarding puts its own entries first, then the first 3 popular types.
+export function popularEntries(entries, filters, onboarding = false) {
   if (hasFilters(filters)) return []
-  return entries.filter((entry) => POPULAR.has(entry.id)).slice(0, 5)
+  const popular = entries.filter((entry) => POPULAR.has(entry.id)).slice(0, 5)
+  return onboarding ? [...ONBOARDING_ENTRIES, ...popular.slice(0, 3)] : popular
 }
 
 // [[category, entries]], sorted by category.

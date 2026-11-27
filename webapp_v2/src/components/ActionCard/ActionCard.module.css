@@ -1,9 +1,14 @@
-.actionCard {
+.card {
   display: block;
   width: 100%;
   border-radius: var(--hoop-card-radius);
 }
 
-.actionCard:hover {
+.card:hover:not(:disabled) {
   background-color: var(--hoop-surface-strong);
+}
+
+.card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }

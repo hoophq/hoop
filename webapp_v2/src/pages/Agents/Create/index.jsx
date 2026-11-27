@@ -1,4 +1,4 @@
-import { Title, Stack, Text, Grid } from '@mantine/core'
+import { Title, Stack, Text, Grid, Group } from '@mantine/core'
 import TextInput from '@/components/TextInput'
 import Button from '@/components/Button'
 import { useState, useEffect } from 'react'
@@ -36,7 +36,8 @@ const INSTALL_METHODS = [
   },
 ]
 
-function AgentsCreate() {
+// `onboarding`: Back goes to the previous page and Next continues the onboarding.
+function AgentsCreate({ onboarding = false }) {
   const navigate = useNavigate()
   const { createAgent, loading, agentKey, clearAgentKey, tagsPool, fetchTagsPool } = useAgentStore()
   const [name, setName] = useState('')
@@ -148,6 +149,12 @@ function AgentsCreate() {
       {hoopKey && (
         <DeploymentMain installMethod={installMethod} hoopKey={hoopKey} />
       )}
+
+      {onboarding && hoopKey && (
+        <Group justify="flex-end">
+          <Button onClick={() => navigate('/onboarding/setup')}>Next</Button>
+        </Group>
+      )}
     </Stack>
   )
 
@@ -157,7 +164,7 @@ function AgentsCreate() {
         variant="transparent"
         color="gray"
         leftSection={<ArrowLeft size={16} />}
-        onClick={() => navigate('/agents')}
+        onClick={() => (onboarding ? navigate(-1) : navigate('/agents'))}
         px={0}
         w="fit-content"
       >

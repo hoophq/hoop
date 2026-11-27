@@ -117,7 +117,7 @@ function SetupGuideTab({ credentials }) {
   )
 }
 
-export default function DetailModal({ entry, opened, onClose, isAdmin }) {
+export default function DetailModal({ entry, opened, onClose, isAdmin, setupPath = '/resources/new' }) {
   const navigate = useNavigate()
   if (!entry) return null
   const credentials = entry.resourceConfiguration?.credentials
@@ -138,7 +138,7 @@ export default function DetailModal({ entry, opened, onClose, isAdmin }) {
               View Docs
             </Button>
             {isAdmin && (
-              <Button onClick={() => navigate(`/resources/new?type=${encodeURIComponent(entry.id)}`)}>
+              <Button onClick={() => navigate(`${setupPath}?type=${encodeURIComponent(entry.id)}`)}>
                 Continue Setup
               </Button>
             )}
