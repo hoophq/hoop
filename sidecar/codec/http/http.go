@@ -112,6 +112,9 @@ type Codec struct {
 	// Inspector captures every request body on a lane that reads SQL, and
 	// withSQL drops those that reach no SQL route unless this is set.
 	keepBodies bool
+	// dropEncoding is set when the codec captures Content-Encoding for a
+	// SQL text route only; statements leave without it.
+	dropEncoding bool
 }
 
 // New builds an HTTP codec.
@@ -143,6 +146,10 @@ func New(o Options) *Codec {
 			headers = append(slices.Clip(o.Headers), header)
 		}
 	}
+	dropEncoding := o.SQL.readsText() && !slices.ContainsFunc(headers, func(h string) bool { return strings.EqualFold(h, contentEncoding) })
+	if dropEncoding {
+		headers = append(slices.Clip(headers), contentEncoding)
+	}
 	c := &Codec{
 		Inspector: codechttp.New(codechttp.Options{
 			CaptureBody:          o.CaptureBody,
@@ -162,7 +169,8 @@ func New(o Options) *Codec {
 		via:   viaFilter{origin: o.Origin},
 		sql:   newSQLReader(o.SQL),
 
-		keepBodies: o.CaptureBody || o.CaptureRequestBody,
+		keepBodies:   o.CaptureBody || o.CaptureRequestBody,
+		dropEncoding: dropEncoding,
 	}
 	c.via.guard.seen = o.Seen
 	if c.via.guard.seen == nil {
@@ -223,7 +231,22 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 			err = errors.Join(sqlErr, err)
 		}
 	}
+	c.dropAddedHeaders(stmts)
 	return stmts, n, err
+}
+
+func (c *Codec) dropAddedHeaders(stmts []inspect.Statement) {
+	if !c.dropEncoding {
+		return
+	}
+	for i := range stmts {
+		if d := stmts[i].HTTP; d != nil && d.Headers != nil {
+			delete(d.Headers, contentEncoding)
+			if len(d.Headers) == 0 {
+				d.Headers = nil
+			}
+		}
+	}
 }
 
 // EndOfStream is libhoop's, followed by the same fixups Decode applies: the
@@ -232,6 +255,7 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 func (c *Codec) EndOfStream(dir inspect.Direction) []inspect.Statement {
 	stmts := c.Inspector.EndOfStream(dir)
 	_ = c.fixup(dir, stmts)
+	c.dropAddedHeaders(stmts)
 	return stmts
 }
 
@@ -315,6 +339,7 @@ func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
+	c.dropAddedHeaders([]inspect.Statement{stmt})
 	return stmt
 }
 
@@ -325,6 +350,7 @@ func (c *Codec) InspectResponse(resp *http.Response, req *http.Request, body []b
 	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
+	c.dropAddedHeaders([]inspect.Statement{stmt})
 	return stmt
 }
 
