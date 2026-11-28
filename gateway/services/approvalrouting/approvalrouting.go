@@ -82,6 +82,13 @@ type RouteInput struct {
 	// (analyzer.StatementShape), never its literals.
 	Statement string
 	Routing   daemon.ApprovalRouting
+	// IncludeSidecarOwners includes the sidecar's owners as approvers and
+	// direct-message recipients (models.ReviewGroupSidecarOwners).
+	IncludeSidecarOwners bool
+	// NoDefaultChannel stops the org default channel from being offered or
+	// used as a fallback. A channel is posted to only when channels_candidates
+	// names it and it belongs to the listener.
+	NoDefaultChannel bool
 }
 
 // RouteDecision is the outcome of RouteReview.

@@ -48,6 +48,9 @@ type routeContext struct {
 	// unreachableChannels are the configured channel candidates the
 	// integration does not reach in this listener's scope. Never offered.
 	unreachableChannels []models.ReviewRoutingUndeliveredChannel
+	// unmatchedOwnerEmails are sidecar owner emails with no Hoop user yet,
+	// for notify-time email lookup when FlagSlackLookupByEmail is on.
+	unmatchedOwnerEmails []string
 }
 
 // causeChannelNotReachable is why a configured channel candidate is not
@@ -181,6 +184,12 @@ func (rc *routeContext) loadRequester(ctx context.Context, db *gorm.DB) error {
 // loadMembers reads the users of the candidates that may settle a review:
 // models.ApproverStatuses, active and invited.
 func (rc *routeContext) loadMembers(ctx context.Context, db *gorm.DB) error {
+	rc.groupMembers = map[string]int{}
+	rc.members = map[string]member{}
+	realGroups := models.StripReservedReviewGroups(rc.candidates)
+	if len(realGroups) == 0 {
+		return nil
+	}
 	var rows []struct {
 		ID    string `gorm:"column:id"`
 		Group string `gorm:"column:name"`
@@ -190,12 +199,10 @@ func (rc *routeContext) loadMembers(ctx context.Context, db *gorm.DB) error {
 		FROM private.users u
 		JOIN private.user_groups ug ON ug.user_id = u.id AND ug.org_id = u.org_id
 		WHERE u.org_id = ? AND u.status IN ? AND ug.name IN ?
-		ORDER BY u.id, ug.name`, rc.in.OrgID, models.ApproverStatuses, rc.candidates).Scan(&rows).Error
+		ORDER BY u.id, ug.name`, rc.in.OrgID, models.ApproverStatuses, realGroups).Scan(&rows).Error
 	if err != nil {
 		return fmt.Errorf("failed reading the members of the candidate groups: %w", err)
 	}
-	rc.groupMembers = map[string]int{}
-	rc.members = map[string]member{}
 	for _, r := range rows {
 		// The requester is no approver of their own statement: a group they
 		// alone are in has nobody to decide.
@@ -326,7 +333,7 @@ func (rc *routeContext) loadRoutes(ctx context.Context, db *gorm.DB) error {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	scope := ChannelScope{SidecarID: rc.in.SidecarID, ListenerName: rc.in.ListenerName}
+	scope := ChannelScope{SidecarID: rc.in.SidecarID, ListenerName: rc.in.ListenerName, NoDefaultChannel: rc.in.NoDefaultChannel}
 	for _, name := range names {
 		// Another key is ignored, as the sidecar warns.
 		if name != IntegrationSlack && name != IntegrationTeams {

@@ -337,11 +337,14 @@ func (r *Review) GetBlobInput() (string, error) {
 type ReviewViewer struct {
 	UserID           string
 	Groups           []string
+	OwnedSidecarIDs  []string
 	IsAuditorOrAdmin bool
 }
 
-// reviewVisibilityCondition: the requester, a reviewer group member, or a force approver as
-// doForcedReview resolves one. A sidecar review has no requester and reads no connection.
+// reviewVisibilityCondition: the requester, a reviewer group member, an owner
+// of the review's sidecar (when the review includes sidecar-owners), or a
+// force approver as doForcedReview resolves one. A sidecar review has no
+// requester and reads no connection.
 const reviewVisibilityCondition = `
 	AND (
 		(COALESCE(rv.listener_name, '') = '' AND rv.owner_id = ?)
@@ -349,6 +352,15 @@ const reviewVisibilityCondition = `
 			SELECT 1 FROM private.review_groups AS vg
 			WHERE vg.review_id = rv.id AND NOT vg.added_on_denial
 				AND vg.group_name = ANY((?)::text[])
+		)
+		OR (
+			COALESCE(rv.sidecar_id::text, '') <> ''
+			AND rv.sidecar_id::text = ANY((?)::text[])
+			AND EXISTS (
+				SELECT 1 FROM private.review_groups AS og
+				WHERE og.review_id = rv.id AND NOT og.added_on_denial
+					AND og.group_name = 'sidecar-owners'
+			)
 		)
 		OR CASE
 			WHEN rv.access_request_rule_name IS NOT NULL AND rv.force_approval_groups IS NOT NULL
@@ -365,8 +377,9 @@ func (v *ReviewViewer) condition() (string, []any) {
 	if v == nil || v.IsAuditorOrAdmin {
 		return "", nil
 	}
-	groups := pq.StringArray(append([]string{}, v.Groups...))
-	return reviewVisibilityCondition, []any{v.UserID, groups, groups, groups}
+	groups := pq.StringArray(StripReservedReviewGroups(v.Groups))
+	owned := pq.StringArray(append([]string{}, v.OwnedSidecarIDs...))
+	return reviewVisibilityCondition, []any{v.UserID, groups, owned, groups, groups}
 }
 
 func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
@@ -525,10 +538,19 @@ func publishReviewCreated(db *gorm.DB, rev *Review) {
 		log.With("review", rev.ID).Warnf("failed reading the approvers of the review, reason=%v", err)
 		return
 	}
+	var ownerEmails []string
+	if rev.SidecarID.Valid && rev.SidecarID.String != "" && ReviewHasSidecarOwners(rev.ReviewGroups) {
+		emails, err := ListSidecarOwnerEmails(db, rev.OrgID, rev.SidecarID.String)
+		if err != nil {
+			log.With("review", rev.ID).Warnf("failed reading the owners of the sidecar, reason=%v", err)
+		} else {
+			ownerEmails = emails
+		}
+	}
 	liveevents.Publish(rev.OrgID, liveevents.Event{
 		Type:     liveevents.ReviewCreated,
 		ID:       rev.ID,
-		Audience: &liveevents.Audience{Groups: groups, OwnerID: rev.OwnerID},
+		Audience: &liveevents.Audience{Groups: StripReservedReviewGroups(groups), Emails: ownerEmails, OwnerID: rev.OwnerID},
 	})
 }
 

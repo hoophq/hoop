@@ -27,6 +27,8 @@ const notifyTimeout = 5 * time.Minute
 type ChannelScope struct {
 	SidecarID    string
 	ListenerName string
+	// NoDefaultChannel omits the org default channel from the returned list.
+	NoDefaultChannel bool
 }
 
 // Channel is one channel an integration can post to.
@@ -48,14 +50,20 @@ type ReviewCard struct {
 	RiskLevel, Title          string
 	Statement                 string
 	ApprovalURL               string
-	Groups                    []string
-	ExpiresAt                 *time.Time
+	Groups    []string
+	ExpiresAt *time.Time
+	// ChannelNoticeOnly posts only a one-line notice (no statement, no
+	// buttons) in channels; direct messages still carry the full card.
+	ChannelNoticeOnly bool
 }
 
 // Targets are where one integration posts.
 type Targets struct {
 	ChannelIDs  []string
 	HoopUserIDs []string
+	// OwnerEmails are sidecar owner emails that have no Hoop user yet, for
+	// notify-time lookup by email when the org turns it on.
+	OwnerEmails []string
 }
 
 // PostResult reports a post. Failed maps a channel id or a hoop user id
@@ -110,8 +118,10 @@ type notifyPlan struct {
 	users     []string
 	// approvers are the members of the selected groups that may settle the
 	// review, requester removed, in id order: who the dm fallback reaches.
-	approvers []string
-	routes    []*route
+	approvers            []string
+	routes               []*route
+	noChannelFallback    bool
+	unmatchedOwnerEmails []string
 }
 
 // plan binds the selected users to the routes.
@@ -155,6 +165,9 @@ func (p *notifyPlan) withoutRequester(ctx context.Context, db *gorm.DB, reviewID
 // delivery, and dm means direct messages only. Without a Slack route
 // (teams only), a channel is allowed when a configured route allows one.
 func (p *notifyPlan) fallbackInChannels() bool {
+	if p.noChannelFallback {
+		return false
+	}
 	if r := p.route(IntegrationSlack); r != nil {
 		return r.delivery != DeliveryDM
 	}
@@ -223,7 +236,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 	rec.NotifiedUsers, rec.Channels, rec.Unreachable = nil, nil, nil
 	rec.UndeliveredChannels = slices.Clone(d.Record.UndeliveredChannels)
 	notified := map[string][]string{}
-	integrated, posted := false, false
+	integrated, posted, anyDelivered := false, false, false
 	var tried, triedUsers []string
 	users := d.plan.recipients(ctx, db, card.ReviewID)
 	for _, r := range d.plan.routes {
@@ -241,15 +254,19 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 		var t Targets
 		if dm {
 			t.HoopUserIDs = slices.Clone(users)
+			t.OwnerEmails = slices.Clone(d.plan.unmatchedOwnerEmails)
 		}
 		for _, ch := range r.channels {
 			t.ChannelIDs = append(t.ChannelIDs, ch.ID)
 		}
-		if len(t.HoopUserIDs) == 0 && len(t.ChannelIDs) == 0 {
+		if len(t.HoopUserIDs) == 0 && len(t.ChannelIDs) == 0 && len(t.OwnerEmails) == 0 {
 			continue
 		}
 		posted = true
 		res := r.notifier.Post(ctx, db, orgID, card, t)
+		if res.Posted > 0 {
+			anyDelivered = true
+		}
 		if r.integration == IntegrationSlack {
 			tried = append(tried, res.Tried...)
 			triedUsers = append(triedUsers, t.HoopUserIDs...)
@@ -281,7 +298,7 @@ func Notify(ctx context.Context, db *gorm.DB, orgID string, d *RouteDecision, ca
 	for _, id := range ids {
 		rec.NotifiedUsers = append(rec.NotifiedUsers, models.ReviewRoutingUser{ID: id, Integrations: notified[id]})
 	}
-	if len(rec.NotifiedUsers) == 0 && len(rec.Channels) == 0 {
+	if len(rec.NotifiedUsers) == 0 && len(rec.Channels) == 0 && !anyDelivered {
 		switch {
 		case !integrated:
 			rec.NotifyFallback = models.ReviewRoutingNotifyNoIntegration

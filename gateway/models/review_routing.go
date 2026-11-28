@@ -9,10 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// Review routing modes. Static means the AI routing fell back.
+// Review routing modes. Static means the AI routing fell back. Groups means
+// the level has static groups and notify: no model was asked.
 const (
 	ReviewRoutingModeAI     = "ai"
 	ReviewRoutingModeStatic = "static"
+	ReviewRoutingModeGroups = "groups"
 )
 
 // Notify fallbacks: why the routed notifications reached no user and no

@@ -13,6 +13,7 @@ import { opaSummary, resolveOPA } from '../features'
 import { configState } from '../status'
 import { saveErrorMessage } from '../useListenerEditor'
 import AuditModal from './AuditModal'
+import OwnersRow from './OwnersRow'
 
 // Wide enough for "Configuration", the longest label.
 const LABEL_WIDTH = 96
@@ -60,9 +61,13 @@ function Editing({ children, onSave, onCancel, saving, error }) {
   )
 }
 
-/** Global settings rows. Each save is a PATCH of that one key; the rest stays as stored. */
-export default function GlobalSettings({ sidecar, editable }) {
+/**
+ * Global settings rows. Each save is a PATCH of that one key; the rest stays as stored.
+ * `showOwners` adds the Owners row: only the details page loads them.
+ */
+export default function GlobalSettings({ sidecar, editable, showOwners = false }) {
   const patchSidecar = useSidecarStore((s) => s.patchSidecar)
+  const manyOwners = useSidecarStore((s) => (s.owners?.length ?? 0) > 1)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const opa = configured ? resolveOPA(null, config) : null
@@ -149,6 +154,11 @@ export default function GlobalSettings({ sidecar, editable }) {
             {sidecar.name}
           </Text>
         </Row>
+        {showOwners && (
+          <Row label="Owners" align={manyOwners ? 'flex-start' : 'center'}>
+            <OwnersRow sidecar={sidecar} />
+          </Row>
+        )}
         <Row label="Created">
           <Text size="sm">{`${new Date(sidecar.created_at).toLocaleString()} by ${sidecar.created_by}`}</Text>
         </Row>

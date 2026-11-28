@@ -26,6 +26,7 @@ import {
   ROUTING_STATIC,
   emptyRouting,
   isRoutingMode,
+  notifyToSpec,
   readRouting,
   routingToSpec,
 } from './approvalRouting'
@@ -40,11 +41,14 @@ export const APPROVER_RULE = 'approval_rule'
 // Who approves one level's hold. A new hold uses the AI agent. A hand-off
 // level keeps here the approver of its "Hold for approval" choice. `routing`
 // is a human level's "How approval is done" (ENG-663): a new hold lets the
-// AI decide. `groupsChosen` marks `groups` as a By groups selection, stored or
-// made, so an empty one means the administrators and is not seeded again.
+// AI decide. Its `notify` is also the one of a By groups level
+// (`approvers.<level>.notify`). `groupsChosen` marks `groups` as a By groups
+// selection, stored or made, so an empty one means the administrators and is
+// not seeded again.
 const emptyApproval = () => ({
   approver: APPROVER_AI,
   groups: [],
+  owners: false,
   groupsChosen: false,
   prompt: '',
   routing: emptyRouting(),
@@ -56,6 +60,7 @@ const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level
 const unseededStatic = (approval) =>
   approval.approver === APPROVER_HUMAN &&
   approval.routing.mode === ROUTING_STATIC &&
+  !approval.owners &&
   approval.groups.length === 0 &&
   !approval.groupsChosen
 
@@ -157,8 +162,9 @@ export function specToForm(spec, ruleName, reviewers) {
       // Only a person's entry has a way to approve; an AI agent's one turns
       // into a person with no mode yet, like a new hold.
       const human = read.approver === APPROVER_HUMAN
-      const routing = human ? readRouting(read.routing) : emptyRouting()
-      form.approval[level] = { ...emptyApproval(), ...read, routing, groupsChosen: human && routing.mode === ROUTING_STATIC }
+      const { notify, ...approver } = read
+      const routing = human ? readRouting(read.routing, notify) : emptyRouting()
+      form.approval[level] = { ...emptyApproval(), ...approver, routing, groupsChosen: human && routing.mode === ROUTING_STATIC }
     } else if (imported) {
       form.approval[level] = { ...emptyApproval(), approver: APPROVER_RULE }
     } else {
@@ -195,13 +201,20 @@ export const humanLevelsWithoutMode = (f) =>
 
 // approvers.<level> (ENG-680). A level an imported approval rule decides has
 // no entry: it files under that rule. An AI-routed human level writes its
-// routing and no groups: the sidecar refuses both. A human level with no mode
-// is refused by `save` before this runs (humanLevelsWithoutMode).
+// routing and no groups: the sidecar refuses both. A By groups level writes
+// its own notify, never beside routing, and none when no integration is on.
+// A human level with no mode is refused by `save` before this runs
+// (humanLevelsWithoutMode).
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
     if (approval.routing.mode === ROUTING_AI) return { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
     if (approval.routing.mode !== ROUTING_STATIC) return null
-    return approval.groups.length > 0 ? { type: APPROVER_HUMAN, groups: approval.groups } : { type: APPROVER_HUMAN }
+    const entry = { type: APPROVER_HUMAN }
+    if (approval.owners) entry.owners = true
+    if (approval.groups.length > 0) entry.groups = approval.groups
+    const notify = notifyToSpec(approval.routing, true)
+    if (notify) entry.notify = notify
+    return entry
   }
   if (approval.approver === APPROVER_AI) {
     const prompt = approval.prompt.trim()

@@ -56,10 +56,14 @@ export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
 export const isHandoffReview = (review) => review?.via_handoff === true
 export const HANDOFF_ROUTE = 'Hand-off → Hold for approval'
 
-// How the review found its approvers when its level uses AI routing
-// (ENG-663). Absent for a static level. `mode` "static" means the AI routing
-// fell back and every candidate group got the review.
+// How the review found or told its approvers (ENG-663). Absent for a level
+// with groups and no notify. `mode` "ai" is an AI routing decision; "static"
+// means the AI routing fell back and every candidate group got the review;
+// "groups" is a level with groups and notify, where nothing selects.
 export const ROUTING_AI = 'ai'
+export const ROUTING_GROUPS = 'groups'
+const ROUTING_MODE_LABEL = { [ROUTING_AI]: 'AI routing', [ROUTING_GROUPS]: 'By groups' }
+export const routingModeLabel = (mode) => ROUTING_MODE_LABEL[mode] ?? 'Static routing used'
 export const reviewRouting = (review) => (review?.routing && typeof review.routing === 'object' ? review.routing : null)
 
 const FALLBACK_CAUSE = {
@@ -88,29 +92,40 @@ export function notifyIntegrationLabel(entry) {
   return `${name}: ${DELIVERY_LABEL[entry.delivery] ?? DELIVERY_LABEL.dm}`
 }
 
-// routing.notify_fallback: the routed notifications reached nobody, so the
-// gateway fell back. routing.notify_fallback_delivery says how: "dm" sends a
-// Slack direct message to every approver of the selected groups (a dm route
-// never posts in a channel); otherwise it posts the review as one without
-// routing (the listener's Slack channels or the default channel).
+// routing.notify_fallback: the notifications reached nobody, so the gateway
+// fell back. routing.notify_fallback_delivery says how: "dm" sends a Slack
+// direct message to every approver of the selected groups (a dm route never
+// posts in a channel); otherwise it posts the review as one without routing
+// or notify (the listener's Slack channels or the default channel).
 // routing.notify_fallback_posted says whether that reached anyone. A value
-// this build does not know shows as sent.
+// this build does not know shows as sent. `mode` "groups" has no AI agent
+// and no routing to name.
 const NOTIFY_FALLBACK = {
   no_integration: 'No notify integration is set up.',
   no_target: 'The AI agent selected nobody it could reach.',
   not_delivered: 'Every routed notification failed.',
 }
-const fallbackOutcome = (delivery, posted) => {
+const GROUPS_NOTIFY_FALLBACK = {
+  no_integration: NOTIFY_FALLBACK.no_integration,
+  no_target: 'No approver of the groups could be reached.',
+  not_delivered: 'Every notification failed.',
+}
+const fallbackOutcome = (delivery, posted, byGroups) => {
   if (delivery === 'dm') {
     return posted === true
       ? 'Sent by direct message to every approver of the selected groups.'
       : 'No approver of the selected groups could get a direct message.'
   }
-  return posted === true ? 'Posted as without routing.' : 'The post as without routing reached nobody either.'
+  const post = byGroups ? 'without notify settings' : 'without routing'
+  return posted === true ? `Posted as ${post}.` : `The post as ${post} reached nobody either.`
 }
-export const notifyFallbackLabel = (value, posted, delivery) =>
-  `${NOTIFY_FALLBACK[value] ?? `The routed notifications reached nobody (${value}).`} ` +
-  fallbackOutcome(delivery, posted)
+export function notifyFallbackLabel(value, posted, delivery, mode) {
+  const byGroups = mode === ROUTING_GROUPS
+  const cause = byGroups
+    ? (GROUPS_NOTIFY_FALLBACK[value] ?? `The notifications reached nobody (${value}).`)
+    : (NOTIFY_FALLBACK[value] ?? `The routed notifications reached nobody (${value}).`)
+  return `${cause} ${fallbackOutcome(delivery, posted, byGroups)}`
+}
 
 // The table's rule cell: the approval rule, else the risk level and the route.
 export function ruleLabel(review) {
@@ -124,13 +139,21 @@ export function ruleLabel(review) {
 export const decidedGroups = (review) =>
   (review?.review_groups_data ?? []).filter((g) => g.status !== STATUS.PENDING)
 
+export const SIDECAR_OWNERS_GROUP = 'sidecar-owners'
+
+export const approverGroupLabel = (group) => (group === SIDECAR_OWNERS_GROUP ? 'Sidecar owners' : group)
+
 // An approval from outside the review's groups answers 200 and changes nothing,
 // so the button is what has to refuse it. `groups` is what /userinfo reports,
 // the same list the backend intersects; the role is the fallback for a gateway
-// that answers none.
+// that answers none. A real group named sidecar-owners never qualifies: the
+// backend sets viewer_is_owner when the caller owns the review's sidecar.
 export function canApprove(review, { groups, role, adminRoleName, approverRoleName }) {
+  if (review?.viewer_is_owner === true) return true
   const mine = groups?.length ? groups : roleToGroups(role, adminRoleName, approverRoleName)
-  return (review?.review_groups_data ?? []).some((g) => mine.includes(g.group))
+  return (review?.review_groups_data ?? []).some(
+    (g) => g.group !== SIDECAR_OWNERS_GROUP && mine.includes(g.group),
+  )
 }
 
 // The gateway appends a group row for an admin who rejects.

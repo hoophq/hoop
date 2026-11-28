@@ -46,6 +46,17 @@ const RISK_ACTIONS = {
   defer: 'reports',
 }
 
+// How a level with groups tells its approvers (`approvers.<level>.notify`):
+// "Slack direct message". A delivery the plane does not know is dm there.
+const NOTIFY_LABELS = { slack: 'Slack', teams: 'Teams' }
+const DELIVERY_LABELS = { channel: 'channel', both: 'direct message and channel' }
+function notifyDetail(notify) {
+  if (notify == null || typeof notify !== 'object' || Array.isArray(notify)) return ''
+  return Object.entries(notify)
+    .map(([key, route]) => `${NOTIFY_LABELS[key] ?? key} ${DELIVERY_LABELS[route?.delivery] ?? 'direct message'}`)
+    .join(' and ')
+}
+
 // Who approves a hold: the block's approval rule, the AI agent, or the members
 // of some groups, which an AI agent selects with AI routing (ENG-663). `sep`
 // follows "Human": ": " in a level, " " inside a hand-off list.
@@ -56,7 +67,13 @@ function approverDetail(read, sep) {
     const candidates = Array.isArray(read.routing.candidates) ? read.routing.candidates : []
     return `Human${sep}AI routing from ${candidates.length > 0 ? candidates.join(', ') : 'all groups'}`
   }
-  return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
+  const notify = notifyDetail(read.notify)
+  const who = read.owners
+    ? ['Sidecar owners', ...read.groups].join(', ')
+    : read.groups.length > 0
+      ? read.groups.join(', ')
+      : 'administrators'
+  return `Human${sep}${who}${notify ? ` by ${notify}` : ''}`
 }
 
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold

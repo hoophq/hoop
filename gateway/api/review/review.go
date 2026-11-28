@@ -70,6 +70,7 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 	case nil:
 		out := toOpenApiReview(review)
 		resolveRoutingUsers(models.DB, ctx.GetOrgID(), []*openapi.Review{out})
+		markViewerOwnedReviews(models.DB, ctx, []*openapi.Review{out})
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching approval request: %v", err)
@@ -105,6 +106,7 @@ func (h *handler) List(c *gin.Context) {
 		refs[i] = &openapiReviews[i]
 	}
 	resolveRoutingUsers(models.DB, ctx.GetOrgID(), refs)
+	markViewerOwnedReviews(models.DB, ctx, refs)
 
 	c.JSON(http.StatusOK, openapiReviews)
 }
@@ -135,13 +137,75 @@ func (h *handler) Count(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.ReviewCount{Count: count})
 }
 
-// Viewer takes the request's groups: the ones DoReview checks to decide.
+// Viewer takes the request's groups and owned sidecars: what DoReview checks
+// to decide.
 func Viewer(ctx *storagev2.Context) models.ReviewViewer {
+	var owned []string
+	if !ctx.IsAuditorOrAdminUser() && ctx.UserEmail != "" && models.DB != nil {
+		ids, err := models.ListOwnedSidecarIDs(models.DB, ctx.OrgID, ctx.UserEmail)
+		if err != nil {
+			log.With("org", ctx.OrgID).Warnf("failed reading the sidecars owned by %s, reason=%v", ctx.UserEmail, err)
+		} else {
+			owned = ids
+		}
+	}
 	return models.ReviewViewer{
 		UserID:           ctx.UserID,
 		Groups:           ctx.UserGroups,
+		OwnedSidecarIDs:  owned,
 		IsAuditorOrAdmin: ctx.IsAuditorOrAdminUser(),
 	}
+}
+
+// markViewerOwnedReviews sets ViewerIsOwner on every sidecar review in reviews
+// that allows sidecar-owners and belongs to a sidecar the caller owns.
+func markViewerOwnedReviews(db *gorm.DB, ctx *storagev2.Context, reviews []*openapi.Review) {
+	if db == nil || ctx.UserEmail == "" {
+		return
+	}
+	hasOwnerReview := false
+	for _, r := range reviews {
+		if r.SidecarID != nil && *r.SidecarID != "" && slices.ContainsFunc(r.ReviewGroupsData, func(g openapi.ReviewGroup) bool {
+			return g.Group == models.ReviewGroupSidecarOwners
+		}) {
+			hasOwnerReview = true
+			break
+		}
+	}
+	if !hasOwnerReview {
+		return
+	}
+	owned, err := models.ListOwnedSidecarIDs(db, ctx.OrgID, ctx.UserEmail)
+	if err != nil || len(owned) == 0 {
+		return
+	}
+	for _, r := range reviews {
+		if r.SidecarID != nil && slices.Contains(owned, *r.SidecarID) &&
+			slices.ContainsFunc(r.ReviewGroupsData, func(g openapi.ReviewGroup) bool {
+				return g.Group == models.ReviewGroupSidecarOwners
+			}) {
+			r.ViewerIsOwner = true
+		}
+	}
+}
+
+// effectiveReviewerGroups are the groups ctx may settle rev under: its real
+// groups with the reserved sidecar-owners name stripped, plus sidecar-owners
+// when rev is a sidecar review that names it and ctx's email owns that sidecar.
+func effectiveReviewerGroups(ctx *storagev2.Context, rev *models.Review) ([]string, error) {
+	groups := models.StripReservedReviewGroups(ctx.UserGroups)
+	if !IsSidecarReview(rev) || !rev.SidecarID.Valid || rev.SidecarID.String == "" ||
+		!models.ReviewHasSidecarOwners(rev.ReviewGroups) {
+		return groups, nil
+	}
+	ok, err := models.IsSidecarOwner(models.DB, ctx.OrgID, rev.SidecarID.String, ctx.UserEmail)
+	if err != nil {
+		return nil, fmt.Errorf("failed checking sidecar ownership, err=%w", err)
+	}
+	if ok {
+		groups = append(groups, models.ReviewGroupSidecarOwners)
+	}
+	return groups, nil
 }
 
 func ParseTimeWindow(timeWindow *openapi.ReviewSessionTimeWindow) (*models.ReviewTimeWindow, error) {
@@ -361,10 +425,16 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
+	reviewerGroups, err := effectiveReviewerGroups(ctx, rev)
+	if err != nil {
+		return nil, err
+	}
+	reviewCtx := contextWithGroups(ctx, reviewerGroups)
+
 	// A lapsed sidecar review never takes a decision. The read reports EXPIRED
 	// before the row records it.
 	if IsSidecarReview(rev) && rev.Status == models.ReviewStatusExpired {
-		return nil, refuseExpiredSidecarDecision(ctx, rev, status)
+		return nil, refuseExpiredSidecarDecision(reviewCtx, rev, status)
 	}
 	if timeWindow != nil {
 		if rev.TimeWindow != nil {
@@ -379,7 +449,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	// Read before doReview, which moves rev.Status to the decision.
 	fromStatus := rev.Status
 
-	rev, err = doReview(ctx, rev, connection, status, hasForced)
+	rev, err = doReview(reviewCtx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
 	}
@@ -444,6 +514,12 @@ func IsSidecarReview(rev *models.Review) bool {
 	return rev != nil && rev.ListenerName.Valid && rev.ListenerName.String != ""
 }
 
+func contextWithGroups(ctx *storagev2.Context, groups []string) *storagev2.Context {
+	apiCtx := *ctx.APIContext
+	apiCtx.UserGroups = groups
+	return &storagev2.Context{APIContext: &apiCtx}
+}
+
 func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
 	err := validateReviewStatusTransition(ctx, rev, status, IsSidecarReview(rev))
 	if err != nil {
@@ -455,7 +531,6 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 	} else {
 		rev, err = doIndividualReview(ctx, rev, connection, status)
 	}
-
 	if err != nil {
 		return nil, err
 	}
