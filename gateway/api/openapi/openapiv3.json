@@ -7544,6 +7544,46 @@
         },
         "type": "object"
       },
+      "openapi.SCIMTokenCreated": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "rotated_at": {
+            "type": "string"
+          },
+          "scim_base_url": {
+            "example": "https://hoop.example.com/api/scim/v2",
+            "type": "string"
+          },
+          "token": {
+            "example": "hscim_...",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SCIMTokenStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rotated_at": {
+            "type": "string"
+          },
+          "scim_base_url": {
+            "example": "https://hoop.example.com/api/scim/v2",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SSHServerConfig": {
         "properties": {
           "hosts_key": {
@@ -21496,6 +21536,88 @@
         "summary": "SAML | Login",
         "tags": [
           "Authentication"
+        ]
+      }
+    },
+    "/scim/token": {
+      "delete": {
+        "description": "Revokes the organization's SCIM 2.0 bearer token.",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Delete SCIM Token",
+        "tags": [
+          "SCIM"
+        ]
+      },
+      "get": {
+        "description": "Whether SCIM 2.0 provisioning is enabled and has an active bearer token.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SCIMTokenStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get SCIM Token Status",
+        "tags": [
+          "SCIM"
+        ]
+      },
+      "post": {
+        "description": "Generates a new SCIM 2.0 bearer token for the organization, replacing any previous token. The plaintext token is returned once.",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SCIMTokenCreated"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Create or Rotate SCIM Token",
+        "tags": [
+          "SCIM"
         ]
       }
     },
