@@ -54,6 +54,7 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
+	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
@@ -530,6 +531,23 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		userapi.DeleteGroup)
+
+	// SCIM 2.0 provisioning: admin token management and RFC 7644 endpoints.
+	r.GET("/scim/token",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiscim.GetTokenStatus)
+	r.POST("/scim/token",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiscim.CreateOrRotateToken)
+	r.DELETE("/scim/token",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiscim.DeleteToken)
+	apiscim.RegisterSCIMRoutes(r)
 
 	r.GET("/serviceaccounts",
 		apiroutes.ReadOnlyAccessRole,

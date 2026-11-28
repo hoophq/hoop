@@ -8693,6 +8693,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/scim/token": {
+            "get": {
+                "description": "Whether SCIM 2.0 provisioning is enabled and has an active bearer token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SCIM"
+                ],
+                "summary": "Get SCIM Token Status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SCIMTokenStatus"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generates a new SCIM 2.0 bearer token for the organization, replacing any previous token. The plaintext token is returned once.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SCIM"
+                ],
+                "summary": "Create or Rotate SCIM Token",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SCIMTokenCreated"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revokes the organization's SCIM 2.0 bearer token.",
+                "tags": [
+                    "SCIM"
+                ],
+                "summary": "Delete SCIM Token",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/search": {
             "get": {
                 "description": "Performs a search for connections and runbooks based on the provided criteria.",
@@ -20617,6 +20685,46 @@ const docTemplate = `{
                     "description": "Repository name",
                     "type": "string",
                     "example": "github.com/myorg/myrunbooks"
+                }
+            }
+        },
+        "openapi.SCIMTokenCreated": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "rotated_at": {
+                    "type": "string"
+                },
+                "scim_base_url": {
+                    "type": "string",
+                    "example": "https://hoop.example.com/api/scim/v2"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "hscim_..."
+                }
+            }
+        },
+        "openapi.SCIMTokenStatus": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "rotated_at": {
+                    "type": "string"
+                },
+                "scim_base_url": {
+                    "type": "string",
+                    "example": "https://hoop.example.com/api/scim/v2"
                 }
             }
         },

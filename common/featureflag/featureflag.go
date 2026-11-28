@@ -44,6 +44,9 @@ const FlagReviewNotifications = "experimental.review_notifications"
 // `hoop context use` when a gateway omits it: never remove it, flip Default.
 const FlagCLIContexts = "experimental.cli_contexts"
 
+// FlagSCIMProvisioning is spelled here for the same reason.
+const FlagSCIMProvisioning = "experimental.scim_provisioning"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -212,6 +215,13 @@ var catalog = map[string]Flag{
 		Name:        FlagReviewNotifications,
 		Description: "Notify approvers in the web app when a request waits for their approval: a toast while they look at the Control Plane, a browser notification when they do not. Only users who can approve the request get it. Needs a Control Plane tab open; browser notifications need the user's permission and HTTPS. With more than one gateway replica, only approvers whose tab is connected to the replica that received the request get it.",
 		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagSCIMProvisioning: {
+		Name:        FlagSCIMProvisioning,
+		Description: "Enable SCIM 2.0 provisioning endpoints (/api/scim/v2/Users and /api/scim/v2/Groups) so identity providers such as PingFederate, Okta and Entra ID can push user and group updates in the background using an organization SCIM bearer token. When off, SCIM endpoints refuse requests.",
+		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},

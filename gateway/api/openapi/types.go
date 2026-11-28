@@ -109,6 +109,23 @@ type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }
 
+// SCIMTokenStatus reports whether SCIM 2.0 provisioning is enabled and has an active token.
+type SCIMTokenStatus struct {
+	Enabled     bool       `json:"enabled"`
+	Configured  bool       `json:"configured"`
+	SCIMBaseURL string     `json:"scim_base_url" example:"https://hoop.example.com/api/scim/v2"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	RotatedAt   *time.Time `json:"rotated_at,omitempty"`
+}
+
+// SCIMTokenCreated is returned once when an admin creates or rotates the SCIM bearer token.
+type SCIMTokenCreated struct {
+	Token       string    `json:"token" example:"hscim_..."`
+	SCIMBaseURL string    `json:"scim_base_url" example:"https://hoop.example.com/api/scim/v2"`
+	CreatedAt   time.Time `json:"created_at"`
+	RotatedAt   time.Time `json:"rotated_at"`
+}
+
 // UserSignupOriginRequest carries the answer to the onboarding
 // "How did you hear about Hoop?" survey. A user may answer only once.
 type UserSignupOriginRequest struct {
