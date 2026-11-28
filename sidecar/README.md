@@ -1728,6 +1728,8 @@ An `approvers.<level>` entry has these keys:
 | `routing` | AI routing of a `human` level's approval request; see below. The alternative to `groups` |
 | `notify` | how the approvers of a `human` level with `groups` are told; see below. `routing` has its own |
 | `escalate` | after `after_sec` seconds (60 to 604800) with no decision, adds `groups` to the review and sends their members a Slack direct message |
+| `all_groups_must_approve` | when true, every approver group (including `owners` when set) must approve before the statement is released, matching Access Request Rules |
+| `min_approvals` | number of approver groups that must approve (default 1; refused beside `all_groups_must_approve` or above the group count) |
 | `prompt` | replaces the approval agent's guidance on an `ai_agent` level |
 
 A `human` level files its approval request with the risk level and no
@@ -1754,6 +1756,7 @@ These are refused at load, by `-validate`, and by the control plane at save:
 | `owners` and `routing` on one entry | they are alternatives |
 | `owners` on an `ai_agent` level | nobody would ask those people |
 | `escalate` on an `ai_agent` level, delay out of range, or empty/blank `escalate.groups` | invalid escalation |
+| `all_groups_must_approve` or `min_approvals` on `ai_agent`, both set together, or `min_approvals` above the group count | invalid approval count |
 | a blank entry in `routing.candidates` or in a `channels_candidates` | it matches no group or channel |
 | `approvers.<level>` on a level whose action does not hold | nothing is held |
 
@@ -1985,8 +1988,8 @@ otherwise none, and only administrators approve. So no one approves a level
 on an older sidecar that they could not approve on a new one: more
 oversight, not less. A block with `approvers` and no `approval_rule` is
 refused to such a sidecar, naming the capability and the release that adds
-it. So is a block whose `approvers` set `routing`, `notify`, `owners` or
-`escalate`, with or without an `approval_rule`.
+it. So is a block whose `approvers` set `routing`, `notify`, `owners`,
+`escalate`, `all_groups_must_approve` or `min_approvals`, with or without an `approval_rule`.
 
 **Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
 statement as before, then a second model turn, the hand-off agent, selects

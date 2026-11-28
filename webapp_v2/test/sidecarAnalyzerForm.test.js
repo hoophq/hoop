@@ -291,6 +291,23 @@ describe('escalation of unanswered holds', () => {
   })
 })
 
+describe('approval count on a human level', () => {
+  it('round-trips all_groups_must_approve and min_approvals', () => {
+    const spec = {
+      high: 'require_approval',
+      medium: 'require_approval',
+      approvers: {
+        high: { type: 'human', owners: true, groups: ['leads'], all_groups_must_approve: true },
+        medium: { type: 'human', groups: ['a', 'b', 'c'], min_approvals: 2 },
+      },
+    }
+    const form = specToForm(spec, 'r', [])
+    expect(form.approval.high.allGroupsMustApprove).toBe(true)
+    expect(form.approval.medium.minApprovals).toBe(2)
+    expect(formToSpec(form, 'r').approvers).toEqual(spec.approvers)
+  })
+})
+
 describe('a level card', () => {
   it('is configured once its approver is chosen, and a person has a way to approve', () => {
     expect(approverConfigured({ approver: 'ai_agent', routing: emptyRouting() })).toBe(true)

@@ -71,30 +71,55 @@ func ReviewPolicyFromRule(orgID string, rule *models.AccessRequestRule) (*Review
 // reserved sidecar-owners group is included, and empty Groups means only the
 // owners approve (not the administrators).
 func ReviewPolicyForLevel(orgID string, level *daemon.LevelApprover) *ReviewPolicy {
+	var names []string
 	if level != nil && level.Owners {
-		names := []string{models.ReviewGroupSidecarOwners}
+		names = append(names, models.ReviewGroupSidecarOwners)
 		for _, g := range NormalizeReviewerGroups(level.Groups) {
 			if g != models.ReviewGroupSidecarOwners {
 				names = append(names, g)
 			}
 		}
-		return reviewPolicyForNames(orgID, names)
+	} else {
+		var named []string
+		if level != nil {
+			named = level.Groups
+		}
+		names = reviewersOrDefault(named)
 	}
-	var named []string
-	if level != nil {
-		named = level.Groups
-	}
-	return ReviewPolicyForGroups(orgID, named)
+	return reviewPolicyForNames(orgID, names, levelMinApprovals(level, len(names)))
 }
 
 // ReviewPolicyForGroups is ReviewPolicyForLevel for groups chosen at filing,
 // such as the groups AI routing selected: one pending row per group, the
 // admin group when there is none, and one approval releases.
 func ReviewPolicyForGroups(orgID string, named []string) *ReviewPolicy {
-	return reviewPolicyForNames(orgID, reviewersOrDefault(named))
+	names := reviewersOrDefault(named)
+	return reviewPolicyForNames(orgID, names, analyzerApprovalMinApprovals)
 }
 
-func reviewPolicyForNames(orgID string, names []string) *ReviewPolicy {
+// ApplyLevelApprovalCount applies a level's all_groups_must_approve or
+// min_approvals setting onto a policy built after routing chooses its groups.
+func ApplyLevelApprovalCount(policy *ReviewPolicy, level *daemon.LevelApprover) {
+	if policy == nil || level == nil {
+		return
+	}
+	policy.MinApprovals = levelMinApprovals(level, len(policy.Groups))
+}
+
+func levelMinApprovals(level *daemon.LevelApprover, groupCount int) int {
+	if level == nil || groupCount <= 0 {
+		return analyzerApprovalMinApprovals
+	}
+	if level.AllGroupsMustApprove {
+		return groupCount
+	}
+	if level.MinApprovals > 0 {
+		return min(level.MinApprovals, groupCount)
+	}
+	return analyzerApprovalMinApprovals
+}
+
+func reviewPolicyForNames(orgID string, names []string, minApprovals int) *ReviewPolicy {
 	groups := make([]models.ReviewGroups, 0, len(names))
 	for _, groupName := range names {
 		groups = append(groups, models.ReviewGroups{
@@ -104,5 +129,5 @@ func reviewPolicyForNames(orgID string, names []string) *ReviewPolicy {
 			Status:    models.ReviewStatusPending,
 		})
 	}
-	return &ReviewPolicy{Groups: groups, MinApprovals: analyzerApprovalMinApprovals}
+	return &ReviewPolicy{Groups: groups, MinApprovals: minApprovals}
 }

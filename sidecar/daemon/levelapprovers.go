@@ -61,6 +61,16 @@ type LevelApprover struct {
 	// direct message when nobody decides within AfterSec seconds. The control
 	// plane reads it; the sidecar files the level and never the escalation.
 	Escalate *ApprovalEscalation `json:"escalate,omitempty" cap:"analyzer_approver_escalate"`
+
+	// AllGroupsMustApprove requires every approver group (including Owners
+	// when set) to approve a human level, matching Access Request Rules.
+	// Refused beside MinApprovals.
+	AllGroupsMustApprove bool `json:"all_groups_must_approve,omitempty" cap:"analyzer_approver_min_approvals"`
+
+	// MinApprovals sets how many approver groups must approve a human level
+	// (1 when unset, matching Access Request Rules). Refused beside
+	// AllGroupsMustApprove.
+	MinApprovals int `json:"min_approvals,omitempty" cap:"analyzer_approver_min_approvals"`
 }
 
 // CapabilityApprovalRouting means this build decodes approvers.<level>.routing.
@@ -87,6 +97,13 @@ const CapabilityApproverOwners = "analyzer_approver_owners"
 // decode approvers at all is refused: under approval_rule the escalation
 // would not run.
 const CapabilityApproverEscalate = "analyzer_approver_escalate"
+
+// CapabilityApproverMinApprovals means this build decodes
+// approvers.<level>.all_groups_must_approve and approvers.<level>.min_approvals.
+// The sidecar does nothing with either key, so ServeLevelApprovers strips them
+// for builds with approvers and without this cap; builds without approvers are
+// refused.
+const CapabilityApproverMinApprovals = "analyzer_approver_min_approvals"
 
 // Bounds of ApprovalEscalation.AfterSec: one minute to seven days, matching
 // the sidecar review TTL bounds on the control plane.
@@ -169,6 +186,13 @@ func (a *LevelApprovers) hasOwners() bool {
 func (a *LevelApprovers) escalates() bool {
 	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
 		func(l *LevelApprover) bool { return l != nil && l.Escalate != nil })
+}
+
+// hasMinApprovals reports a block where some level sets all_groups_must_approve
+// or min_approvals.
+func (a *LevelApprovers) hasMinApprovals() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && (l.AllGroupsMustApprove || l.MinApprovals != 0) })
 }
 
 // routedLevels lists the held levels whose human approver sets routing:
@@ -342,6 +366,7 @@ func validateLevelApprovers(la *LaneAnalyzerConfig, where string) []string {
 		problems = append(problems, validateNotify(a, at)...)
 		problems = append(problems, validateOwners(a, at)...)
 		problems = append(problems, validateEscalate(a, at)...)
+		problems = append(problems, validateMinApprovals(a, at)...)
 	}
 	return problems
 }
@@ -442,6 +467,52 @@ func validateEscalate(a *LevelApprover, at string) []string {
 	return problems
 }
 
+// validateMinApprovals refuses all_groups_must_approve / min_approvals where
+// invalid, matching Access Request Rules.
+func validateMinApprovals(a *LevelApprover, at string) []string {
+	if !a.AllGroupsMustApprove && a.MinApprovals == 0 {
+		return nil
+	}
+	var problems []string
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: approval count does not apply to type %q", at, analyzer.ApproverAIAgent))
+		return problems
+	}
+	if a.MinApprovals < 0 {
+		problems = append(problems, fmt.Sprintf("%s: min_approvals must be at least 1, got %d", at, a.MinApprovals))
+	}
+	if a.AllGroupsMustApprove && a.MinApprovals != 0 {
+		problems = append(problems, fmt.Sprintf("%s: all_groups_must_approve and min_approvals are alternatives; set one", at))
+	}
+	if a.MinApprovals > 0 && a.Routing == nil {
+		count := staticApproverGroupCount(a)
+		if a.MinApprovals > count {
+			problems = append(problems, fmt.Sprintf("%s: min_approvals (%d) exceeds the number of approver groups (%d)",
+				at, a.MinApprovals, count))
+		}
+	}
+	return problems
+}
+
+func staticApproverGroupCount(a *LevelApprover) int {
+	seen := map[string]struct{}{}
+	for _, g := range a.Groups {
+		g = strings.TrimSpace(g)
+		if g != "" {
+			seen[g] = struct{}{}
+		}
+	}
+	n := len(seen)
+	if a.Owners {
+		delete(seen, "sidecar-owners")
+		return len(seen) + 1
+	}
+	if n == 0 {
+		return 1
+	}
+	return n
+}
+
 // LaneApproverWarnings lists the routing and notify settings that the control
 // plane ignores or reads as another value. None is refused. Exported so the
 // control plane can show them at the save.
@@ -516,7 +587,8 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 		stripNotify := !hs.grants(CapabilityApproverNotify, since)
 		stripOwners := !hs.grants(CapabilityApproverOwners, since)
 		stripEscalate := !hs.grants(CapabilityApproverEscalate, since)
-		if !stripNotify && !stripOwners && !stripEscalate {
+		stripMin := !hs.grants(CapabilityApproverMinApprovals, since)
+		if !stripNotify && !stripOwners && !stripEscalate && !stripMin {
 			return cfg
 		}
 		return mapLevelApprovers(cfg, func(a *LevelApprover) bool {
@@ -533,6 +605,11 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 				a.Escalate = nil
 				changed = true
 			}
+			if stripMin && (a.AllGroupsMustApprove || a.MinApprovals != 0) {
+				a.AllGroupsMustApprove = false
+				a.MinApprovals = 0
+				changed = true
+			}
 			return changed
 		})
 	}
@@ -540,7 +617,8 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 	for i, l := range cfg.Listeners {
 		if l.Analyzer == nil || l.Analyzer.Approvers == nil || l.Analyzer.ApprovalRule == "" ||
 			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() ||
-			l.Analyzer.Approvers.hasOwners() || l.Analyzer.Approvers.escalates() {
+			l.Analyzer.Approvers.hasOwners() || l.Analyzer.Approvers.escalates() ||
+			l.Analyzer.Approvers.hasMinApprovals() {
 			continue
 		}
 		if listeners == nil {

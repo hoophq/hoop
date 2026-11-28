@@ -248,6 +248,7 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 	// once fileHeldStatement knows the review is new.
 	if approver != nil && approver.Routing != nil {
 		filing.routing = approver.Routing
+		filing.approver = approver
 	}
 	// A level with static groups and notify, or with owners, plans who is
 	// told at the same point. An owner level defaults to Slack direct messages
@@ -335,6 +336,7 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 				return
 			}
 			filing.policy = services.ReviewPolicyForGroups(sidecar.OrgID, decision.Groups)
+			services.ApplyLevelApprovalCount(filing.policy, filing.approver)
 			filing.routingRecord = decision.Record
 		}
 		if filing.notify != nil && decision == nil {
@@ -1169,6 +1171,7 @@ type sidecarFiling struct {
 	protocol string
 	// routing is the level's AI routing; nil files to the policy as is.
 	routing *daemon.ApprovalRouting
+	approver *daemon.LevelApprover
 	// notify is the level's static groups and notify, as the routing shape
 	// NotifyGroups reads; nil notifies as a level without notify.
 	notify *daemon.ApprovalRouting

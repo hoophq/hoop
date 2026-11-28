@@ -69,6 +69,8 @@ const emptyApproval = () => ({
   approver: APPROVER_AI,
   groups: [],
   owners: false,
+  allGroupsMustApprove: false,
+  minApprovals: '',
   groupsChosen: false,
   prompt: '',
   routing: emptyRouting(),
@@ -235,10 +237,17 @@ export const humanLevelsWithoutMode = (f) =>
 function approverToSpec(approval) {
   if (approval.approver === APPROVER_HUMAN) {
     const escalate = escalateToSpec(approval.escalate)
-    if (approval.routing.mode === ROUTING_AI) {
-      const entry = { type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) }
+    const applyCount = (entry) => {
+      if (approval.allGroupsMustApprove) {
+        entry.all_groups_must_approve = true
+      } else if (Number(approval.minApprovals) > 1) {
+        entry.min_approvals = Math.round(Number(approval.minApprovals))
+      }
       if (escalate) entry.escalate = escalate
       return entry
+    }
+    if (approval.routing.mode === ROUTING_AI) {
+      return applyCount({ type: APPROVER_HUMAN, routing: routingToSpec(approval.routing) })
     }
     if (approval.routing.mode !== ROUTING_STATIC) return null
     const entry = { type: APPROVER_HUMAN }
@@ -246,8 +255,7 @@ function approverToSpec(approval) {
     if (approval.groups.length > 0) entry.groups = approval.groups
     const notify = notifyToSpec(approval.routing, true)
     if (notify) entry.notify = notify
-    if (escalate) entry.escalate = escalate
-    return entry
+    return applyCount(entry)
   }
   if (approval.approver === APPROVER_AI) {
     const prompt = approval.prompt.trim()

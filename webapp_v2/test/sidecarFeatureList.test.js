@@ -119,4 +119,13 @@ describe('the approver of a held level in the analyzer summary', () => {
       'Every statement · high: hold (Human: Sidecar owners; escalates to risk after 15m)',
     )
   })
+
+  it('mentions all groups or min approvals when set', () => {
+    expect(detail({ type: 'human', owners: true, groups: ['leads'], all_groups_must_approve: true })).toBe(
+      'Every statement · high: hold (Human: Sidecar owners, leads, all groups)',
+    )
+    expect(detail({ type: 'human', groups: ['a', 'b', 'c'], min_approvals: 2 })).toBe(
+      'Every statement · high: hold (Human: a, b, c, min 2)',
+    )
+  })
 })

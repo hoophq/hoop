@@ -326,6 +326,33 @@ export default function ApprovalRouting({ approval, groupOptions, groupsLoaded, 
               value={approval.groups}
               onChange={(groups) => onChange({ groups, groupsChosen: true })}
             />
+            {((approval.owners ? 1 : 0) + (approval.groups?.length ?? 0) > 1 ||
+              approval.allGroupsMustApprove ||
+              Number(approval.minApprovals) > 1) && (
+              <Stack gap="sm">
+                <Switch
+                  label="All groups must approve"
+                  description="Every selected approver group (including Sidecar owners) must approve before the statement runs."
+                  checked={Boolean(approval.allGroupsMustApprove)}
+                  onChange={(event) =>
+                    onChange({
+                      allGroupsMustApprove: event.currentTarget.checked,
+                      minApprovals: event.currentTarget.checked ? '' : approval.minApprovals,
+                    })
+                  }
+                />
+                {!approval.allGroupsMustApprove && (
+                  <NumberInput
+                    label="Minimum approvals"
+                    description="Number of approver groups that must approve (1 when empty)."
+                    min={1}
+                    max={Math.max(1, (approval.owners ? 1 : 0) + (approval.groups?.length ?? 0))}
+                    value={approval.minApprovals ?? ''}
+                    onChange={(value) => onChange({ minApprovals: value === '' ? '' : Number(value) })}
+                  />
+                )}
+              </Stack>
+            )}
             <Notify routing={routing} onRoute={setRoute} />
           </>
         )
