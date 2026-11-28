@@ -48,6 +48,9 @@ type routeContext struct {
 	// unreachableChannels are the configured channel candidates the
 	// integration does not reach in this listener's scope. Never offered.
 	unreachableChannels []models.ReviewRoutingUndeliveredChannel
+	// unmatchedOwnerEmails are sidecar owner emails with no Hoop user yet,
+	// for notify-time email lookup when FlagSlackLookupByEmail is on.
+	unmatchedOwnerEmails []string
 }
 
 // causeChannelNotReachable is why a configured channel candidate is not

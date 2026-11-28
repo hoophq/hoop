@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/hoophq/hoop/common/featureflag"
 
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/models"
@@ -27,8 +30,9 @@ type recordedSlackPost struct {
 
 // recordingSlack records the channel, text and blocks of every chat.postMessage.
 type recordingSlack struct {
-	mu    sync.Mutex
-	posts []recordedSlackPost
+	mu      sync.Mutex
+	posts   []recordedSlackPost
+	byEmail map[string]string
 }
 
 func (f *recordingSlack) all() []recordedSlackPost {
@@ -47,18 +51,32 @@ func (f *recordingSlack) destinations() []string {
 
 func useRecordingSlack(t *testing.T, defaultChannel string) *recordingSlack {
 	t.Helper()
-	f := &recordingSlack{}
+	f := &recordingSlack{byEmail: map[string]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/users.lookupByEmail" {
+			email := strings.ToLower(r.FormValue("email"))
+			f.mu.Lock()
+			uid, ok := f.byEmail[email]
+			f.mu.Unlock()
+			if !ok {
+				fmt.Fprint(w, `{"ok":false,"error":"users_not_found"}`)
+				return
+			}
+			fmt.Fprintf(w, `{"ok":true,"user":{"id":%q,"team_id":"T1","is_email_confirmed":true,"profile":{"email":%q}}}`, uid, email)
+			return
+		}
 		p := recordedSlackPost{
 			Channel: r.FormValue("channel"),
 			Text:    r.FormValue("text"),
 			Blocks:  r.FormValue("blocks"),
 		}
-		f.mu.Lock()
-		f.posts = append(f.posts, p)
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/chat.postMessage" {
+			f.mu.Lock()
+			f.posts = append(f.posts, p)
+			f.mu.Unlock()
+		}
 		fmt.Fprintf(w, `{"ok":true,"channel":%q,"ts":"1.0"}`, p.Channel)
 	}))
 	t.Cleanup(srv.Close)
@@ -194,6 +212,24 @@ func TestALevelWithOwners(t *testing.T) {
 		approved, err := reviewapi.DoReview(userCtx(lead, "leads"), filed.Review.ID, models.ReviewStatusApproved, nil, false, "")
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusApproved, approved.Status)
+	})
+
+	t.Run("owner with no Hoop user gets DM via email lookup when flag is on; different Slack email stays silent", func(t *testing.T) {
+		slackFake := useRecordingSlack(t, "C-DEFAULT")
+		slackFake.byEmail["prelogin@example.com"] = "U-PRELOGIN"
+		sc := seedLevelSidecar(t, "owned-pre", "owned-pre-rule", ownerSpec("owned-pre-rule", ""))
+		setListenerChannels(t, sc, "C-LANE")
+		setOwners(t, sc, "prelogin@example.com", "different-email@example.com")
+
+		featureflag.Set(statusTestOrgID, featureflag.FlagSlackLookupByEmail, true)
+		t.Cleanup(func() { featureflag.Set(statusTestOrgID, featureflag.FlagSlackLookupByEmail, false) })
+
+		filed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM secret_table WHERE id = 4", "high"))
+		require.Eventually(t, func() bool { return len(slackFake.destinations()) == 1 }, 10*time.Second, 50*time.Millisecond)
+		assert.Equal(t, []string{"U-PRELOGIN"}, slackFake.destinations())
+		r := storedRouting(t, sc, filed.Review.ID)
+		require.NotNil(t, r)
+		assert.Empty(t, r.Channels)
 	})
 
 	t.Run("handshake strips owners for a build with approvers, refuses one without", func(t *testing.T) {

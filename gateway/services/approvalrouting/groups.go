@@ -59,6 +59,7 @@ func NotifyGroups(ctx context.Context, db *gorm.DB, in RouteInput) (*RouteDecisi
 
 	plan := rc.plan(rc.eligibleUsers(), groups)
 	plan.noChannelFallback = in.NoDefaultChannel
+	plan.unmatchedOwnerEmails = rc.unmatchedOwnerEmails
 	for _, r := range plan.routes {
 		ids, err := rc.staticChannels(ctx, db, r)
 		if err != nil {
@@ -94,12 +95,17 @@ func (rc *routeContext) loadSidecarOwners(ctx context.Context, db *gorm.DB) erro
 		}
 		rc.members[id] = m
 	}
+	unreg, err := models.ListUnregisteredSidecarOwnerEmails(db.WithContext(ctx), rc.in.OrgID, rc.in.SidecarID)
+	if err != nil {
+		return fmt.Errorf("failed reading unregistered owners of the sidecar: %w", err)
+	}
+	rc.unmatchedOwnerEmails = unreg
 	owners, err := models.ListSidecarOwners(db.WithContext(ctx), rc.in.OrgID, rc.in.SidecarID)
 	if err == nil {
 		for _, o := range owners {
 			if !o.Matched {
 				log.With("org", rc.in.OrgID, "sidecar", rc.in.SidecarID).
-					Warnf("sidecar owner %s matches no single Hoop user and cannot be notified", o.Email)
+					Warnf("sidecar owner %s matches no single Hoop user", o.Email)
 			}
 		}
 	}

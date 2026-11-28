@@ -3,7 +3,9 @@ package approvalrouting
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
@@ -112,7 +114,7 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 	if len(card.Groups) == 0 || len(card.Groups) >= SlackMaxButtons {
 		return fail(fmt.Sprintf("a review message cannot carry %d approval groups", len(card.Groups)))
 	}
-	slackIDOf, err := slackIDs(ctx, db, orgID, t.HoopUserIDs)
+	userInfoOf, err := slackUserContacts(ctx, db, orgID, t.HoopUserIDs)
 	if err != nil {
 		// A database error can name the host, the user and the database:
 		// the record, which every approval viewer reads, gets a fixed cause.
@@ -121,16 +123,31 @@ func (slackNotifier) Post(ctx context.Context, db *gorm.DB, orgID string, card R
 		return fail(causeSlackIDsUnread)
 	}
 
+	lookupByEmail := featureflag.IsEnabled(orgID, featureflag.FlagSlackLookupByEmail)
 	dmDestinations := []string{}
 	userOf := map[string]string{}
 	for _, u := range t.HoopUserIDs {
-		sid := slackIDOf[u]
+		info := userInfoOf[u]
+		sid := info.slackID
+		if sid == "" && lookupByEmail && info.email != "" {
+			if found := lookupVouchedSlackID(ctx, svc, orgID, info.email); found != "" {
+				sid = found
+				_, _ = models.LinkUserSlackID(db.WithContext(ctx), orgID, u, sid)
+			}
+		}
 		if sid == "" {
 			out.Failed[u] = causeNoSlackID
 			continue
 		}
 		userOf[sid] = u
 		dmDestinations = append(dmDestinations, sid)
+	}
+	if lookupByEmail {
+		for _, email := range t.OwnerEmails {
+			if sid := lookupVouchedSlackID(ctx, svc, orgID, email); sid != "" {
+				dmDestinations = append(dmDestinations, sid)
+			}
+		}
 	}
 	channels := normalizeNames(t.ChannelIDs)
 	out.Tried = channels
@@ -202,25 +219,67 @@ func ownerChannelNotice(card ReviewCard) string {
 	return fmt.Sprintf("An approval request for %s is waiting for the owner.", target)
 }
 
-// slackIDs maps users that may settle a review (models.ApproverStatuses)
-// onto their slack_id ("" without one).
-func slackIDs(ctx context.Context, db *gorm.DB, orgID string, userIDs []string) (map[string]string, error) {
-	out := map[string]string{}
+type userSlackContact struct {
+	slackID string
+	email   string
+}
+
+// lookupVouchedSlackID asks Slack for the user with email and returns its id
+// only when Slack vouches for it: active, non-bot, non-guest, same workspace
+// or grid, confirmed email equal to email.
+func lookupVouchedSlackID(ctx context.Context, svc *slackservice.SlackService, orgID, email string) string {
+	u, err := svc.LookupUserByEmail(ctx, email)
+	if err != nil {
+		if !slackservice.IsUserNotFound(err) {
+			log.With("org", orgID).Warnf("failed looking up slack user for %s, reason=%v", email, err)
+		}
+		return ""
+	}
+	if u.IdentityRefusal(svc.TeamID(), svc.EnterpriseID()) != slackservice.Vouched ||
+		!u.IsEmailConfirmed || !strings.EqualFold(u.Email, email) {
+		log.With("org", orgID).Infof("slack user %s for %s is not notified: slack does not vouch for it", u.ID, email)
+		return ""
+	}
+	return u.ID
+}
+
+// slackUserContacts maps users that may settle a review onto their slack_id
+// and email.
+func slackUserContacts(ctx context.Context, db *gorm.DB, orgID string, userIDs []string) (map[string]userSlackContact, error) {
+	out := map[string]userSlackContact{}
 	if len(userIDs) == 0 {
 		return out, nil
 	}
 	var rows []struct {
 		ID      string  `gorm:"column:id"`
 		SlackID *string `gorm:"column:slack_id"`
+		Email   string  `gorm:"column:email"`
 	}
-	err := db.WithContext(ctx).Raw(`SELECT id, slack_id FROM private.users WHERE org_id = ? AND id IN ? AND status IN ?`,
+	err := db.WithContext(ctx).Raw(`SELECT id, slack_id, email FROM private.users WHERE org_id = ? AND id IN ? AND status IN ?`,
 		orgID, userIDs, models.ApproverStatuses).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
+		c := userSlackContact{email: r.Email}
 		if r.SlackID != nil {
-			out[r.ID] = *r.SlackID
+			c.slackID = *r.SlackID
+		}
+		out[r.ID] = c
+	}
+	return out, nil
+}
+
+// slackIDs maps users that may settle a review onto their slack_id.
+func slackIDs(ctx context.Context, db *gorm.DB, orgID string, userIDs []string) (map[string]string, error) {
+	contacts, err := slackUserContacts(ctx, db, orgID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(contacts))
+	for id, c := range contacts {
+		if c.slackID != "" {
+			out[id] = c.slackID
 		}
 	}
 	return out, nil

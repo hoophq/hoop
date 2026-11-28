@@ -134,6 +134,26 @@ func ListSidecarOwnerEmails(db *gorm.DB, orgID, sidecarID string) ([]string, err
 	return emails, err
 }
 
+// ListUnregisteredSidecarOwnerEmails returns owner emails of sidecarID that
+// have no active or invited user in orgID yet. An email with two or more users
+// is ambiguous and omitted.
+func ListUnregisteredSidecarOwnerEmails(db *gorm.DB, orgID, sidecarID string) ([]string, error) {
+	if orgID == "" || sidecarID == "" {
+		return nil, nil
+	}
+	var emails []string
+	err := db.Raw(`
+		SELECT o.email
+		FROM private.sidecar_owners o
+		WHERE o.org_id = ? AND o.sidecar_id = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM private.users u
+			WHERE u.org_id = o.org_id AND lower(u.email) = o.email AND u.status IN ?
+		  )
+		ORDER BY o.position`, orgID, sidecarID, ApproverStatuses).Scan(&emails).Error
+	return emails, err
+}
+
 // ReviewHasSidecarOwners reports whether any non-denial group row of groups
 // is the reserved sidecar-owners group.
 func ReviewHasSidecarOwners(groups []ReviewGroups) bool {
