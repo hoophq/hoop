@@ -371,6 +371,16 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apisidecar.PutSlackChannels)
+	// The people responsible for the sidecar.
+	r.GET("/sidecars/:nameOrID/owners",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.GetOwners)
+	r.PUT("/sidecars/:nameOrID/owners",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apisidecar.PutOwners)
 }
 
 // sidecarOf names the sidecar a request authenticated as, for the telemetry

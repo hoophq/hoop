@@ -88,7 +88,7 @@ func Stream(c *gin.Context) {
 func allowed(ctx *storagev2.Context, ev liveevents.Event) bool {
 	switch ev.Type {
 	case liveevents.ReviewCreated:
-		return ev.Audience.Allows(ctx.UserID, ctx.UserGroups, ctx.IsAdmin())
+		return ev.Audience.Allows(ctx.UserID, ctx.UserEmail, ctx.UserGroups, ctx.IsAdmin())
 	default:
 		return ctx.IsAdmin()
 	}

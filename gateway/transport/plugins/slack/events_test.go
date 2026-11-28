@@ -57,7 +57,7 @@ func TestCheckSlackUser(t *testing.T) {
 
 // Enterprise Grid: a user whose home workspace is another one of the same grid
 // org is the same company; one from another grid is not.
-func TestSameWorkspace(t *testing.T) {
+func TestInWorkspace(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
 		userTeam, userGrid string
@@ -71,7 +71,7 @@ func TestSameWorkspace(t *testing.T) {
 		{"bot team unknown", "T2", "", "", "", true},
 	} {
 		u := &slackservice.SlackUser{TeamID: tt.userTeam, EnterpriseID: tt.userGrid}
-		if got := sameWorkspace(u, tt.botTeam, tt.botGrid); got != tt.want {
+		if got := u.InWorkspace(tt.botTeam, tt.botGrid); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
 	}
@@ -346,7 +346,7 @@ func TestResolveSidecarApprover(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			before := len(f.ephemerals)
-			ctx := p.resolveSidecarApprover(clickEvent(ss, tt.slackID, tt.group))
+			ctx := p.resolveSidecarApprover(clickEvent(ss, tt.slackID, tt.group), nil)
 			if tt.wantEmail != "" {
 				if ctx == nil {
 					t.Fatalf("refused with %q, want approver %s", f.last(), tt.wantEmail)
@@ -364,6 +364,32 @@ func TestResolveSidecarApprover(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("sidecar-owners admits an owner and refuses a non-owner with that IdP group", func(t *testing.T) {
+		sc := &models.Sidecar{OrgID: approverOrgID, Name: "owned-edge", KeyHash: models.HashAPIKey("hsc_owned"), CreatedBy: "test"}
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar: %v", err)
+		}
+		seedApprover(t, "sc-owner@corp.com", "active", "U-SCOWNER")
+		seedApprover(t, "sc-spoof@corp.com", "active", "U-SCSPOOF", models.ReviewGroupSidecarOwners)
+		if err := models.SetSidecarOwners(models.DB, approverOrgID, sc.ID, []string{"sc-owner@corp.com"}); err != nil {
+			t.Fatalf("seed owner: %v", err)
+		}
+		f.users["U-SCOWNER"] = slackUserJSON("U-SCOWNER", botTeamID, "sc-owner@corp.com", nil)
+		f.users["U-SCSPOOF"] = slackUserJSON("U-SCSPOOF", botTeamID, "sc-spoof@corp.com", nil)
+		rev := &models.Review{SidecarID: sql.NullString{String: sc.ID, Valid: true}}
+
+		ctx := p.resolveSidecarApprover(clickEvent(ss, "U-SCOWNER", models.ReviewGroupSidecarOwners), rev)
+		if ctx == nil || ctx.UserEmail != "sc-owner@corp.com" {
+			t.Fatalf("owner refused: ctx=%+v last=%q", ctx, f.last())
+		}
+		if ctx := p.resolveSidecarApprover(clickEvent(ss, "U-SCSPOOF", models.ReviewGroupSidecarOwners), rev); ctx != nil {
+			t.Fatalf("non-owner with real sidecar-owners group approved as %s", ctx.UserEmail)
+		}
+		if f.last() != cpNotOwnerMsg {
+			t.Errorf("ephemeral = %q, want %q", f.last(), cpNotOwnerMsg)
+		}
+	})
 }
 
 // The gateway path is main's, word for word: the association link for an

@@ -1,7 +1,9 @@
 // AI routing of a human level's approval (ENG-663): `approvers.<level>.routing`
-// of an analyzer spec, the alternative to `groups`. The form keeps the
-// fields it does not edit (`rest`, `otherNotify`), so a save writes them back
-// unchanged.
+// of an analyzer spec, the alternative to `groups`. A level with groups can
+// name its own `approvers.<level>.notify`, in the shape of `routing.notify`;
+// the form holds both in `routing.notify`, so a change of mode keeps it. The
+// form keeps the fields it does not edit (`rest`, `otherNotify`), so a save
+// writes them back unchanged.
 
 // "How approval is done" of a human level. The AI picks the groups (the
 // recommended default of a new hold); static routing sends the request to
@@ -92,14 +94,8 @@ export function routingModePatch(approval, mode, options, loaded) {
   return patch
 }
 
-// readRouting reads a stored `routing` value. Absent: static routing (the
-// level names its groups instead).
-export function readRouting(raw) {
-  if (!isObject(raw)) return emptyRouting(ROUTING_STATIC)
-  const routing = emptyRouting(ROUTING_AI)
-  const { candidates, notify, ...rest } = raw
-  routing.candidates = candidatesToSpec(stringList(candidates))
-  routing.rest = rest
+// readNotify reads a stored `notify` value into `routing`.
+function readNotify(routing, notify) {
   if (!isObject(notify)) return routing
   for (const [key, value] of Object.entries(notify)) {
     if (!(key in routing.notify)) {
@@ -118,28 +114,50 @@ export function readRouting(raw) {
   return routing
 }
 
-// notifyRouteToSpec writes one `notify` entry. A dm delivery is left out, and
-// channels are written only for a delivery that posts to channels.
-export function notifyRouteToSpec(route) {
+// readRouting reads a stored `routing` value. Absent: static routing (the
+// level names its groups instead), with the level's own `notify`.
+export function readRouting(raw, levelNotify) {
+  if (!isObject(raw)) return readNotify(emptyRouting(ROUTING_STATIC), levelNotify)
+  const routing = emptyRouting(ROUTING_AI)
+  const { candidates, notify, ...rest } = raw
+  routing.candidates = candidatesToSpec(stringList(candidates))
+  routing.rest = rest
+  return readNotify(routing, notify)
+}
+
+// notifyRouteToSpec writes one `notify` entry. Channels are written only for
+// a delivery that posts to channels. A dm delivery is left out, unless
+// `explicit`: a level with groups names it, since it stops the channel post.
+export function notifyRouteToSpec(route, explicit = false) {
   const entry = { ...route.rest }
   if (route.delivery !== DELIVERY_DM) {
     entry.delivery = route.delivery
     if (route.channels.length > 0) entry.channels_candidates = [...route.channels]
+  } else if (explicit) {
+    entry.delivery = DELIVERY_DM
   }
   return entry
 }
 
+// notifyToSpec writes the `notify` value: of `routing` for an AI-routed
+// level, of the level itself (`explicit`) for one with groups. Switched-off
+// integrations are left out. Null with no integration on: `notify` is then
+// left out and notifications work as before.
+export function notifyToSpec(routing, explicit = false) {
+  const notify = { ...routing.otherNotify }
+  for (const { key } of NOTIFY_INTEGRATIONS) {
+    if (routing.notify[key].on) notify[key] = notifyRouteToSpec(routing.notify[key], explicit)
+  }
+  return Object.keys(notify).length > 0 ? notify : null
+}
+
 // routingToSpec writes the `routing` value of an AI-routed level. Empty
-// candidates and switched-off integrations are left out; with no integration
-// on, `notify` is left out and notifications work as before.
+// candidates are left out.
 export function routingToSpec(routing) {
   const out = { ...routing.rest }
   const candidates = candidatesToSpec(routing.candidates)
   if (candidates) out.candidates = candidates
-  const notify = { ...routing.otherNotify }
-  for (const { key } of NOTIFY_INTEGRATIONS) {
-    if (routing.notify[key].on) notify[key] = notifyRouteToSpec(routing.notify[key])
-  }
-  if (Object.keys(notify).length > 0) out.notify = notify
+  const notify = notifyToSpec(routing)
+  if (notify) out.notify = notify
   return out
 }

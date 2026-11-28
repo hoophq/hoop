@@ -18,6 +18,13 @@ const EMPTY = {
   selectedId: null,
   selectedError: null,
   selectedLoading: false,
+  // The owners of the sidecar the details page shows: `[{ email, matched }]`,
+  // null until the first answer. `ownersId` is what was asked for, so a save
+  // that answers after the page left writes nothing.
+  owners: null,
+  ownersId: null,
+  ownersError: null,
+  ownersLoading: false,
 }
 
 // Install a written document. Only the on-screen sidecar's generation moves, so a
@@ -47,6 +54,7 @@ export const useSidecarStore = create((set, get) => ({
   listRequestId: 0,
   selectedRequestId: 0,
   refreshRequestId: 0,
+  ownersRequestId: 0,
   // Moves on logout, so a write that answers after it is dropped.
   session: 0,
 
@@ -57,6 +65,7 @@ export const useSidecarStore = create((set, get) => ({
       listRequestId: state.listRequestId + 1,
       selectedRequestId: state.selectedRequestId + 1,
       refreshRequestId: state.refreshRequestId + 1,
+      ownersRequestId: state.ownersRequestId + 1,
     })),
 
   fetchSidecars: async () => {
@@ -130,7 +139,44 @@ export const useSidecarStore = create((set, get) => ({
       selectedError: null,
       selectedLoading: false,
       selectedRequestId: state.selectedRequestId + 1,
+      owners: null,
+      ownersId: null,
+      ownersError: null,
+      ownersLoading: false,
+      ownersRequestId: state.ownersRequestId + 1,
     })),
+
+  fetchOwners: async (nameOrId) => {
+    const requestId = get().ownersRequestId + 1
+    set({ ownersRequestId: requestId, ownersId: nameOrId, owners: null, ownersError: null, ownersLoading: true })
+    try {
+      const { data } = await sidecarsService.getOwners(nameOrId)
+      set((state) =>
+        state.ownersRequestId === requestId ? { owners: data?.owners ?? [], ownersLoading: false } : {},
+      )
+    } catch (error) {
+      const message = error.response?.data?.message ?? error.message ?? 'Failed to load owners.'
+      set((state) => (state.ownersRequestId === requestId ? { ownersError: message, ownersLoading: false } : {}))
+    }
+  },
+
+  // Replaces the whole list; `{ ok, error }` like updateSidecar. The answer is
+  // the stored list, with `matched` read again for every owner.
+  saveOwners: async (nameOrId, owners) => {
+    try {
+      const { session, ownersId } = get()
+      const { data } = await sidecarsService.putOwners(nameOrId, owners)
+      const saved = data?.owners ?? []
+      set((state) =>
+        state.session === session && state.ownersId === ownersId
+          ? { owners: saved, ownersError: null, ownersLoading: false, ownersRequestId: state.ownersRequestId + 1 }
+          : {},
+      )
+      return { ok: true, owners: saved }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  },
 
   createSidecar: async ({ name }) => {
     const { data } = await sidecarsService.create({ name })
