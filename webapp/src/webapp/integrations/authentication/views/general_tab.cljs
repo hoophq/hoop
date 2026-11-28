@@ -1,7 +1,7 @@
 (ns webapp.integrations.authentication.views.general-tab
   (:require
    ["@radix-ui/themes" :refer [Box Grid Heading Text]]
-   ["lucide-react" :refer [BookLock GlobeLock KeyRound Shield]]
+   ["lucide-react" :refer [BookLock GlobeLock KeyRound Server Shield]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.callout-link :as callout-link]
@@ -31,6 +31,8 @@
                                                                  (= @selected-provider "jumpcloud")]}
                        {:id "okta" :name "Okta" :icon [icon-component "/icons/identity-providers/okta.svg"
                                                        (= @selected-provider "okta")]}
+                       ;; No logo file yet: an icon, as "Other" has.
+                       {:id "pingfederate" :name "PingFederate" :icon [:> Server {:size 20}]}
                        {:id "other" :name "Other" :icon [:> GlobeLock {:size 20}]}]]
          ^{:key (:id provider)}
          [selection-card/selection-card
