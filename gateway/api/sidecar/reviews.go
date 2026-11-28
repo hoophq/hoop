@@ -249,6 +249,21 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 	if approver != nil && approver.Routing != nil {
 		filing.routing = approver.Routing
 	}
+	// A level with static groups and notify, or with owners, plans who is
+	// told at the same point. An owner level defaults to Slack direct messages
+	// and never uses the organization default channel.
+	if approver != nil && approver.Routing == nil && (len(approver.Notify) > 0 || approver.Owners) {
+		notifyMap := approver.Notify
+		if approver.Owners && len(notifyMap) == 0 {
+			notifyMap = map[string]daemon.NotifyRoute{daemon.NotifySlack: {Delivery: daemon.DeliveryDM}}
+		}
+		filing.notify = &daemon.ApprovalRouting{Candidates: approver.Groups, Notify: notifyMap}
+		filing.includeOwners = approver.Owners
+	}
+	if approver != nil && approver.Escalate != nil {
+		filing.escalateAfterSec = approver.Escalate.AfterSec
+		filing.escalateGroups = models.StripReservedReviewGroups(services.NormalizeReviewerGroups(approver.Escalate.Groups))
+	}
 	// The limits are those of the block's approval_rule: an older build files
 	// this level under that rule, so both builds get the same limits.
 	if ruleName != "" {
@@ -320,6 +335,15 @@ func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 				return
 			}
 			filing.policy = services.ReviewPolicyForGroups(sidecar.OrgID, decision.Groups)
+			filing.routingRecord = decision.Record
+		}
+		if filing.notify != nil && decision == nil {
+			decision, err = notifyFiling(c.Request.Context(), sidecar, req, filing)
+			if err != nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+					"failed planning the notifications of the sidecar approval request")
+				return
+			}
 			filing.routingRecord = decision.Record
 		}
 
@@ -726,6 +750,12 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 func notifyFiledReview(sidecar *models.Sidecar, rev *models.Review, listenerName, display string,
 	decision *approvalrouting.RouteDecision) {
 	if !decision.Notifies() {
+		// An owner level never falls back to a channel post with the statement.
+		if models.ReviewHasSidecarOwners(rev.ReviewGroups) {
+			log.With("sid", rev.SessionID, "review-id", rev.ID).
+				Warnf("owner review has no configured notify integration; skipping channel post")
+			return
+		}
 		notifySlack(sidecar, rev, listenerName, display, nil)
 		return
 	}
@@ -763,25 +793,44 @@ func routeFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.Sidec
 	})
 }
 
+// notifyFiling plans who a new review of a level with static groups and
+// notify tells. No model is asked: every approver of the groups, and the
+// channels the notify keys allow.
+func notifyFiling(ctx context.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
+	filing sidecarFiling) (*approvalrouting.RouteDecision, error) {
+	return approvalrouting.NotifyGroups(context.WithoutCancel(ctx), models.DB, approvalrouting.RouteInput{
+		OrgID:                sidecar.OrgID,
+		Principal:            req.Principal,
+		SidecarID:            sidecar.ID,
+		ListenerName:         req.ListenerName,
+		Protocol:             filing.protocol,
+		RiskLevel:            filing.level,
+		Routing:              *filing.notify,
+		IncludeSidecarOwners: filing.includeOwners,
+		NoDefaultChannel:     filing.includeOwners,
+	})
+}
+
 // routingCard is the review message newSlackReviewRequest describes, for
 // any integration.
 func routingCard(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) approvalrouting.ReviewCard {
 	msg := newSlackReviewRequest(sidecar, rev, listenerName, display)
 	return approvalrouting.ReviewCard{
-		ReviewID:        msg.ID,
-		SessionID:       msg.SessionID,
-		Requester:       msg.Name,
-		RequesterEmail:  msg.Email,
-		RequesterGroups: msg.UserGroups,
-		Connection:      msg.Connection,
-		ConnectionType:  msg.ConnectionType,
-		Sidecar:         sidecar.Name,
-		Listener:        listenerName,
-		RiskLevel:       rev.RiskLevel.String,
-		Statement:       msg.Script,
-		ApprovalURL:     msg.WebappURL,
-		Groups:          msg.ApprovalGroups,
-		ExpiresAt:       msg.ExpiresAt,
+		ReviewID:          msg.ID,
+		SessionID:         msg.SessionID,
+		Requester:         msg.Name,
+		RequesterEmail:    msg.Email,
+		RequesterGroups:   msg.UserGroups,
+		Connection:        msg.Connection,
+		ConnectionType:    msg.ConnectionType,
+		Sidecar:           sidecar.Name,
+		Listener:          listenerName,
+		RiskLevel:         rev.RiskLevel.String,
+		Statement:         msg.Script,
+		ApprovalURL:       msg.WebappURL,
+		Groups:            msg.ApprovalGroups,
+		ChannelNoticeOnly: models.ReviewHasSidecarOwners(rev.ReviewGroups),
+		ExpiresAt:         msg.ExpiresAt,
 	}
 }
 
@@ -857,6 +906,10 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 	if connection == "" {
 		connection = listenerName
 	}
+	email := rev.OwnerEmail
+	if email == "" {
+		email = reviewOwnerEmail
+	}
 	return &slackservice.MessageReviewRequest{
 		// ID is load bearing: it becomes the message metadata and the button
 		// ids, and it is how a click finds its way back to this review.
@@ -870,7 +923,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		// saying who may act beats an empty field.
 		Name:           sidecar.Name,
 		UserGroups:     slackplugin.ParseGroups(rev.ReviewGroups),
-		Email:          reviewOwnerEmail,
+		Email:          email,
 		Connection:     connection,
 		ConnectionType: reviewSlackType,
 
@@ -1116,6 +1169,14 @@ type sidecarFiling struct {
 	protocol string
 	// routing is the level's AI routing; nil files to the policy as is.
 	routing *daemon.ApprovalRouting
+	// notify is the level's static groups and notify, as the routing shape
+	// NotifyGroups reads; nil notifies as a level without notify.
+	notify *daemon.ApprovalRouting
+	// includeOwners marks a level with approvers.<level>.owners set.
+	includeOwners bool
+	// escalateAfterSec and escalateGroups are copied onto the review at filing.
+	escalateAfterSec int
+	escalateGroups   []string
 	// routingRecord is the routing decision the review stores.
 	routingRecord *models.ReviewRouting
 }
@@ -1136,12 +1197,16 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 		return nil, nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
 	}
 
+	ownerEmail := sidecarReviewOwnerEmail(models.DB, sidecar)
+
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
 	sess := newSidecarSession(sidecar, sessionID, display, now)
+	sess.UserEmail = ownerEmail
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, filing, now)
+	rev.OwnerEmail = ownerEmail
 	if mirror != nil {
 		sess.Connection = mirror.Name
 		rev.ConnectionName = mirror.Name
@@ -1152,6 +1217,17 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 		return nil, nil, err
 	}
 	return rev, expiredIDs, nil
+}
+
+// sidecarReviewOwnerEmail returns the sidecar's first owner email when it has
+// owners, else the stand-in reviewOwnerEmail.
+func sidecarReviewOwnerEmail(db *gorm.DB, sidecar *models.Sidecar) string {
+	if db != nil && sidecar != nil {
+		if emails, err := models.ListSidecarOwnerEmails(db, sidecar.OrgID, sidecar.ID); err == nil && len(emails) > 0 {
+			return emails[0]
+		}
+	}
+	return reviewOwnerEmail
 }
 
 // newSidecarSession is the session a sidecar review waits in. Its user is the sidecar.
@@ -1197,7 +1273,6 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		OwnerID:    sidecar.ID,
 		OwnerEmail: reviewOwnerEmail,
 		OwnerName:  ptr.String(sidecar.Name),
-
 		MinApprovals:          &filing.policy.MinApprovals,
 		ReviewGroups:          filing.policy.Groups,
 		ForceApprovalGroups:   filing.forceGroups,
@@ -1209,9 +1284,26 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		// Fixed at filing like the policy, so a rule edit moves no live review.
 		ExpiresAt:      models.SidecarReviewDeadline(now, filing.pendingTTL),
 		ApprovalTTLSec: copyInt(filing.approvalTTL),
+		EscalateAt:     escalationDeadline(now, filing.escalateAfterSec, filing.escalateGroups),
+		EscalateGroups: escalationGroups(filing.escalateAfterSec, filing.escalateGroups),
 
 		CreatedAt: now,
 	}
+}
+
+func escalationDeadline(now time.Time, afterSec int, groups []string) *time.Time {
+	if afterSec <= 0 || len(groups) == 0 {
+		return nil
+	}
+	t := now.Add(time.Duration(afterSec) * time.Second)
+	return &t
+}
+
+func escalationGroups(afterSec int, groups []string) pq.StringArray {
+	if afterSec <= 0 || len(groups) == 0 {
+		return nil
+	}
+	return pq.StringArray(groups)
 }
 
 func copyInt(v *int) *int {

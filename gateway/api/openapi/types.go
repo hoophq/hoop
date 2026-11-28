@@ -324,6 +324,26 @@ type SidecarListenerSlackChannels struct {
 	Channels []string `json:"channels" example:"C0987654321"`
 }
 
+// SidecarOwnersRequest replaces the owners of a sidecar.
+type SidecarOwnersRequest struct {
+	// The emails of the owners, in order. An empty list removes them all
+	Owners []string `json:"owners" binding:"required" example:"ana@example.com"`
+}
+
+// SidecarOwners is the people responsible for a sidecar.
+type SidecarOwners struct {
+	// The owners, in the order they were set
+	Owners []SidecarOwner `json:"owners"`
+}
+
+// SidecarOwner is one owner of a sidecar.
+type SidecarOwner struct {
+	// The email of the owner, in lowercase
+	Email string `json:"email" example:"ana@example.com"`
+	// True when exactly one active or invited user has this email
+	Matched bool `json:"matched"`
+}
+
 type SidecarUpdateRequest struct {
 	// The daemon configuration this sidecar serves. Replaces the stored
 	// document entirely.
@@ -1762,12 +1782,16 @@ type Review struct {
 	ViaHandoff bool `json:"via_handoff,omitempty" readonly:"true" example:"false"`
 	// The AI routing decision. Absent on an approval request with static routing
 	Routing *ReviewRouting `json:"routing,omitempty" readonly:"true"`
+	// True when the caller is an owner of the review's sidecar and the review allows owners to approve
+	ViewerIsOwner bool `json:"viewer_is_owner,omitempty" readonly:"true"`
 }
 
-// ReviewRouting is the AI routing decision of an approval request (ENG-663).
+// ReviewRouting is how an approval request found its approvers and who was
+// told: the AI routing decision (ENG-663), or the notify of a level with
+// static groups.
 type ReviewRouting struct {
-	// ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request
-	Mode string `json:"mode" enums:"ai,static" readonly:"true" example:"ai"`
+	// ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request. groups: the level has static groups and notify, and no AI was asked
+	Mode string `json:"mode" enums:"ai,static,groups" readonly:"true" example:"ai"`
 	// Why the AI routing fell back. Set with mode static
 	FallbackCause string `json:"fallback_cause,omitempty" enums:"no_provider,timeout,provider_error,no_tool_call,refusal,invalid_decision,no_valid_group" readonly:"true" example:"timeout"`
 	// Detail of the fallback: fixed text per cause. Provider errors, database errors and the model's own words are in the gateway log only

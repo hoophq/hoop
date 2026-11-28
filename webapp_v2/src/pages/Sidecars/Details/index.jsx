@@ -30,6 +30,7 @@ export default function SidecarDetailsPage() {
   const clearSelected = useSidecarStore((s) => s.clearSelected)
   const deleteSidecar = useSidecarStore((s) => s.deleteSidecar)
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
+  const fetchOwners = useSidecarStore((s) => s.fetchOwners)
 
   // Each check-in of this sidecar re-reads it, so a sidecar started after the
   // page opened shows its file without a reload.
@@ -51,10 +52,12 @@ export default function SidecarDetailsPage() {
   const showLoader = loading
 
   // Dropping the record on unmount keeps this page from opening on a stale one.
+  // clearSelected drops the owners too.
   useEffect(() => {
     fetchSidecar(id)
+    fetchOwners(id)
     return clearSelected
-  }, [id, fetchSidecar, clearSelected])
+  }, [id, fetchSidecar, fetchOwners, clearSelected])
 
   const confirmDelete = async () => {
     setDeletingBusy(true)
@@ -104,6 +107,7 @@ export default function SidecarDetailsPage() {
             <SidecarDetails
               sidecar={selected}
               editable
+              showOwners
               onDelete={() => setDeleting(true)}
               listenerActions={{
                 onAdd: () => navigate(`/sidecars/${encodeURIComponent(selected.id)}/listeners/new`),

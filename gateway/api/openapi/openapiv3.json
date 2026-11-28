@@ -6255,6 +6255,11 @@
             "example": false,
             "readOnly": true,
             "type": "boolean"
+          },
+          "viewer_is_owner": {
+            "description": "True when the caller is an owner of the review's sidecar and the review allows owners to approve",
+            "readOnly": true,
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -6474,10 +6479,11 @@
             "type": "array"
           },
           "mode": {
-            "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request",
+            "description": "ai: the AI selected the groups. static: the AI routing fell back, every candidate got the approval request. groups: the level has static groups and notify, and no AI was asked",
             "enum": [
               "ai",
-              "static"
+              "static",
+              "groups"
             ],
             "example": "ai",
             "readOnly": true,
@@ -9378,6 +9384,50 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "openapi.SidecarOwner": {
+        "properties": {
+          "email": {
+            "description": "The email of the owner, in lowercase",
+            "example": "ana@example.com",
+            "type": "string"
+          },
+          "matched": {
+            "description": "True when exactly one active or invited user has this email",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarOwners": {
+        "properties": {
+          "owners": {
+            "description": "The owners, in the order they were set",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarOwner"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarOwnersRequest": {
+        "properties": {
+          "owners": {
+            "description": "The emails of the owners, in order. An empty list removes them all",
+            "example": [
+              "ana@example.com"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "owners"
+        ],
         "type": "object"
       },
       "openapi.SidecarPatchRequest": {
@@ -26092,6 +26142,140 @@
           }
         },
         "summary": "Clear Sidecar Identity",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/{nameOrID}/owners": {
+      "get": {
+        "description": "The people responsible for the sidecar, by email, and whether each email matches one user.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarOwners"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Sidecar Owners",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "put": {
+        "description": "Replace the owners of the sidecar. An empty list removes them all. An owner is an email; the user with that email can sign in later.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarOwnersRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarOwners"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Set Sidecar Owners",
         "tags": [
           "Sidecars"
         ]

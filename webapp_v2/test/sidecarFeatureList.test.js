@@ -81,3 +81,42 @@ describe('the sidecar-level feature card', () => {
     expect(card('guardrails', bound).rules.map((r) => r.name)).toEqual(['no-drop', 'no-admin-api'])
   })
 })
+
+describe('the approver of a held level in the analyzer summary', () => {
+  const detail = (approver) => {
+    const listener = { name: 'appdb', analyzer: { high: 'require_approval', approvers: { high: approver } } }
+    return featureList(listener, { listeners: [listener] }, []).find((f) => f.key === 'ai-analyzer').rules[0].detail
+  }
+
+  it('names the groups, and the delivery when notify is set', () => {
+    expect(detail({ type: 'human', groups: ['dba'] })).toBe('Every statement · high: hold (Human: dba)')
+    expect(detail({ type: 'human', groups: ['dba'], notify: { slack: { delivery: 'dm' } } })).toBe(
+      'Every statement · high: hold (Human: dba by Slack direct message)',
+    )
+    expect(detail({ type: 'human', notify: { slack: {} } })).toBe(
+      'Every statement · high: hold (Human: administrators by Slack direct message)',
+    )
+    expect(
+      detail({ type: 'human', groups: ['dba', 'sre'], notify: { slack: { delivery: 'both' }, teams: { delivery: 'channel' } } }),
+    ).toBe('Every statement · high: hold (Human: dba, sre by Slack direct message and channel and Teams channel)')
+  })
+
+  it('keeps the summary of a routed level', () => {
+    expect(detail({ type: 'human', routing: { candidates: ['dba'], notify: { slack: {} } } })).toBe(
+      'Every statement · high: hold (Human: AI routing from dba)',
+    )
+  })
+
+  it('names Sidecar owners when owners is set', () => {
+    expect(detail({ type: 'human', owners: true })).toBe('Every statement · high: hold (Human: Sidecar owners)')
+    expect(detail({ type: 'human', owners: true, groups: ['dba'] })).toBe(
+      'Every statement · high: hold (Human: Sidecar owners, dba)',
+    )
+  })
+
+  it('mentions escalation when escalate is set', () => {
+    expect(detail({ type: 'human', owners: true, escalate: { after_sec: 900, groups: ['risk'] } })).toBe(
+      'Every statement · high: hold (Human: Sidecar owners; escalates to risk after 15m)',
+    )
+  })
+})

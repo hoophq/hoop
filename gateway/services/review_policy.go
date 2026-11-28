@@ -67,8 +67,19 @@ func ReviewPolicyFromRule(orgID string, rule *models.AccessRequestRule) (*Review
 
 // ReviewPolicyForLevel is the policy of a review filed under a human risk
 // level: one pending row per group of approvers.<level>, or the admin group
-// when it names none, and one approval releases.
+// when it names none, and one approval releases. With Owners set, the
+// reserved sidecar-owners group is included, and empty Groups means only the
+// owners approve (not the administrators).
 func ReviewPolicyForLevel(orgID string, level *daemon.LevelApprover) *ReviewPolicy {
+	if level != nil && level.Owners {
+		names := []string{models.ReviewGroupSidecarOwners}
+		for _, g := range NormalizeReviewerGroups(level.Groups) {
+			if g != models.ReviewGroupSidecarOwners {
+				names = append(names, g)
+			}
+		}
+		return reviewPolicyForNames(orgID, names)
+	}
 	var named []string
 	if level != nil {
 		named = level.Groups
@@ -80,7 +91,10 @@ func ReviewPolicyForLevel(orgID string, level *daemon.LevelApprover) *ReviewPoli
 // such as the groups AI routing selected: one pending row per group, the
 // admin group when there is none, and one approval releases.
 func ReviewPolicyForGroups(orgID string, named []string) *ReviewPolicy {
-	names := reviewersOrDefault(named)
+	return reviewPolicyForNames(orgID, reviewersOrDefault(named))
+}
+
+func reviewPolicyForNames(orgID string, names []string) *ReviewPolicy {
 	groups := make([]models.ReviewGroups, 0, len(names))
 	for _, groupName := range names {
 		groups = append(groups, models.ReviewGroups{

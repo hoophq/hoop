@@ -41,26 +41,28 @@ func TestStopEndsTheSubscription(t *testing.T) {
 }
 
 func TestAudienceAllowsTheGroupMembersButNotTheOwner(t *testing.T) {
-	a := &Audience{Groups: []string{"dba", "sre"}, OwnerID: "owner"}
+	a := &Audience{Groups: []string{"dba", "sre"}, Emails: []string{"ana@example.com"}, OwnerID: "owner"}
 	for _, tc := range []struct {
 		name    string
 		user    string
+		email   string
 		groups  []string
 		isAdmin bool
 		want    bool
 	}{
-		{"a reviewer", "u1", []string{"eng", "dba"}, false, true},
-		{"a force approver", "u2", []string{"sre"}, false, true},
-		{"outside the groups", "u3", []string{"eng"}, false, false},
-		{"an admin outside the groups", "u4", []string{"admin"}, true, false},
-		{"the owner in a group", "owner", []string{"dba"}, false, false},
-		{"the owner as an admin in a group", "owner", []string{"dba", "admin"}, true, true},
+		{"a reviewer", "u1", "u1@example.com", []string{"eng", "dba"}, false, true},
+		{"a force approver", "u2", "u2@example.com", []string{"sre"}, false, true},
+		{"a named email", "u5", "Ana@Example.com", []string{"eng"}, false, true},
+		{"outside the groups", "u3", "u3@example.com", []string{"eng"}, false, false},
+		{"an admin outside the groups", "u4", "u4@example.com", []string{"admin"}, true, false},
+		{"the owner in a group", "owner", "owner@example.com", []string{"dba"}, false, false},
+		{"the owner as an admin in a group", "owner", "owner@example.com", []string{"dba", "admin"}, true, true},
 	} {
-		if got := a.Allows(tc.user, tc.groups, tc.isAdmin); got != tc.want {
+		if got := a.Allows(tc.user, tc.email, tc.groups, tc.isAdmin); got != tc.want {
 			t.Errorf("%s: Allows = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if (*Audience)(nil).Allows("u1", []string{"dba"}, true) {
+	if (*Audience)(nil).Allows("u1", "ana@example.com", []string{"dba"}, true) {
 		t.Error("an event with no audience reached a user")
 	}
 }

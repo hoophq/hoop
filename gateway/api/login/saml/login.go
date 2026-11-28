@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	saml2 "github.com/russellhaering/gosaml2"
 )
@@ -268,6 +269,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		redirectToErrURL(c, login.Redirect, "unable to save user state")
 		return
 	}
+	go slackservice.LinkUserAfterLogin(usr.OrgID, usr.Email)
 
 	// generate a new access token for the user base on the saml assertion
 	log.Infof("obtained user information, sync-groups=%v (%v), notOnOrAfter=%v",

@@ -41,11 +41,66 @@ type LevelApprover struct {
 	// the alternative to Groups, never beside it. The control plane reads
 	// it; the sidecar files the level and never the routing.
 	Routing *ApprovalRouting `json:"routing,omitempty" cap:"analyzer_approval_routing"`
+
+	// Notify maps an integration (slack, teams) onto how it tells the
+	// approvers of a human level with static groups. Nothing selects: every
+	// approver of the groups gets the direct message, and every channel the
+	// key allows gets the post. Absent keeps the channel post of a level
+	// without it. A level with routing sets routing.notify, never this.
+	// The control plane reads it; the sidecar files the level and never the
+	// notify.
+	Notify map[string]NotifyRoute `json:"notify,omitempty" cap:"analyzer_approver_notify"`
+
+	// Owners lets the sidecar's owners approve a human level, alongside any
+	// Groups named on the same entry. Empty Groups with Owners means only the
+	// owners approve, not the administrators. The control plane reads it; the
+	// sidecar files the level and never the owners.
+	Owners bool `json:"owners,omitempty" cap:"analyzer_approver_owners"`
+
+	// Escalate adds Groups to a pending review and notifies their members by
+	// direct message when nobody decides within AfterSec seconds. The control
+	// plane reads it; the sidecar files the level and never the escalation.
+	Escalate *ApprovalEscalation `json:"escalate,omitempty" cap:"analyzer_approver_escalate"`
 }
 
 // CapabilityApprovalRouting means this build decodes approvers.<level>.routing.
 // No downgrade exists: static groups would page other people.
 const CapabilityApprovalRouting = "analyzer_approval_routing"
+
+// CapabilityApproverNotify means this build decodes approvers.<level>.notify.
+// The sidecar does nothing with the key, so ServeLevelApprovers serves a
+// build without it the document with the key removed. A build that does not
+// decode approvers at all is refused: it files under approval_rule, and the
+// control plane would post in a channel what notify keeps out of one.
+const CapabilityApproverNotify = "analyzer_approver_notify"
+
+// CapabilityApproverOwners means this build decodes approvers.<level>.owners.
+// The sidecar does nothing with the key, so ServeLevelApprovers serves a
+// build without it the document with the key removed. A build that does not
+// decode approvers at all is refused: it files under approval_rule, which
+// lets other groups approve and posts in a channel.
+const CapabilityApproverOwners = "analyzer_approver_owners"
+
+// CapabilityApproverEscalate means this build decodes approvers.<level>.escalate.
+// The sidecar does nothing with the key, so ServeLevelApprovers serves a
+// build without it the document with the key removed. A build that does not
+// decode approvers at all is refused: under approval_rule the escalation
+// would not run.
+const CapabilityApproverEscalate = "analyzer_approver_escalate"
+
+// Bounds of ApprovalEscalation.AfterSec: one minute to seven days, matching
+// the sidecar review TTL bounds on the control plane.
+const (
+	MinEscalationDelaySec = 60
+	MaxEscalationDelaySec = 604800
+)
+
+// ApprovalEscalation sends a pending approval request to more groups by
+// direct message when nobody decides within AfterSec seconds.
+type ApprovalEscalation struct {
+	AfterSec int      `json:"after_sec,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
+}
 
 // ApprovalRouting is the AI routing of a human level's approval request.
 type ApprovalRouting struct {
@@ -76,7 +131,9 @@ type NotifyRoute struct {
 
 	// ChannelsCandidates are the channels the routing agent selects from
 	// for channel and both. Empty means every channel the integration
-	// reaches.
+	// reaches. Under approvers.<level>.notify nothing selects: they are the
+	// channels that get the post, and empty means the channels a level
+	// without notify posts to.
 	ChannelsCandidates []string `json:"channels_candidates,omitempty"`
 }
 
@@ -94,6 +151,24 @@ func (n NotifyRoute) EffectiveDelivery() string {
 func (a *LevelApprovers) routes() bool {
 	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
 		func(l *LevelApprover) bool { return l != nil && l.Routing != nil })
+}
+
+// notifies reports a block where some level sets notify.
+func (a *LevelApprovers) notifies() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && len(l.Notify) > 0 })
+}
+
+// hasOwners reports a block where some level sets owners.
+func (a *LevelApprovers) hasOwners() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && l.Owners })
+}
+
+// escalates reports a block where some level sets escalate.
+func (a *LevelApprovers) escalates() bool {
+	return a != nil && slices.ContainsFunc([]*LevelApprover{a.High, a.Medium, a.Low},
+		func(l *LevelApprover) bool { return l != nil && l.Escalate != nil })
 }
 
 // routedLevels lists the held levels whose human approver sets routing:
@@ -264,6 +339,9 @@ func validateLevelApprovers(la *LaneAnalyzerConfig, where string) []string {
 			}
 		}
 		problems = append(problems, validateRouting(a, at)...)
+		problems = append(problems, validateNotify(a, at)...)
+		problems = append(problems, validateOwners(a, at)...)
+		problems = append(problems, validateEscalate(a, at)...)
 	}
 	return problems
 }
@@ -295,9 +373,78 @@ func validateRouting(a *LevelApprover, at string) []string {
 	return problems
 }
 
-// LaneApproverWarnings lists the routing settings that the control plane
-// ignores or reads as another value. None is refused. Exported so the control
-// plane can show them at the save.
+// validateNotify refuses notify where nobody would read it, and a blank
+// channel.
+func validateNotify(a *LevelApprover, at string) []string {
+	if len(a.Notify) == 0 {
+		return nil
+	}
+	var problems []string
+	if a.Routing != nil {
+		problems = append(problems, fmt.Sprintf("%s: notify and routing are alternatives; "+
+			"a level with routing sets routing.notify", at))
+	}
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: notify names people nobody asks, "+
+			"and the type is %q", at, analyzer.ApproverAIAgent))
+	}
+	for _, k := range slices.Sorted(maps.Keys(a.Notify)) {
+		for i, c := range a.Notify[k].ChannelsCandidates {
+			if strings.TrimSpace(c) == "" {
+				problems = append(problems, fmt.Sprintf("%s: notify.%s.channels_candidates[%d] is blank", at, k, i))
+			}
+		}
+	}
+	return problems
+}
+
+// validateOwners refuses owners where nobody would read it or beside routing.
+func validateOwners(a *LevelApprover, at string) []string {
+	if !a.Owners {
+		return nil
+	}
+	var problems []string
+	if a.Routing != nil {
+		problems = append(problems, fmt.Sprintf("%s: owners and routing are alternatives; "+
+			"set owners for the sidecar's owners or routing for AI routing, not both", at))
+	}
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: owners name people nobody asks, "+
+			"and the type is %q", at, analyzer.ApproverAIAgent))
+	}
+	return problems
+}
+
+// validateEscalate refuses an escalation on ai_agent, an out-of-range delay,
+// an empty group list, or a blank group.
+func validateEscalate(a *LevelApprover, at string) []string {
+	e := a.Escalate
+	if e == nil {
+		return nil
+	}
+	var problems []string
+	if a.Type == analyzer.ApproverAIAgent {
+		problems = append(problems, fmt.Sprintf("%s: escalate names people nobody asks, "+
+			"and the type is %q", at, analyzer.ApproverAIAgent))
+	}
+	if e.AfterSec < MinEscalationDelaySec || e.AfterSec > MaxEscalationDelaySec {
+		problems = append(problems, fmt.Sprintf("%s: escalate.after_sec must be between %d and %d seconds, got %d",
+			at, MinEscalationDelaySec, MaxEscalationDelaySec, e.AfterSec))
+	}
+	if len(e.Groups) == 0 {
+		problems = append(problems, fmt.Sprintf("%s: escalate.groups is required", at))
+	}
+	for i, g := range e.Groups {
+		if strings.TrimSpace(g) == "" {
+			problems = append(problems, fmt.Sprintf("%s: escalate.groups[%d] is blank", at, i))
+		}
+	}
+	return problems
+}
+
+// LaneApproverWarnings lists the routing and notify settings that the control
+// plane ignores or reads as another value. None is refused. Exported so the
+// control plane can show them at the save.
 func LaneApproverWarnings(la *LaneAnalyzerConfig) []string {
 	if la == nil {
 		return nil
@@ -305,7 +452,11 @@ func LaneApproverWarnings(la *LaneAnalyzerConfig) []string {
 	var out []string
 	for _, l := range la.levels() {
 		a := la.LevelApprover(l.risk)
-		if a == nil || a.Routing == nil {
+		if a == nil {
+			continue
+		}
+		out = append(out, notifyWarnings(fmt.Sprintf("approvers.%s", l.name), a.Notify)...)
+		if a.Routing == nil {
 			continue
 		}
 		at := fmt.Sprintf("approvers.%s.routing", l.name)
@@ -314,43 +465,82 @@ func LaneApproverWarnings(la *LaneAnalyzerConfig) []string {
 				"notifies nobody", at, analyzer.ApproverAIAgent))
 			continue
 		}
-		for _, k := range slices.Sorted(maps.Keys(a.Routing.Notify)) {
-			n := a.Routing.Notify[k]
-			if k != NotifySlack && k != NotifyTeams {
-				out = append(out, fmt.Sprintf("%s.notify.%s is ignored: only %s and %s are notify keys",
-					at, k, NotifySlack, NotifyTeams))
-				continue
-			}
-			if n.Delivery != "" && n.Delivery != n.EffectiveDelivery() {
-				out = append(out, fmt.Sprintf("%s.notify.%s.delivery %q is not %s, %s or %s; %s is used",
-					at, k, n.Delivery, DeliveryDM, DeliveryChannel, DeliveryBoth, DeliveryDM))
-			}
-			if len(n.ChannelsCandidates) > 0 && n.EffectiveDelivery() == DeliveryDM {
-				out = append(out, fmt.Sprintf("%s.notify.%s.channels_candidates is ignored: "+
-					"delivery %s posts to no channel", at, k, DeliveryDM))
-			}
+		out = append(out, notifyWarnings(at, a.Routing.Notify)...)
+	}
+	return out
+}
+
+// notifyWarnings lists the keys of one notify map that are ignored or read
+// as another value. at names the map's parent.
+func notifyWarnings(at string, notify map[string]NotifyRoute) []string {
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(notify)) {
+		n := notify[k]
+		if k != NotifySlack && k != NotifyTeams {
+			out = append(out, fmt.Sprintf("%s.notify.%s is ignored: only %s and %s are notify keys",
+				at, k, NotifySlack, NotifyTeams))
+			continue
+		}
+		if n.Delivery != "" && n.Delivery != n.EffectiveDelivery() {
+			out = append(out, fmt.Sprintf("%s.notify.%s.delivery %q is not %s, %s or %s; %s is used",
+				at, k, n.Delivery, DeliveryDM, DeliveryChannel, DeliveryBoth, DeliveryDM))
+		}
+		if len(n.ChannelsCandidates) > 0 && n.EffectiveDelivery() == DeliveryDM {
+			out = append(out, fmt.Sprintf("%s.notify.%s.channels_candidates is ignored: "+
+				"delivery %s posts to no channel", at, k, DeliveryDM))
 		}
 	}
 	return out
 }
 
-// ServeLevelApprovers returns cfg for hs: unchanged when hs has the cap; else
-// a copy with approvers dropped from every block that names an
-// approval_rule and sets no routing. A block that sets approvers and names no
-// approval_rule, or sets routing, keeps them, so CheckServable refuses it
-// naming the capability. cfg is never changed.
+// ServeLevelApprovers returns cfg for hs. cfg is never changed.
+//
+// A build that decodes approvers gets cfg, without the keys of
+// approvers.<level> that only the control plane reads (notify) when the build
+// does not decode them: the sidecar does nothing with them, and the control
+// plane acts on its own copy.
+//
+// A build that does not decode approvers gets a copy with approvers dropped
+// from every block that names an approval_rule and sets no routing and no
+// notify. A block that sets approvers and names no approval_rule, or sets
+// routing or notify, keeps them, so CheckServable refuses it naming the
+// capability.
 //
 // On an old build a dropped ai_agent level becomes a human hold under
 // approval_rule: more oversight, never less. Routing is never dropped:
-// approval_rule would page other people than the routing selects.
+// approval_rule would page other people than the routing selects. Notify is
+// never dropped with approvers either: approval_rule posts in a channel.
 func ServeLevelApprovers(cfg Config, hs Handshake) Config {
-	if hs.grants(CapabilityLevelApprovers, capabilitySince()) {
-		return cfg
+	since := capabilitySince()
+	if hs.grants(CapabilityLevelApprovers, since) {
+		stripNotify := !hs.grants(CapabilityApproverNotify, since)
+		stripOwners := !hs.grants(CapabilityApproverOwners, since)
+		stripEscalate := !hs.grants(CapabilityApproverEscalate, since)
+		if !stripNotify && !stripOwners && !stripEscalate {
+			return cfg
+		}
+		return mapLevelApprovers(cfg, func(a *LevelApprover) bool {
+			changed := false
+			if stripNotify && len(a.Notify) > 0 {
+				a.Notify = nil
+				changed = true
+			}
+			if stripOwners && a.Owners {
+				a.Owners = false
+				changed = true
+			}
+			if stripEscalate && a.Escalate != nil {
+				a.Escalate = nil
+				changed = true
+			}
+			return changed
+		})
 	}
 	var listeners []ListenerConfig
 	for i, l := range cfg.Listeners {
 		if l.Analyzer == nil || l.Analyzer.Approvers == nil || l.Analyzer.ApprovalRule == "" ||
-			l.Analyzer.Approvers.routes() {
+			l.Analyzer.Approvers.routes() || l.Analyzer.Approvers.notifies() ||
+			l.Analyzer.Approvers.hasOwners() || l.Analyzer.Approvers.escalates() {
 			continue
 		}
 		if listeners == nil {
@@ -358,6 +548,43 @@ func ServeLevelApprovers(cfg Config, hs Handshake) Config {
 		}
 		block := *l.Analyzer
 		block.Approvers = nil
+		listeners[i].Analyzer = &block
+	}
+	if listeners != nil {
+		cfg.Listeners = listeners
+	}
+	return cfg
+}
+
+// mapLevelApprovers returns cfg with change applied to a copy of every level
+// approver. change reports whether it changed the copy; a listener nothing
+// changed in keeps its block. cfg is never changed.
+func mapLevelApprovers(cfg Config, change func(*LevelApprover) bool) Config {
+	var listeners []ListenerConfig
+	for i, l := range cfg.Listeners {
+		if l.Analyzer == nil || l.Analyzer.Approvers == nil {
+			continue
+		}
+		approvers := *l.Analyzer.Approvers
+		changed := false
+		for _, level := range []**LevelApprover{&approvers.High, &approvers.Medium, &approvers.Low} {
+			if *level == nil {
+				continue
+			}
+			a := **level
+			if change(&a) {
+				*level = &a
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if listeners == nil {
+			listeners = slices.Clone(cfg.Listeners)
+		}
+		block := *l.Analyzer
+		block.Approvers = &approvers
 		listeners[i].Analyzer = &block
 	}
 	if listeners != nil {

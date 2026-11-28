@@ -60,7 +60,7 @@ func (p *slackPlugin) resolveApprover(ev *event) *storagev2.Context {
 		return nil
 	}
 	if reviewapi.IsSidecarReview(rev) {
-		return p.resolveSidecarApprover(ev)
+		return p.resolveSidecarApprover(ev, rev)
 	}
 	return p.resolveHoopApprover(ev)
 }
